@@ -1,0 +1,165 @@
+import { useEffect, useRef, useState } from 'react'
+import { AppProvider, useApp } from './lib/app'
+import { useHotkeys } from './lib/hotkeys'
+import { AttachmentViewer } from './components/AttachmentViewer'
+import { BoardPage } from './components/Board'
+import { Compose } from './components/Compose'
+import { GuidedReview } from './components/GuidedReview'
+import { InboxPane } from './components/InboxPane'
+import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
+import { PhoneApp } from './components/Phone'
+import { NewSessionDialog } from './components/NewSession'
+import { DeviceGate } from './components/Devices'
+import { SearchPalette } from './components/SearchPalette'
+import { SettingsPage } from './components/Settings'
+import { Sidebar } from './components/Sidebar'
+import { TerminalPane } from './components/TerminalPane'
+
+export function App() {
+  return (
+    <DeviceGate>
+      <AppProvider>
+        <Root />
+      </AppProvider>
+    </DeviceGate>
+  )
+}
+
+function Root() {
+  const { route, sessions, navigate, isPhone, overlay, setOverlay, undoLast, settings } = useApp()
+
+  // Desktop: keep a session selected (the first live one), and drop a deleted one.
+  useEffect(() => {
+    if (!sessions) return
+    if (route.s && sessions.some((s) => s.id === route.s)) return
+    if (isPhone) {
+      if (route.s) navigate({ s: null }, { push: false })
+      return
+    }
+    const first = sessions.find((s) => !s.archived_at) ?? sessions[0]
+    navigate({ s: first?.id ?? null, t: null, f: null })
+  }, [sessions, route.s, isPhone, navigate])
+
+  // First run: nothing to show yet, so offer to start a session.
+  const offered = useRef(false)
+  useEffect(() => {
+    if (!sessions || offered.current) return
+    offered.current = true
+    if (sessions.length === 0 && route.view === 'main') setOverlay({ kind: 'new-session' })
+  }, [sessions, route.view, setOverlay])
+
+  useHotkeys({
+    'mod+k': () => setOverlay({ kind: 'search' }),
+    '/': () => setOverlay({ kind: 'search' }),
+    '?': () => setOverlay({ kind: 'shortcuts' }),
+    z: () => undoLast(),
+    'shift+d': () => {
+      if (!settings.decision_mode) return false
+      setOverlay({ kind: 'decide' })
+    },
+  })
+
+  const close = () => setOverlay(null)
+  return (
+    <>
+      {route.view === 'settings' ? (
+        <SettingsPage />
+      ) : route.view === 'board' ? (
+        <BoardPage />
+      ) : isPhone ? (
+        <PhoneApp />
+      ) : (
+        <Desktop />
+      )}
+      {route.view === 'review' && route.r && <GuidedReview attachmentId={route.r} />}
+      {overlay?.kind === 'search' && <SearchPalette onClose={close} />}
+      {overlay?.kind === 'shortcuts' && <Shortcuts onClose={close} />}
+      {overlay?.kind === 'decide' && <DecisionMode onClose={close} />}
+      {overlay?.kind === 'compose' && <Compose sessionId={overlay.sessionId} draftId={overlay.draftId} onClose={close} />}
+      {overlay?.kind === 'delete-session' && <DeleteSession session={overlay.session} onClose={close} />}
+      {overlay?.kind === 'drafts' && <DraftsList onClose={close} />}
+      {overlay?.kind === 'new-session' && <NewSessionDialog onClose={close} />}
+      <Toasts />
+    </>
+  )
+}
+
+function Desktop() {
+  const { route, sessions, layout, setLayout, settings } = useApp()
+  const session = sessions?.find((s) => s.id === route.s) ?? null
+  // Text size zooms the page: columns are measured in zoomed pixels.
+  const width = useWindowWidth() / ((settings.text_size || 13) / 13)
+  const showInbox = !!session && session.kind !== 'shell' && !layout.inboxCollapsed
+  // An open file takes the center: the session list folds into its rail.
+  // A narrow window shrinks the side columns first, then folds the list too.
+  const MIN_CENTER = 420
+  let sidebarW = layout.sidebarW
+  let inboxW = showInbox ? (route.f ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
+  let rail = layout.rail || !!route.f
+  const side = () => (rail ? 60 : sidebarW)
+  if (side() + inboxW + MIN_CENTER > width) {
+    const over = side() + inboxW + MIN_CENTER - width
+    if (showInbox) inboxW = Math.max(320, inboxW - Math.ceil(over / 2))
+    if (!rail) sidebarW = Math.max(216, sidebarW - (side() + inboxW + MIN_CENTER - width))
+    if (side() + inboxW + MIN_CENTER > width) rail = true
+  }
+  return (
+    <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
+      <div style={{ width: rail ? 60 : sidebarW }} className="shrink-0 border-r border-line">
+        <Sidebar forceRail={rail} />
+      </div>
+      {!rail && <Resizer onDrag={(dx) => setLayout({ sidebarW: clamp(layout.sidebarW + dx, 216, 480) })} />}
+      <main className="min-w-0 flex-1">
+        {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
+      </main>
+      {showInbox && (
+        <>
+          <Resizer grip onDrag={(dx) => setLayout({ inboxW: clamp(layout.inboxW - dx, 320, 760) })} />
+          <div style={{ width: inboxW }} className="shrink-0">
+            <InboxPane session={session} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function useWindowWidth(): number {
+  const [w, setW] = useState(window.innerWidth)
+  useEffect(() => {
+    const on = () => setW(window.innerWidth)
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+  return w
+}
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, v))
+}
+
+/** A column edge: drag to resize. */
+function Resizer({ onDrag, grip }: { onDrag: (dx: number) => void; grip?: boolean }) {
+  const last = useRef<number | null>(null)
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="resizer"
+      onPointerDown={(e) => {
+        last.current = e.clientX
+        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        if (last.current === null) return
+        const dx = e.clientX - last.current
+        last.current = e.clientX
+        if (dx) onDrag(dx)
+      }}
+      onPointerUp={() => (last.current = null)}
+      className="group relative z-[1] -mx-1 flex w-[9px] shrink-0 cursor-col-resize items-center justify-center"
+    >
+      <div className="absolute inset-y-0 left-1 w-px bg-line group-hover:bg-linestrong" />
+      {grip && <div className="relative h-8 w-1 rounded-sm bg-[#52525b]" />}
+    </div>
+  )
+}

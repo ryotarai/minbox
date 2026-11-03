@@ -1,0 +1,323 @@
+// Pure text helpers of the minbox mod: the tools' contract and what a reply
+// looks like when it reaches Claude. No `$` here, so it is easy to test.
+
+export const SEND_TOOL = 'send_message'
+export const READ_TOOL = 'read_thread'
+
+export const SEND_DESCRIPTION = [
+  "Send a message to the person's minbox inbox, the pane beside this terminal.",
+  'Use it when you finish long work they should look at, or need a decision only they can make, and it can wait: ask each decision as a `:::question` block (see `body`).',
+  'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
+  'Their reply arrives later as a new message in this conversation; meanwhile keep working on what does not depend on it, or end your turn.',
+  'Leave `thread_id` out to start a new thread (give a short `subject`); pass the thread_id of a reply to answer in its thread.',
+  'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
+].join(' ')
+
+export const QUESTION_GUIDE = [
+  'The message, in Markdown. Lead with what you need from the person; they switch in cold, so say what it affects and what you know.',
+  'Ask each decision as a block:',
+  ':::question',
+  'The question, on the first line.',
+  'One to three short lines of context.',
+  '- [ ] Choice A — why',
+  '- [ ] Choice B — why',
+  'Recommended: Choice A',
+  ':::',
+  '`:::question` picks one, `:::question-multi` any number, `:::question-text` asks for free text.',
+  'Optional context lines: `Stopped: <what waits>` when your work is stopped on the answer; `Holds up: a; b` for what it blocks; `Replaces: <earlier question>` when you re-ask.',
+  'Ask the person to do things by hand with an `:::actions` block of `- [ ] item` lines; they mark each Done or Can\'t do it.',
+  'The person can also answer Other, add a note, or skip. Ask only what you cannot decide alone.',
+  'Answers come back under "## Answers to your questions".',
+].join('\n')
+
+export const ATTACHMENTS_GUIDE =
+  'Files to show the person beside your message, e.g. ["docs/plan.md", "/tmp/checkout.png", "src/retry.mjs"]: absolute (anywhere you can read) or relative to the session\'s folder. ' +
+  'For something visual, a screenshot or image usually reads fastest; attach the HTML or source too when they should open or click through it. Any regular file, any size. ' +
+  "Markdown, plain text, config and data files, Mermaid and Graphviz sources and HTML (its relative images and frames load from its folder) open in minbox's viewers; " +
+  'images (PNG, JPEG, GIF, WebP, SVG, AVIF, BMP, ICO) show in the message; videos (MP4, MOV, WebM) play beside it, and the person comments at moments (each comment comes back with its time and the paused frame\'s path); ' +
+  'source code, scripts and other text open as code with line comments; PDFs and anything else are offered as a download. Folders and .env files are refused. ' +
+  'The inbox keeps the version you sent and shows the file as it is now, saying when it changed. ' +
+  "The person's annotations, including comments on images and code lines, come back in their reply. " +
+  'Each attachment\'s kind in the result is markdown, text, html, mermaid, graphviz, code, image, video, pdf or file; treat any other as file. ' +
+  'A markdown link to an attached file in the body, e.g. [the mock](proto/admin.html), opens it beside the thread.'
+
+export const SEND_SCHEMA = {
+  type: 'object',
+  properties: {
+    body: { type: 'string', description: QUESTION_GUIDE },
+    subject: {
+      type: 'string',
+      description: 'A short title for a new thread (under 60 characters). Ignored with thread_id.',
+    },
+    thread_id: {
+      type: 'string',
+      description: 'The thread to continue (the thread_id a reply came with). Leave out to start a new thread.',
+    },
+    name: {
+      type: 'string',
+      description: 'A short tag for a new thread, e.g. "archive-search". Ignored with thread_id.',
+    },
+    attachments: {
+      type: 'array',
+      items: { type: 'string' },
+      description: ATTACHMENTS_GUIDE,
+    },
+    review: {
+      type: 'object',
+      description: 'A guided review of your changes: minbox snapshots each file\'s diff against HEAD. Lead with the section the person should look at most.',
+      properties: {
+        title: { type: 'string' },
+        summary: { type: 'string', description: 'What changed and why, in two or three sentences.' },
+        sections: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              summary: { type: 'string' },
+              files: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['title', 'files'],
+          },
+        },
+      },
+      required: ['title', 'sections'],
+    },
+  },
+  required: ['body'],
+  additionalProperties: false,
+} as const
+
+export const READ_DESCRIPTION =
+  "Read the person's minbox inbox for this session: with `thread_id`, that thread's messages and the answers given; without, the list of this session's threads."
+
+export const READ_SCHEMA = {
+  type: 'object',
+  properties: {
+    thread_id: { type: 'string', description: 'The thread to read. Leave out to list threads.' },
+  },
+  additionalProperties: false,
+} as const
+
+export const TITLE_TOOL = 'set_session_title'
+
+export const TITLE_DESCRIPTION =
+  "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply."
+
+export const TITLE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'One line, about 3-8 words, at most 80 characters; plain text, in the language the person writes in.' },
+  },
+  required: ['title'],
+  additionalProperties: false,
+} as const
+
+/** The system prompt's section on keeping the session's title current. */
+export function titleSection(titleTool: string): string {
+  return [
+    '# Session title',
+    `The person sees this session in minbox's session list under a title you set with ${titleTool}. Keep it current:`,
+    '- Set it once the task is clear, early in the first turn: a few words naming the work (e.g. "Fix login redirect loop"), not a status or a sentence.',
+    '- Set it again whenever the main task changes (a new request, a different bug, the next phase); leave it alone for small steps within the same task.',
+    "- Plain text, at most 80 characters, in the person's language. Do not mention the title in your replies.",
+  ].join('\n')
+}
+
+export const CARD_TOOL = 'card'
+
+export const CARD_DESCRIPTION = [
+  "Keep the person's minbox Board up to date: one card per piece of work, across sessions.",
+  'action "list" shows the cards; "create" adds one (title, column, note); "update" changes one by id (move it with column, link a PR with pr_url / pr_state / pr_number).',
+  'Columns: backlog, designing, look (waits on the person), building, review (the person reviews), shipped, icebox, dropped.',
+  'Only works when the person turned the Board on in minbox settings.',
+].join(' ')
+
+export const CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    action: { type: 'string', enum: ['list', 'create', 'update'] },
+    id: { type: 'string', description: 'The card to update.' },
+    title: { type: 'string' },
+    column: { type: 'string', enum: ['backlog', 'designing', 'look', 'building', 'review', 'shipped', 'icebox', 'dropped'] },
+    note: { type: 'string', description: 'One line: where it stands.' },
+    thread_id: { type: 'string', description: 'The minbox thread about this card.' },
+    pr_url: { type: 'string' },
+    pr_state: { type: 'string', enum: ['draft', 'open', 'merged', 'closed'] },
+    pr_number: { type: 'number' },
+  },
+  required: ['action'],
+  additionalProperties: false,
+} as const
+
+export type Card = {
+  id: string
+  title: string
+  column: string
+  note: string
+  pr_number?: number
+  pr_state?: string
+}
+
+/** The card tool's answer. */
+export function cardText(action: string, v: Card | Card[]): string {
+  if (Array.isArray(v)) {
+    if (v.length === 0) return 'The Board has no cards yet.'
+    return v.map((c) => `- ${c.id} [${c.column}] ${c.title}${c.note ? ` · ${c.note}` : ''}${c.pr_number ? ` · PR #${c.pr_number} ${c.pr_state ?? ''}`.trimEnd() : ''}`).join('\n')
+  }
+  return `${action === 'create' ? 'Created' : 'Updated'} card ${v.id} [${v.column}] ${v.title}.`
+}
+
+export type AttachmentRecord = { id: string; name: string; type?: string; kind?: string; path: string; author?: string; ref?: string }
+
+export type Message = {
+  id: string
+  thread_id: string
+  author: 'agent' | 'user'
+  body: string
+  words?: string
+  questions?: { key: string; kind: string; prompt: string }[] | null
+  created_at: string
+  attachments?: AttachmentRecord[] | null
+  inline_images?: AttachmentRecord[] | null
+}
+
+export type Pending = Message & {
+  subject: string
+  urgent?: boolean
+  new_thread: boolean
+  in_reply_to?: Message | null
+}
+
+export type Thread = {
+  id: string
+  subject: string
+  updated_at: string
+  unread: number
+  open_questions: number
+  section: string
+  last_body: string
+  last_author: string
+  messages?: Message[]
+}
+
+const REPLY_LINE =
+  'The person replied to you in the minbox inbox. Their reply follows as they wrote it: it is their answer to you.'
+const NEW_THREAD_LINE =
+  'The person started a new thread with you in the minbox inbox: a request of their own, not an answer to something you asked. It may be unrelated to what you were doing; say how you will handle it before you start.'
+
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, ' ').trim()
+}
+
+/** The turn text for the person's messages from the inbox (one or more). */
+export function wakeText(pending: Pending[], sendTool: string, readTool: string): string {
+  const parts = pending.map((p) => {
+    const lines = [
+      `minbox inbox: ${oneLine(p.subject) || 'a reply'} (thread_id: ${p.thread_id})`,
+      p.new_thread ? NEW_THREAD_LINE : REPLY_LINE,
+      `When they need to hear back, answer in the same thread: ${sendTool} with thread_id ${p.thread_id}.`,
+      '',
+      p.body.trim(),
+    ]
+    return lines.join('\n')
+  })
+  parts.push(`[more: ${readTool} · the person reads replies in the minbox inbox]`)
+  return parts.join('\n\n---\n\n')
+}
+
+export type SendResult = {
+  thread_id: string
+  new_thread: boolean
+  questions?: { key: string; prompt: string }[]
+  attachments?: { id: string; name: string; kind: string; path: string }[]
+  images_not_shown?: { ref: string; reason: string; not_yet?: boolean }[]
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+/** What send_message returns to Claude. */
+export function sentText(r: SendResult): string {
+  const asking = r.questions?.length ? ` asking ${plural(r.questions.length, 'question')}` : ''
+  const files = r.attachments?.length ? ` with ${plural(r.attachments.length, 'attachment')}` : ''
+  const lines = [
+    `Sent to the minbox inbox${asking}${files} (${r.new_thread ? 'Started thread' : 'Added to thread'} ${r.thread_id}).`,
+    "The person's reply will arrive by itself as a new message in this conversation. Do not wait or poll for it.",
+  ]
+  if (r.questions?.length) {
+    lines.push(`Questions the inbox shows: ${r.questions.map((q) => `"${q.prompt}"`).join(', ')}.`)
+  }
+  if (r.attachments?.length) {
+    lines.push(`Attached: ${r.attachments.map((a) => `${a.name} (${a.kind})`).join(', ')}.`)
+  }
+  for (const n of (r.images_not_shown ?? []).slice(0, 10)) {
+    lines.push(
+      n.not_yet
+        ? `This image does not exist yet: ${n.ref}; it shows once written there.`
+        : `The message was sent, but this image will not show: ${n.ref} (${n.reason}). Copy the image to a plain folder and link that path, or attach it with attachments.`,
+    )
+  }
+  return lines.join(' ')
+}
+
+/** read_thread's answer for one thread. */
+export function threadText(t: Thread): string {
+  const lines = [`Thread ${t.id}: ${t.subject}`]
+  for (const m of t.messages ?? []) {
+    lines.push('', `[${m.author === 'agent' ? 'you' : 'person'} · ${m.created_at}]`, m.body.trim())
+    for (const a of m.attachments ?? []) {
+      lines.push(a.kind === 'review' ? `Guided review: ${a.name}` : `Attached: ${a.name} (${a.path})${a.type ? ` [${a.type}]` : ''}`)
+    }
+    for (const a of m.inline_images ?? []) lines.push(`Image shown: ${a.ref ?? a.name} (${a.path})`)
+  }
+  if (t.open_questions > 0) lines.push('', `(${t.open_questions} of your questions are still open; the person will answer in the inbox.)`)
+  return lines.join('\n')
+}
+
+/** read_thread's answer without a thread: the list. */
+export function threadListText(threads: Thread[]): string {
+  if (threads.length === 0) return 'No threads in the minbox inbox for this session yet.'
+  return threads.map((t) => `- ${t.id} "${t.subject}" · ${threadState(t)}: ${oneLine(t.last_body).slice(0, 80)}`).join('\n')
+}
+
+function threadState(t: Thread): string {
+  if (t.open_questions > 0) return `${t.open_questions} open question${t.open_questions > 1 ? 's' : ''}`
+  if (t.last_author === 'user') return 'the person wrote last'
+  return 'you wrote last'
+}
+
+/** The reminder that rides the conversation's first prompt. */
+export function reminderText(sendTool: string, extra?: string | null): string {
+  const lines = [
+    `minbox inbox is on for this session: the person watches it beside this terminal.`,
+    `When you finish long work, or need a decision only they can make, send it with ${sendTool} (each decision as a :::question block) and keep going; their reply comes back here by itself.`,
+    'A decision in the inbox stays there: never also ask it in the chat with a blocking question tool (AskUserQuestion or similar).',
+  ]
+  const more = extra?.trim()
+  if (more) lines.push(`The person adds: ${more}`)
+  return lines.join(' ')
+}
+
+/** After a compaction: the threads this session has open, so their ids stay right. */
+export function openThreadsText(threads: Thread[], sendTool: string, extra?: string | null): string | null {
+  const open = threads.filter((t) => !['quiet', 'archived', 'snoozed'].includes(t.section)).slice(0, 5)
+  if (open.length === 0) return null
+  return [
+    `${reminderText(sendTool, extra)}`,
+    `Your open minbox threads (${open.length}); answer in one with its thread_id:`,
+    ...open.map((t) => `- ${t.id} "${oneLine(t.subject)}" · ${threadState(t)}`),
+  ].join('\n')
+}
+
+/** Parses the server file's JSON ({ url }). */
+export function serverUrlOf(text: string | null | undefined): string | null {
+  if (!text) return null
+  try {
+    const v = JSON.parse(text)
+    return typeof v?.url === 'string' && /^https?:\/\//.test(v.url) ? v.url.replace(/\/+$/, '') : null
+  } catch {
+    return null
+  }
+}

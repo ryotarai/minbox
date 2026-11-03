@@ -1,0 +1,5 @@
+{
+  "name": "minbox",
+  "version": "0.1.0",
+  "description": "Connects a Claude Code session started by minbox to the minbox inbox: a tool to message the person, and their replies delivered back as turns."
+}

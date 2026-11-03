@@ -1,0 +1,333 @@
+@import 'tailwindcss';
+
+/* Design tokens. Dark is the default; [data-theme='light'] on <html> switches. */
+:root {
+  --mb-bg: #0b0b0d;
+  --mb-surface: #111114;
+  --mb-raised: #18181c;
+  --mb-overlay: #1c1c21;
+  --mb-card: #16161a;
+  --mb-card-dim: #131316;
+  --mb-sunken: #0e0e11;
+  --mb-sel: #26262c;
+  --mb-rowsel: #1f1f25;
+  --mb-chip: #1f1f24;
+  --mb-key: #2c2c33;
+  --mb-line: #222227;
+  --mb-line2: #2c2c32;
+  --mb-linestrong: #36363d;
+  --mb-fg: #ededf0;
+  --mb-fg2: #c4c4cc;
+  --mb-body: #dcdce0;
+  --mb-muted: #a6a6b0;
+  --mb-subtle: #8b8b95;
+  --mb-faint: #6b6b75;
+  --mb-wait: #f2b14a;
+  --mb-waitfg: #ffe2ad;
+  --mb-accent: #f2b14a;
+  --mb-onaccent: #1a1204;
+  --mb-work: #82aefc;
+  --mb-ok: #6fd6a0;
+  --mb-danger: #ff9a80;
+  --mb-dangerfg: #ffd3c7;
+  --mb-dangerstrong: #e5664a;
+  --mb-purple: #b79cff;
+  --mb-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --mb-term-bg: #0e0e11;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --mb-bg: #f3f3f5;
+  --mb-surface: #ffffff;
+  --mb-raised: #f1f1f4;
+  --mb-overlay: #ffffff;
+  --mb-card: #fbfbfc;
+  --mb-card-dim: #f6f6f8;
+  --mb-sunken: #f5f5f7;
+  --mb-sel: #e6e6eb;
+  --mb-rowsel: #ececf1;
+  --mb-chip: #ececf0;
+  --mb-key: #e4e4e9;
+  --mb-line: #e4e4e9;
+  --mb-line2: #dadae0;
+  --mb-linestrong: #c6c6ce;
+  --mb-fg: #17171a;
+  --mb-fg2: #3a3a42;
+  --mb-body: #26262b;
+  --mb-muted: #55555f;
+  --mb-subtle: #676772;
+  --mb-faint: #9a9aa4;
+  --mb-wait: #a35f00;
+  --mb-waitfg: #7a4600;
+  --mb-accent: #f2b14a;
+  --mb-onaccent: #1a1204;
+  --mb-work: #2563d6;
+  --mb-ok: #16824e;
+  --mb-danger: #c2410c;
+  --mb-dangerfg: #8a2a07;
+  --mb-dangerstrong: #d9482b;
+  --mb-purple: #7c4dde;
+  --mb-shadow: 0 16px 40px rgba(20, 20, 30, 0.18);
+  --mb-term-bg: #0e0e11;
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --color-bg: var(--mb-bg);
+  --color-surface: var(--mb-surface);
+  --color-raised: var(--mb-raised);
+  --color-overlay: var(--mb-overlay);
+  --color-card: var(--mb-card);
+  --color-carddim: var(--mb-card-dim);
+  --color-sunken: var(--mb-sunken);
+  --color-sel: var(--mb-sel);
+  --color-rowsel: var(--mb-rowsel);
+  --color-chip: var(--mb-chip);
+  --color-key: var(--mb-key);
+  --color-line: var(--mb-line);
+  --color-line2: var(--mb-line2);
+  --color-linestrong: var(--mb-linestrong);
+  --color-fg: var(--mb-fg);
+  --color-fg2: var(--mb-fg2);
+  --color-body: var(--mb-body);
+  --color-muted: var(--mb-muted);
+  --color-subtle: var(--mb-subtle);
+  --color-faint: var(--mb-faint);
+  --color-wait: var(--mb-wait);
+  --color-waitfg: var(--mb-waitfg);
+  --color-accent: var(--mb-accent);
+  --color-onaccent: var(--mb-onaccent);
+  --color-work: var(--mb-work);
+  --color-ok: var(--mb-ok);
+  --color-danger: var(--mb-danger);
+  --color-dangerfg: var(--mb-dangerfg);
+  --color-dangerstrong: var(--mb-dangerstrong);
+  --color-purple: var(--mb-purple);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-pop: var(--mb-shadow);
+}
+
+@layer base {
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+html {
+  background: var(--mb-bg);
+  color: var(--mb-fg);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+button:disabled {
+  cursor: default;
+}
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--mb-accent);
+  outline-offset: 2px;
+}
+::selection {
+  background: color-mix(in srgb, var(--mb-accent) 35%, transparent);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+kbd {
+  font-family: var(--font-mono);
+}
+
+/* Phone: inputs at 16px keep iOS from zooming. */
+@media (max-width: 767px) {
+  input,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Thin scrollbars that follow the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mb-linestrong) transparent;
+}
+
+}
+
+/* Rendered Markdown in messages and attachments. */
+.md {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  color: var(--mb-body);
+}
+.md > * + * {
+  margin-top: 0.6em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 650;
+  color: var(--mb-fg);
+  line-height: 1.35;
+}
+.md h1 {
+  font-size: 1.4em;
+}
+.md h2 {
+  font-size: 1.18em;
+  margin-top: 1em;
+}
+.md h3,
+.md h4 {
+  font-size: 1.02em;
+}
+.md a {
+  color: var(--mb-wait);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md ul {
+  list-style: disc;
+  padding-left: 1.3em;
+}
+.md ol {
+  list-style: decimal;
+  padding-left: 1.3em;
+}
+.md li + li {
+  margin-top: 0.2em;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--mb-chip);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.md pre {
+  background: var(--mb-sunken);
+  border: 1px solid var(--mb-line);
+  padding: 0.6em 0.8em;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md blockquote {
+  border-left: 3px solid var(--mb-linestrong);
+  padding-left: 0.8em;
+  color: var(--mb-muted);
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--mb-linestrong);
+  padding: 0.25em 0.5em;
+}
+.md hr {
+  border-color: var(--mb-linestrong);
+}
+.md mark.mb-anno {
+  background: color-mix(in srgb, var(--mb-work) 28%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+@keyframes mb-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.mb-pulse {
+  animation: mb-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mb-skeleton {
+  50% {
+    opacity: 0.55;
+  }
+}
+.mb-skeleton {
+  animation: mb-skeleton 1.4s ease-in-out infinite;
+}
+
+/* The terminal host (ghostty-web). The canvas lies over the host, so text the
+   browser puts in the host (IME composition) starts at the cursor cell, set
+   in --ime-x/--ime-y while composing. That text is invisible; .mb-ime draws it. */
+.mb-term > canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.mb-term {
+  color: transparent;
+  caret-color: transparent;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: var(--ime-font, 13px);
+  line-height: var(--ime-h, 16px);
+  text-indent: var(--ime-x, 0);
+}
+.mb-term::before {
+  content: '';
+  display: block;
+  height: var(--ime-y, 0);
+}
+.mb-ime {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  padding: 0 1px;
+  white-space: pre;
+  font-family: var(--font-mono);
+  text-indent: 0;
+  color: #ededf0;
+  background: #26262c;
+  text-decoration: underline;
+  text-decoration-color: #f2b14a;
+  text-underline-offset: 3px;
+  pointer-events: none;
+}
+
+/* Annotations in a document: saved comments are underlined amber; the words
+   being commented (the selection) show blue. */
+.md mark.mb-anno-saved {
+  background: transparent;
+  color: inherit;
+  border-bottom: 2px solid var(--mb-wait);
+}
+[data-testid='attachment-body'] ::selection {
+  background: color-mix(in srgb, var(--mb-work) 30%, transparent);
+}
+.md img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.md .mb-inert-link {
+  color: var(--mb-muted);
+  text-decoration: underline dotted;
+  cursor: default;
+}
