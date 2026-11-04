@@ -1,5 +1,5 @@
 // Package attach classifies attached files the way Plannotator Inbox does
-// (docs/research/plannotator-attachments.md §2): by name first, then by bytes.
+// (ported from Plannotator; see THIRD_PARTY_NOTICES.md): by name first, then by bytes.
 package attach
 
 import (

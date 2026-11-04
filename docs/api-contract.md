@@ -195,7 +195,7 @@ After the replay, and after every resize, the host sends every attached client a
 text frame `{"type":"size","cols":N,"rows":M}`. Clients still send `resize` frames.
 A phone view does not send `resize` unless the person asks ("Fit to this screen").
 
-## Attachments v2 (match Plannotator Inbox; spec: docs/research/plannotator-attachments.md)
+## Attachments v2 (match Plannotator Inbox)
 
 No size or count limits on agent attachments. Refused: folders, non-regular files, the
 dotenv family (`/(^|\.)env$/i`, `/^\.envrc$/i`, `/^\.env\./i` except `.env.example`),

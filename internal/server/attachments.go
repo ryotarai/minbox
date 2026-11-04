@@ -29,7 +29,7 @@ import (
 )
 
 // Attachments, the way Plannotator Inbox has them
-// (docs/research/plannotator-attachments.md): any regular file of any size,
+// (ported from Plannotator; see THIRD_PARTY_NOTICES.md): any regular file of any size,
 // kept as sent (a blob) and shown as it is now; folders and .env files refused.
 
 const (

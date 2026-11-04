@@ -1,5 +1,5 @@
 // Attachment wording and grouping, after Plannotator Inbox
-// (docs/research/plannotator-attachments.md §2, §3.2, §7).
+// (ported from Plannotator; see THIRD_PARTY_NOTICES.md).
 import type { Attachment, AttachmentDetail, AttachmentType, Message } from '../api'
 import { hm } from './format'
 

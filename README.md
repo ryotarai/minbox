@@ -184,3 +184,7 @@ plugin/minbox/      the Claude Code mod (hooks module)
 web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
 docs/               API contract, design notes, diagrams
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). Parts are ported from Plannotator (MIT); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
