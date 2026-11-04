@@ -240,8 +240,14 @@ type attachmentSnapshot struct {
 }
 
 type reviewReq struct {
-	Title    string `json:"title"`
-	Summary  string `json:"summary"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	// Cwd is where relative file paths resolve (e.g. a git worktree); the
+	// session's directory when empty, and resolved against it.
+	Cwd string `json:"cwd"`
+	// Base, a branch or commit: diff from where HEAD left it, so committed
+	// changes show too (e.g. "main" for a worktree's branch). HEAD when empty.
+	Base     string `json:"base"`
 	Sections []struct {
 		Title   string   `json:"title"`
 		Summary string   `json:"summary"`
@@ -265,6 +271,7 @@ type reviewSection struct {
 type review struct {
 	Title     string          `json:"title"`
 	Summary   string          `json:"summary"`
+	Base      string          `json:"base,omitempty"`
 	Additions int             `json:"additions"`
 	Deletions int             `json:"deletions"`
 	Sections  []reviewSection `json:"sections"`
@@ -302,7 +309,11 @@ func snapshotReview(ctx context.Context, fsys hostfs.FS, home, cwd string, req *
 	if len(req.Sections) > 20 {
 		return nil, errors.New("review has too many sections (20 at most)")
 	}
-	rv := review{Title: strings.TrimSpace(req.Title), Summary: req.Summary, Sections: []reviewSection{}}
+	if req.Cwd != "" {
+		cwd = hostfs.ResolveIn(home, cwd, req.Cwd)
+	}
+	base := strings.TrimSpace(req.Base)
+	rv := review{Title: strings.TrimSpace(req.Title), Summary: req.Summary, Base: base, Sections: []reviewSection{}}
 	nFiles := 0
 	for _, sec := range req.Sections {
 		rs := reviewSection{Title: sec.Title, Summary: sec.Summary, Files: []reviewFile{}}
@@ -310,7 +321,7 @@ func snapshotReview(ctx context.Context, fsys hostfs.FS, home, cwd string, req *
 			if nFiles++; nFiles > 50 {
 				return nil, errors.New("review has too many files (50 at most)")
 			}
-			diff, err := fsys.GitDiff(ctx, cwd, hostfs.ResolveIn(home, cwd, f))
+			diff, err := fsys.GitDiff(ctx, cwd, hostfs.ResolveIn(home, cwd, f), base)
 			if err != nil {
 				return nil, fmt.Errorf("review file %s: %v", f, err)
 			}

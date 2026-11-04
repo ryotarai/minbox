@@ -297,26 +297,53 @@ func frontmatter(path string) (name, desc string) {
 	return name, desc
 }
 
-// GitDiff is path's diff against HEAD (an untracked file against /dev/null).
-func (l *Local) GitDiff(ctx context.Context, cwd, path string) (string, error) {
+// GitDiff is path's diff in the repository or worktree that holds it, not
+// cwd's: a file in a worktree is diffed in that worktree. Against HEAD, or,
+// with base (a branch or commit), against the merge base of base and HEAD, so
+// the branch's committed changes show as well as uncommitted ones. An
+// untracked file is diffed against /dev/null.
+func (l *Local) GitDiff(ctx context.Context, cwd, path, base string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", cwd, "diff", "--no-color", "--no-ext-diff", "HEAD", "--", path).Output()
+	dir := gitDirOf(path, cwd)
+	from := "HEAD"
+	if base != "" {
+		if strings.HasPrefix(base, "-") {
+			return "", fmt.Errorf("bad base %q", base)
+		}
+		mb, err := exec.CommandContext(ctx, "git", "-C", dir, "merge-base", base, "HEAD").Output()
+		if err != nil {
+			return "", fmt.Errorf("base %s: no common commit with HEAD in %s", base, dir)
+		}
+		from = strings.TrimSpace(string(mb))
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "diff", "--no-color", "--no-ext-diff", from, "--", path).Output()
 	if err == nil && len(out) > 0 {
 		return string(out), nil
 	}
-	if err := exec.CommandContext(ctx, "git", "-C", cwd, "ls-files", "--error-unmatch", "--", path).Run(); err == nil {
+	if err := exec.CommandContext(ctx, "git", "-C", dir, "ls-files", "--error-unmatch", "--", path).Run(); err == nil {
 		return "", nil // tracked and unchanged
 	}
 	if _, serr := os.Stat(path); serr != nil {
 		return "", serr
 	}
-	out, err = exec.CommandContext(ctx, "git", "-C", cwd, "diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path).Output()
+	out, err = exec.CommandContext(ctx, "git", "-C", dir, "diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path).Output()
 	var exitErr *exec.ExitError
 	if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() == 1) {
 		return "", fmt.Errorf("git diff: %v", err)
 	}
 	return string(out), nil
+}
+
+// gitDirOf is the nearest existing directory holding path (git finds the
+// repository or worktree from there), else cwd.
+func gitDirOf(path, cwd string) string {
+	for d := filepath.Dir(path); d != "" && d != "/" && d != "."; d = filepath.Dir(d) {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			return d
+		}
+	}
+	return cwd
 }
 
 func (l *Local) TranscriptExists(ctx context.Context, cwd, id string) bool {

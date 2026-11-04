@@ -65,9 +65,12 @@ export const SEND_SCHEMA = {
     },
     review: {
       type: 'object',
-      description: 'A guided review of your changes: minbox snapshots each file\'s diff against HEAD. Lead with the section the person should look at most.',
+      description:
+        "A guided review of your changes: minbox snapshots each file's diff, in the git repository or worktree that holds the file. Lead with the section the person should look at most. Working in a worktree or on a branch whose changes are committed: set cwd to the worktree and base to the branch you started from (e.g. main), or the review shows only uncommitted changes.",
       properties: {
         title: { type: 'string' },
+        cwd: { type: 'string', description: 'Where relative file paths resolve, e.g. the git worktree you work in (absolute, or relative to the session directory). Default: the session directory.' },
+        base: { type: 'string', description: 'A branch or commit to diff from (from where your HEAD left it), so committed changes show as well as uncommitted ones, e.g. "main". Default: HEAD (uncommitted changes only).' },
         summary: { type: 'string', description: 'What changed and why, in two or three sentences.' },
         sections: {
           type: 'array',
