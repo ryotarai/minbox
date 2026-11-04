@@ -401,6 +401,7 @@ export const api = {
   unarchiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/unarchive`),
   completions: (id: string) => call<Completions>('GET', `/api/sessions/${id}/completions`),
 
+  allThreads: () => call<Thread[]>('GET', '/api/threads'),
   threads: (sessionId: string) => call<Thread[]>('GET', `/api/sessions/${sessionId}/threads`),
   thread: (id: string) => call<Thread>('GET', `/api/threads/${id}`),
   createThread: (sessionId: string, subject: string, body: string, name?: string, uploads?: string[]) =>

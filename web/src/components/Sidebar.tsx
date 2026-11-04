@@ -113,6 +113,7 @@ export function Sidebar({ forceRail }: { forceRail?: boolean }) {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+        <AllInboxLink />
         {sessions === null && <SkeletonRows />}
         {groups.map((g) => (
           <div key={g.section} className="flex flex-col gap-0.5" data-section={g.section}>
@@ -139,6 +140,33 @@ export function Sidebar({ forceRail }: { forceRail?: boolean }) {
 
       <Footer />
     </nav>
+  )
+}
+
+/** The entry to the all-sessions inbox: the top row of the session list. */
+export function AllInboxLink({ phone }: { phone?: boolean }) {
+  const { sessions, route, navigate } = useApp()
+  const waiting = (sessions ?? []).filter((s) => !s.archived_at).reduce((n, s) => n + attentionOf(s), 0)
+  const on = route.view === 'inbox'
+  return (
+    <button
+      type="button"
+      data-testid="open-all-inbox"
+      onClick={() => navigate({ view: on ? 'main' : 'inbox' }, { push: phone })}
+      className={cx(
+        'flex shrink-0 items-center gap-2.5 rounded-lg border-0 text-left text-fg',
+        phone ? 'mx-3 mb-1 mt-1 min-h-12 px-3' : 'h-10 px-3',
+        on ? 'bg-sel' : 'bg-raised hover:bg-sel',
+      )}
+    >
+      <IconInbox size={16} className="text-muted" />
+      <span className="flex-1 text-[13.5px] font-[650]">All inbox</span>
+      {waiting > 0 && (
+        <span data-testid="all-inbox-waiting" className="rounded-[6px] bg-accent px-1.5 text-[11.5px] font-bold text-onaccent" title="Threads waiting on you">
+          {waiting}
+        </span>
+      )}
+    </button>
   )
 }
 

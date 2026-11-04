@@ -139,6 +139,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/stop", s.stopSession)
 	mux.HandleFunc("GET /api/sessions/{id}/terminal", s.terminalWS)
 	mux.HandleFunc("POST /api/sessions/{id}/uploads", s.upload)
+	mux.HandleFunc("GET /api/threads", s.listAllThreads)
 	mux.HandleFunc("GET /api/sessions/{id}/threads", s.listThreads)
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)

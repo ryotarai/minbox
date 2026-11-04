@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
+import { AllInboxPage } from './components/AllInbox'
 import { BoardPage } from './components/Board'
 import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
@@ -66,6 +67,8 @@ function Root() {
         <SettingsPage />
       ) : route.view === 'board' ? (
         <BoardPage />
+      ) : route.view === 'inbox' ? (
+        <AllInboxPage />
       ) : isPhone ? (
         <PhoneApp />
       ) : (

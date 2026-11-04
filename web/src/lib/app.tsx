@@ -14,7 +14,7 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'board' | 'review'
+export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -38,7 +38,7 @@ function readRoute(): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'board', 'review'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'board', 'review', 'inbox'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
