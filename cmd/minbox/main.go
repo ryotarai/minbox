@@ -85,7 +85,7 @@ const usage = `usage:
   minbox status [--data-dir <dir>]          whether the server runs (exit 3 if not), its URL and log
   minbox start --listen 0.0.0.0:4848        serve other machines too; their browsers must be paired
                                             (minbox pair accept <code>)
-  minbox start --tailscale [--tailscale-port 443] [--tailscale-user-login <login>]   (default login: this machine's Tailscale user)
+  minbox start --tailscale [--tailscale-port 3125] [--tailscale-user-login <login>]   (default login: this machine's Tailscale user)
   minbox start --tailscale-service minbox [--tailscale-user-login <login>]   (as svc:minbox: https://minbox.<tailnet>.ts.net)
                                             also serve it on the tailnet through tailscale serve (HTTPS);
                                             browsers there must be paired (minbox pair accept <code>)
@@ -123,7 +123,7 @@ func hostStart(args []string) error {
 	tsServe := fs.Bool("tailscale", false, "serve it through tailscale serve (HTTPS on the tailnet); listen on 127.0.0.1 only")
 	tsLogin := fs.String("tailscale-user-login", "", "with --tailscale: the Tailscale user (login) whose requests are answered (default: this machine's)")
 	port := fs.Int("port", 4849, "with --tailscale: the local port")
-	httpsPort := fs.Int("tailscale-port", server.HostTailscalePort, "with --tailscale: the tailnet HTTPS port (443 is left to minbox start)")
+	httpsPort := fs.Int("tailscale-port", server.HostTailscalePort, "with --tailscale: the tailnet HTTPS port (3125 is left to minbox start)")
 	_ = fs.Parse(args)
 	if *tsServe {
 		if *tsLogin == "" {
@@ -449,7 +449,7 @@ func newServeFlags(name string) *serveFlags {
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser")
 	f.tsServe = fs.Bool("tailscale", false, "also serve minbox on the tailnet through tailscale serve (HTTPS); browsers there must be paired")
 	f.tsService = fs.String("tailscale-service", "", "serve minbox as this Tailscale Service (svc:<name>, https://<name>.<tailnet>.ts.net) instead of on this machine's name; the service must be defined in the Tailscale admin console")
-	f.tsPort = fs.Int("tailscale-port", 443, "with --tailscale or --tailscale-service: the tailnet HTTPS port")
+	f.tsPort = fs.Int("tailscale-port", 3125, "with --tailscale or --tailscale-service: the tailnet HTTPS port")
 	f.tsLogin = fs.String("tailscale-user-login", "", "with --tailscale or --tailscale-service: answer only this Tailscale user (login) (default: this machine's)")
 	return f
 }

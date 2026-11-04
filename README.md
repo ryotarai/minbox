@@ -58,7 +58,7 @@ inbox.
 | `--claude` | `claude` (`MINBOX_CLAUDE`) | Command that starts Claude Code, e.g. `"claude --model sonnet"` |
 | `--tailscale` | | Also serve minbox on your tailnet over HTTPS (`tailscale serve`) |
 | `--tailscale-service NAME` | | Serve it as the Tailscale Service `svc:NAME` instead (`https://NAME.<tailnet>.ts.net`) |
-| `--tailscale-port` | `443` | The tailnet HTTPS port |
+| `--tailscale-port` | `3125` | The tailnet HTTPS port |
 | `--tailscale-user-login` | this machine's Tailscale user | The only Tailscale user who is answered |
 | `--no-open` | | Do not open the browser |
 | `--foreground` | | Do not daemonize |
