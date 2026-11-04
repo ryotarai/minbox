@@ -625,3 +625,33 @@ test('settings: swapping puts the inbox left of the terminal, and the edge still
   await page.mouse.up()
   await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(58)
 })
+
+test('the reply box grows with the text and can fill the pane', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'reply-grow')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say hello there')
+  await page.getByTestId('thread-row').first().click()
+  const box = page.getByTestId('reply-box')
+  const h0 = (await box.boundingBox())!.height
+  await box.fill(Array.from({ length: 8 }, (_, i) => `line ${i}`).join('\n'))
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan(h0 + 60)
+  await box.fill(Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n'))
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeLessThanOrEqual(241)
+  await box.fill('short')
+  await expect.poll(async () => Math.abs((await box.boundingBox())!.height - h0)).toBeLessThan(2)
+
+  // Full height: the messages step aside, the box fills the pane, and the text stays.
+  await page.getByTestId('reply-full').click()
+  const pane = page.getByTestId('thread-view')
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan((await pane.boundingBox())!.height * 0.5)
+  await expect(box).toHaveValue('short')
+  await page.getByTestId('reply-full').click()
+  await expect.poll(async () => Math.abs((await box.boundingBox())!.height - h0)).toBeLessThan(2)
+  // Sending from the full-height box returns to the thread.
+  await page.getByTestId('reply-full').click()
+  await box.fill('full reply')
+  await page.getByTestId('reply-send').click()
+  await expect(page.getByTestId('reply-full')).toHaveAttribute('aria-pressed', 'false')
+  await expectTerminal(page, 'full reply')
+})
