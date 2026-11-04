@@ -1,13 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { FitAddon, Terminal as GhosttyTerminal, init } from 'ghostty-web'
+import { FitAddon, Ghostty, Terminal as GhosttyTerminal } from 'ghostty-web'
 import { uploadImage } from '../api'
 import { cx } from './ui'
-
-let ready: Promise<void> | null = null
-function initGhostty(): Promise<void> {
-  ready ??= init()
-  return ready
-}
 
 const THEME = {
   background: '#0e0e11',
@@ -69,6 +63,26 @@ function zoomAware(term: GhosttyTerminal) {
   if (r) {
     Object.defineProperty(r, 'charWidth', { get: () => r.getMetrics().width * zoom() })
     Object.defineProperty(r, 'charHeight', { get: () => r.getMetrics().height * zoom() })
+  }
+}
+
+/**
+ * Repaints from scratch. The canvas is drawn by diff, so a canvas that was cleared or
+ * measured before the font loaded (seen after a session switch) stays garbled until
+ * something forces a full redraw.
+ */
+function redraw(term: GhosttyTerminal | null | undefined) {
+  const t = term as unknown as {
+    renderer?: { remeasureFont(): void; render(b: unknown, force: boolean, y: number, p: unknown): void }
+    wasmTerm?: unknown
+    viewportY?: number
+  }
+  if (!t?.renderer || !t.wasmTerm) return
+  try {
+    t.renderer.remeasureFont()
+    t.renderer.render(t.wasmTerm, true, t.viewportY ?? 0, term)
+  } catch {
+    /* terminal already disposed */
   }
 }
 
@@ -182,10 +196,14 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
     }
 
     ;(async () => {
-      await initGhostty()
+      // Each terminal gets its own wasm instance (own memory). Sharing one, as init() does,
+      // lets a trap in one terminal ("memory access out of bounds") corrupt every terminal
+      // opened after it, until a page reload.
+      const ghostty = await Ghostty.load()
       if (disposed) return
       el.innerHTML = ''
       term = new GhosttyTerminal({
+        ghostty,
         fontSize,
         fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
         theme: THEME,
@@ -196,6 +214,8 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       term.loadAddon(fit)
       term.open(el)
       zoomAware(term)
+      // Metrics are measured once: measure again, and repaint, when the font is there.
+      document.fonts?.ready.then(() => !disposed && redraw(term))
       el.appendChild(ime)
       if (autoFocus) term.focus()
       // For end-to-end tests: the terminal draws on a canvas, so its text is read from the buffer.
@@ -248,6 +268,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
                 if (term && (term.cols !== msg.cols || term.rows !== msg.rows)) term.resize(msg.cols, msg.rows)
                 fitsBox()
                 flush()
+                redraw(term)
                 return
               }
             } catch {
@@ -269,7 +290,11 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         clearTimeout(retry)
         openSocket()
       }
-      const onVisible = () => document.visibilityState === 'visible' && retryNow()
+      const onVisible = () => {
+        if (document.visibilityState !== 'visible') return
+        redraw(term)
+        retryNow()
+      }
       window.addEventListener('online', retryNow)
       document.addEventListener('visibilitychange', onVisible)
       stopReconnect = () => {
