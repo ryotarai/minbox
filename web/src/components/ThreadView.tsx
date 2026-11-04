@@ -117,7 +117,59 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, messages.length])
 
-  // Remember where "new since you looked" starts before marking the thread read.
+  // Select text in the messages: a bubble offers Reply, which quotes it into the reply box.
+  const [quote, setQuote] = useState<{ text: string; x: number; y: number; below: boolean } | null>(null)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const evaluate = () => {
+      const sel = window.getSelection()
+      const box = scrollRef.current
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !box) return setQuote(null)
+      const range = sel.getRangeAt(0)
+      const text = sel.toString().trim()
+      // Where it starts decides: a triple-click can run on to the start of the next block.
+      const start = range.startContainer
+      if (!text || !box.contains(start.nodeType === 1 ? start : start.parentNode)) return setQuote(null)
+      const rects = range.getClientRects()
+      const r = rects.length ? rects[rects.length - 1]! : range.getBoundingClientRect()
+      const zoom = parseFloat((document.getElementById('root') as HTMLElement).style.zoom || '1')
+      const first = rects.length ? rects[0]! : r
+      const vw = window.innerWidth / zoom
+      const below = first.top / zoom < 48 // no room above: under the selection instead
+      setQuote({
+        text,
+        x: Math.min(Math.max(r.right / zoom, 100), vw - 8), // the bubble's right edge sits at the selection's end
+        y: below ? r.bottom / zoom + 6 : first.top / zoom - 6,
+        below,
+      })
+    }
+    const on = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(evaluate, 150)
+    }
+    document.addEventListener('selectionchange', on)
+    return () => {
+      document.removeEventListener('selectionchange', on)
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
+  const quoteIntoReply = () => {
+    if (!quote) return
+    const block = quote.text.split('\n').map((l) => (l.trim() ? `> ${l}` : '>')).join('\n')
+    updateReplyDraft(threadId, (d) => ({ ...d, words: d.words.trim() ? `${d.words.replace(/\s+$/, '')}\n\n${block}\n\n` : `${block}\n\n` }))
+    window.getSelection()?.removeAllRanges()
+    setQuote(null)
+    // After the draft re-renders the box: focus it with the caret at the end, for the instruction.
+    requestAnimationFrame(() => {
+      const el = replyRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+      el.scrollTop = el.scrollHeight
+    })
+  }
+
+  // Remember where "new since you looked" before marking the thread read.
   useEffect(() => {
     if (!thread || firstNew !== undefined) return
     const m = thread.messages?.find((x) => x.author === 'agent' && !x.read_at)
@@ -391,6 +443,19 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
         ))}
       </div>
       </div>
+
+      {quote && (
+        <button
+          type="button"
+          data-testid="quote-reply"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={quoteIntoReply}
+          style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
+          className="fixed z-[30] flex h-8 items-center gap-1.5 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] font-semibold text-fg shadow-pop hover:bg-raised"
+        >
+          ❝ Reply
+        </button>
+      )}
 
       <ReplyBox
         session={session}

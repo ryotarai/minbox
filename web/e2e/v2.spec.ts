@@ -704,3 +704,27 @@ test('a narrower screen keeps one inbox pane', async ({ page, minbox }) => {
   await expect(page.getByTestId('inbox-pane')).toBeVisible()
   await expect(page.getByTestId('thread-pane')).toHaveCount(0)
 })
+
+test('selecting text in a thread offers Reply, which quotes it into the reply box and focuses it', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'quote')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Please review the retry logic')
+  await page.getByTestId('thread-row').first().click()
+  await expect(page.getByTestId('quote-reply')).toHaveCount(0)
+  await page.getByTestId('message').getByText('Please review the retry logic').click({ clickCount: 3 })
+  const bubble = page.getByTestId('quote-reply')
+  await expect(bubble).toBeVisible()
+  await bubble.click()
+  const box = page.getByTestId('reply-box')
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('> Please review the retry logic\n\n')
+  await expect(bubble).toHaveCount(0)
+  // The person writes the instruction after the quote.
+  await page.keyboard.type('Add a jitter.')
+  await expect(box).toHaveValue('> Please review the retry logic\n\nAdd a jitter.')
+  // A second quote appends below.
+  await page.getByTestId('message').getByText('Please review the retry logic').click({ clickCount: 3 })
+  await page.getByTestId('quote-reply').click()
+  await expect(box).toHaveValue(/Add a jitter\.\n\n> Please review the retry logic\n\n$/)
+})
