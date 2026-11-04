@@ -470,3 +470,22 @@ test('All inbox lists every session\'s threads; picking one opens its session an
   await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
   await expect(page.getByTestId('thread-subject')).toHaveText('First idea for alpha')
 })
+
+test('the terminal reconnects by itself after its connection drops', async ({ page, minbox }) => {
+  const routed: { close: () => void }[] = []
+  await page.routeWebSocket(/\/terminal$/, (ws) => {
+    ws.connectToServer()
+    routed.push(ws)
+  })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'flaky', 'shell')
+  await typeInTerminal(page, 'echo before-$((1+1))')
+  await expectTerminal(page, 'before-2')
+  expect(routed.length).toBe(1)
+  routed[0]!.close()
+  // No reload: a new socket opens, the screen is replayed, and typing works again.
+  await expect.poll(() => routed.length, { timeout: 15_000 }).toBe(2)
+  await typeInTerminal(page, 'echo after-$((3+4))')
+  await expectTerminal(page, 'after-7')
+  await expectTerminal(page, 'before-2')
+})
