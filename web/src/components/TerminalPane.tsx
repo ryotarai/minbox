@@ -42,7 +42,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
         <StatusPill s={session} waits={waitsOnPerson(session)} />
         <span className="flex-1" />
         {size && (
-          <span className="mono text-[11.5px] text-subtle" data-testid="pty-size">
+          <span className="sr-only" data-testid="pty-size">
             {size.cols}×{size.rows}
           </span>
         )}
