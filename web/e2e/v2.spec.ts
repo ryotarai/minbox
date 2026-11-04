@@ -855,3 +855,30 @@ test('with a thread open, the back button shows how many other threads have new 
   await expect(page.getByTestId('thread-view')).toContainText('Which database')
   await expect(page.getByTestId('back-badge')).toHaveCount(0)
 })
+
+for (const [name, size] of [['desktop', { width: 1280, height: 800 }], ['phone', { width: 390, height: 844 }]] as const) {
+  test(`${name}: text in the new-thread box survives opening a thread and going back; sending clears it`, async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'keep')
+    if (name === 'phone') {
+      await page.setViewportSize(size)
+      await page.goto(minbox.url + '/#')
+      await page.getByTestId('session-row').filter({ hasText: 'keep' }).click()
+    }
+    const box = page.getByTestId('quick-body')
+    await box.fill('first note')
+    await page.getByTestId('quick-send').click()
+    await expect(page.getByTestId('thread-subject')).toHaveText('first note')
+    await page.getByTestId(name === 'phone' ? 'mobile-back' : 'thread-back').click()
+    await expect(box).toHaveValue('')
+    await box.fill('half-written idea')
+    await page.getByTestId('thread-row').filter({ hasText: 'first note' }).click()
+    await expect(page.getByTestId('thread-subject')).toHaveText('first note')
+    await page.getByTestId(name === 'phone' ? 'mobile-back' : 'thread-back').click()
+    await expect(box).toHaveValue('half-written idea')
+    await page.getByTestId('quick-send').click()
+    await expect(page.getByTestId('thread-subject')).toHaveText('half-written idea')
+    await page.getByTestId(name === 'phone' ? 'mobile-back' : 'thread-back').click()
+    await expect(box).toHaveValue('')
+  })
+}
