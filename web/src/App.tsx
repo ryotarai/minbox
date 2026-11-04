@@ -6,7 +6,7 @@ import { AllInboxPage } from './components/AllInbox'
 import { BoardPage } from './components/Board'
 import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
-import { InboxPane } from './components/InboxPane'
+import { InboxPane, ThreadPane } from './components/InboxPane'
 import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
 import { PhoneApp } from './components/Phone'
 import { NewSessionDialog } from './components/NewSession'
@@ -93,38 +93,67 @@ function Desktop() {
   // Text size zooms the page: columns are measured in zoomed pixels.
   const width = useWindowWidth() / ((settings.text_size || 13) / 13)
   const showInbox = !!session && session.kind !== 'shell' && !layout.inboxCollapsed
+  // A wide screen has four panes: the thread opens in its own pane beside the inbox list.
+  const WIDE_MIN = 1680
+  const wide = showInbox && width >= WIDE_MIN
   // An open file takes the center: the session list folds into its rail.
   // A narrow window gives way in this order: the session list narrows, then folds into its rail,
-  // then the inbox narrows. The inbox keeps the width it was dragged to as long as it fits, so a
-  // drag moves the edge 1:1 (shrinking both columns at once made it follow at half the distance).
+  // then the thread pane narrows, then the inbox. A column keeps the width it was dragged to as
+  // long as it fits, so a drag moves the edge 1:1.
   const MIN_CENTER = 420
   let sidebarW = layout.sidebarW
-  let inboxW = showInbox ? (route.f ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
+  let inboxW = showInbox ? (route.f && !wide ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
+  let threadW = wide ? layout.threadW : 0
   let rail = layout.rail || !!route.f
-  const over = () => (rail ? 60 : sidebarW) + inboxW + MIN_CENTER - width
+  const over = () => (rail ? 60 : sidebarW) + inboxW + threadW + MIN_CENTER - width
   if (!rail && over() > 0) sidebarW = Math.max(216, sidebarW - over())
   if (!rail && over() > 0) rail = true
+  if (wide && over() > 0) threadW = Math.max(360, threadW - over())
   if (showInbox && over() > 0) inboxW = Math.max(320, inboxW - over())
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
-  const cur = useRef({ sidebarW, inboxW })
-  cur.current = { sidebarW, inboxW }
+  const cur = useRef({ sidebarW, inboxW, threadW })
+  cur.current = { sidebarW, inboxW, threadW }
   const dragSidebar = (dx: number) => {
     cur.current.sidebarW = clamp(cur.current.sidebarW + dx / zoom, 216, 480)
     setLayout({ sidebarW: cur.current.sidebarW })
   }
+  // dx is positive when the edge moves right and widens the column on its left.
   const dragInbox = (dx: number) => {
-    cur.current.inboxW = clamp(cur.current.inboxW - dx / zoom, 320, 760)
+    cur.current.inboxW = clamp(cur.current.inboxW + dx / zoom, 320, 760)
     setLayout({ inboxW: cur.current.inboxW })
   }
-  // The inbox with its drag edge: right of the terminal, or left of it when the panes are swapped.
+  const dragThread = (dx: number) => {
+    cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 360, 900)
+    setLayout({ threadW: cur.current.threadW })
+  }
+  // The inbox column (and on a wide screen the thread pane after it), with their drag edges:
+  // right of the terminal, or left of it when the panes are swapped.
   const swap = settings.swap_panes
-  const inboxPane = showInbox && (
+  const inboxCol = showInbox && (
+    <div style={{ width: inboxW }} className="shrink-0">
+      <InboxPane session={session} wide={wide} />
+    </div>
+  )
+  const threadCol = wide && (
+    <div style={{ width: threadW }} className="shrink-0">
+      <ThreadPane session={session} />
+    </div>
+  )
+  const panes = !showInbox ? null : swap ? (
     <>
-      {swap && <div style={{ width: inboxW }} className="shrink-0"><InboxPane session={session} /></div>}
-      <Resizer grip onDrag={(dx) => dragInbox(swap ? -dx : dx)} />
-      {!swap && <div style={{ width: inboxW }} className="shrink-0"><InboxPane session={session} /></div>}
+      {inboxCol}
+      <Resizer grip onDrag={dragInbox} />
+      {threadCol}
+      {wide && <Resizer grip onDrag={dragThread} />}
+    </>
+  ) : (
+    <>
+      <Resizer grip onDrag={(dx) => dragInbox(-dx)} />
+      {inboxCol}
+      {wide && <Resizer grip onDrag={(dx) => dragThread(-dx)} />}
+      {threadCol}
     </>
   )
   return (
@@ -133,11 +162,11 @@ function Desktop() {
         <Sidebar forceRail={rail} />
       </div>
       {!rail && <Resizer onDrag={dragSidebar} />}
-      {swap && inboxPane}
+      {swap && panes}
       <main className="min-w-0 flex-1">
         {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
       </main>
-      {!swap && inboxPane}
+      {!swap && panes}
     </div>
   )
 }
