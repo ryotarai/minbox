@@ -102,6 +102,8 @@ type Props = {
   /** Focus the terminal once it opens (not on a phone: that raises the keyboard). */
   autoFocus?: boolean
   fontSize?: number
+  /** Shift+Enter inserts a newline in Claude Code's prompt (it sends ESC CR, as Claude Code's own terminal setup does) instead of submitting. Not for a shell. */
+  newlineOnShiftEnter?: boolean
   onSize?: (cols: number, rows: number) => void
   onNotice: (text: string, error?: boolean) => void
   className?: string
@@ -112,7 +114,7 @@ type Props = {
  * terminal host (through the server).
  */
 export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalView(
-  { sessionId, autoFocus = true, fontSize = 13, onSize, onNotice, className },
+  { sessionId, autoFocus = true, fontSize = 13, newlineOnShiftEnter = true, onSize, onNotice, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -505,6 +507,15 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         if (Date.now() - typedAt < 1500) requestAnimationFrame(revealCursor)
       })
       term.onData((data: string) => send(data))
+      // A plain terminal sends the same CR for Shift+Enter as for Enter, so Claude Code submits.
+      if (newlineOnShiftEnter) {
+        term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+          if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return false
+          if (e.type === 'keydown') send('\x1b\r')
+          e.preventDefault()
+          return true
+        })
+      }
       // Measure now, and again once the layout settles (a window resize passes
       // through transient sizes while the columns re-flow).
       measure()

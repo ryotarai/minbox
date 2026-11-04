@@ -577,3 +577,27 @@ test('the new-thread box can fill the pane\'s height, and goes back', async ({ p
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('long note')
 })
+
+test('Shift+Enter is a newline for Claude Code (ESC CR) and still Enter in a shell', async ({ page, minbox }) => {
+  const sent: string[] = []
+  await page.routeWebSocket(/\/terminal$/, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      if (typeof m !== 'string') sent.push(JSON.stringify(Array.from(m as Buffer)))
+      server.send(m)
+    })
+  })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'nl-claude')
+  await expectTerminal(page, 'ready>')
+  await page.getByTestId('terminal').click()
+  sent.length = 0
+  await page.keyboard.press('Shift+Enter')
+  await expect.poll(() => sent.join('')).toContain('[27,13]')
+  await createSession(page, minbox.dataDir, 'nl-shell', 'shell')
+  await page.getByTestId('terminal').click()
+  sent.length = 0
+  await page.keyboard.press('Shift+Enter')
+  await expect.poll(() => sent.join('')).toContain('[13]')
+  expect(sent.join('')).not.toContain('[27,13]')
+})

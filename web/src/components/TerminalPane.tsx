@@ -62,6 +62,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
           key={`${session.id}:${ended ? 'ended' : 'running'}`}
           ref={term}
           sessionId={session.id}
+          newlineOnShiftEnter={session.kind !== 'shell'}
           onSize={(cols, rows) => setSize({ cols, rows })}
           onNotice={onNotice}
         />
