@@ -280,7 +280,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
   if (!thread) {
     return (
       <div className="flex h-full flex-col" data-testid="thread-view">
-        {!phone && <ThreadHeaderBar session={session} onBack={onBack} />}
+        {!phone && <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)} />}
         <div className="p-6 text-[13px] text-subtle">Loading…</div>
       </div>
     )
@@ -300,7 +300,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
   return (
     <div className="flex h-full flex-col" data-testid="thread-view" data-thread-id={thread.id}>
       {!phone && (
-        <ThreadHeaderBar session={session} onBack={onBack}>
+        <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
           <button
             type="button"
             data-testid="mark-read"
@@ -484,7 +484,12 @@ function foldedSummary(ms: Message[]): string {
   return parts.join(' · ')
 }
 
-function ThreadHeaderBar({ session, onBack, children }: { session: Session; onBack: () => void; children?: React.ReactNode }) {
+/** How many other threads of the session hold messages the person has not seen. */
+export function unreadElsewhere(threads: Thread[] | null, openId: string | null): number {
+  return (threads ?? []).filter((t) => t.id !== openId && t.unread > 0 && !t.archived_at).length
+}
+
+function ThreadHeaderBar({ session, onBack, others = 0, children }: { session: Session; onBack: () => void; others?: number; children?: React.ReactNode }) {
   return (
     <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-line px-2">
       <button
@@ -495,6 +500,11 @@ function ThreadHeaderBar({ session, onBack, children }: { session: Session; onBa
         className="flex h-8 min-w-0 items-center gap-1.5 rounded-md border-0 bg-transparent pl-1 pr-2 text-[13px] text-fg2 hover:bg-raised"
       >
         <IconBack size={14} className="shrink-0 text-subtle" />
+        {others > 0 && (
+          <span data-testid="back-badge" title="Other threads have new messages" className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold text-onaccent">
+            {others}
+          </span>
+        )}
         <StatusDot s={session} waits={waitsOnPerson(session)} size={7} ring={false} />
         <span className="truncate">{session.name}</span>
       </button>
