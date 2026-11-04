@@ -5,8 +5,9 @@ export const SEND_TOOL = 'send_message'
 export const READ_TOOL = 'read_thread'
 
 export const SEND_DESCRIPTION = [
-  "Send a message to the person's minbox inbox, the pane beside this terminal.",
-  'Use it when you finish long work they should look at, or need a decision only they can make, and it can wait: ask each decision as a `:::question` block (see `body`).',
+  "Send a message to the person's minbox inbox, the pane beside this terminal: it is how they hear from you.",
+  'Use it EVERY time you need their opinion, a decision, an approval or an action from them (run something, check something, review, choose what is next), and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).',
+  'They may not be watching the terminal: something asked only in the chat goes unseen.',
   'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
   'Their reply arrives later as a new message in this conversation; meanwhile keep working on what does not depend on it, or end your turn.',
   'Leave `thread_id` out to start a new thread (give a short `subject`); pass the thread_id of a reply to answer in its thread.',
@@ -113,15 +114,92 @@ export const TITLE_SCHEMA = {
   additionalProperties: false,
 } as const
 
+/** The system prompt's section on the inbox: the person hears from Claude there. */
+export function inboxSection(sendTool: string): string {
+  return [
+    '# minbox: inbox',
+    `The person follows this session through the minbox inbox and may not be watching the terminal. ${sendTool} is how you reach them:`,
+    "- Every time you need their opinion, a decision, an approval or an action from them (run or check something, review, choose what comes next), send it with the tool, each decision as a :::question block. Do this every time, also for small questions; a question asked only in your chat reply goes unseen.",
+    '- When you finish a task or a long stretch of work, send a short summary of what is done and anything they should look at.',
+    '- Then keep working on what does not depend on the answer, or end your turn; their reply arrives here by itself. Do not ask the same thing again in the chat.',
+  ].join('\n')
+}
+
+/**
+ * The turn's last words ask the person something: a question, or a request
+ * for their decision or action. Read from the answer's end.
+ */
+export function asksPerson(answer: string): boolean {
+  // Code and URLs are not asking anything (`a ? b : c`, `?q=`).
+  const prose = answer
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]*`/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+  const tail = prose.trim().slice(-400)
+  if (!tail) return false
+  if (/[?？]\s*[*_`)）」]*\s*$/.test(tail)) return true
+  const lastLines = tail.split('\n').slice(-4).join('\n')
+  if (/[?？]/.test(lastLines)) return true
+  return /(どうしますか|いかがですか|よろしいですか|しますか|ますか。|ご確認|確認してください|教えてください|選んでください|決めてください|お知らせください|お願いします|指示をください|ご判断|\bshould I\b|\bwould you like\b|\bdo you want\b|\blet me know\b|\bplease (?:confirm|review|check|choose|decide|run|approve|test|try)\b|\bwhich (?:one|option|approach)\b|\byour call\b)/i.test(lastLines)
+}
+
+/** A plugin turn: the last reply asked the person in the chat, not in the inbox. */
+export function nudgeText(sendTool: string): string {
+  return [
+    `minbox: your last reply asks the person for something (an opinion, a decision or an action) in the chat only, and they follow this session through the inbox.`,
+    `Send it now with ${sendTool}: what you need, with enough context to answer cold, each decision as a :::question block. Do not repeat the chat reply here; after sending, end your turn.`,
+  ].join(' ')
+}
+
 /** The system prompt's section on keeping the session's title current. */
 export function titleSection(titleTool: string): string {
   return [
-    '# Session title',
+    '# minbox: session title',
     `The person sees this session in minbox's session list under a title you set with ${titleTool}. Keep it current:`,
     '- Set it once the task is clear, early in the first turn: a few words naming the work (e.g. "Fix login redirect loop"), not a status or a sentence.',
     '- Set it again whenever the main task changes (a new request, a different bug, the next phase); leave it alone for small steps within the same task.',
     "- Plain text, at most 80 characters, in the person's language. Do not mention the title in your replies.",
   ].join('\n')
+}
+
+export const OPEN_TOOL = 'open_url'
+
+export const OPEN_DESCRIPTION =
+  "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer."
+
+export const OPEN_SCHEMA = {
+  type: 'object',
+  properties: {
+    url: { type: 'string', description: 'An absolute http(s) URL, e.g. https://github.com/owner/repo/pull/12.' },
+  },
+  required: ['url'],
+  additionalProperties: false,
+} as const
+
+/** The system prompt's section on opening pages for the person. */
+export function openSection(openTool: string): string {
+  return [
+    '# minbox: opening pages',
+    `When the person asks you to open, show or view a web page (a PR, an issue, a CI run, a URL), call ${openTool} with its URL. It opens the page in the browser they are using minbox from.`,
+    '- Never open pages with Bash (`open URL`, `xdg-open`, `gh pr view --web`, `gh browse`, …): those open on the machine you run on, which may be a remote host the person is not sitting at.',
+    '- With gh, get the URL first (e.g. `gh pr view --json url -q .url`), then pass it to the tool.',
+  ].join('\n')
+}
+
+/**
+ * The Bash command opens a web page on the host: `open URL` (and its Linux
+ * kin) or gh's `--web` / `browse`. Those go to the minbox tool instead.
+ */
+export function opensBrowser(command: string): boolean {
+  // At the start of a command (not an argument, as in `echo open …`).
+  const start = String.raw`(?:^|[;&|(\x60]|\$\()\s*`
+  const opener = new RegExp(start + String.raw`(?:open|xdg-open|gio\s+open|sensible-browser|x-www-browser|wslview)\s+(?:[^;&|\n]*?[\s'"])?['"]?https?:\/\/`)
+  const gh = new RegExp(start + String.raw`gh\s+(?:browse\b|[^;&|\n]*\s(?:--web|-w)(?=[\s;&|)]|$))`)
+  return opener.test(command) || gh.test(command)
+}
+
+export function openDeny(openTool: string): string {
+  return `minbox: this would open the page on the host machine, not in the person's browser. Call ${openTool} with the page's URL instead (with gh, get it with e.g. \`gh pr view --json url -q .url\`).`
 }
 
 export const CARD_TOOL = 'card'
@@ -289,23 +367,27 @@ function threadState(t: Thread): string {
 }
 
 /** The reminder that rides the conversation's first prompt. */
-export function reminderText(sendTool: string, extra?: string | null): string {
+export function reminderText(sendTool: string, extra?: string | null, tools: { title?: string; open?: string } = {}): string {
   const lines = [
-    `minbox inbox is on for this session: the person watches it beside this terminal.`,
-    `When you finish long work, or need a decision only they can make, send it with ${sendTool} (each decision as a :::question block) and keep going; their reply comes back here by itself.`,
+    `minbox inbox is on for this session: the person follows this session through it and may not be watching the terminal.`,
+    `Whenever you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at, send it with ${sendTool} (each decision as a :::question block) — every time, not only for big things — and keep going; their reply comes back here by itself.`,
     'A decision in the inbox stays there: never also ask it in the chat with a blocking question tool (AskUserQuestion or similar).',
   ]
+  // Also in the system prompt (prompt.compose, and minbox's --append-system-prompt);
+  // repeated here for environments that skip both.
+  if (tools.title) lines.push(`Keep this session's title in minbox current with ${tools.title}: a few words naming the work, set early and again when the task changes.`)
+  if (tools.open) lines.push(`To open a web page for the person (a PR, an issue, a URL), call ${tools.open}; never \`open URL\`, \`xdg-open\` or \`gh … --web\` in Bash, which open on the host machine.`)
   const more = extra?.trim()
   if (more) lines.push(`The person adds: ${more}`)
   return lines.join(' ')
 }
 
 /** After a compaction: the threads this session has open, so their ids stay right. */
-export function openThreadsText(threads: Thread[], sendTool: string, extra?: string | null): string | null {
+export function openThreadsText(threads: Thread[], sendTool: string, extra?: string | null, tools: { title?: string; open?: string } = {}): string | null {
   const open = threads.filter((t) => !['quiet', 'archived', 'snoozed'].includes(t.section)).slice(0, 5)
   if (open.length === 0) return null
   return [
-    `${reminderText(sendTool, extra)}`,
+    `${reminderText(sendTool, extra, tools)}`,
     `Your open minbox threads (${open.length}); answer in one with its thread_id:`,
     ...open.map((t) => `- ${t.id} "${oneLine(t.subject)}" · ${threadState(t)}`),
   ].join('\n')

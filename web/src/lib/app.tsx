@@ -246,6 +246,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         /* older server: defaults */
       })
   }, [])
+  // Claude opened a page (mcp__minbox__open_url): open it here, in the
+  // person's browser, not on the host. A page opened without a click is
+  // usually blocked, so the browser being looked at tries, and every browser
+  // offers it in a toast.
+  const openForClaude = useRef((_url: string, _sessionId?: string) => {})
+  openForClaude.current = (url: string, sessionId?: string) => {
+    // Not 'noopener': with it window.open answers null even when it opened.
+    const open = () => {
+      const w = window.open(url, '_blank')
+      if (w) w.opener = null
+      return !!w
+    }
+    if (document.visibilityState === 'visible' && document.hasFocus() && open()) return
+    const name = sessions?.find((s) => s.id === sessionId)?.name
+    toast(`${name ? `${name}: ` : ''}Claude wants to open ${url}`, {
+      action: 'Open',
+      onAction: () => void open(),
+      ms: 60_000,
+    })
+  }
   useEffect(() => {
     reloadSessions()
     loadSettings()
@@ -259,6 +279,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (ev.type === 'settings') loadSettings()
         if (ev.type === 'hosts') reloadHosts()
         if (ev.type === 'devices') setDevicesVersion((v) => v + 1)
+        if (ev.type === 'open' && ev.url) openForClaude.current(ev.url, ev.session_id)
       },
       () => {
         reloadSessions()

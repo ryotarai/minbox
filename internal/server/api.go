@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -575,6 +576,30 @@ func (s *Server) agentTitle(w http.ResponseWriter, r *http.Request, sess *store.
 		s.hub.publish(Event{Type: "sessions"})
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "title": title})
+}
+
+// agentOpen opens a page in the person's browser (wherever minbox is open),
+// not on the host: Claude's `open URL` would open it on the host machine,
+// which may be another computer.
+func (s *Server) agentOpen(w http.ResponseWriter, r *http.Request, sess *store.Session) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	u, err := url.Parse(strings.TrimSpace(req.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		httpError(w, 400, "url must be an absolute http(s) URL")
+		return
+	}
+	n := s.hub.count()
+	if n == 0 {
+		httpError(w, 409, "no browser has minbox open; give the person the URL in your reply instead")
+		return
+	}
+	s.hub.publish(Event{Type: "open", SessionID: sess.ID, URL: u.String()})
+	writeJSON(w, 200, map[string]any{"ok": true, "url": u.String(), "browsers": n})
 }
 
 func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.Session) {

@@ -3,9 +3,11 @@
  * and the environment MINBOX_TOKEN (this session's bearer token) and
  * MINBOX_SERVER_FILE (a JSON file holding the server's current URL).
  *
- * - Registers `send_message`, `read_thread` and `set_session_title`, served over
- *   minbox's HTTP API, and a system prompt section asking Claude to keep the
- *   session's title (shown in the session list) current.
+ * - Registers `send_message`, `read_thread`, `set_session_title` and `open_url`,
+ *   served over minbox's HTTP API, and system prompt sections asking Claude to
+ *   keep the session's title (shown in the session list) current and to open
+ *   pages with `open_url`: in the person's browser, not on the host. Bash
+ *   commands that would open a page on the host are refused.
  * - Long-polls the server for the person's messages. Once Claude has been idle
  *   for two ticks, each is claimed (so one mod instance delivers it), submitted
  *   as a plugin turn with `$.prompt.submit`, then acknowledged as delivered.
@@ -28,7 +30,16 @@ import {
   SEND_DESCRIPTION,
   SEND_SCHEMA,
   SEND_TOOL,
+  openDeny,
+  openSection,
+  opensBrowser,
+  OPEN_DESCRIPTION,
+  OPEN_SCHEMA,
+  OPEN_TOOL,
   openThreadsText,
+  asksPerson,
+  inboxSection,
+  nudgeText,
   reminderText,
   sentText,
   serverUrlOf,
@@ -56,6 +67,9 @@ let lastClaudeSessionId: string | null = null
 let sendToolName = `mcp__minbox__${SEND_TOOL}`
 let readToolName = `mcp__minbox__${READ_TOOL}`
 let titleToolName = `mcp__minbox__${TITLE_TOOL}`
+let openToolName = `mcp__minbox__${OPEN_TOOL}`
+/** The tools whose use the reminder repeats from the system prompt. */
+const guided = () => ({ title: titleToolName, open: openToolName })
 let promptExtra: string | null = null
 let helloing: Promise<void> | null = null
 let timer: { cancel(): void } | null = null
@@ -63,6 +77,12 @@ let busy = false
 let idleTicks = 0
 let remindNext = true
 let threadsNext = false
+/** send_message ran in the current main-loop turn. */
+let sentThisTurn = false
+/** The last turn asked the person in the chat only: remind Claude once idle. */
+let nudgeNext = false
+/** The running turn is that reminder (its own end never reminds again). */
+let nudging = false
 
 function randomId(): string {
   const b = new Uint8Array(8)
@@ -130,6 +150,15 @@ function pendingPath(id: string, action: 'claim' | 'release' | 'delivered'): str
 async function tick($: any): Promise<void> {
   if (!conn) return
   idleTicks = busy ? 0 : idleTicks + 1
+  if (nudgeNext && !busy && idleTicks >= IDLE_TICKS) {
+    nudgeNext = false
+    nudging = true
+    try {
+      await $.prompt.submit({ text: nudgeText(sendToolName) })
+    } catch {
+      nudging = false
+    }
+  }
   if (polling) return
   polling = true
   try {
@@ -182,6 +211,8 @@ export const register: Register = (on) => {
     readToolName = read?.tool ?? readToolName
     const title = await $.tool.register({ name: TITLE_TOOL, description: TITLE_DESCRIPTION, inputSchema: TITLE_SCHEMA, isDeferred: false })
     titleToolName = title?.tool ?? titleToolName
+    const open = await $.tool.register({ name: OPEN_TOOL, description: OPEN_DESCRIPTION, inputSchema: OPEN_SCHEMA, isDeferred: false })
+    openToolName = open?.tool ?? openToolName
     await $.tool.register({ name: CARD_TOOL, description: CARD_DESCRIPTION, inputSchema: CARD_SCHEMA, isDeferred: true })
 
     timer?.cancel()
@@ -200,6 +231,7 @@ export const register: Register = (on) => {
     if (conn && !e.agentId) {
       busy = true
       idleTicks = 0
+      sentThisTurn = false
       status($, 'working')
     }
     return next(e)
@@ -209,6 +241,10 @@ export const register: Register = (on) => {
     if (conn && !e.agentId) {
       busy = false
       idleTicks = 0
+      // Asked the person in the chat but not in the inbox: remind Claude once.
+      const answered = e.reason === 'answer' && !e.isAborted
+      nudgeNext = answered && !nudging && !sentThisTurn && asksPerson(e.answer ?? '')
+      nudging = false
       status($, 'idle')
     }
     return next(e)
@@ -222,15 +258,18 @@ export const register: Register = (on) => {
 
   on('prompt.submit', async ($, e, next) => {
     if (!conn) return next(e)
-    if (e.origin?.kind === 'composer') idleTicks = 0 // the person typed: their turn goes first
+    if (e.origin?.kind === 'composer') {
+      idleTicks = 0 // the person typed: their turn goes first
+      nudgeNext = false // and they answered in the chat
+    }
     if (!remindNext && !threadsNext) return next(e)
     if (helloing) await helloing.catch(() => {}) // prompt_extra comes with the hello
     let extra: string | null = null
     if (threadsNext) {
       const res = await api($, 'GET', '/api/agent/threads')
-      extra = res.ok && Array.isArray(res.json) ? openThreadsText(res.json as Thread[], sendToolName, promptExtra) : null
+      extra = res.ok && Array.isArray(res.json) ? openThreadsText(res.json as Thread[], sendToolName, promptExtra, guided()) : null
     }
-    extra ??= remindNext ? reminderText(sendToolName, promptExtra) : null
+    extra ??= remindNext || threadsNext ? reminderText(sendToolName, promptExtra, guided()) : null
     remindNext = false
     threadsNext = false
     return extra ? next({ ...e, context: [...(e.context ?? []), extra] }) : next(e)
@@ -249,6 +288,7 @@ export const register: Register = (on) => {
       review: e.review && typeof e.review === 'object' ? e.review : undefined,
     })
     if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
+    sentThisTurn = true
     return { result: sentText(res.json) }
   })
 
@@ -256,7 +296,29 @@ export const register: Register = (on) => {
   on('prompt.compose', async ($, e, next) => {
     const res = await next(e)
     if (!conn) return res
-    return { ...res, sections: [...res.sections, { id: 'minbox:session-title', text: titleSection(titleToolName), scope: 'session' as const }] }
+    // minbox's --append-system-prompt may carry the same already.
+    const has = (heading: string) => res.sections.some((s) => s.text.includes(heading))
+    const add = [
+      has('# minbox: inbox') ? null : { id: 'minbox:inbox', text: inboxSection(sendToolName), scope: 'session' as const },
+      has('# minbox: session title') ? null : { id: 'minbox:session-title', text: titleSection(titleToolName), scope: 'session' as const },
+      has('# minbox: opening pages') ? null : { id: 'minbox:open-url', text: openSection(openToolName), scope: 'session' as const },
+    ].filter((s) => s !== null)
+    return add.length ? { ...res, sections: [...res.sections, ...add] } : res
+  })
+
+  on('tool.call', { tool: `mcp__minbox__${OPEN_TOOL}` }, async ($, e: any) => {
+    if (!conn) return { deny: 'minbox is not connected in this session.' }
+    const url = typeof e.url === 'string' ? e.url.trim() : ''
+    if (!url) return { deny: 'url is required.' }
+    const res = await api($, 'POST', '/api/agent/open', { url })
+    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
+    return { result: `Opened ${res.json?.url ?? url} in the person's browser.` }
+  })
+
+  // Pages opened from Bash would open on the host, not where the person is.
+  on('tool.call', { tool: 'Bash' }, async ($, e: any, next) => {
+    if (conn && typeof e.command === 'string' && opensBrowser(e.command)) return { deny: openDeny(openToolName) }
+    return next(e)
   })
 
   on('tool.call', { tool: `mcp__minbox__${TITLE_TOOL}` }, async ($, e: any) => {

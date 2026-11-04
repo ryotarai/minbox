@@ -90,6 +90,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     elif line.startswith("title "):
         r = api("POST", "/api/agent/title", {"title": line[len("title "):]})
         out(f"titled {r['title']}")
+    elif line.startswith("openurl "):
+        r = api("POST", "/api/agent/open", {"url": line[len("openurl "):]})
+        out(f"opened {r.get('url', r)}")
     elif line == "attach":
         with open("plan.md", "w") as f:
             f.write("# Archive plan\n\nAdd `archived_at` to threads and sessions.\n\n## Changes\n\n- Archived threads leave the list and come back when Claude writes.\n- Search uses LIKE first, capped at 50.\n")
@@ -136,13 +139,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
                        "sections": [{"title": "Section rules", "summary": "The first rule that matches wins.", "files": ["derive.go"]}]}})
         last_thread = r["thread_id"]
         out(f"sent review in {r['thread_id']}")
-    elif line == "mouse":
+    elif line in ("mouse", "mouse drag"):
         # A full-screen program that tracks the mouse (like Claude Code's
         # full-screen UI): alternate screen, button events, SGR encoding.
         import termios, tty, select
         fd = sys.stdin.fileno()
         saved = termios.tcgetattr(fd)
-        sys.stdout.write("\x1b[?1049h\x1b[?1000h\x1b[?1006h")
+        sys.stdout.write("\x1b[?1049h\x1b[?1000h\x1b[?1006h" + ("\x1b[?1002h" if line == "mouse drag" else ""))
         sys.stdout.flush()
         tty.setraw(fd)
         got = b""
@@ -152,7 +155,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             if r:
                 got += os.read(fd, 1024)
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        sys.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l")
+        sys.stdout.write("\x1b[?1002l\x1b[?1006l\x1b[?1000l\x1b[?1049l")
         out("mouse got: " + repr(got))
     elif line.startswith("card "):
         r = api("POST", "/api/agent/cards", {"title": line[5:], "column": "building", "note": "working on it"})

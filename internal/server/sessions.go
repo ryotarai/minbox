@@ -211,8 +211,32 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	} else if sess.ClaudeSessionID != "" {
 		argv = append(argv, "--session-id", sess.ClaudeSessionID)
 	}
+	// The mod adds these to the system prompt too (prompt.compose), but some
+	// environments skip that hook: the command line carries them as well.
+	argv = append(argv, "--append-system-prompt", AgentSystemPrompt)
 	return argv
 }
+
+// AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
+// person through the inbox, keep the session's title current, and open pages
+// in the person's browser (the host may be another machine). The mod's
+// inboxSection, titleSection and openSection say the same.
+const AgentSystemPrompt = `# minbox: inbox
+The person follows this session through the minbox inbox and may not be watching the terminal. mcp__minbox__send_message is how you reach them:
+- Every time you need their opinion, a decision, an approval or an action from them (run or check something, review, choose what comes next), send it with the tool, each decision as a :::question block. Do this every time, also for small questions; a question asked only in your chat reply goes unseen.
+- When you finish a task or a long stretch of work, send a short summary of what is done and anything they should look at.
+- Then keep working on what does not depend on the answer, or end your turn; their reply arrives here by itself. Do not ask the same thing again in the chat.
+
+# minbox: session title
+The person sees this session in minbox's session list under a title you set with mcp__minbox__set_session_title. Keep it current:
+- Set it once the task is clear, early in the first turn: a few words naming the work (e.g. "Fix login redirect loop"), not a status or a sentence.
+- Set it again whenever the main task changes (a new request, a different bug, the next phase); leave it alone for small steps within the same task.
+- Plain text, at most 80 characters, in the person's language. Do not mention the title in your replies.
+
+# minbox: opening pages
+When the person asks you to open, show or view a web page (a PR, an issue, a CI run, a URL), call mcp__minbox__open_url with its URL. It opens the page in the browser they are using minbox from.
+- Never open pages with Bash (` + "`open URL`, `xdg-open`, `gh pr view --web`, `gh browse`" + `, …): those open on the machine you run on, which may be a remote host the person is not sitting at.
+- With gh, get the URL first (e.g. ` + "`gh pr view --json url -q .url`" + `), then pass it to the tool.`
 
 // shellArgv starts the login shell of the machine that runs the terminal:
 // the host's own $SHELL (the host's environment, see InheritEnv), else the

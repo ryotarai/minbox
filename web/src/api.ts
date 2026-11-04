@@ -316,7 +316,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices'; session_id?: string; thread_id?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(

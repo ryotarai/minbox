@@ -13,6 +13,7 @@ type Event struct {
 	Type      string `json:"type"` // "sessions" | "threads" | "thread"
 	SessionID string `json:"session_id,omitempty"`
 	ThreadID  string `json:"thread_id,omitempty"`
+	URL       string `json:"url,omitempty"` // "open": a page Claude opens in the person's browser
 }
 
 // hub fans events out to SSE subscribers.
@@ -22,6 +23,13 @@ type hub struct {
 }
 
 func newHub() *hub { return &hub{subs: map[chan Event]struct{}{}} }
+
+// count is the number of browsers listening.
+func (h *hub) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs)
+}
 
 func (h *hub) publish(ev Event) {
 	h.mu.Lock()

@@ -145,6 +145,9 @@ func TestCreateSessionSpawnsClaudeWithTheMod(t *testing.T) {
 	if !strings.HasPrefix(argv, "claude --plugin-dir /plugin --session-id "+sess.ClaudeSessionID) {
 		t.Fatalf("argv = %s", argv)
 	}
+	if n := len(req.Argv); n < 2 || req.Argv[n-2] != "--append-system-prompt" || !strings.Contains(req.Argv[n-1], "mcp__minbox__open_url") {
+		t.Errorf("argv lacks minbox's system prompt: %q", req.Argv)
+	}
 	envs := strings.Join(req.Env, "\n")
 	for _, want := range []string{"MINBOX_TOKEN=" + sess.Token, "MINBOX_SESSION_ID=" + sess.ID, "TERM=xterm-256color"} {
 		if !strings.Contains(envs, want) {
@@ -311,7 +314,7 @@ func TestResumeUsesTranscriptWhenThere(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := e.host.spawned[len(e.host.spawned)-1]
-	if argv := strings.Join(last.Argv, " "); !strings.HasSuffix(argv, "--resume "+sess.ClaudeSessionID) {
+	if argv := strings.Join(last.Argv, " "); !strings.Contains(argv, " --resume "+sess.ClaudeSessionID+" ") {
 		t.Fatalf("argv = %s", argv)
 	}
 }

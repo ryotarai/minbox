@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { ATTACHMENTS_GUIDE, SEND_DESCRIPTION, sentText, threadText } from './text'
+import { asksPerson, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCRIPTION, sentText, threadText } from './text'
 
 const SERVER_FILE = '/data/server.json'
 
@@ -208,4 +208,97 @@ test('set_session_title sets the title, and the system prompt asks for it', asyn
   const call = server.calls.find((c) => c.path === '/api/agent/title')
   expect(call?.body).toEqual({ title: 'Fix login redirect' })
   expect(JSON.stringify(res)).toContain('Session title set')
+})
+
+test('open_url opens the page in the browser; Bash opening it on the host is refused', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' }] }))
+  let ran = ''
+  on('tool.call', { tool: 'Bash' }, (_: any, e: any) => {
+    ran = e.command
+    return { result: 'ok' }
+  })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+
+  const composed: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as any)
+  expect(composed.sections.find((s: any) => s.id === 'minbox:open-url')?.text).toContain('mcp__minbox__open_url')
+
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__open_url', url: 'https://github.com/o/r/pull/12' } as any)
+  expect(server.calls.find((c) => c.path === '/api/agent/open')?.body).toEqual({ url: 'https://github.com/o/r/pull/12' })
+  expect(JSON.stringify(res)).toContain("in the person's browser")
+
+  const denied: any = await $.tool.call({ tool: 'Bash', command: 'open https://github.com/o/r/pull/12' } as any)
+  expect(denied.deny).toContain('mcp__minbox__open_url')
+  expect(ran).toBe('')
+  await $.tool.call({ tool: 'Bash', command: 'gh pr view --json url -q .url' } as any)
+  expect(ran).toBe('gh pr view --json url -q .url')
+})
+
+test('opensBrowser: commands that open a page on the host', () => {
+  for (const c of [
+    'open https://github.com/o/r/pull/1',
+    "open 'https://x.dev'",
+    'cd /w && open -a "Google Chrome" https://x.dev',
+    'xdg-open http://localhost:3000',
+    'gh pr view 12 --web',
+    'gh pr create --fill -w',
+    'gh browse',
+    'gh run view 99 --web; echo done',
+  ]) expect([c, opensBrowser(c)]).toEqual([c, true])
+  for (const c of ['gh pr view --json url -q .url', 'open README.md', 'echo open https://x', 'git push -u origin main', 'grep -w open file', 'gh pr list --state open']) {
+    expect([c, opensBrowser(c)]).toEqual([c, false])
+  }
+})
+
+test('without prompt.compose the first prompt still carries the title and open_url guidance; compose does not repeat the command line', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  fakeServer(on, [])
+  // The system prompt already holds minbox's --append-system-prompt.
+  on('prompt.compose', () => ({ sections: [{ id: 'append', text: '# minbox: inbox\n…\n\n# minbox: session title\n…\n\n# minbox: opening pages\n…', scope: 'session' }] }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+
+  const first: any = await $.prompt.submit({ text: 'open the PR', origin: { kind: 'composer' } } as any)
+  const extra = (first.context ?? []).join('\n')
+  expect(extra).toContain('mcp__minbox__open_url')
+  expect(extra).toContain('mcp__minbox__set_session_title')
+
+  const composed: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as any)
+  expect(composed.sections.map((s: any) => s.id)).toEqual(['append'])
+})
+
+test('a turn that asks the person in the chat only is followed by one reminder to use the inbox', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+
+  const turn = async (answer: string, send = false) => {
+    await $.turn.start({ turnId: 't', prompt: 'p' } as any)
+    if (send) await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'Which one?', subject: 'Pick' } as any)
+    await $.turn.complete({ turnId: 't', answer, reason: 'answer', isAborted: false, durationMs: 1 } as any)
+    await clock.advance(5000)
+  }
+
+  await turn('Done. マージしてもよろしいですか？')
+  expect(server.submitted.length).toBe(1)
+  expect(server.submitted[0]).toContain('Send it now with mcp__minbox__send_message')
+  // The reminder's own turn never reminds again.
+  await turn('Should I merge it?')
+  expect(server.submitted.length).toBe(1)
+  // Asked through the inbox: nothing to remind.
+  await turn('I sent the question to your inbox. Which one?', true)
+  expect(server.submitted.length).toBe(1)
+  // A plain report: nothing either.
+  await turn('All tests pass; the fix is in `a ? b : c`.')
+  expect(server.submitted.length).toBe(1)
+})
+
+test('asksPerson reads the end of the answer', () => {
+  for (const a of ['どちらにしますか？', 'Ready. Should I push?', 'Let me know if you want the other layout.', '確認してください。', 'Please review the diff.', '方針A/Bどちらで進めますか。'])
+    expect([a, asksPerson(a)]).toEqual([a, true])
+  for (const a of ['Fixed the bug; tests pass.', 'Uses `x ? y : z` now.', 'Opened https://x.dev/?q=1', '```\nconst a = b ? c : d\n```\nDone.'])
+    expect([a, asksPerson(a)]).toEqual([a, false])
 })

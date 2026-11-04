@@ -209,6 +209,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/hello", s.agent(s.agentHello))
 	mux.HandleFunc("POST /api/agent/status", s.agent(s.agentStatus))
 	mux.HandleFunc("POST /api/agent/title", s.agent(s.agentTitle))
+	mux.HandleFunc("POST /api/agent/open", s.agent(s.agentOpen))
 	mux.HandleFunc("POST /api/agent/messages", s.agent(s.agentSend))
 	mux.HandleFunc("GET /api/agent/threads", s.agent(s.agentListThreads))
 	mux.HandleFunc("GET /api/agent/threads/{id}", s.agent(s.agentReadThread))

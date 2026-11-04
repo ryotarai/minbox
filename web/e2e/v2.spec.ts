@@ -435,3 +435,31 @@ test('the mouse wheel reaches a full-screen program that tracks the mouse as whe
   await expect.poll(joined, { timeout: 15_000 }).toMatch(/mouse got: b'.*\\x1b\[<64;\d+;\d+M.*\\x1b\[<65;\d+;\d+M/)
   expect(await joined()).not.toContain('\\x1b[A')
 })
+
+test("a click and a drag reach a program that tracks the mouse (Claude Code's full-screen UI)", async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'clicks')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'mouse drag')
+  await page.waitForTimeout(500)
+  const box = (await page.locator('.mb-term canvas').boundingBox())!
+  const { cols, rows } = await page.evaluate(() => ({ cols: (window as any).__minboxTerminal.cols, rows: (window as any).__minboxTerminal.rows }))
+  const at = (col: number, row: number) => [box.x + (box.width / cols) * (col - 0.5), box.y + (box.height / rows) * (row - 0.5)] as const
+  // A click on cell 5,3; then a drag from 2,4 to 9,4.
+  await page.mouse.click(...at(5, 3))
+  await page.mouse.move(...at(2, 4))
+  await page.mouse.down()
+  await page.mouse.move(...at(9, 4), { steps: 3 })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  await page.keyboard.press('q')
+  const joined = async () => (await terminalText(page)).replace(/\n/g, '')
+  await expect.poll(joined, { timeout: 15_000 }).toContain('mouse got: ')
+  const got = await joined()
+  expect(got).toContain('\\x1b[<0;5;3M\\x1b[<0;5;3m') // press and release
+  expect(got).toContain('\\x1b[<0;2;4M')
+  expect(got).toMatch(/\\x1b\[<32;\d+;4M/) // motion with the button down
+  expect(got).toContain('\\x1b[<0;9;4m')
+  // The click went to the program, not to a selection of the terminal's own.
+  expect(await page.evaluate(() => (window as any).__minboxTerminal.getSelection())).toBe('')
+})

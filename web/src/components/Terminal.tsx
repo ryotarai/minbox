@@ -256,19 +256,29 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       // program that tracks the mouse gets wheel buttons 64/65 in the encoding
       // it asked for (ghostty-web would send ↑/↓ keys on the alternate screen,
       // and Claude Code's full-screen UI would cycle its prompt history).
+      // The 1-based cell under a point (in zoomed pixels, as events give them).
+      const cellAt = (clientX: number, clientY: number): [number, number] => {
+        const canvas = el.querySelector('canvas')
+        if (!term || !canvas) return [1, 1]
+        const r = canvas.getBoundingClientRect()
+        const col = Math.min(term.cols, Math.max(1, Math.floor((clientX - r.left) / (r.width / term.cols)) + 1))
+        const row = Math.min(term.rows, Math.max(1, Math.floor((clientY - r.top) / (r.height / term.rows)) + 1))
+        return [col, row]
+      }
+      // A mouse report in the encoding the program asked for (SGR, urxvt, X10).
+      const mouseSeq = (btn: number, col: number, row: number, release: boolean): string => {
+        if (term?.getMode(1006)) return `\x1b[<${btn};${col};${row}${release ? 'm' : 'M'}`
+        const b = release ? 3 + (btn & ~3) : btn // the old encodings release as button 3
+        if (term?.getMode(1015)) return `\x1b[${b + 32};${col};${row}M`
+        return `\x1b[M${String.fromCharCode(32 + b, 32 + Math.min(col, 223), 32 + Math.min(row, 223))}`
+      }
       const scrollAt = (n: number, clientX: number, clientY: number, mods = 0): boolean => {
         if (!term) return false
         const canvas = el.querySelector('canvas')
         if (!canvas) return false
         if (term.hasMouseTracking()) {
-          const r = canvas.getBoundingClientRect()
-          const col = Math.min(term.cols, Math.max(1, Math.floor((clientX - r.left) / (r.width / term.cols)) + 1))
-          const row = Math.min(term.rows, Math.max(1, Math.floor((clientY - r.top) / (r.height / term.rows)) + 1))
-          const btn = (n < 0 ? 64 : 65) + mods
-          let seq: string
-          if (term.getMode(1006)) seq = `\x1b[<${btn};${col};${row}M`
-          else if (term.getMode(1015)) seq = `\x1b[${btn + 32};${col};${row}M`
-          else seq = `\x1b[M${String.fromCharCode(32 + btn, 32 + Math.min(col, 223), 32 + Math.min(row, 223))}`
+          const [col, row] = cellAt(clientX, clientY)
+          const seq = mouseSeq((n < 0 ? 64 : 65) + mods, col, row, false)
           for (let i = 0; i < Math.min(Math.abs(n), 10); i++) send(seq)
         } else if (term.buffer.active.type === 'alternate') {
           // A full-screen program without the mouse: arrow keys, as a wheel does.
@@ -362,6 +372,58 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         el.removeEventListener('touchmove', onTouchMove)
         el.removeEventListener('touchend', onTouchEnd)
         el.removeEventListener('touchcancel', onTouchEnd)
+      }
+
+      // Mouse buttons. ghostty-web reports only the wheel to a program that
+      // tracks the mouse; a click goes to its own text selection. Report
+      // presses, releases and (modes 1002/1003) motion, so Claude Code's
+      // full-screen UI can be clicked. Shift+drag still selects text here, as
+      // in other terminals.
+      let pressed: number | null = null
+      let lastCell = ''
+      const modsOf = (e: MouseEvent) => (e.altKey ? 8 : 0) + (e.ctrlKey ? 16 : 0)
+      const onMouseDown = (e: MouseEvent) => {
+        if (!term || !term.hasMouseTracking() || e.shiftKey || e.button > 1) return
+        if (!(e.target instanceof HTMLCanvasElement)) return
+        e.stopPropagation() // not ghostty-web's selection
+        e.preventDefault()
+        term.focus()
+        const [col, row] = cellAt(e.clientX, e.clientY)
+        pressed = e.button
+        lastCell = `${col},${row}`
+        send(mouseSeq(pressed + modsOf(e), col, row, false))
+      }
+      const onMouseMove = (e: MouseEvent) => {
+        if (!term || !term.hasMouseTracking()) return
+        const drag = pressed !== null && (term.getMode(1002) || term.getMode(1003))
+        const hover = pressed === null && term.getMode(1003) && e.target instanceof HTMLCanvasElement && el.contains(e.target)
+        if (!drag && !hover) return
+        const [col, row] = cellAt(e.clientX, e.clientY)
+        const cell = `${col},${row}`
+        if (cell === lastCell) return
+        lastCell = cell
+        send(mouseSeq(32 + (pressed ?? 3) + modsOf(e), col, row, false))
+      }
+      const onMouseUp = (e: MouseEvent) => {
+        if (pressed === null) return
+        const b = pressed
+        pressed = null
+        if (!term || !term.hasMouseTracking()) return
+        const [col, row] = cellAt(e.clientX, e.clientY)
+        send(mouseSeq(b + modsOf(e), col, row, true))
+      }
+      el.addEventListener('mousedown', onMouseDown, true)
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+      const unmouse = () => {
+        el.removeEventListener('mousedown', onMouseDown, true)
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+      }
+      const untouchOnly = untouch
+      untouch = () => {
+        untouchOnly?.()
+        unmouse()
       }
 
       // When the PTY is larger than the view (it scrolls), and when the view
