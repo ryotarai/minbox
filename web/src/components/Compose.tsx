@@ -199,10 +199,14 @@ type CompletingProps = {
   onChange: (v: string) => void
   onSubmit: () => void
   placeholder: string
+  className?: string
+  testid?: string
+  /** Open the @ / completions above the field (it sits at the bottom of a column). */
+  dropUp?: boolean
 }
 
 /** A textarea that completes @agents and /skills of the session's project. */
-const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
+export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
   const [comps, setComps] = useState<Completions | null>(null)
   const [token, setToken] = useState<{ ch: '@' | '/'; start: number; q: string } | null>(null)
   const [sel, setSel] = useState(0)
@@ -243,7 +247,7 @@ const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeho
     <div className="relative">
       <textarea
         ref={ref}
-        data-testid="compose-body"
+        data-testid={testid}
         aria-label="Body"
         value={value}
         placeholder={placeholder}
@@ -282,10 +286,10 @@ const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeho
             onSubmit()
           }
         }}
-        className="h-[120px] w-full resize-none rounded-md border border-linestrong bg-sunken p-2.5 text-[13.5px] outline-none focus:border-accent"
+        className={cx('w-full resize-none rounded-md border border-linestrong bg-sunken p-2.5 text-[13.5px] outline-none focus:border-accent', className ?? 'h-[120px]')}
       />
       {items.length > 0 && (
-        <div role="listbox" data-testid="completions" className="absolute left-2 top-full z-10 mt-1 w-[320px] rounded-[10px] border border-linestrong bg-overlay p-1 shadow-pop">
+        <div role="listbox" data-testid="completions" className={cx('absolute left-2 z-10 w-[320px] rounded-[10px] border border-linestrong bg-overlay p-1 shadow-pop', dropUp ? 'bottom-full mb-1' : 'top-full mt-1')}>
           {items.map((c, i) => (
             <button
               key={c.insert}

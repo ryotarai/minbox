@@ -61,12 +61,11 @@ test('the person can start a thread; it reaches Claude', async ({ page, minbox }
   await createSession(page, minbox.dataDir, 'compose')
   await expectTerminal(page, 'ready>')
 
-  await page.getByTestId('compose').click()
-  await page.getByTestId('compose-subject').fill('Idea')
-  await page.getByTestId('compose-body').fill('Please also update the README')
-  await page.getByTestId('compose-send').click()
-  await expect(page.getByTestId('thread-subject')).toHaveText('Idea')
-  await expectTerminal(page, '<<< inbox [Idea] Please also update the README')
+  await expect(page.getByTestId('compose')).toHaveCount(0)
+  await page.getByTestId('quick-body').fill('Please also update the README')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Please also update the README')
+  await expectTerminal(page, '<<< inbox [Please also update the README] Please also update the README')
   await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
 
   // Claude answers in the same thread: it shows up as new.

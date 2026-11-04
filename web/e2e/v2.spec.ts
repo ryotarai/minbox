@@ -154,11 +154,9 @@ test('search finds Japanese words, in this session or all of them', async ({ pag
   await createSession(page, minbox.dataDir, 'jp')
   await expectTerminal(page, 'ready>')
   // Japanese goes in through the inbox (the terminal test driver types ASCII only).
-  await page.getByTestId('compose').first().click()
-  await page.getByTestId('compose-subject').fill('Note')
-  await page.getByTestId('compose-body').fill('アーカイブ済みのスレッドの扱いについて')
-  await page.getByTestId('compose-send').click()
-  await expect(page.getByTestId('thread-subject')).toHaveText('Note')
+  await page.getByTestId('quick-body').fill('アーカイブ済みのスレッドの扱いについて')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('アーカイブ済みのスレッドの扱いについて')
   await createSession(page, minbox.dataDir, 'other')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'say unrelated')
@@ -170,7 +168,7 @@ test('search finds Japanese words, in this session or all of them', async ({ pag
   const hit = page.getByTestId('search-result').first()
   await expect(hit).toContainText('jp')
   await hit.click()
-  await expect(page.getByTestId('thread-subject')).toHaveText('Note')
+  await expect(page.getByTestId('thread-subject')).toHaveText('アーカイブ済みのスレッドの扱いについて')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('jp')
 })
 
@@ -209,23 +207,6 @@ test('rename in place; delete through a dialog', async ({ page, minbox }) => {
   await expect(page.getByRole('dialog')).toContainText('Delete renamed?')
   await page.getByTestId('delete-confirm').click()
   await expect(page.getByTestId('session-row')).toHaveCount(0)
-})
-
-test('compose: closing with text keeps a draft', async ({ page, minbox }) => {
-  await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'drafty')
-  await page.getByTestId('compose').first().click()
-  await page.getByTestId('compose-subject').fill('Later')
-  await page.getByTestId('compose-body').fill('Something to send later')
-  await page.keyboard.press('Escape')
-  await page.getByTestId('keep-draft').getByRole('button', { name: 'Keep draft' }).click()
-  await expect(page.getByTestId('drafts')).toHaveText('Drafts 1')
-  await page.getByTestId('drafts').click()
-  await page.getByRole('dialog').getByText('New message · Later').click()
-  await expect(page.getByTestId('compose-body')).toHaveValue('Something to send later')
-  await page.getByTestId('compose-send').click()
-  await expect(page.getByTestId('drafts')).toHaveText('Drafts 0')
-  await expectTerminal(page, '<<< inbox [Later] Something to send later')
 })
 
 test('settings: the theme and the Board persist on the server; Claude can add cards', async ({ page, minbox }) => {

@@ -66,9 +66,8 @@ test('screenshots', async ({ page, minbox }) => {
   await page.keyboard.press('Escape')
 
   await page.getByTestId('thread-back').click()
-  await page.getByTestId('compose').first().click()
+  await page.getByTestId('quick-body').fill('Also check the README')
   await shot('09-compose')
-  await page.keyboard.press('Escape')
 
   await page.locator('body').click({ position: { x: 700, y: 5 } })
   await page.keyboard.press('Shift+?')

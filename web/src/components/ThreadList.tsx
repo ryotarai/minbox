@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { SECTION_LABEL, SECTION_ORDER, api, type Delivery, type Section, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
+import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { oneLine, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { proseOf } from '../lib/markdown'
 import { IconChevronRight, IconInbox, IconPaperclip, IconPin } from './icons'
 import { Button, Skeleton, cx } from './ui'
 import { NextStep } from './NextStep'
+import { CompletingTextarea } from './Compose'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
   queued: { icon: '◷', label: 'Queued', color: 'text-muted' },
@@ -69,7 +71,7 @@ export function ThreadList({
   onOpen: (id: string) => void
   phone?: boolean
 }) {
-  const { setOverlay, settings } = useApp()
+  const { settings } = useApp()
   const groups = useMemo(() => sortThreads(threads ?? []), [threads])
   const flat = groups.flatMap((g) => g.items)
   const [cursor, setCursor] = useState(0)
@@ -102,16 +104,6 @@ export function ThreadList({
       {!phone && (
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
           <div className="flex-1 truncate text-[15px] font-[650]">Inbox</div>
-          <Button size="sm" variant="ghost" data-testid="compose" onClick={() => setOverlay({ kind: 'compose', sessionId: session.id })}>
-            ✎ New message
-          </Button>
-        </div>
-      )}
-      {phone && (
-        <div className="flex shrink-0 justify-end px-3">
-          <Button size="sm" variant="ghost" data-testid="compose" onClick={() => setOverlay({ kind: 'compose', sessionId: session.id })}>
-            ✎ New message
-          </Button>
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" data-testid="thread-list">
@@ -149,6 +141,83 @@ export function ThreadList({
             </div>
           ))
         )}
+      </div>
+      <QuickCompose session={session} phone={phone} onOpen={onOpen} />
+    </div>
+  )
+}
+
+/** A box at the bottom of the list: type, send, and a new thread starts with Claude Code. */
+function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: boolean; onOpen: (id: string) => void }) {
+  const { error } = useApp()
+  const [body, setBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const filesId = `quick:${session.id}`
+  const { files, addFiles, addPastedText, remove: removeFile } = useComposeFiles(filesId)
+  const io = fileInputHandlers(addFiles, addPastedText)
+  const uploading = files.some((f) => f.state === 'uploading')
+  const hasFiles = files.some((f) => f.state === 'done')
+  const canSend = (!!body.trim() || hasFiles) && !uploading && !sending
+  const send = async () => {
+    if (!canSend) return
+    setSending(true)
+    try {
+      const th = await api.createThread(session.id, '', body.trim(), undefined, uploadIds(filesId))
+      clearFiles(filesId)
+      setBody('')
+      onOpen(th.id)
+    } catch (err) {
+      error(err)
+    } finally {
+      setSending(false)
+    }
+  }
+  const hint =
+    session.status === 'ended' ? 'Session ended: Claude gets this after Resume' : session.status === 'working' ? 'Working: Claude gets this when its turn ends' : 'Claude gets this as its next turn'
+  return (
+    <div className="shrink-0 border-t border-line p-2.5" data-testid="quick-compose">
+      <ComposeFileTiles
+        files={files}
+        onRemove={removeFile}
+        onPutBack={(f) => {
+          if (!f.pasted) return
+          const at = Math.min(f.pasted.at, body.length)
+          setBody(body.slice(0, at) + f.pasted.text + body.slice(at))
+          removeFile(f.key)
+        }}
+      />
+      <CompletingTextarea
+        ref={ref}
+        testid="quick-body"
+        dropUp
+        className="h-[72px]"
+        sessionId={session.id}
+        value={body}
+        onChange={setBody}
+        onSubmit={() => void send()}
+        {...io}
+        placeholder="Start a new thread with Claude Code… (@ agents, / skills)"
+      />
+      <div className="mt-1.5 flex items-center gap-2">
+        <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileRef.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
+          <IconPaperclip />
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            addFiles(Array.from(e.target.files ?? []))
+            e.target.value = ''
+          }}
+        />
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{hint}</span>
+        <Button variant="primary" size="sm" data-testid="quick-send" disabled={!canSend} onClick={() => void send()}>
+          Send{phone ? '' : ' ⌘↵'}
+        </Button>
       </div>
     </div>
   )
