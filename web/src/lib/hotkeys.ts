@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isMac } from './format'
 
 // Keyboard shortcuts. Components register handlers by key; the newest
 // registration of a key wins (an open dialog over the list, for instance).
@@ -31,7 +32,10 @@ export function inTerminal(target: EventTarget | null = document.activeElement):
 /** "mod+k", "shift+e", "?", "j", "escape", "arrowdown", "enter", "shift+f10", "]". */
 export function keyOf(e: KeyboardEvent): string {
   const parts: string[] = []
-  if (e.metaKey || e.ctrlKey) parts.push('mod')
+  // "mod" is ⌘ on a Mac (Ctrl stays the terminal's: Ctrl+K kills the line),
+  // Ctrl elsewhere.
+  if (isMac() ? e.metaKey : e.ctrlKey) parts.push('mod')
+  else if (e.ctrlKey || e.metaKey) parts.push('ctrl')
   if (e.altKey) parts.push('alt')
   let k = e.key.toLowerCase()
   if (k === ' ') k = 'space'
