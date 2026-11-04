@@ -205,21 +205,28 @@ type CompletingProps = {
   dropUp?: boolean
   /** Grow with the text, from `min` px up to `max` px (then it scrolls). */
   autoGrow?: { min: number; max: number }
+  /** Fill the height of the parent (a flex column) instead of a fixed one. */
+  fill?: boolean
 }
 
 /** A textarea that completes @agents and /skills of the session's project. */
-export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, autoGrow, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
+export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, autoGrow, fill, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
   const [comps, setComps] = useState<Completions | null>(null)
   const [token, setToken] = useState<{ ch: '@' | '/'; start: number; q: string } | null>(null)
   const [sel, setSel] = useState(0)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el || !autoGrow) return
+    if (!el) return
+    if (!autoGrow || fill) {
+      el.style.height = ''
+      el.style.overflowY = ''
+      return
+    }
     el.style.height = 'auto'
     const h = Math.min(autoGrow.max, Math.max(autoGrow.min, el.scrollHeight + 2)) // +2: the border
     el.style.height = `${h}px`
     el.style.overflowY = el.scrollHeight + 2 > autoGrow.max ? 'auto' : 'hidden'
-  }, [value, autoGrow, ref])
+  }, [value, autoGrow, fill, ref])
   useEffect(() => {
     if (!sessionId) return
     api.completions(sessionId).then(setComps).catch(() => setComps(null))
@@ -254,7 +261,7 @@ export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, 
     })
   }
   return (
-    <div className="relative">
+    <div className={cx('relative', fill && 'min-h-0 flex-1')}>
       <textarea
         ref={ref}
         data-testid={testid}
@@ -296,7 +303,7 @@ export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, 
             onSubmit()
           }
         }}
-        className={cx('w-full resize-none rounded-md border border-linestrong bg-sunken p-2.5 text-[13.5px] outline-none focus:border-accent', className ?? 'h-[120px]')}
+        className={cx('w-full resize-none rounded-md border border-linestrong bg-sunken p-2.5 text-[13.5px] outline-none focus:border-accent', fill ? 'h-full' : (className ?? 'h-[120px]'))}
       />
       {items.length > 0 && (
         <div role="listbox" data-testid="completions" className={cx('absolute left-2 z-10 w-[320px] rounded-[10px] border border-linestrong bg-overlay p-1 shadow-pop', dropUp ? 'bottom-full mb-1' : 'top-full mt-1')}>
