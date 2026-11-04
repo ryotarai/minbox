@@ -526,3 +526,20 @@ test('a thread scrolled to the bottom follows new messages without a pill', asyn
   await expect.poll(() => scroller.evaluate((e) => e.scrollHeight - e.scrollTop - e.clientHeight)).toBeLessThan(80)
   await expect(page.getByTestId('new-message-pill')).toHaveCount(0)
 })
+
+test('Accept recommended says what it does once another choice is picked, and goes when the recommended one is', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'recs')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'ask')
+  await page.getByTestId('thread-row').first().click()
+  const card = page.getByTestId('question-card').first()
+  const btn = card.getByTestId('accept-recommended')
+  await expect(btn).toHaveText('Accept recommended')
+  // Another choice than the recommended one.
+  const other = card.getByTestId('choice').filter({ hasNotText: 'Recommended' }).first()
+  await other.click()
+  await expect(btn).toHaveText('Switch to recommended')
+  await btn.click()
+  await expect(btn).toHaveCount(0)
+})

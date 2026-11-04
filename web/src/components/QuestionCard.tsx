@@ -50,6 +50,15 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
   const choices = q.choices ?? []
   const recommended = choices.filter((c) => c.recommended).map((c) => c.label)
   const update = (patch: Partial<Answer>) => onDraft({ ...a, skipped: false, ...patch, key: q.key })
+  // "Accept" fits only while nothing is picked. With another choice (or an Other text) picked it
+  // would silently swap the pick, so it says "Switch to"; once the recommended one is picked it goes.
+  const recommendedPick = q.kind === 'multi' ? recommended : recommended.slice(0, 1)
+  const picked = a.selected ?? []
+  const hasPick = picked.length > 0 || !!a.other?.trim()
+  const isRecommendedPick = !a.other?.trim() && picked.length === recommendedPick.length && recommendedPick.every((l) => picked.includes(l))
+  const showRecommended = recommended.length > 0 && !isRecommendedPick
+  const recommendedLabel = hasPick ? 'Switch to recommended' : 'Accept recommended'
+  const useRecommended = () => update({ selected: recommendedPick, other: '' })
   const state: CardState = sent ? (sent.skipped ? 'Skipped' : 'Answered') : closed ? 'Closed' : answerIsEmpty(draft) ? 'Open' : 'Draft'
   const { prose, meta } = contextParts(q.context)
 
@@ -217,14 +226,9 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
 
       {!readOnly && (
         <div className={cx('flex items-center gap-1', phone ? 'gap-2' : 'border-t border-sel pt-2')}>
-          {phone && recommended.length > 0 ? (
-            <button
-              type="button"
-              data-testid="accept-recommended"
-              onClick={() => update({ selected: q.kind === 'multi' ? recommended : recommended.slice(0, 1), other: '' })}
-              className="h-11 flex-1 rounded-[10px] border-0 bg-sel text-[14px] font-semibold"
-            >
-              Accept recommended
+          {phone && showRecommended ? (
+            <button type="button" data-testid="accept-recommended" onClick={useRecommended} className="h-11 flex-1 rounded-[10px] border-0 bg-sel text-[14px] font-semibold">
+              {recommendedLabel}
             </button>
           ) : null}
           {!phone && !noteOpen && (
@@ -232,9 +236,9 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
               Add note
             </CardLink>
           )}
-          {!phone && recommended.length > 0 && (
-            <CardLink testid="accept-recommended" onClick={() => update({ selected: q.kind === 'multi' ? recommended : recommended.slice(0, 1), other: '' })}>
-              Accept recommended
+          {!phone && showRecommended && (
+            <CardLink testid="accept-recommended" onClick={useRecommended}>
+              {recommendedLabel}
             </CardLink>
           )}
           <CardLink testid="skip-question" big={phone} onClick={() => onDraft({ key: q.key, skipped: !a.skipped, note: a.note })}>
