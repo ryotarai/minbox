@@ -1,72 +1,186 @@
 # minbox
 
-Claude Code のセッションを、ターミナルと Inbox を並べて扱う Web アプリです。何を作るかは [WHAT.md](WHAT.md) にあります。
+minbox puts your Claude Code sessions, their terminals and an inbox on one screen.
+Claude sends questions and reports to the inbox and keeps working; you answer when you have a
+moment, from your desk or your phone, and the answer reaches Claude as a new turn.
 
-```
-┌──────────┬──────────────────────────┬───────────────┐
-│ Sessions │ Terminal (Claude Code)   │ Inbox         │
-└──────────┴──────────────────────────┴───────────────┘
-```
+<p align="center"><img src="docs/images/layout.svg" alt="The minbox screen: sessions on the left, the session's terminal in the middle, its inbox on the right" width="880"></p>
 
-## 使い方
+- **Sessions** run in real terminals (PTYs). The list is sorted by who is waiting on whom
+  (Stopped on you → Holding up work → Waiting on you → Sent → New → Quiet → Archived), and
+  shows the title Claude gives each session.
+- **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
+  full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
+  and types its path.
+- **Inbox**: Claude's messages, with question cards (single, multiple and free-text choice),
+  action items, attachments you can annotate, and guided reviews of its changes. Your reply
+  reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is
+  safe.
+- **Shells** sit next to Claude sessions: **+ New → Shell** opens the host's own `$SHELL`.
+- **One binary**. The web UI, the server, the terminal host and the Claude Code mod are all in
+  `minbox`, with SQLite for storage.
+- **Anywhere**. Serve minbox on your tailnet and pair your phone. You can also run sessions on
+  other machines (remote hosts).
+
+minbox works with Claude Code only. It talks to Claude through a Claude Code mod (a hooks
+module), not by typing into the terminal. Background and design goals: [WHAT.md](WHAT.md)
+(Japanese).
+
+## Quick start
+
+Requirements: Go 1.26+, Node.js (to build the web UI), and Claude Code with mod support.
 
 ```sh
-make build                     # web/dist をビルドし、bin/minbox に埋め込む
-./bin/minbox start             # バックグラウンドで起動し、http://127.0.0.1:4848 を開く
-./bin/minbox status            # 動いているか、URL、ログの場所(止まっていれば終了コード 3)
-./bin/minbox stop              # サーバーを止める(セッションは terminal host で動き続ける)
-./bin/minbox restart           # 止めて、前回の start と同じフラグで起動し直す
-./bin/minbox start --foreground  # フォアグラウンドで動かす(ログは標準エラー)
+make build                 # builds web/dist and embeds it in bin/minbox
+./bin/minbox start         # runs in the background and opens http://127.0.0.1:4848
 ```
 
-`start` はサーバーをデーモンとして起動し、応答するのを待ってから戻ります。ログは `<data-dir>/minbox.log` に追記されます。
+Click **+ New** and pick a directory. minbox starts `claude` there with its mod loaded. When
+Claude needs something from you, the session moves up the list and the question shows in the
+inbox.
 
-左の **+ New** でディレクトリを選ぶと、そのディレクトリで `claude` が起動します。Claude が質問や作業報告を送ると右の Inbox に届き、返信すると Claude が手の空いたときに新しいメッセージとして受け取ります。
+```sh
+./bin/minbox status        # running? its URL and log (exit code 3 when stopped)
+./bin/minbox restart       # stop, then start with the flags of the last `minbox start`
+./bin/minbox stop          # stop the server; sessions keep running in the terminal host
+./bin/minbox start --foreground   # stay in the foreground, logs on stderr
+```
 
-| フラグ | 既定値 | 内容 |
+`start` daemonizes. It returns once the server answers, and logs go to `<data-dir>/minbox.log`.
+
+### Flags (`minbox start`)
+
+| Flag | Default | What it does |
 | --- | --- | --- |
-| `--addr` | `127.0.0.1:4848` | 待ち受けるアドレス(ループバックのみ) |
-| `--data-dir` | `~/.minbox`(`MINBOX_DATA_DIR`) | データベース、mod、貼り付けた画像の置き場所 |
-| `--claude` | `claude`(`MINBOX_CLAUDE`) | Claude Code を起動するコマンド。例: `"claude --model sonnet"` |
-| `--no-open` | | ブラウザを開かない |
-| `--foreground` | | デーモンにせず、フォアグラウンドで動かす |
+| `--addr` | `127.0.0.1:4848` | Address to listen on (loopback) |
+| `--listen` | | Listen on another address instead, e.g. `0.0.0.0:4848`. Browsers on other machines must be paired. |
+| `--data-dir` | `~/.minbox` (`MINBOX_DATA_DIR`) | Database, mod, uploads, logs |
+| `--claude` | `claude` (`MINBOX_CLAUDE`) | Command that starts Claude Code, e.g. `"claude --model sonnet"` |
+| `--tailscale` | | Also serve minbox on your tailnet over HTTPS (`tailscale serve`) |
+| `--tailscale-service NAME` | | Serve it as the Tailscale Service `svc:NAME` instead (`https://NAME.<tailnet>.ts.net`) |
+| `--tailscale-port` | `443` | The tailnet HTTPS port |
+| `--tailscale-user-login` | this machine's Tailscale user | The only Tailscale user who is answered |
+| `--no-open` | | Do not open the browser |
+| `--foreground` | | Do not daemonize |
 
-画面:
+## How it works
 
-- **左**: セッション一覧。人を待っている順(Stopped on you → Holding up work → Waiting on you → Sent → New → Quiet → Archived)に並びます。`⌘B` で畳んでレールにできます。
-- **中央**: ターミナル。添付ファイルを開くと、ここに表示して注釈を付けられます(注釈は返信と一緒に届きます)。
-- **右**: Inbox。スレッドの一覧と、質問カード・アクション項目・添付つきのスレッドです。
-- **ほかの画面**: 検索(`⌘K` か `/`)、Guided review(全画面)、Settings、Board(Settings → Capabilities でオン)、Decision mode(同じく。待っている質問を 1 問ずつ番号キーで答える)。
-- **スマホ(幅 768px 未満)**: 「セッション一覧 → セッション(Inbox / Terminal タブ)」の順にたどります。ターミナルは PTY のサイズを変えずに表示し、補助キーと画像アップロードがあります。
+<p align="center"><img src="docs/images/architecture.svg" alt="Architecture: browsers talk to the minbox server; the server talks to a local terminal host over a unix socket and to remote hosts with signed requests; the minbox mod inside each Claude Code calls the server's agent API" width="920"></p>
 
-キーボード操作(`?` で一覧を表示):
+- **The server** (`minbox start`, Go) does the following:
+  - serves the web UI, the REST API, server-sent events and the terminal WebSockets;
+  - serves the agent API that the mod calls;
+  - keeps sessions, threads and cards in SQLite (`modernc.org/sqlite`, no cgo).
+- **The terminal host** (`minbox host`) is a separate process that owns the PTYs.
+  - The server starts it when none is running.
+  - Restarting or upgrading the server leaves the running sessions alone.
+  - The two check each other's protocol version and restart the host only when they must.
+  - After a reboot, sessions that were open resume with `claude --resume`. Sessions you stopped,
+    or that Claude ended itself, stay stopped.
+- **The PTY** takes the size of the smallest screen attached to it, and grows back when that
+  screen leaves.
+- **The minbox mod** (`plugin/minbox`) is embedded in the binary and loaded with
+  `claude --plugin-dir`. It gives Claude these tools:
 
-- `⌘K` / `/`: 検索。`?`: ショートカット一覧。`⌘B`: サイドバーを畳む。`Esc`: 閉じる・一覧に戻る
-- `↑` `↓` / `J` `K`: 移動。`↵`: 開く。`N`: 最初の新着。`Q`: 開いている質問へ
-- `R`: 返信欄に移る。`⌘↵`: 送信。`E`: Mark read。`⇧E`: アーカイブ。`Z`: 直前の操作を取り消す
-- `]` / `[`: 次 / 前の添付。`O`: 最新の添付。`F`: 添付を全画面
-- `⌘V`: ターミナルにフォーカスがあり、クリップボードに画像が入っているとき、その画像をアップロードしてパスを入力する
+  | Tool | What it does |
+  | --- | --- |
+  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review to the inbox |
+  | `read_thread` | Read a thread (or list them) |
+  | `set_session_title` | Set the title shown in the session list |
+  | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |
+  | `card` | Create and update cards on the Board (when it is on) |
 
-ターミナルにフォーカスがあるときは `⌘K` 以外のショートカットは効きません。1 文字のショートカットは Settings で切れます。
+  minbox's instructions reach Claude three ways, because some environments skip one of them:
+  - `--append-system-prompt`;
+  - the mod's `prompt.compose` hook;
+  - a reminder on the first prompt.
 
-## 仕組み
+  They ask Claude to send every question, decision or request for action to the inbox. If a
+  turn still ends with a question asked only in the chat, the mod reminds Claude once.
 
-- **サーバー** `minbox start`(Go)は、Web アプリの配信、ブラウザ向け API と SSE、ターミナルの WebSocket 中継、mod 向け API を受け持ちます。データは SQLite3(`modernc.org/sqlite`)に保存します。
-- **terminal host** `minbox host start` は PTY を持つ別プロセスです。サーバーが起動時に、なければ立ち上げます。`minbox host stop` で止められます(動いていた `claude` は終了し、次に `minbox` を起動すると開いていたセッションが `--resume` で再開します)。サーバーを再起動(アップデート)しても、動いているセッションは終了しません。接続時にお互いのプロトコルバージョンを確かめ、どちらかが相手の required version に満たないときは host を再起動します(`internal/termhost`)。
-- **自動レジューム**: host がいない状態で起動すると(OS の再起動後など)、開いていたセッションを `claude --resume <id>` で再開します。人が止めたセッションや Claude が自分で終了したセッションは再開しません。
-- **Claude Code mod**(`plugin/minbox`)はバイナリに埋め込まれ、`claude --plugin-dir` で読み込まれます。mod は次のことをします。
-  - `send_message` と `read_thread` の 2 つのツールを登録する
-  - 人の返信をロングポーリングで受け取る
-  - Claude が idle になってから claim → `$.prompt.submit` → delivered の順で、1 回だけ配信する
-  - 質問は `:::question` / `:::question-multi` / `:::question-text` ブロックで書く。回答は "## Answers to your questions" として Claude に届く
+### A question and its answer
 
-## 開発
+<p align="center"><img src="docs/images/message-flow.svg" alt="Message flow: Claude sends a question with send_message; the server notifies the inbox; the person answers; the mod long-polls, claims the reply once Claude is idle, submits it as a new turn and marks it delivered" width="920"></p>
+
+1. **Claude asks.** It calls `send_message`, which returns at once.
+2. **You answer.** The inbox shows the question, and you answer it at any time, on any device.
+3. **The mod waits for a quiet moment.** It long-polls for your reply and waits until Claude is
+   idle (or delivers at once if you pressed *Send now*).
+4. **The reply arrives once.** The mod claims the reply, submits it as a plugin turn
+   (`$.prompt.submit`) and marks it delivered.
+   - Claude receives the answers under "## Answers to your questions".
+   - If the submit fails, the claim is released, so a reply is never lost or delivered twice.
+
+## Other devices and machines
+
+### Your phone and other browsers
 
 ```sh
-make test-go        # Go のユニットテスト
-make test-mod       # mod のテスト (claude plugin test)
-make test-e2e       # Playwright (偽の claude を使う。モデルは呼ばない)
-cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # 本物の Claude Code (Haiku) で確認
+minbox start --tailscale            # https://<this machine>.<tailnet>.ts.net
 ```
 
-フロントエンドを開発するときは、Go サーバーを 4848 番で起動し、`cd web && npm run dev` を実行します(Vite が `/api` を 4848 番に中継します)。
+The first time a browser on another machine opens minbox, it shows a pairing code. Accept it
+in one of these places:
+- in a browser on this machine (**Settings → Devices**);
+- with `minbox pair accept <code>`.
+
+The browser keeps a device key, and after pairing it signs in by itself. On a phone, minbox
+opens as a session list and a session view with Inbox and Terminal tabs. The terminal fits the
+screen, scrolls with a swipe, and stays visible above the keyboard.
+
+### Sessions on another machine
+
+Run a host there and add it in **Settings → Hosts**:
+
+```sh
+minbox host --tailscale             # on the other machine: https://<it>.<tailnet>.ts.net:14849
+minbox host --listen 0.0.0.0:4849   # or directly, over TCP
+```
+
+1. The server asks to pair; accept with `minbox pair accept <code>` on that machine.
+2. From then on, every request the server sends to the host is signed with the server's ed25519
+   key.
+
+Sessions there run with that machine's own `$SHELL`, environment and files. Their mods reach the
+server back through the same connection.
+
+## Keyboard
+
+Press `?` for the full list. ⌘ is Ctrl on Linux and Windows.
+
+| Keys | |
+| --- | --- |
+| `⌘K` / `/` | Search threads, messages and files |
+| `⌘B` | Fold the session list |
+| `↑` `↓` / `J` `K`, `↵` | Move, open |
+| `N` / `Q` | First unread / the open question |
+| `R`, `⌘↵` | Reply, send |
+| `E` / `⇧E` / `Z` | Mark read / archive / undo |
+| `]` `[` / `O` / `F` | Next, previous attachment / the latest / full screen |
+
+While the terminal has focus, only `⌘K` is minbox's (Ctrl+K stays the shell's). In Claude Code's
+full-screen UI, clicks and the wheel go to Claude Code; Shift+drag selects text.
+
+## Development
+
+```sh
+make test-go        # Go unit tests
+make test-mod       # the mod's tests (claude plugin test)
+make test-e2e       # Playwright, against a fake claude (no model calls)
+cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # a real Claude Code (Haiku)
+```
+
+For the frontend, run the server on port 4848 and `cd web && npm run dev`. Vite proxies `/api`
+to the server.
+
+Layout:
+
+```
+cmd/minbox/         CLI: start/stop/status/restart, host, pair
+internal/server/    HTTP API, SSE, agent API, sessions, hosts, pairing
+internal/termhost/  the terminal host (PTYs, attach protocol)
+internal/store/     SQLite store
+plugin/minbox/      the Claude Code mod (hooks module)
+web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
+docs/               API contract, design notes, diagrams
+```
