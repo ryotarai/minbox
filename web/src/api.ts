@@ -489,15 +489,20 @@ export function subscribe(
   let attempts = 0
   let lostAt: Date | null = null
   let retry: ReturnType<typeof setTimeout> | null = null
+  let lastSeen = Date.now()
   const connect = () => {
+    retry = null
     es = new EventSource('/api/events')
+    lastSeen = Date.now()
     es.onopen = () => {
+      lastSeen = Date.now()
       attempts = 0
       lostAt = null
       onState({ connected: true, attempts: 0, since: null })
       onOpen()
     }
     es.onmessage = (m) => {
+      lastSeen = Date.now()
       try {
         onEvent(JSON.parse(m.data))
       } catch {
@@ -520,8 +525,26 @@ export function subscribe(
     connect()
   }
   ;(window as unknown as { __minboxReconnect?: () => void }).__minboxReconnect = reconnectNow
+  // A connection can die without an error (a sleeping tablet, a dropped Wi-Fi): the server sends a
+  // ping every 20 s, so silence means it is gone. Check on a timer and when the page comes back.
+  const STALE_MS = 50_000
+  const check = () => {
+    if (closed || retry) return // already waiting to retry
+    if (!es || es.readyState === EventSource.CLOSED || Date.now() - lastSeen > STALE_MS) reconnectNow()
+  }
+  const watch = setInterval(check, 10_000)
+  const onWake = () => {
+    if (closed) return
+    if (retry) reconnectNow()
+    else if (document.visibilityState !== 'hidden' && Date.now() - lastSeen > 25_000) reconnectNow()
+  }
+  window.addEventListener('online', onWake)
+  document.addEventListener('visibilitychange', onWake)
   return () => {
     closed = true
+    clearInterval(watch)
+    window.removeEventListener('online', onWake)
+    document.removeEventListener('visibilitychange', onWake)
     if (retry) clearTimeout(retry)
     es?.close()
   }

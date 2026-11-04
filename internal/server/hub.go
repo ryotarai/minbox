@@ -72,7 +72,7 @@ func (h *hub) serveSSE(w http.ResponseWriter, r *http.Request) {
 			b, _ := json.Marshal(ev)
 			fmt.Fprintf(w, "data: %s\n\n", b)
 		case <-ping.C:
-			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "data: {\"type\":\"ping\"}\n\n") // a real event: the page watches for it
 		}
 		flusher.Flush()
 	}

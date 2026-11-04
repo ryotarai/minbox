@@ -119,6 +119,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
     if (!el) return
     let disposed = false
     let ws: WebSocket | null = null
+    let stopReconnect: (() => void) | null = null
     let term: GhosttyTerminal | null = null
     let fit: FitAddon | null = null
     let observer: ResizeObserver | null = null
@@ -202,51 +203,81 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
 
       api.current = { send, focus: () => term?.focus() }
 
+      // The socket reconnects by itself (a dropped network, a restarted server, a sleeping
+      // tablet): the host replays the screen, so the view is reset before the replay is drawn.
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-      ws = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/terminal`)
-      ws.binaryType = 'arraybuffer'
-      ws.onopen = () => {
-        setState('open')
-        measure()
-        sendWant()
-      }
-      // The replay is drawn once the PTY's size is known (it comes after it).
-      let held: (Uint8Array | string)[] | null = []
-      const flush = () => {
-        if (!held) return
-        for (const d of held) term?.write(d)
-        held = null
-      }
-      if (held) setTimeout(flush, 1500)
-      const write = (d: Uint8Array | string) => {
-        if (held) held.push(d)
-        else term?.write(d)
-      }
-      ws.onmessage = (e) => {
-        if (e.data instanceof ArrayBuffer) {
-          write(new Uint8Array(e.data))
-          return
+      let attempts = 0
+      let retry: ReturnType<typeof setTimeout> | null = null
+      const openSocket = () => {
+        retry = null
+        const sock = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/terminal`)
+        ws = sock
+        sock.binaryType = 'arraybuffer'
+        const reconnecting = attempts > 0
+        sock.onopen = () => {
+          attempts = 0
+          setState('open')
+          measure()
+          sendWant()
         }
-        const text = String(e.data)
-        if (text.startsWith('{') && text.includes('"type"')) {
-          try {
-            const msg = JSON.parse(text) as { type: string; cols: number; rows: number }
-            if (msg.type === 'size') {
-              onSizeRef.current?.(msg.cols, msg.rows)
-              if (term && (term.cols !== msg.cols || term.rows !== msg.rows)) term.resize(msg.cols, msg.rows)
-              fitsBox()
-              flush()
-              return
-            }
-          } catch {
-            /* plain text */
+        // The replay is drawn once the PTY's size is known (it comes after it).
+        let held: (Uint8Array | string)[] | null = []
+        const flush = () => {
+          if (!held) return
+          if (reconnecting) term?.write('\x1bc') // RIS: the replay starts from a clean screen
+          for (const d of held) term?.write(d)
+          held = null
+        }
+        setTimeout(flush, 1500)
+        const write = (d: Uint8Array | string) => {
+          if (held) held.push(d)
+          else term?.write(d)
+        }
+        sock.onmessage = (e) => {
+          if (sock !== ws) return
+          if (e.data instanceof ArrayBuffer) {
+            write(new Uint8Array(e.data))
+            return
           }
+          const text = String(e.data)
+          if (text.startsWith('{') && text.includes('"type"')) {
+            try {
+              const msg = JSON.parse(text) as { type: string; cols: number; rows: number }
+              if (msg.type === 'size') {
+                onSizeRef.current?.(msg.cols, msg.rows)
+                if (term && (term.cols !== msg.cols || term.rows !== msg.rows)) term.resize(msg.cols, msg.rows)
+                fitsBox()
+                flush()
+                return
+              }
+            } catch {
+              /* plain text */
+            }
+          }
+          write(text)
         }
-        write(text)
+        sock.onclose = () => {
+          if (disposed || sock !== ws) return
+          setState('closed')
+          attempts++
+          retry = setTimeout(openSocket, Math.min(1000 * attempts, 10000))
+        }
       }
-      ws.onclose = () => {
-        if (!disposed) setState('closed')
+      // Back online, or the page is shown again: try now instead of waiting for the timer.
+      const retryNow = () => {
+        if (disposed || !retry) return
+        clearTimeout(retry)
+        openSocket()
       }
+      const onVisible = () => document.visibilityState === 'visible' && retryNow()
+      window.addEventListener('online', retryNow)
+      document.addEventListener('visibilitychange', onVisible)
+      stopReconnect = () => {
+        if (retry) clearTimeout(retry)
+        window.removeEventListener('online', retryNow)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
+      openSocket()
       // Mouse wheel. ghostty-web turns the wheel into ↑/↓ keys on the
       // alternate screen, even when the program asked for mouse events: Claude
       // Code's full-screen UI then cycles its prompt history instead of
@@ -510,6 +541,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
 
     return () => {
       disposed = true
+      stopReconnect?.()
       el.removeEventListener('paste', onPaste, true)
       el.removeEventListener('compositionstart', onCompStart)
       el.removeEventListener('compositionupdate', onCompUpdate)
