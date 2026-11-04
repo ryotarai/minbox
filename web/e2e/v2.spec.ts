@@ -543,3 +543,16 @@ test('Accept recommended says what it does once another choice is picked, and go
   await btn.click()
   await expect(btn).toHaveCount(0)
 })
+
+test('the new-thread text box grows with what is typed, up to a limit', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'grow')
+  const box = page.getByTestId('quick-body')
+  const h0 = (await box.boundingBox())!.height
+  await box.fill(Array.from({ length: 6 }, (_, i) => `line ${i}`).join('\n'))
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan(h0 + 40)
+  await box.fill(Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n'))
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeLessThanOrEqual(241)
+  await box.fill('')
+  await expect.poll(async () => Math.abs((await box.boundingBox())!.height - h0)).toBeLessThan(2)
+})

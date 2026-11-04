@@ -192,7 +192,7 @@ function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: bo
         ref={ref}
         testid="quick-body"
         dropUp
-        className="h-[72px]"
+        autoGrow={{ min: 72, max: 240 }}
         sessionId={session.id}
         value={body}
         onChange={setBody}
