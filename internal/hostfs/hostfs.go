@@ -81,8 +81,11 @@ type FS interface {
 	MkdirAll(ctx context.Context, path string) error
 	ListDirs(ctx context.Context, path string) (Listing, error)
 	Completions(ctx context.Context, cwd string) (map[string][]Completion, error)
-	// GitDiff is path's diff against HEAD in cwd (an untracked file against /dev/null).
-	GitDiff(ctx context.Context, cwd, path string) (string, error)
+	// GitDiff is path's diff in the repository (or worktree) that holds it:
+	// against HEAD, or with base against where HEAD left base (its merge
+	// base), so committed changes show too. An untracked file is diffed
+	// against /dev/null.
+	GitDiff(ctx context.Context, cwd, path, base string) (string, error)
 	// TranscriptExists: Claude Code has a transcript for the conversation in cwd.
 	TranscriptExists(ctx context.Context, cwd, claudeSessionID string) bool
 	// WriteFile creates area/rel (exclusive) from r and answers its absolute path.
