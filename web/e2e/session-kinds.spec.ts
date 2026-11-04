@@ -204,3 +204,60 @@ test("Claude's open_url opens the page in the person's browser, or offers it whe
   await typeInTerminal(page, 'openurl file:///etc/passwd')
   await expectTerminal(page, 'url must be an absolute http(s) URL')
 })
+
+test('desktop with a mouse: no on-screen terminal keys', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'mouse-shell', 'shell')
+  await typeInTerminal(page, 'echo ready-$((1+1))')
+  await expectTerminal(page, 'ready-2')
+  await expect(page.getByTestId('desktop')).toBeVisible()
+  await expect(page.getByTestId('term-key-esc')).toHaveCount(0)
+})
+
+test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } })
+
+  test('the wide layout shows the terminal keys and they reach the shell', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'fold-shell', 'shell')
+    await expect(page.getByTestId('desktop')).toBeVisible()
+    await expect(page.getByTestId('term-key-esc')).toBeVisible()
+    await expect(page.getByTestId('term-key-tab')).toBeVisible()
+    await expect(page.getByTestId('term-key-ctrl')).toBeVisible()
+
+    // ← moves the cursor back one: "echo k-ab", ←, "X" runs `echo k-aXb`.
+    await page.getByTestId('terminal').click()
+    await page.keyboard.type('echo k-ab')
+    await page.getByTestId('term-key-left').click()
+    await page.keyboard.type('X')
+    await page.keyboard.press('Enter')
+    await expectTerminal(page, 'k-aXb')
+
+    // Ctrl armed, then "c": an interrupt.
+    await page.getByTestId('terminal').click()
+    await page.keyboard.type('sleep 30')
+    await page.keyboard.press('Enter')
+    await page.getByTestId('term-key-ctrl').click()
+    await expect(page.getByTestId('term-key-ctrl')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('terminal').click()
+    await page.keyboard.type('c')
+    await typeInTerminal(page, 'echo after-$((6*7))')
+    await expectTerminal(page, 'after-42')
+  })
+
+  test('a finger drag on the terminal/inbox edge resizes the inbox', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'fold-claude')
+    const inbox = page.getByTestId('inbox-pane')
+    await expect(inbox).toBeVisible()
+    const before = (await inbox.boundingBox())!.width
+    const edge = (await page.getByTestId('resizer').last().boundingBox())!
+    const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
+    // A real touch sequence (not mouse events): without touch-action: none the browser takes it as a pan.
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 8 * i, y }] })
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(async () => (await inbox.boundingBox())!.width).toBeGreaterThan(before + 20)
+  })
+})
