@@ -69,6 +69,8 @@ test('the body draws diagrams and pages, shows its images, and its links to atta
   await page.getByTestId('thread-row').filter({ hasText: 'Rich body' }).click()
   const msg = page.getByTestId('message').filter({ hasText: 'A diagram' })
   await expect(msg.getByTestId('diagram').locator('svg')).toBeVisible({ timeout: 20_000 })
+  const svgImg = msg.getByAltText('SVG from the message')
+  await expect.poll(() => svgImg.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(40)
   const embed = msg.getByTestId('html-embed')
   await expect(embed).toContainText('HTML · sandboxed')
   await expect(embed.frameLocator('iframe').locator('#chart')).toHaveText('Live chart', { timeout: 15_000 })

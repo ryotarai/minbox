@@ -126,7 +126,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             f.write(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR42mNk+M9Qz0AEYBxVSF8ADY0BBQqqP0kAAAAASUVORK5CYII="))
         with open("plan.md", "w") as f:
             f.write("# Plan\n\nDo it.\n")
-        body = ("A diagram:\n\n```mermaid\ngraph LR\n  X --> Y\n```\n\nA page:\n\n```html\n<div id=chart style='color:var(--foreground)'>Live chart</div>\n```\n\n"
+        body = ("A diagram:\n\n```mermaid\ngraph LR\n  X --> Y\n```\n\nA picture:\n\n```svg\n<svg xmlns='http://www.w3.org/2000/svg' width='40' height='20'><rect width='40' height='20' fill='teal'/></svg>\n```\n\nA page:\n\n```html\n<div id=chart style='color:var(--foreground)'>Live chart</div>\n```\n\n"
                 "A screenshot: ![shot](shot.png)\n\nSee [the plan](plan.md) and [missing](nope.md).")
         r = api("POST", "/api/agent/messages", {"subject": "Rich body", "body": body, "attachments": ["plan.md"]})
         last_thread = r["thread_id"]
