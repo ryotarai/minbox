@@ -32,6 +32,46 @@ const THEME = {
   brightWhite: '#ededf0',
 }
 
+/**
+ * Text size zooms the page (CSS zoom on #root). ghostty-web turns mouse
+ * positions into cells with the event's offsetX/offsetY and the canvas's
+ * client rect, which are in zoomed pixels, divided by its cell size in
+ * unzoomed ones: under a zoom of 1.2 a press 20 rows down lands 4 rows lower.
+ * Scale its pixel→cell conversions (selection and its auto-scroll at the edges; link hover and click) by the
+ * canvas's zoom, read from its drawn size over its layout size.
+ */
+function zoomAware(term: GhosttyTerminal) {
+  const t = term as unknown as {
+    canvas?: HTMLCanvasElement
+    renderer?: { getMetrics(): { width: number; height: number } }
+    selectionManager?: {
+      pixelToCell(x: number, y: number): { col: number; row: number }
+      updateAutoScroll(y: number, height: number): void
+    }
+  }
+  const zoom = () => {
+    const c = t.canvas
+    if (!c || !c.offsetWidth) return 1
+    return c.getBoundingClientRect().width / c.offsetWidth || 1
+  }
+  const sm = t.selectionManager
+  if (sm) {
+    const pixelToCell = sm.pixelToCell.bind(sm)
+    sm.pixelToCell = (x, y) => {
+      const z = zoom()
+      return pixelToCell(x / z, y / z)
+    }
+    // Dragging near an edge scrolls: the offset is zoomed, the height is not.
+    const updateAutoScroll = sm.updateAutoScroll.bind(sm)
+    sm.updateAutoScroll = (y, height) => updateAutoScroll(y / zoom(), height)
+  }
+  const r = t.renderer
+  if (r) {
+    Object.defineProperty(r, 'charWidth', { get: () => r.getMetrics().width * zoom() })
+    Object.defineProperty(r, 'charHeight', { get: () => r.getMetrics().height * zoom() })
+  }
+}
+
 /** Shell-quotes a path when it holds characters a shell would split on. */
 export function shellQuote(path: string): string {
   return /^[\w@%+=:,./-]+$/.test(path) ? path : `'${path.replace(/'/g, `'\\''`)}'`
@@ -154,6 +194,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       fit = new FitAddon()
       term.loadAddon(fit)
       term.open(el)
+      zoomAware(term)
       el.appendChild(ime)
       if (autoFocus) term.focus()
       // For end-to-end tests: the terminal draws on a canvas, so its text is read from the buffer.
