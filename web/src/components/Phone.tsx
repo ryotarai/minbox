@@ -11,6 +11,8 @@ import { PairRequestBanner } from './Devices'
 import { HostTag, Segmented, StatusDot, cx, statusOf } from './ui'
 import { api } from '../api'
 import { useThread } from './ThreadView'
+import { unreadElsewhere } from './ThreadView'
+import { useThreads } from './ThreadList'
 import { TerminalKeys } from './TerminalKeys'
 
 /**
@@ -199,6 +201,7 @@ function PhoneSessionRow({ s, strong, onOpen }: { s: Session; strong?: boolean; 
 function PhoneSession({ session, keyboard }: { session: Session; keyboard: boolean }) {
   const { route, navigate, sessions, error, toast } = useApp()
   const [thread] = useThread(route.t)
+  const sessionThreads = useThreads(session.id)
   const othersWaiting = (sessions ?? []).filter((s) => s.id !== session.id && !s.archived_at && sectionOf(s) !== 'archived' && waitsOnPerson(s)).length
   const st = statusOf(session, waitsOnPerson(session))
   const back = () => {
@@ -220,8 +223,13 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
           className="flex h-11 min-w-11 items-center gap-0.5 rounded-[10px] border-0 bg-transparent px-1.5 text-fg2"
         >
           <IconBack size={20} />
-          {othersWaiting > 0 && !inThread && (
+          {!inThread && othersWaiting > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-extrabold text-onaccent">{othersWaiting}</span>
+          )}
+          {inThread && unreadElsewhere(sessionThreads, route.t) > 0 && (
+            <span data-testid="back-badge" title="Other threads have new messages" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-extrabold text-onaccent">
+              {unreadElsewhere(sessionThreads, route.t)}
+            </span>
           )}
         </button>
         {inThread ? (

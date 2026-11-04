@@ -759,3 +759,21 @@ test('coming back to the page loads what arrived meanwhile, into the open thread
   await away()
   await expect(page.getByTestId('thread-view')).toContainText('second message')
 })
+
+test('with a thread open, the back button shows how many other threads have new messages', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'badge')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say first message')
+  await page.getByTestId('thread-row').filter({ hasText: 'Note' }).click()
+  await expect(page.getByTestId('thread-view')).toContainText('first message')
+  await expect(page.getByTestId('back-badge')).toHaveCount(0)
+  // Claude starts another thread while this one is open.
+  await typeInTerminal(page, 'ask')
+  await expect(page.getByTestId('back-badge')).toHaveText('1')
+  // Reading it clears the badge.
+  await page.getByTestId('thread-back').click()
+  await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
+  await expect(page.getByTestId('thread-view')).toContainText('Which database')
+  await expect(page.getByTestId('back-badge')).toHaveCount(0)
+})
