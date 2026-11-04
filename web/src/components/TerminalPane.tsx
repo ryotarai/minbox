@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
 import { IconPanelRight, IconTerminal } from './icons'
-import { TerminalView } from './Terminal'
+import { TerminalView, type TerminalHandle } from './Terminal'
+import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
 import { Button, IconButton, StatusPill, cx } from './ui'
 import { waitsOnPerson } from './Sidebar'
 
@@ -11,6 +12,9 @@ import { waitsOnPerson } from './Sidebar'
 export function TerminalPane({ session }: { session: Session | null }) {
   const { layout, setLayout, toast, error } = useApp()
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
+  const touch = useTouchPrimary()
+  const term = useRef<TerminalHandle>(null)
+  const wrap = useRef<HTMLDivElement>(null)
   const onNotice = useCallback((text: string, isError?: boolean) => toast(text, { error: isError }), [toast])
 
   if (!session) {
@@ -29,6 +33,11 @@ export function TerminalPane({ session }: { session: Session | null }) {
         <span className="min-w-0 truncate text-[14px] font-semibold" data-testid="terminal-session-name">
           {session.name}
         </span>
+        {session.title && (
+          <span className="min-w-0 truncate text-[13.5px] text-fg2" data-testid="terminal-session-title" title={session.title}>
+            {session.title}
+          </span>
+        )}
         <span className="mono hidden min-w-0 truncate text-[12px] text-subtle xl:inline">{homeRelative(session.cwd)}</span>
         <StatusPill s={session} waits={waitsOnPerson(session)} />
         <span className="flex-1" />
@@ -47,10 +56,11 @@ export function TerminalPane({ session }: { session: Session | null }) {
           <IconPanelRight />
         </IconButton>
       </div>
-      <div className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[18px] py-4">
+      <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[18px] py-4">
         {/* A resumed session is a new process: the key change reattaches. */}
         <TerminalView
           key={`${session.id}:${ended ? 'ended' : 'running'}`}
+          ref={term}
           sessionId={session.id}
           onSize={(cols, rows) => setSize({ cols, rows })}
           onNotice={onNotice}
@@ -66,6 +76,8 @@ export function TerminalPane({ session }: { session: Session | null }) {
           </div>
         )}
       </div>
+      {/* Touch screens (tablets, unfolded foldables) usually have no physical keyboard. */}
+      {touch && !ended && <TerminalKeys term={term} wrap={wrap} className="-mt-1 mx-3 mb-3" />}
     </div>
   )
 }
