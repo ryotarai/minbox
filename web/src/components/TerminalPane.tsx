@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconPanelRight, IconTerminal } from './icons'
+import { IconPanelLeft, IconPanelRight, IconTerminal } from './icons'
 import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
 import { Button, IconButton, StatusPill, cx } from './ui'
@@ -10,7 +10,7 @@ import { waitsOnPerson } from './Sidebar'
 
 /** The center column: the session's terminal with its header and the ended bar. */
 export function TerminalPane({ session }: { session: Session | null }) {
-  const { layout, setLayout, toast, error } = useApp()
+  const { layout, setLayout, toast, error, settings } = useApp()
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
   const touch = useTouchPrimary()
   const term = useRef<TerminalHandle>(null)
@@ -53,7 +53,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
           onClick={() => setLayout({ inboxCollapsed: !layout.inboxCollapsed })}
           className={cx('border border-line2', layout.inboxCollapsed && 'text-wait')}
         >
-          <IconPanelRight />
+          {settings.swap_panes ? <IconPanelLeft /> : <IconPanelRight />}
         </IconButton>
       </div>
       <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[18px] py-4">

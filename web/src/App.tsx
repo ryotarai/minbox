@@ -118,23 +118,26 @@ function Desktop() {
     cur.current.inboxW = clamp(cur.current.inboxW - dx / zoom, 320, 760)
     setLayout({ inboxW: cur.current.inboxW })
   }
+  // The inbox with its drag edge: right of the terminal, or left of it when the panes are swapped.
+  const swap = settings.swap_panes
+  const inboxPane = showInbox && (
+    <>
+      {swap && <div style={{ width: inboxW }} className="shrink-0"><InboxPane session={session} /></div>}
+      <Resizer grip onDrag={(dx) => dragInbox(swap ? -dx : dx)} />
+      {!swap && <div style={{ width: inboxW }} className="shrink-0"><InboxPane session={session} /></div>}
+    </>
+  )
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
       <div style={{ width: rail ? 60 : sidebarW }} className="shrink-0 border-r border-line">
         <Sidebar forceRail={rail} />
       </div>
       {!rail && <Resizer onDrag={dragSidebar} />}
+      {swap && inboxPane}
       <main className="min-w-0 flex-1">
         {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
       </main>
-      {showInbox && (
-        <>
-          <Resizer grip onDrag={dragInbox} />
-          <div style={{ width: inboxW }} className="shrink-0">
-            <InboxPane session={session} />
-          </div>
-        </>
-      )}
+      {!swap && inboxPane}
     </div>
   )
 }

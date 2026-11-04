@@ -129,6 +129,9 @@ function General() {
             ))}
           </div>
         </Row>
+        <Row label="Swap terminal and inbox" desc="Put the inbox on the left of the terminal instead of the right.">
+          <Switch label="Swap terminal and inbox" on={settings.swap_panes} onChange={(v) => saveSettings({ swap_panes: v })} />
+        </Row>
       </Group>
       <Group title="When Claude asks you">
         <Row label="Browser notifications" desc="When the tab is in the background and something new waits on you">
