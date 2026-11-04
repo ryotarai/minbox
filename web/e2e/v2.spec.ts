@@ -602,26 +602,26 @@ test('Shift+Enter is a newline for Claude Code (ESC CR) and still Enter in a she
   expect(sent.join('')).not.toContain('[27,13]')
 })
 
-test('settings: swapping puts the inbox left of the terminal, and the edge still drags', async ({ page, minbox }) => {
+test('settings: the inbox is left of the terminal by default; swapping puts it right, and the edge still drags', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'swap')
   await expectTerminal(page, 'ready>')
   const inbox = page.getByTestId('inbox-pane')
   const main = page.locator('main')
-  expect((await inbox.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x)
+  expect((await inbox.boundingBox())!.x).toBeLessThan((await main.boundingBox())!.x)
   await page.getByTestId('open-settings').click()
   await page.getByRole('switch', { name: 'Swap terminal and inbox' }).click()
-  await expect(page.getByRole('switch', { name: 'Swap terminal and inbox' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('switch', { name: 'Swap terminal and inbox' })).toHaveAttribute('aria-checked', 'false')
   await page.goto(minbox.url)
   await expect(inbox).toBeVisible()
-  expect((await inbox.boundingBox())!.x).toBeLessThan((await main.boundingBox())!.x)
-  // Dragging the edge right widens the inbox now.
+  expect((await inbox.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x)
+  // Dragging the edge left widens the inbox when it is on the right.
   const before = (await inbox.boundingBox())!.width
   const edge = (await page.getByTestId('resizer').last().boundingBox())!
   const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
   await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(x + 60, y, { steps: 6 })
+  await page.mouse.move(x - 60, y, { steps: 6 })
   await page.mouse.up()
   await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(58)
 })

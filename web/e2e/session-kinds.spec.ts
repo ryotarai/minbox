@@ -245,7 +245,7 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     await expectTerminal(page, 'after-42')
   })
 
-  test('a finger drag on the terminal/inbox edge resizes the inbox', async ({ page, minbox }) => {
+  test('a finger drag on the inbox/terminal edge resizes the inbox (the inbox is on the left by default)', async ({ page, minbox }) => {
     await page.goto(minbox.url)
     await createSession(page, minbox.dataDir, 'fold-claude')
     const inbox = page.getByTestId('inbox-pane')
@@ -256,7 +256,7 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     // A real touch sequence (not mouse events): without touch-action: none the browser takes it as a pan.
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
-    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 8 * i, y }] })
+    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 8 * i, y }] })
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     // The edge follows the finger 1:1 (it dragged 80px).
     await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(78)
