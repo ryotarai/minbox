@@ -147,7 +147,7 @@ function Resizer({ onDrag, grip }: { onDrag: (dx: number) => void; grip?: boolea
       data-testid="resizer"
       onPointerDown={(e) => {
         last.current = e.clientX
-        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+        e.currentTarget.setPointerCapture(e.pointerId)
       }}
       onPointerMove={(e) => {
         if (last.current === null) return
@@ -156,10 +156,14 @@ function Resizer({ onDrag, grip }: { onDrag: (dx: number) => void; grip?: boolea
         if (dx) onDrag(dx)
       }}
       onPointerUp={() => (last.current = null)}
-      className="group relative z-[1] -mx-1 flex w-[9px] shrink-0 cursor-col-resize items-center justify-center"
+      onPointerCancel={() => (last.current = null)}
+      // touch-none: a finger drag moves the edge instead of scrolling or swiping the page.
+      className="group relative z-[1] -mx-1 flex w-[9px] shrink-0 touch-none cursor-col-resize items-center justify-center"
     >
+      {/* A wider grab area for a finger (tablets, unfolded foldables); it overlaps the panes but draws nothing. */}
+      <div className="absolute inset-0 pointer-coarse:-inset-x-3" />
       <div className="absolute inset-y-0 left-1 w-px bg-line group-hover:bg-linestrong" />
-      {grip && <div className="relative h-8 w-1 rounded-sm bg-[#52525b]" />}
+      {grip && <div className="relative h-8 w-1 rounded-sm bg-[#52525b] pointer-coarse:h-12 pointer-coarse:w-1.5" />}
     </div>
   )
 }
