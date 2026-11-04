@@ -155,9 +155,17 @@ export function ThreadList({
 }
 
 /** A box at the bottom of the list: type, send, and a new thread starts with Claude Code. */
+/** Quick-compose text per session, kept while the box is unmounted (opening a thread, switching sessions). */
+const quickDrafts = new Map<string, string>()
+
 function QuickCompose({ session, phone, onOpen, full, onToggleFull }: { session: Session; phone?: boolean; onOpen: (id: string) => void; full: boolean; onToggleFull: () => void }) {
   const { error } = useApp()
-  const [body, setBody] = useState('')
+  const [body, setBodyState] = useState(() => quickDrafts.get(session.id) ?? '')
+  const setBody = (v: string) => {
+    if (v) quickDrafts.set(session.id, v)
+    else quickDrafts.delete(session.id)
+    setBodyState(v)
+  }
   const [sending, setSending] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
