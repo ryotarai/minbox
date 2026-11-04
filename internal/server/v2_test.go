@@ -71,6 +71,70 @@ func TestAttachmentsAndReview(t *testing.T) {
 	}
 }
 
+// A review of work in a git worktree: files resolve in the worktree (cwd, or
+// absolute paths), and base shows the branch's committed changes too.
+func TestReviewOfAWorktreeShowsItsCommittedChanges(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	repo := e.dir
+	git := func(dir string, args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	git(repo, "init", "-q", "-b", "main")
+	_ = os.WriteFile(filepath.Join(repo, "a.go"), []byte("package a\n"), 0o644)
+	git(repo, "add", "a.go")
+	git(repo, "commit", "-qm", "init")
+	wt := filepath.Join(repo, ".claude", "worktrees", "fix")
+	git(repo, "worktree", "add", "-q", "-b", "fix", wt)
+	_ = os.WriteFile(filepath.Join(wt, "a.go"), []byte("package a\n\nfunc Committed() {}\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(wt, "b.go"), []byte("package a\nvar B = 1\n"), 0o644)
+	git(wt, "add", "a.go", "b.go")
+	git(wt, "commit", "-qm", "fix")
+	_ = os.WriteFile(filepath.Join(wt, "a.go"), []byte("package a\n\nfunc Committed() {}\n\nfunc Uncommitted() {}\n"), 0o644)
+
+	review := func(rv map[string]any) map[string]any {
+		t.Helper()
+		code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "review", "subject": "R", "review": rv}, bearer(sess))
+		if code != 201 {
+			t.Fatalf("send: %d %v", code, sent)
+		}
+		id := sent["attachments"].([]any)[0].(map[string]any)["id"].(string)
+		_, att, _ := e.do("GET", "/api/attachments/"+id, nil, nil)
+		return att["review"].(map[string]any)
+	}
+	files := func(r map[string]any) []map[string]any {
+		var out []map[string]any
+		for _, f := range r["sections"].([]any)[0].(map[string]any)["files"].([]any) {
+			out = append(out, f.(map[string]any))
+		}
+		return out
+	}
+
+	// The worktree as cwd, against main: committed and uncommitted changes.
+	r := review(map[string]any{"title": "Fix", "cwd": ".claude/worktrees/fix", "base": "main", "sections": []any{map[string]any{"title": "s", "files": []string{"a.go", "b.go"}}}})
+	fs := files(r)
+	if !strings.Contains(fs[0]["diff"].(string), "+func Committed() {}") || !strings.Contains(fs[0]["diff"].(string), "+func Uncommitted() {}") {
+		t.Fatalf("a.go diff = %v", fs[0])
+	}
+	if fs[1]["path"] != "b.go" || fs[1]["additions"].(float64) != 2 || r["base"] != "main" {
+		t.Fatalf("review = %v", r)
+	}
+	// Absolute paths into the worktree, without base: its uncommitted change only.
+	r = review(map[string]any{"title": "Fix", "sections": []any{map[string]any{"title": "s", "files": []string{filepath.Join(wt, "a.go")}}}})
+	d := files(r)[0]["diff"].(string)
+	if !strings.Contains(d, "+func Uncommitted() {}") || strings.Contains(d, "+func Committed() {}") {
+		t.Fatalf("worktree diff against HEAD = %q", d)
+	}
+	// A base the worktree does not know: an error, not an empty review.
+	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "review": map[string]any{"title": "R", "cwd": wt, "base": "nope", "sections": []any{map[string]any{"title": "s", "files": []string{"a.go"}}}}}, bearer(sess)); code != 400 {
+		t.Fatalf("unknown base: %d", code)
+	}
+}
+
 func TestThreadOpsReplyExtrasAndSearch(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()

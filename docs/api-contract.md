@@ -525,3 +525,14 @@ A main-loop turn that ends asking the person something (a question mark, or phra
 aside) without calling `send_message` is followed, once Claude is idle, by one plugin turn asking
 it to send that to the inbox. That turn never triggers another; the person typing in the terminal
 cancels it.
+
+## Guided review: worktrees and committed changes
+
+- `send_message.review` adds `cwd` (where relative file paths resolve, e.g. a git worktree;
+  absolute or relative to the session directory; default the session directory) and `base`
+  (a branch or commit; default none).
+- Each file is diffed in the repository or worktree that holds it (git runs in the file's
+  directory, not the session's), so files in a worktree diff against that worktree's HEAD.
+- With `base`, the diff starts at `git merge-base <base> HEAD`, so the branch's committed changes
+  show as well as uncommitted ones. A base with no common commit: 400 `review file …: base …`.
+- The stored review JSON carries `base` when given. Host `/fs/gitdiff` takes `base`.

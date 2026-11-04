@@ -79,7 +79,7 @@ func Handler(l *Local) http.Handler {
 		writeJSON(w, 200, v)
 	})
 	mux.HandleFunc("GET /fs/gitdiff", func(w http.ResponseWriter, r *http.Request) {
-		d, err := l.GitDiff(r.Context(), q(r, "cwd"), q(r, "path"))
+		d, err := l.GitDiff(r.Context(), q(r, "cwd"), q(r, "path"), q(r, "base"))
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -218,9 +218,9 @@ func (c *Remote) Completions(ctx context.Context, cwd string) (map[string][]Comp
 	return v, err
 }
 
-func (c *Remote) GitDiff(ctx context.Context, cwd, path string) (string, error) {
+func (c *Remote) GitDiff(ctx context.Context, cwd, path, base string) (string, error) {
 	var v struct{ Diff string }
-	err := c.getJSON(ctx, "/fs/gitdiff", url.Values{"cwd": {cwd}, "path": {path}}, &v)
+	err := c.getJSON(ctx, "/fs/gitdiff", url.Values{"cwd": {cwd}, "path": {path}, "base": {base}}, &v)
 	return v.Diff, err
 }
 
