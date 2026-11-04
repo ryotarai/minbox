@@ -839,10 +839,14 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
     resume = true
   } else {
     const waited = minutesSince(m.created_at)
-    if (session.status === 'working' && waited >= 2 && !m.urgent) {
+    if (session.status === 'working' && m.urgent) text = 'Send now pressed · goes into the running turn.'
+    else if (session.status === 'working' && waited >= 2) {
       text = `Undelivered ${waited} min · goes in by itself in ${Math.max(1, AUTO_SEND_MIN - waited)} min`
       now = true
-    } else if (session.status === 'working') text = 'Queued · Claude Code is working; it gets this when its turn ends.'
+    } else if (session.status === 'working') {
+      text = 'Queued · Claude Code is working; it gets this when its turn ends.'
+      now = true
+    }
     else text = 'Queued · goes in when Claude Code is idle.'
   }
   return (

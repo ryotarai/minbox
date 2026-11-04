@@ -223,7 +223,7 @@ function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: bo
   )
 }
 
-function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean }) {
+export function ThreadRow({ t, focused, onOpen, phone, sessionName }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean; sessionName?: string }) {
   const { settings } = useApp()
   const attention = ['stopped', 'holding', 'waiting'].includes(t.section)
   const strong = (attention || t.unread > 0) && settings.list.highlight_subject
@@ -257,6 +257,11 @@ function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: boolean;
         <span className="shrink-0 text-[12px] text-subtle">{shortTime(t.updated_at)}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
+        {sessionName && (
+          <span data-testid="thread-session" className="max-w-[40%] shrink-0 truncate rounded-[5px] bg-chip px-1.5 text-[11px] leading-[18px] text-fg2">
+            {sessionName}
+          </span>
+        )}
         {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}
         {t.last_author === 'user' && <span className="shrink-0 text-subtle">You:</span>}
         <span className="min-w-0 flex-1 truncate">{oneLine(proseOf(t.last_body)) || '—'}</span>

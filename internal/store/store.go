@@ -971,6 +971,11 @@ func (s *Store) ListThreads(ctx context.Context, sessionID string) ([]Thread, er
 	return s.loadThreads(ctx, `t.session_id=?`, sessionID)
 }
 
+// ListAllThreads returns every thread of every session that is not archived.
+func (s *Store) ListAllThreads(ctx context.Context) ([]Thread, error) {
+	return s.loadThreads(ctx, `s.archived_at IS NULL`)
+}
+
 // GetThread returns the thread with all its messages.
 func (s *Store) GetThread(ctx context.Context, id string) (*Thread, error) {
 	threads, err := s.loadThreads(ctx, `t.id=?`, id)

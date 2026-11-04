@@ -195,6 +195,20 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 
 // ---- inbox (browser) ----
 
+// listAllThreads: the threads of every live session, for the all-sessions inbox.
+func (s *Server) listAllThreads(w http.ResponseWriter, r *http.Request) {
+	threads, err := s.store.ListAllThreads(r.Context())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	for i := range threads {
+		threads[i].Messages = nil
+	}
+	store.SortThreads(threads)
+	writeJSON(w, 200, threads)
+}
+
 func (s *Server) listThreads(w http.ResponseWriter, r *http.Request) {
 	threads, err := s.store.ListThreads(r.Context(), r.PathValue("id"))
 	if err != nil {

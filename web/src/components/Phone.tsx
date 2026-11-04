@@ -4,7 +4,7 @@ import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
 import { IconArchive, IconBack, IconChevronRight, IconImage, IconMail, IconMore, IconPlus, IconSearch } from './icons'
 import { InboxPhone } from './PhoneInbox'
-import { SessionMenu, groupSessions, sectionOf, waitsOnPerson, Logo } from './Sidebar'
+import { AllInboxLink, SessionMenu, groupSessions, sectionOf, waitsOnPerson, Logo } from './Sidebar'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
 import { ConnectionBanner } from './Banners'
 import { PairRequestBanner } from './Devices'
@@ -84,6 +84,7 @@ function PhoneSessions() {
       <ConnectionBanner />
       <PairRequestBanner />
       <div data-testid="session-list" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+        <AllInboxLink phone />
         {need.length > 0 && (
           <>
             <div className="px-4 pb-1.5 pt-2.5 text-[12px] font-bold uppercase tracking-[0.06em] text-wait">{need.map((g) => SECTION_LABEL[g.section]).join(' · ')}</div>

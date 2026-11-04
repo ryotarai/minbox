@@ -444,3 +444,29 @@ test("a click and a drag reach a program that tracks the mouse (Claude Code's fu
   // The click went to the program, not to a selection of the terminal's own.
   expect(await page.evaluate(() => (window as any).__minboxTerminal.getSelection())).toBe('')
 })
+
+test('All inbox lists every session\'s threads; picking one opens its session and the thread', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'alpha')
+  await expectTerminal(page, 'ready>')
+  await page.getByTestId('quick-body').fill('First idea for alpha')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('First idea for alpha')
+  await createSession(page, minbox.dataDir, 'beta')
+  await expectTerminal(page, 'ready>')
+  await page.getByTestId('quick-body').fill('Second idea for beta')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Second idea for beta')
+
+  // The entry is the first row of the session list.
+  await page.getByTestId('open-all-inbox').click()
+  const rows = page.getByTestId('all-thread-list').getByTestId('thread-row')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.filter({ hasText: 'First idea for alpha' }).getByTestId('thread-session')).toHaveText('alpha')
+  await expect(rows.filter({ hasText: 'Second idea for beta' }).getByTestId('thread-session')).toHaveText('beta')
+
+  // Picking a thread of another session goes to the main screen with that session and thread open.
+  await rows.filter({ hasText: 'First idea for alpha' }).click()
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
+  await expect(page.getByTestId('thread-subject')).toHaveText('First idea for alpha')
+})
