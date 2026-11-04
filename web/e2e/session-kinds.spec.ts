@@ -258,6 +258,8 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
     for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 8 * i, y }] })
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    await expect.poll(async () => (await inbox.boundingBox())!.width).toBeGreaterThan(before + 20)
+    // The edge follows the finger 1:1 (it dragged 80px).
+    await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(78)
+    expect((await inbox.boundingBox())!.width - before).toBeLessThanOrEqual(82)
   })
 })
