@@ -5,7 +5,7 @@ minbox は、[Plannotator Inbox](https://github.com/backnotprop/plannotator) に
 エージェントの作業を見ることと、エージェントとやり取りすることを同じ場所でできるようにします。
 
 参考実装: `/Users/ryotarai/src/github.com/backnotprop/plannotator`
-(設計の参考にするだけで、minbox は Plannotator に一切依存しません。特に `packages/inbox`、`docs/agent-guides/inbox*.md`、`docs/agent-guides/claude-code-mod.md`、`apps/hook/hooks/mod/`)
+(設計とコードの一部は Plannotator(MIT)から移植しています。出所は `THIRD_PARTY_NOTICES.md` を見てください。実行時には minbox は Plannotator に一切依存しません。特に `packages/inbox`、`docs/agent-guides/inbox*.md`、`docs/agent-guides/claude-code-mod.md`、`apps/hook/hooks/mod/`)
 
 ## 画面構成
 
@@ -50,7 +50,7 @@ minbox がエージェントへの通信路として使うことはありませ�
 
 - **Web アプリ** — `minbox` を起動し、ブラウザで開いて使います。
 - **シングルバイナリ** — `minbox` 1 つを置けば動きます。フロントエンドもバイナリに含めます。
-- **Plannotator への依存はゼロ** — Plannotator の CLI、サーバー、パッケージ、データディレクトリのいずれも使いません。Inbox のサーバー、ストア、Claude Code mod はすべて minbox が自前で持ちます。
+- **Plannotator への実行時の依存はゼロ** — Plannotator の CLI、サーバー、パッケージ、データディレクトリのいずれも使いません。Inbox のサーバー、ストア、Claude Code mod はすべて minbox が自前で持ちます。
 - **サーバー: Go** — HTTP / WebSocket サーバー、セッション管理、Inbox、Claude Code mod との通信を受け持ちます。
 - **PTY** — セッションは minbox が PTY 上で `claude` を起動して作ります。入出力は Go サーバーが WebSocket でブラウザに中継します。
 - **terminal host(PTY を持つ別プロセス)** — PTY はサーバーとは別の terminal host プロセスが持ちます。minbox をアップデートしてサーバーを再起動しても、動いているセッションがすべて終了しないようにするためです。

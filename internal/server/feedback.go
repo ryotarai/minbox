@@ -13,7 +13,7 @@ import (
 )
 
 // The person's comments on attached files, composed into the reply the agent
-// reads the way Plannotator does (docs/research/plannotator-attachments.md §4.1).
+// reads the way Plannotator does (ported from Plannotator; see THIRD_PARTY_NOTICES.md).
 
 const markupOnlyText = "See the marked-up image."
 
