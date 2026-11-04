@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
 import { threadLink, useApp } from '../lib/app'
 import { clearReplyDraft, getReplyDraft, setReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
@@ -14,6 +14,7 @@ import {
   IconBack,
   IconCheck,
   IconClaude,
+  IconExpand,
   IconFold,
   IconGrid,
   IconMore,
@@ -84,6 +85,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
   const [firstNew, setFirstNew] = useState<string | null | undefined>(undefined)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [showArtifacts, setShowArtifacts] = useState(false)
+  const [fullReply, setFullReply] = useState(false) // the reply box takes the pane's whole height
 
   const messages = thread?.messages ?? []
 
@@ -284,7 +286,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
       )}
       <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} />
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className={cx('relative flex min-h-0 flex-1 flex-col', fullReply && 'hidden')}>
       {unseen > 0 && (
         <button
           type="button"
@@ -399,6 +401,8 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
         stayOpen={stayOpen}
         replyRef={replyRef}
         phone={phone}
+        full={fullReply}
+        onToggleFull={() => setFullReply((v) => !v)}
         sessions={sessions ?? []}
         onCompose={() => setOverlay({ kind: 'compose', sessionId: session.id })}
       />
@@ -931,6 +935,8 @@ function ReplyBox({
   stayOpen,
   replyRef,
   phone,
+  full,
+  onToggleFull,
   sessions,
   onCompose,
 }: {
@@ -942,6 +948,8 @@ function ReplyBox({
   stayOpen: number
   replyRef: React.RefObject<HTMLTextAreaElement | null>
   phone?: boolean
+  full: boolean
+  onToggleFull: () => void
   sessions: Session[]
   onCompose: () => void
 }) {
@@ -964,6 +972,19 @@ function ReplyBox({
     updateReplyDraft(thread.id, (d) => ({ ...d, words: d.words.slice(0, at) + f.pasted!.text + d.words.slice(at) }))
     removeFile(f.key)
   }
+  const fullButton = (
+    <button
+      type="button"
+      aria-label={full ? 'Back to the thread' : 'Full height'}
+      aria-pressed={full}
+      title={full ? 'Back to the thread' : 'Full height'}
+      data-testid="reply-full"
+      onClick={onToggleFull}
+      className={cx('border-0 bg-transparent p-1 text-muted hover:text-fg', full && 'text-fg')}
+    >
+      <IconExpand size={16} />
+    </button>
+  )
   const fileTiles = <ComposeFileTiles files={files} onRemove={removeFile} onPutBack={putBack} />
   const clip = (
     <>
@@ -1004,6 +1025,7 @@ function ReplyBox({
       })
       clearReplyDraft(thread.id)
       clearFiles(thread.id)
+      if (full) onToggleFull()
       if (opts.forward_to) {
         const to = sessions.find((s) => s.id === opts.forward_to)
         toast(`Sent to Claude Code · in ${to?.name ?? 'the other session'}`)
@@ -1039,6 +1061,21 @@ function ReplyBox({
       </span>
     ) : null
 
+  // The box grows with the text (up to a limit); full height fills the pane instead.
+  useLayoutEffect(() => {
+    const el = replyRef.current
+    if (!el) return
+    if (full) {
+      el.style.height = ''
+      el.style.overflowY = ''
+      return
+    }
+    const max = phone ? 160 : 240
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(max, el.scrollHeight)}px`
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
+  }, [words, full, phone, replyRef])
+
   const textarea = (
     <textarea
       ref={replyRef}
@@ -1061,6 +1098,7 @@ function ReplyBox({
       className={cx(
         'w-full resize-none border-0 bg-transparent p-0 text-fg outline-none placeholder:text-faint',
         phone ? 'min-h-[24px] text-[16px]' : 'min-h-10 text-[13.5px]',
+        full && 'min-h-0 flex-1',
       )}
     />
   )
@@ -1112,13 +1150,16 @@ function ReplyBox({
 
   if (phone) {
     return (
-      <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-surface px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5" onDragOver={io.onDragOver} onDrop={io.onDrop}>
+      <div className={cx('flex flex-col gap-2 border-t border-line bg-surface px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
         {counter}
         {fileTiles}
-        <div className="flex items-end gap-2">
-          <div className="flex flex-1 items-end gap-1 rounded-xl border border-linestrong bg-sunken px-3 py-3 focus-within:border-accent">
-            <div className="min-w-0 flex-1">{textarea}</div>
-            {clip}
+        <div className={cx('flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
+          <div className={cx('flex flex-1 gap-1 rounded-xl border border-linestrong bg-sunken px-3 py-3 focus-within:border-accent', full ? 'items-stretch' : 'items-end')}>
+            <div className={cx('flex min-w-0 flex-1 flex-col', full && 'min-h-0')}>{textarea}</div>
+            <div className="flex flex-col items-center justify-end gap-1">
+              {fullButton}
+              {clip}
+            </div>
           </div>
           <button
             ref={sendRef}
@@ -1138,14 +1179,15 @@ function ReplyBox({
   }
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-line px-3.5 pb-3 pt-2.5" onDragOver={io.onDragOver} onDrop={io.onDrop}>
+    <div className={cx('flex flex-col gap-2 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       <span className="text-[12px] text-muted">Reply to Claude Code in {session.name}</span>
-      <div className="flex flex-col gap-2 rounded-[10px] border border-linestrong bg-sunken px-3 py-2.5 focus-within:border-accent">
+      <div className={cx('flex flex-col gap-2 rounded-[10px] border border-linestrong bg-sunken px-3 py-2.5 focus-within:border-accent', full && 'min-h-0 flex-1')}>
         {textarea}
         {fileTiles}
         {(picksCount > 0 || annos.length > 0 || counter || true) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {clip}
+            {fullButton}
             {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center rounded-[6px] bg-chip px-2 text-[12px]">✓ {plural(picksCount, 'pick')}</span>}
             {annos.length > 0 && (
               <span data-testid="annotations-chip" className="flex h-6 items-center gap-1 rounded-[6px] bg-chip px-2 text-[12px]">
