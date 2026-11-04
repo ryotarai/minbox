@@ -4,7 +4,7 @@ minbox は、[Plannotator Inbox](https://github.com/backnotprop/plannotator) に
 エージェントのセッション一覧、そのセッションのターミナル、Inbox を 1 つの画面に並べて、
 エージェントの作業を見ることと、エージェントとやり取りすることを同じ場所でできるようにします。
 
-参考実装: `/Users/ryotarai/src/github.com/backnotprop/plannotator`
+参考実装は Plannotator です。
 (設計とコードの一部は Plannotator(MIT)から移植しています。出所は `THIRD_PARTY_NOTICES.md` を見てください。実行時には minbox は Plannotator に一切依存しません。特に `packages/inbox`、`docs/agent-guides/inbox*.md`、`docs/agent-guides/claude-code-mod.md`、`apps/hook/hooks/mod/`)
 
 ## 画面構成
