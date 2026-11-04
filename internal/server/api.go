@@ -98,6 +98,8 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+const terminalPingEvery = 15 * time.Second
+
 // terminalWS bridges the browser's WebSocket to the terminal host's attach socket.
 func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -145,6 +147,26 @@ func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	go pipe(upstream, conn)
+	// A radio that drops leaves the socket half-open, with no close for minutes. The page
+	// treats silence as death, so something must flow even when the terminal is idle.
+	go func() {
+		t := time.NewTicker(terminalPingEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
+				err := conn.Write(wctx, websocket.MessageText, []byte(`{"type":"ping"}`))
+				wcancel()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 	pipe(conn, upstream)
 	conn.Close(websocket.StatusNormalClosure, "")
 }

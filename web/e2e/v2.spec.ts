@@ -490,6 +490,60 @@ test('the terminal reconnects by itself after its connection drops', async ({ pa
   await expectTerminal(page, 'before-2')
 })
 
+test('a terminal socket stuck connecting is replaced without a reload', async ({ page, minbox }) => {
+  // routeWebSocket mocks open at once, so a real hang is made by pointing the first socket at a
+  // black hole (a non-routable address: no open, no error, no close).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __minboxTimings: object; WebSocket: typeof WebSocket; __wsCount: number }
+    w.__minboxTimings = { connectMs: 1500 }
+    w.__wsCount = 0
+    const Real = w.WebSocket
+    w.WebSocket = class extends Real {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(w.__wsCount++ === 0 && String(url).endsWith('/terminal') ? 'ws://10.255.255.1:81/' : url, protocols)
+      }
+    } as typeof WebSocket
+  })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'hung', 'shell')
+  // Keystrokes typed into the hung socket go nowhere: wait for the replacement to be up.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __wsCount: number }).__wsCount), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
+  await page.waitForTimeout(3000)
+  await typeInTerminal(page, 'echo hung-$((2+3))')
+  await expectTerminal(page, 'hung-5')
+})
+
+test('a silent but open terminal socket is replaced after the silence limit', async ({ page, minbox }) => {
+  await page.addInitScript(() => {
+    ;(window as unknown as { __minboxTimings: object }).__minboxTimings = { silentMs: 2000 }
+  })
+  let n = 0
+  let silent = false
+  await page.routeWebSocket(/\/terminal$/, (ws) => {
+    const server = ws.connectToServer()
+    const mine = ++n
+    ws.onMessage((m) => server.send(m))
+    // Stand in for the server's keep-alive, which is too slow (15 s) for the shortened limit.
+    const beat = setInterval(() => {
+      if (!(silent && mine === 1)) ws.send('{"type":"ping"}')
+    }, 500)
+    ws.onClose(() => clearInterval(beat))
+    // Once "silent", the first socket stays open but nothing from the server reaches the page.
+    server.onMessage((m) => {
+      if (!(silent && mine === 1)) ws.send(m)
+    })
+  })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'quiet', 'shell')
+  await typeInTerminal(page, 'echo before-$((1+1))')
+  await expectTerminal(page, 'before-2')
+  expect(n).toBe(1)
+  silent = true
+  await expect.poll(() => n, { timeout: 15_000 }).toBe(2)
+  await typeInTerminal(page, 'echo after-$((3+4))')
+  await expectTerminal(page, 'after-7')
+})
+
 test('a message that arrives below the fold shows a pill that scrolls down', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'pilly')
