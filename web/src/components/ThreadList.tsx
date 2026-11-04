@@ -5,8 +5,8 @@ import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeF
 import { oneLine, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { proseOf } from '../lib/markdown'
-import { IconChevronRight, IconInbox, IconPaperclip, IconPin } from './icons'
-import { Button, Skeleton, cx } from './ui'
+import { IconChevronRight, IconExpand, IconInbox, IconPaperclip, IconPin } from './icons'
+import { Button, IconButton, Skeleton, cx } from './ui'
 import { NextStep } from './NextStep'
 import { CompletingTextarea } from './Compose'
 
@@ -76,6 +76,7 @@ export function ThreadList({
   const flat = groups.flatMap((g) => g.items)
   const [cursor, setCursor] = useState(0)
   const [collapsed, setCollapsed] = useState<Set<Section>>(new Set(['archived', 'snoozed']))
+  const [full, setFull] = useState(false) // the new-thread box takes the pane's whole height
 
   useHotkeys({
     j: () => setCursor((c) => Math.min(c + 1, flat.length - 1)),
@@ -106,7 +107,7 @@ export function ThreadList({
           <div className="flex-1 truncate text-[15px] font-[650]">Inbox</div>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" data-testid="thread-list">
+      <div className={cx('min-h-0 flex-1 overflow-y-auto px-2 pb-3', full && 'hidden')} data-testid="thread-list">
         {threads === null ? (
           <Skeleton />
         ) : threads.length === 0 ? (
@@ -142,13 +143,13 @@ export function ThreadList({
           ))
         )}
       </div>
-      <QuickCompose session={session} phone={phone} onOpen={onOpen} />
+      <QuickCompose session={session} phone={phone} onOpen={(id) => (setFull(false), onOpen(id))} full={full} onToggleFull={() => setFull((v) => !v)} />
     </div>
   )
 }
 
 /** A box at the bottom of the list: type, send, and a new thread starts with Claude Code. */
-function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: boolean; onOpen: (id: string) => void }) {
+function QuickCompose({ session, phone, onOpen, full, onToggleFull }: { session: Session; phone?: boolean; onOpen: (id: string) => void; full: boolean; onToggleFull: () => void }) {
   const { error } = useApp()
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -177,7 +178,7 @@ function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: bo
   const hint =
     session.status === 'ended' ? 'Session ended: Claude gets this after Resume' : session.status === 'working' ? 'Working: Claude gets this when its turn ends' : 'Claude gets this as its next turn'
   return (
-    <div className="shrink-0 border-t border-line p-2.5" data-testid="quick-compose">
+    <div className={cx('border-t border-line p-2.5', full ? 'flex min-h-0 flex-1 flex-col' : 'shrink-0')} data-testid="quick-compose" data-full={full}>
       <ComposeFileTiles
         files={files}
         onRemove={removeFile}
@@ -193,6 +194,7 @@ function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: bo
         testid="quick-body"
         dropUp
         autoGrow={{ min: 72, max: 240 }}
+        fill={full}
         sessionId={session.id}
         value={body}
         onChange={setBody}
@@ -214,6 +216,17 @@ function QuickCompose({ session, phone, onOpen }: { session: Session; phone?: bo
             e.target.value = ''
           }}
         />
+        <IconButton
+          size={28}
+          aria-label={full ? 'Back to the thread list' : 'Full height'}
+          aria-pressed={full}
+          title={full ? 'Back to the thread list' : 'Full height'}
+          data-testid="quick-full"
+          onClick={onToggleFull}
+          className={cx(full && 'bg-sel text-fg')}
+        >
+          <IconExpand size={15} />
+        </IconButton>
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{hint}</span>
         <Button variant="primary" size="sm" data-testid="quick-send" disabled={!canSend} onClick={() => void send()}>
           Send{phone ? '' : ' ⌘↵'}

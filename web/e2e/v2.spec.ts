@@ -556,3 +556,24 @@ test('the new-thread text box grows with what is typed, up to a limit', async ({
   await box.fill('')
   await expect.poll(async () => Math.abs((await box.boundingBox())!.height - h0)).toBeLessThan(2)
 })
+
+test('the new-thread box can fill the pane\'s height, and goes back', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'tall')
+  const box = page.getByTestId('quick-body')
+  const pane = page.getByTestId('inbox-pane')
+  const small = (await box.boundingBox())!.height
+  await box.fill('draft text')
+  await page.getByTestId('quick-full').click()
+  await expect(page.getByTestId('thread-list')).toBeHidden()
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan((await pane.boundingBox())!.height * 0.6)
+  await expect(box).toHaveValue('draft text')
+  await page.getByTestId('quick-full').click()
+  await expect(page.getByTestId('thread-list')).toBeVisible()
+  await expect.poll(async () => Math.abs((await box.boundingBox())!.height - small)).toBeLessThan(40)
+  // Sending from the full-height box returns to the thread.
+  await page.getByTestId('quick-full').click()
+  await box.fill('long note')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('long note')
+})
