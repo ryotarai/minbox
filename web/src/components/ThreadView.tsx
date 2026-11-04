@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
-import { threadLink, useApp } from '../lib/app'
+import { ALL_THREADS, threadLink, useApp } from '../lib/app'
 import { clearReplyDraft, getReplyDraft, setReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
@@ -40,7 +40,7 @@ type Props = {
 export function useThread(threadId: string | null): [Thread | null, () => void] {
   const { threadVersion, error } = useApp()
   const [thread, setThread] = useState<Thread | null>(null)
-  const v = threadId ? (threadVersion[threadId] ?? 0) : 0
+  const v = threadId ? (threadVersion[threadId] ?? 0) + (threadVersion[ALL_THREADS] ?? 0) : 0
   const load = useCallback(() => {
     if (!threadId) return
     api

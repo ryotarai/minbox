@@ -728,3 +728,34 @@ test('selecting text in a thread offers Reply, which quotes it into the reply bo
   await page.getByTestId('quote-reply').click()
   await expect(box).toHaveValue(/Add a jitter\.\n\n> Please review the retry logic\n\n$/)
 })
+
+test('coming back to the page loads what arrived meanwhile, into the open thread too', async ({ page, minbox }) => {
+  // The event stream never delivers (as after a phone slept): only a reload by the page can show news.
+  await page.route('**/api/events', (route) => route.abort())
+  await page.addInitScript(() => {
+    const real = Date.now.bind(Date)
+    ;(window as unknown as { __skew: number }).__skew = 0
+    Date.now = () => real() + (window as unknown as { __skew: number }).__skew
+  })
+  const away = async () => {
+    // Hidden, then shown after more than 5 s.
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+      ;(window as unknown as { __skew: number }).__skew += 10_000
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'wake')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say first message')
+  await away()
+  await page.getByTestId('thread-row').first().click()
+  await expect(page.getByTestId('thread-view')).toContainText('first message')
+  await typeInTerminal(page, 'say second message')
+  await expect(page.getByTestId('thread-view')).not.toContainText('second message')
+  await away()
+  await expect(page.getByTestId('thread-view')).toContainText('second message')
+})

@@ -77,6 +77,9 @@ export function useIsPhone(): boolean {
 
 // ---- layout preferences (this browser) ----
 
+/** In `threadVersion`: bumped when every open thread should load again. */
+export const ALL_THREADS = '*'
+
 export type Layout = { sidebarW: number; inboxW: number; threadW: number; rail: boolean; inboxCollapsed: boolean }
 function defaultLayout(): Layout {
   const w = window.innerWidth
@@ -286,11 +289,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         loadSettings()
         reloadHosts()
         setThreadsVersion((v) => v + 1)
+        setThreadVersion((m) => ({ ...m, [ALL_THREADS]: (m[ALL_THREADS] ?? 0) + 1 })) // events were missed: the open thread too
         setCardsVersion((v) => v + 1)
       },
       setConn,
     )
   }, [reloadSessions, loadSettings, reloadHosts])
+
+  // The page comes back after a while hidden (a phone unlocked, a tab switched back to): what
+  // arrived meanwhile may not have been delivered, so load it again.
+  useEffect(() => {
+    let hiddenAt: number | null = null
+    const on = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+        return
+      }
+      if (hiddenAt !== null && Date.now() - hiddenAt > 5000) {
+        reloadSessions()
+        setThreadsVersion((v) => v + 1)
+        setThreadVersion((m) => ({ ...m, [ALL_THREADS]: (m[ALL_THREADS] ?? 0) + 1 }))
+      }
+      hiddenAt = null
+    }
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
+  }, [reloadSessions])
 
   const saveSettings = useCallback(
     (patch: Partial<Settings>) => {
