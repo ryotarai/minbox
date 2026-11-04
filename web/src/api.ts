@@ -531,15 +531,18 @@ export function subscribe(
   // A connection can die without an error (a sleeping tablet, a dropped Wi-Fi): the server sends a
   // ping every 20 s, so silence means it is gone. Check on a timer and when the page comes back.
   const STALE_MS = 50_000
+  const CONNECT_MS = 10_000
   const check = () => {
     if (closed || retry) return // already waiting to retry
-    if (!es || es.readyState === EventSource.CLOSED || Date.now() - lastSeen > STALE_MS) reconnectNow()
+    // One that never opened (CONNECTING, no error) is replaced after CONNECT_MS, not STALE_MS.
+    const hung = es?.readyState === EventSource.CONNECTING && Date.now() - lastSeen > CONNECT_MS
+    if (!es || es.readyState === EventSource.CLOSED || hung || Date.now() - lastSeen > STALE_MS) reconnectNow()
   }
   const watch = setInterval(check, 10_000)
   const onWake = () => {
     if (closed) return
     if (retry) reconnectNow()
-    else if (document.visibilityState !== 'hidden' && Date.now() - lastSeen > 25_000) reconnectNow()
+    else if (document.visibilityState !== 'hidden' && (es?.readyState !== EventSource.OPEN || Date.now() - lastSeen > 25_000)) reconnectNow()
   }
   window.addEventListener('online', onWake)
   document.addEventListener('visibilitychange', onWake)

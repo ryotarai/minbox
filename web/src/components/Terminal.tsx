@@ -230,13 +230,43 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       const proto = location.protocol === 'https:' ? 'wss' : 'ws'
       let attempts = 0
       let retry: ReturnType<typeof setTimeout> | null = null
+      // Cellular sockets hang in CONNECTING or go half-open without a close event, so the page
+      // also times the connect and treats silence (the server pings) as death. Tests shorten these.
+      const T = {
+        connectMs: 8000,
+        silentMs: 40_000,
+        wakeSilentMs: 20_000,
+        ...(window as unknown as { __minboxTimings?: object }).__minboxTimings,
+      }
+      let lastFrame = Date.now()
+      let connectTimer: ReturnType<typeof setTimeout> | null = null
+      // Drops a socket without waiting for its close event (detached, so a late event cannot
+      // act), and schedules the retry with the backoff.
+      const abandon = (sock: WebSocket) => {
+        if (connectTimer) clearTimeout(connectTimer)
+        sock.onopen = sock.onmessage = sock.onclose = null
+        try {
+          sock.close()
+        } catch {
+          /* already gone */
+        }
+        setState('closed')
+        attempts++
+        retry = setTimeout(openSocket, Math.min(1000 * attempts, 10000))
+      }
       const openSocket = () => {
         retry = null
         const sock = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/terminal`)
         ws = sock
         sock.binaryType = 'arraybuffer'
         const reconnecting = attempts > 0
+        lastFrame = Date.now()
+        connectTimer = setTimeout(() => {
+          if (!disposed && sock === ws && sock.readyState !== WebSocket.OPEN) abandon(sock)
+        }, T.connectMs)
         sock.onopen = () => {
+          if (connectTimer) clearTimeout(connectTimer)
+          lastFrame = Date.now()
           attempts = 0
           setState('open')
           measure()
@@ -245,7 +275,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         // The replay is drawn once the PTY's size is known (it comes after it).
         let held: (Uint8Array | string)[] | null = []
         const flush = () => {
-          if (!held) return
+          if (!held || sock !== ws) return // an abandoned socket must not reset the new one's screen
           if (reconnecting) term?.write('\x1bc') // RIS: the replay starts from a clean screen
           for (const d of held) term?.write(d)
           held = null
@@ -257,6 +287,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         }
         sock.onmessage = (e) => {
           if (sock !== ws) return
+          lastFrame = Date.now()
           if (e.data instanceof ArrayBuffer) {
             write(new Uint8Array(e.data))
             return
@@ -265,6 +296,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
           if (text.startsWith('{') && text.includes('"type"')) {
             try {
               const msg = JSON.parse(text) as { type: string; cols: number; rows: number }
+              if (msg.type === 'ping') return // the server's keep-alive, not terminal output
               if (msg.type === 'size') {
                 onSizeRef.current?.(msg.cols, msg.rows)
                 if (term && (term.cols !== msg.cols || term.rows !== msg.rows)) term.resize(msg.cols, msg.rows)
@@ -281,27 +313,41 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         }
         sock.onclose = () => {
           if (disposed || sock !== ws) return
+          if (connectTimer) clearTimeout(connectTimer)
           setState('closed')
           attempts++
           retry = setTimeout(openSocket, Math.min(1000 * attempts, 10000))
         }
       }
-      // Back online, or the page is shown again: try now instead of waiting for the timer.
-      const retryNow = () => {
-        if (disposed || !retry) return
-        clearTimeout(retry)
-        openSocket()
+      // Back online, or the page is shown again: do not wait for the timer, and replace a
+      // socket that is not open or has gone quiet.
+      const wake = () => {
+        if (disposed) return
+        if (retry) {
+          clearTimeout(retry)
+          openSocket()
+        } else if (ws && (ws.readyState !== WebSocket.OPEN || Date.now() - lastFrame > T.wakeSilentMs)) {
+          abandon(ws)
+          if (retry) clearTimeout(retry)
+          openSocket()
+        }
       }
+      const silence = setInterval(() => {
+        if (disposed || retry || !ws || ws.readyState !== WebSocket.OPEN) return
+        if (Date.now() - lastFrame > T.silentMs) abandon(ws)
+      }, Math.max(250, Math.min(5000, T.silentMs / 4)))
       const onVisible = () => {
         if (document.visibilityState !== 'visible') return
         redraw(term)
-        retryNow()
+        wake()
       }
-      window.addEventListener('online', retryNow)
+      window.addEventListener('online', wake)
       document.addEventListener('visibilitychange', onVisible)
       stopReconnect = () => {
         if (retry) clearTimeout(retry)
-        window.removeEventListener('online', retryNow)
+        if (connectTimer) clearTimeout(connectTimer)
+        clearInterval(silence)
+        window.removeEventListener('online', wake)
         document.removeEventListener('visibilitychange', onVisible)
       }
       openSocket()
