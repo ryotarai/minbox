@@ -173,3 +173,34 @@ test('on a Mac only ⌘K opens search; Ctrl+K stays the terminal’s', async ({ 
   await page.keyboard.press('Meta+k')
   await expect(page.getByTestId('search-input')).toBeVisible()
 })
+
+test("Claude's open_url opens the page in the person's browser, or offers it when blocked", async ({ page, browser, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'opener')
+  await expectTerminal(page, 'ready>')
+  // A second browser whose popups are blocked gets the page in a toast.
+  const other = await browser.newContext()
+  const blocked = await other.newPage()
+  await blocked.addInitScript(() => {
+    const real = window.open.bind(window)
+    ;(window as any).__realOpen = real
+    window.open = () => null
+  })
+  await blocked.goto(minbox.url)
+  await expect(blocked.getByTestId('session-list')).toBeVisible()
+
+  const target = `${minbox.url}/?opened-by-claude`
+  const popup = page.waitForEvent('popup')
+  await typeInTerminal(page, `openurl ${target}`)
+  await expectTerminal(page, `opened ${target}`)
+  expect((await popup).url()).toContain(target) // the app adds its own #route
+
+  const notice = blocked.getByTestId('notice').filter({ hasText: 'opener: Claude wants to open' })
+  await expect(notice).toContainText(target)
+  await expect(notice.getByTestId('undo')).toHaveText('Open')
+  await other.close()
+
+  // Not a web page: refused.
+  await typeInTerminal(page, 'openurl file:///etc/passwd')
+  await expectTerminal(page, 'url must be an absolute http(s) URL')
+})

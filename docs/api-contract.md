@@ -496,3 +496,32 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 - `minbox status` prints pid, uptime, URL, data dir, log and whether the terminal host answers;
   exit 3 when the server is not running.
 - `minbox` with no command prints the usage.
+
+## Opening pages: `open_url`
+
+- Tool `open_url {url}` → `POST /api/agent/open {url}` (absolute http(s) URL, else 400). With no
+  browser on `/api/events`: 409 (Claude gives the URL in its reply instead). Otherwise it publishes
+  the event `{"type":"open","session_id","url"}` and answers `{ok, url, browsers}`.
+- Each browser: when it is visible and focused it opens the page in a new tab; where that is
+  blocked (no click), or in any other browser, a toast "<session>: Claude wants to open <url>"
+  with Open (60 s).
+- The mod refuses Bash commands that would open a page on the host — `open|xdg-open|gio open|
+  sensible-browser|x-www-browser|wslview … http(s)://…` at a command start, `gh browse`, and gh
+  with `--web`/`-w` — pointing Claude to `open_url`.
+
+## minbox's system prompt
+
+The inbox (`send_message` every time the person's opinion, decision, approval or action is
+needed, and a summary when work is done), session title and `open_url` guidance reaches Claude
+three ways, as some environments skip
+the mod's `prompt.compose` hook:
+- the server starts Claude with `--append-system-prompt` (`server.AgentSystemPrompt`, headings
+  `# minbox: inbox`, `# minbox: session title` and `# minbox: opening pages`);
+- the mod's `prompt.compose` adds the same sections unless those headings are there already;
+- the mod's first-prompt (and after-compaction) reminder repeats them in a sentence each.
+
+A main-loop turn that ends asking the person something (a question mark, or phrases such as
+"Should I", "Let me know", "どうしますか", "確認してください" in its last lines, code and URLs
+aside) without calling `send_message` is followed, once Claude is idle, by one plugin turn asking
+it to send that to the inbox. That turn never triggers another; the person typing in the terminal
+cancels it.
