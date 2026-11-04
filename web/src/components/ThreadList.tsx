@@ -65,11 +65,17 @@ export function ThreadList({
   threads,
   onOpen,
   phone,
+  selectedId,
+  keys = true,
 }: {
   session: Session
   threads: Thread[] | null
   onOpen: (id: string) => void
   phone?: boolean
+  /** The thread open beside the list (wide screens). */
+  selectedId?: string | null
+  /** The list's own j/k/Enter keys; off while a thread beside it takes them. */
+  keys?: boolean
 }) {
   const { settings } = useApp()
   const groups = useMemo(() => sortThreads(threads ?? []), [threads])
@@ -92,7 +98,7 @@ export function ThreadList({
       const t = flat.find((x) => x.unread > 0) ?? flat[0]
       if (t) onOpen(t.id)
     },
-  }, !phone)
+  }, !phone && keys)
 
   // Keep thread panel open: show the top thread instead of the list.
   useEffect(() => {
@@ -138,7 +144,7 @@ export function ThreadList({
                 {g.section === 'snoozed' && g.items.some((t) => t.stopped) && <span className="text-danger" title="A snoozed thread stopped on you">▲</span>}
               </button>
               {!collapsed.has(g.section) &&
-                g.items.map((t) => <ThreadRow key={t.id} t={t} focused={!phone && flat[cursor]?.id === t.id} onOpen={() => onOpen(t.id)} phone={phone} />)}
+                g.items.map((t) => <ThreadRow key={t.id} t={t} focused={!phone && (selectedId ? selectedId === t.id : flat[cursor]?.id === t.id)} onOpen={() => onOpen(t.id)} phone={phone} />)}
             </div>
           ))
         )}

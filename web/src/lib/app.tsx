@@ -77,12 +77,12 @@ export function useIsPhone(): boolean {
 
 // ---- layout preferences (this browser) ----
 
-export type Layout = { sidebarW: number; inboxW: number; rail: boolean; inboxCollapsed: boolean }
+export type Layout = { sidebarW: number; inboxW: number; threadW: number; rail: boolean; inboxCollapsed: boolean }
 function defaultLayout(): Layout {
   const w = window.innerWidth
-  if (w >= 1440) return { sidebarW: 340, inboxW: 480, rail: false, inboxCollapsed: false }
-  if (w >= 1200) return { sidebarW: 272, inboxW: 440, rail: false, inboxCollapsed: false }
-  return { sidebarW: 250, inboxW: 380, rail: false, inboxCollapsed: false }
+  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 560, rail: false, inboxCollapsed: false }
+  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, rail: false, inboxCollapsed: false }
+  return { sidebarW: 250, inboxW: 380, threadW: 480, rail: false, inboxCollapsed: false }
 }
 function readLayout(): Layout {
   try {

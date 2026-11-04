@@ -655,3 +655,52 @@ test('the reply box grows with the text and can fill the pane', async ({ page, m
   await expect(page.getByTestId('reply-full')).toHaveAttribute('aria-pressed', 'false')
   await expectTerminal(page, 'full reply')
 })
+
+test.describe('wide screen: four panes', () => {
+  test.use({ viewport: { width: 1920, height: 1000 } })
+
+  test('the thread opens in its own pane beside the inbox list', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'wide')
+    await expectTerminal(page, 'ready>')
+    await typeInTerminal(page, 'say first wide message')
+    const inbox = page.getByTestId('inbox-pane')
+    const threadPane = page.getByTestId('thread-pane')
+    await expect(threadPane).toBeVisible()
+    await expect(threadPane).toContainText('Pick a thread')
+    // Inbox | thread | terminal, left to right (the default layout).
+    const [i, t, m] = await Promise.all([inbox.boundingBox(), threadPane.boundingBox(), page.locator('main').boundingBox()])
+    expect(i!.x).toBeLessThan(t!.x)
+    expect(t!.x).toBeLessThan(m!.x)
+    await inbox.getByTestId('thread-row').first().click()
+    await expect(threadPane.getByTestId('thread-subject')).toHaveText('Note')
+    // The list stays beside it, the picked row marked.
+    await expect(inbox.getByTestId('thread-row')).toHaveCount(1)
+    await expect(inbox.getByTestId('thread-view')).toHaveCount(0)
+    // Closing the thread empties the pane again.
+    await threadPane.getByTestId('thread-back').click()
+    await expect(threadPane).toContainText('Pick a thread')
+  })
+
+  test('the thread pane edge drags', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'wide-drag')
+    await expectTerminal(page, 'ready>')
+    const threadPane = page.getByTestId('thread-pane')
+    const before = (await threadPane.boundingBox())!.width
+    const edge = (await page.getByTestId('resizer').last().boundingBox())!
+    const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 50, y, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => Math.round((await threadPane.boundingBox())!.width - before)).toBeGreaterThanOrEqual(48)
+  })
+})
+
+test('a narrower screen keeps one inbox pane', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'not-wide')
+  await expect(page.getByTestId('inbox-pane')).toBeVisible()
+  await expect(page.getByTestId('thread-pane')).toHaveCount(0)
+})
