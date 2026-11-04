@@ -27,6 +27,7 @@ export const QUESTION_GUIDE = [
   '`:::question` picks one, `:::question-multi` any number, `:::question-text` asks for free text.',
   'Optional context lines: `Stopped: <what waits>` when your work is stopped on the answer; `Holds up: a; b` for what it blocks; `Replaces: <earlier question>` when you re-ask.',
   'Ask the person to do things by hand with an `:::actions` block of `- [ ] item` lines; they mark each Done or Can\'t do it.',
+  'Fenced blocks draw as pictures: ```mermaid and ```dot (Graphviz) as diagrams, ```svg (an inline <svg>) as an image, ```html as a sandboxed live page. Use them instead of ASCII art.',
   'The person can also answer Other, add a note, or skip. Ask only what you cannot decide alone.',
   'Answers come back under "## Answers to your questions".',
 ].join('\n')
