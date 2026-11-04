@@ -264,7 +264,7 @@ export type Settings = {
   single_key: boolean
   board: boolean
   decision_mode: boolean
-  /** The inbox pane left of the terminal instead of right of it. */
+  /** The inbox pane left of the terminal (the default) instead of right of it. */
   swap_panes: boolean
   prompt_extra: string
   list: ListOptions
@@ -279,7 +279,7 @@ export const DEFAULT_SETTINGS: Settings = {
   single_key: true,
   board: false,
   decision_mode: false,
-  swap_panes: false,
+  swap_panes: true,
   prompt_extra: '',
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
