@@ -158,7 +158,7 @@ func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
 				return
 			case <-t.C:
 				wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
-				err := conn.Write(wctx, websocket.MessageText, []byte(`{"type":"ping"}`))
+				err := conn.Write(wctx, websocket.MessageBinary, nil) // empty: a page still on an older build draws nothing for it
 				wcancel()
 				if err != nil {
 					cancel()

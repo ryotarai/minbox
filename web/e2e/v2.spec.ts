@@ -525,7 +525,7 @@ test('a silent but open terminal socket is replaced after the silence limit', as
     ws.onMessage((m) => server.send(m))
     // Stand in for the server's keep-alive, which is too slow (15 s) for the shortened limit.
     const beat = setInterval(() => {
-      if (!(silent && mine === 1)) ws.send('{"type":"ping"}')
+      if (!(silent && mine === 1)) ws.send(Buffer.alloc(0))
     }, 500)
     ws.onClose(() => clearInterval(beat))
     // Once "silent", the first socket stays open but nothing from the server reaches the page.
