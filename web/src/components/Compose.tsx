@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type Completion, type Completions, type Session } from '../api'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { useApp } from '../lib/app'
@@ -203,13 +203,23 @@ type CompletingProps = {
   testid?: string
   /** Open the @ / completions above the field (it sits at the bottom of a column). */
   dropUp?: boolean
+  /** Grow with the text, from `min` px up to `max` px (then it scrolls). */
+  autoGrow?: { min: number; max: number }
 }
 
 /** A textarea that completes @agents and /skills of the session's project. */
-export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
+export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, autoGrow, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
   const [comps, setComps] = useState<Completions | null>(null)
   const [token, setToken] = useState<{ ch: '@' | '/'; start: number; q: string } | null>(null)
   const [sel, setSel] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !autoGrow) return
+    el.style.height = 'auto'
+    const h = Math.min(autoGrow.max, Math.max(autoGrow.min, el.scrollHeight + 2)) // +2: the border
+    el.style.height = `${h}px`
+    el.style.overflowY = el.scrollHeight + 2 > autoGrow.max ? 'auto' : 'hidden'
+  }, [value, autoGrow, ref])
   useEffect(() => {
     if (!sessionId) return
     api.completions(sessionId).then(setComps).catch(() => setComps(null))
