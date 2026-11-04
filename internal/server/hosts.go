@@ -455,7 +455,7 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 // HostTailscalePort is the tailnet HTTPS port `minbox host --tailscale`
-// serves on: not 443, which `minbox start --tailscale` (or anything
+// serves on: not 3125, which `minbox start --tailscale` (or anything
 // else) may hold on the same machine.
 const HostTailscalePort = 14849
 

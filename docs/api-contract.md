@@ -408,12 +408,12 @@ Implementation notes (Hosts v2):
 - Host protocol 3 (remote hosts need ≥ 3); a remote host's `/version` adds `hostname` and `tailscale`, and reports pid 0.
   Pairing codes are accepted as `482-913` or `482913`. `minbox pair list` prints "no pairing requests are waiting" when empty.
 - The server's key: `<data dir>/server-key` (PEM "MINBOX ED25519 SEED", 0600); its name is the machine's hostname.
-- `minbox host --tailscale` runs `tailscale serve --bg --https=14849 http://127.0.0.1:<port>` (`--tailscale-port`; 443 is left to `minbox start`) once listening;
+- `minbox host --tailscale` runs `tailscale serve --bg --https=14849 http://127.0.0.1:<port>` (`--tailscale-port`; 3125 is left to `minbox start`) once listening;
   `MINBOX_SKIP_TAILSCALE_SERVE=1` skips that. The Tailscale-User-Login check applies to every route, `/version` included.
 
 ## Browser pairing and `minbox start --tailscale`
 
-`minbox start --tailscale [--tailscale-port 443] [--tailscale-user-login LOGIN]`: listen on 127.0.0.1 only and
+`minbox start --tailscale [--tailscale-port 3125] [--tailscale-user-login LOGIN]`: listen on 127.0.0.1 only and
 run `tailscale serve` to it (as the host does). Requests that come through tailscale serve
 (they carry `Tailscale-User-Login`; their Host is the MagicDNS name) are "remote"; with
 `--tailscale-user-login` any other login is refused (403). The guard accepts the server's own
@@ -469,12 +469,12 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 - Accept/reject answer 409 when the request is no longer pending; accept answers
   `{ok: true, device}`. Revoke answers `{ok: true}` (404 for an unknown id).
 - SSE `devices` also fires when the CLI changes the files (polled every 2 s).
-- `start --tailscale` runs `tailscale serve --bg --https=443 http://127.0.0.1:<port>` (skip:
+- `start --tailscale` runs `tailscale serve --bg --https=3125 http://127.0.0.1:<port>` (skip:
   `MINBOX_SKIP_TAILSCALE_SERVE=1`) and takes its MagicDNS name from `tailscale status --json`
   (override: `MINBOX_TAILSCALE_NAME`). A host with `--tailscale` on the same machine serves on
   :14849, so the two do not meet.
 - `start --tailscale-service NAME` serves as the Tailscale Service `svc:NAME` instead
-  (`tailscale serve --bg --service=svc:NAME --https=443 ...`), answering to `NAME.<tailnet>.ts.net`;
+  (`tailscale serve --bg --service=svc:NAME --https=3125 ...`), answering to `NAME.<tailnet>.ts.net`;
   the service must be defined (and this machine approved) in the Tailscale admin console.
 - With `--tailscale`/`--tailscale-service` and no `--tailscale-user-login`, the login is this
   machine's Tailscale user (`tailscale status --json`; `MINBOX_TAILSCALE_LOGIN` overrides).
