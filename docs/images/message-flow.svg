@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="590" viewBox="0 0 920 590" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>How a question goes to the inbox and the answer comes back to Claude</title>
+  <defs>
+    <style>
+      .h { font-size: 14px; font-weight: 650; fill: #1f2328; }
+      .t { font-size: 12px; fill: #424a53; }
+      .s { font-size: 11px; fill: #59636e; }
+      .m { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #59636e; }
+      .life { stroke: #d0d7de; stroke-width: 1.5; stroke-dasharray: 4 4; }
+      .msg { stroke: #57606a; stroke-width: 1.5; fill: none; }
+      .gold { stroke: #d4a72c; stroke-width: 1.6; fill: none; }
+      .n { font-size: 11px; font-weight: 700; fill: #ffffff; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#57606a"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d4a72c"/></marker>
+  </defs>
+  <rect width="920" height="590" rx="14" fill="#ffffff"/>
+
+  <!-- heads -->
+  <rect x="40" y="24" width="210" height="50" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="145" y="46" text-anchor="middle" class="h">Claude Code</text>
+  <text x="145" y="63" text-anchor="middle" class="s">with the minbox mod</text>
+  <rect x="355" y="24" width="210" height="50" rx="10" fill="#fff8e6" stroke="#d4a72c"/>
+  <text x="460" y="46" text-anchor="middle" class="h">minbox server</text>
+  <text x="460" y="63" text-anchor="middle" class="s">store · pending replies</text>
+  <rect x="670" y="24" width="210" height="50" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="775" y="46" text-anchor="middle" class="h">Inbox (browser)</text>
+  <text x="775" y="63" text-anchor="middle" class="s">the person</text>
+  <line x1="145" y1="74" x2="145" y2="575" class="life"/>
+  <line x1="460" y1="74" x2="460" y2="575" class="life"/>
+  <line x1="775" y1="74" x2="775" y2="575" class="life"/>
+
+  <!-- 1 -->
+  <circle cx="24" cy="112" r="10" fill="#57606a"/><text x="24" y="116" text-anchor="middle" class="n">1</text>
+  <path d="M145 112 H458" class="gold" marker-end="url(#g)"/>
+  <text x="160" y="104" class="t">tool <tspan class="m">send_message</tspan> (a <tspan class="m">:::question</tspan> block)</text>
+  <text x="160" y="128" class="m">POST /api/agent/messages</text>
+  <text x="160" y="146" class="s">returns at once; Claude keeps working or ends its turn</text>
+
+  <!-- 2 -->
+  <circle cx="24" cy="184" r="10" fill="#57606a"/><text x="24" y="188" text-anchor="middle" class="n">2</text>
+  <path d="M460 184 H773" class="msg" marker-end="url(#a)"/>
+  <text x="475" y="176" class="t">SSE <tspan class="m">{"type":"threads"}</tspan></text>
+  <text x="475" y="200" class="s">the session moves up: Waiting on you</text>
+
+  <!-- 3 -->
+  <circle cx="24" cy="244" r="10" fill="#57606a"/><text x="24" y="248" text-anchor="middle" class="n">3</text>
+  <path d="M775 244 H462" class="msg" marker-end="url(#a)"/>
+  <text x="490" y="236" class="t">the person answers (any time, any device)</text>
+  <text x="490" y="260" class="s">kept as a pending reply for that session</text>
+
+  <!-- 4 long poll -->
+  <circle cx="24" cy="310" r="10" fill="#57606a"/><text x="24" y="314" text-anchor="middle" class="n">4</text>
+  <rect x="150" y="290" width="306" height="64" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <path d="M160 312 H450" class="msg" marker-end="url(#a)"/>
+  <text x="166" y="306" class="m">GET /api/agent/pending?wait=20</text>
+  <path d="M450 336 H160" class="msg" marker-end="url(#a)"/>
+  <text x="300" y="350" class="s">the pending reply</text>
+  <text x="166" y="378" class="s">long poll; delivered once Claude is idle</text>
+  <text x="166" y="394" class="s">(or at once, if the person pressed Send now)</text>
+
+  <!-- 5 claim -->
+  <circle cx="24" cy="430" r="10" fill="#57606a"/><text x="24" y="434" text-anchor="middle" class="n">5</text>
+  <path d="M145 430 H458" class="msg" marker-end="url(#a)"/>
+  <text x="160" y="422" class="m">POST …/claim</text>
+  <text x="270" y="422" class="s">one mod instance owns it</text>
+
+  <!-- 6 submit -->
+  <circle cx="24" cy="472" r="10" fill="#57606a"/><text x="24" y="476" text-anchor="middle" class="n">6</text>
+  <rect x="60" y="456" width="170" height="34" rx="8" fill="#fff8e6" stroke="#d4a72c"/>
+  <text x="145" y="477" text-anchor="middle" class="m" style="fill:#1f2328">$.prompt.submit(reply)</text>
+  <text x="246" y="466" class="s">a new turn carrying the answers</text>
+  <text x="246" y="481" class="s">(not keystrokes: a half-typed</text>
+  <text x="246" y="496" class="s">prompt in the terminal is safe)</text>
+
+  <!-- 7 delivered -->
+  <circle cx="24" cy="540" r="10" fill="#57606a"/><text x="24" y="544" text-anchor="middle" class="n">7</text>
+  <path d="M145 540 H458" class="msg" marker-end="url(#a)"/>
+  <text x="160" y="532" class="m">POST …/delivered</text>
+  <text x="160" y="560" class="s">a failed submit releases it instead</text>
+</svg>

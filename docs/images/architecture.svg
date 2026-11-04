@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="530" viewBox="0 0 920 530" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>minbox architecture: browsers, the server, terminal hosts and Claude Code with the minbox mod</title>
+  <defs>
+    <style>
+      .h { font-size: 14px; font-weight: 650; fill: #1f2328; }
+      .t { font-size: 12px; fill: #424a53; }
+      .s { font-size: 11px; fill: #59636e; }
+      .m { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #59636e; }
+      .d { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #d4d4d8; }
+      .edge { stroke: #8c959f; stroke-width: 1.6; fill: none; }
+      .agent { stroke: #d4a72c; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8c959f"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#d4a72c"/></marker>
+  </defs>
+  <rect width="920" height="530" rx="14" fill="#ffffff"/>
+
+  <!-- browsers -->
+  <rect x="20" y="60" width="180" height="76" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="36" y="88" class="h">Browser</text>
+  <text x="36" y="108" class="t">this machine</text>
+  <text x="36" y="124" class="s">trusted on 127.0.0.1</text>
+  <rect x="20" y="160" width="180" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="36" y="188" class="h">Browser / phone</text>
+  <text x="36" y="208" class="t">over Tailscale or the LAN</text>
+  <text x="36" y="224" class="s">paired once (device key),</text>
+  <text x="36" y="240" class="s">then a session cookie</text>
+  <text x="20" y="278" class="s">HTTP · SSE · WebSocket;</text>
+  <text x="20" y="294" class="s">HTTPS through <tspan class="m">tailscale serve</tspan></text>
+
+  <!-- server -->
+  <rect x="250" y="40" width="296" height="240" rx="12" fill="#fff8e6" stroke="#d4a72c"/>
+  <text x="268" y="68" class="h">minbox server</text>
+  <text x="378" y="68" class="m">minbox start</text>
+  <rect x="266" y="82" width="264" height="30" rx="7" fill="#ffffff" stroke="#e7d39a"/>
+  <text x="278" y="101" class="t">Web UI (React, embedded in the binary)</text>
+  <rect x="266" y="118" width="264" height="30" rx="7" fill="#ffffff" stroke="#e7d39a"/>
+  <text x="278" y="137" class="t">REST API · SSE <tspan class="m">/api/events</tspan></text>
+  <rect x="266" y="154" width="264" height="30" rx="7" fill="#ffffff" stroke="#e7d39a"/>
+  <text x="278" y="173" class="t">Terminal WebSocket relay</text>
+  <rect x="266" y="190" width="264" height="30" rx="7" fill="#ffffff" stroke="#e7d39a"/>
+  <text x="278" y="209" class="t">Agent API <tspan class="m">/api/agent/*</tspan> (bearer)</text>
+  <rect x="266" y="226" width="264" height="38" rx="7" fill="#ffffff" stroke="#e7d39a"/>
+  <text x="278" y="249" class="t">SQLite: sessions, threads, cards</text>
+
+  <path d="M200 98 H250" class="edge" marker-end="url(#a)" marker-start="url(#a)"/>
+  <path d="M200 206 C226 206 226 150 250 150" class="edge" marker-end="url(#a)" marker-start="url(#a)"/>
+
+  <!-- local host -->
+  <rect x="640" y="40" width="264" height="232" rx="12" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="658" y="68" class="h">terminal host</text>
+  <text x="762" y="68" class="m">minbox host</text>
+  <text x="658" y="88" class="s">owns the PTYs; outlives server restarts</text>
+  <rect x="656" y="102" width="232" height="154" rx="9" fill="#0e0e11"/>
+  <text x="670" y="124" class="m" style="fill:#a9c7ff">PTY</text>
+  <text x="700" y="124" class="d">claude --plugin-dir …</text>
+  <rect x="670" y="138" width="204" height="104" rx="7" fill="#24242a" stroke="#f2b14a" stroke-opacity=".7"/>
+  <text x="682" y="158" font-size="12" font-weight="650" fill="#f2b14a">minbox mod</text>
+  <text x="682" y="178" class="d">send_message</text>
+  <text x="682" y="194" class="d">read_thread · card</text>
+  <text x="682" y="210" class="d">set_session_title</text>
+  <text x="682" y="226" class="d">open_url · reply delivery</text>
+
+  <path d="M546 120 H640" class="edge" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="556" y="112" class="s">unix socket</text>
+  <path d="M670 205 H548" class="agent" marker-end="url(#g)"/>
+  <text x="556" y="224" class="s">localhost</text>
+  <text x="556" y="238" class="s">HTTP</text>
+
+  <!-- remote host -->
+  <rect x="640" y="310" width="264" height="196" rx="12" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="658" y="338" class="h">remote host</text>
+  <text x="752" y="338" class="m">another machine</text>
+  <text x="658" y="358" class="m">minbox host --tailscale</text>
+  <text x="658" y="374" class="m">minbox host --listen :4849</text>
+  <rect x="656" y="388" width="232" height="102" rx="9" fill="#0e0e11"/>
+  <text x="670" y="410" class="m" style="fill:#a9c7ff">PTY</text>
+  <text x="700" y="410" class="d">claude + minbox mod</text>
+  <text x="670" y="432" class="d" style="fill:#9a9aa5">files: /fs/* · uploads</text>
+  <text x="670" y="452" class="d" style="fill:#9a9aa5">the host's own $SHELL</text>
+  <text x="670" y="470" class="d" style="fill:#9a9aa5">and environment</text>
+
+  <path d="M500 280 V370 H640" class="edge" marker-end="url(#a)"/>
+  <text x="488" y="336" class="t" text-anchor="end">every request signed (ed25519);</text>
+  <text x="488" y="352" class="t" text-anchor="end">paired once: <tspan class="m">minbox pair accept</tspan></text>
+  <path d="M640 450 H526 V282" class="agent" marker-end="url(#g)"/>
+  <text x="512" y="436" class="s" text-anchor="end">the mod's agent API calls ride</text>
+  <text x="512" y="452" class="s" text-anchor="end">the server's <tspan class="m">/relay</tspan> WebSocket</text>
+
+  <!-- legend -->
+  <line x1="20" y1="476" x2="50" y2="476" class="edge"/>
+  <text x="58" y="480" class="s">UI, API, terminal</text>
+  <line x1="20" y1="498" x2="50" y2="498" class="agent"/>
+  <text x="58" y="502" class="s">Claude → minbox (the mod)</text>
+</svg>
