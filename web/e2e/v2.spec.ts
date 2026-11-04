@@ -489,3 +489,24 @@ test('the terminal reconnects by itself after its connection drops', async ({ pa
   await expectTerminal(page, 'after-7')
   await expectTerminal(page, 'before-2')
 })
+
+test('a message that arrives below the fold shows a pill that scrolls down', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'pilly')
+  await expectTerminal(page, 'ready>')
+  // Long messages, so the thread scrolls (a terminal line holds about 1000 characters).
+  const para = Array.from({ length: 110 }, (_, i) => `word${i}`).join(' ')
+  for (let i = 0; i < 4; i++) await typeInTerminal(page, `say ${para}`)
+  await page.getByTestId('thread-row').first().click()
+  await expect(page.getByTestId('thread-view')).toBeVisible()
+  const scroller = page.getByTestId('thread-view').locator('div.overflow-y-auto').first()
+  await expect.poll(() => scroller.evaluate((e) => e.scrollHeight > e.clientHeight + 100)).toBe(true)
+  // Read at the top; Claude writes again.
+  await scroller.evaluate((e) => (e.scrollTop = 0))
+  await typeInTerminal(page, 'say second message')
+  const pill = page.getByTestId('new-message-pill')
+  await expect(pill).toHaveText('↓ New message')
+  await pill.click()
+  await expect(pill).toHaveCount(0)
+  await expect.poll(() => scroller.evaluate((e) => e.scrollHeight - e.scrollTop - e.clientHeight)).toBeLessThan(80)
+})

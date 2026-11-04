@@ -87,6 +87,25 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
 
   const messages = thread?.messages ?? []
 
+  // New messages below the fold: a pill to jump down. Near the bottom (or after the person's own
+  // message) the view just follows; further up, it stays put and the pill says something came in.
+  const [unseen, setUnseen] = useState(0)
+  const seenCount = useRef<number | null>(null)
+  const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  const toBottom = () => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  useEffect(() => {
+    if (!thread) return
+    const n = messages.length
+    const prev = seenCount.current
+    seenCount.current = n
+    const el = scrollRef.current
+    if (prev === null || n <= prev || !el) return
+    const added = messages.slice(prev)
+    if (nearBottom(el) || added.every((m) => m.author === 'user')) requestAnimationFrame(toBottom)
+    else setUnseen((u) => u + added.filter((m) => m.author === 'agent').length)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, messages.length])
+
   // Remember where "new since you looked" starts before marking the thread read.
   useEffect(() => {
     if (!thread || firstNew !== undefined) return
@@ -256,7 +275,25 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
       )}
       <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} />
 
-      <div ref={scrollRef} className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto', phone ? 'px-3.5 pb-4 pt-3.5' : 'px-[18px] py-3.5')}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      {unseen > 0 && (
+        <button
+          type="button"
+          data-testid="new-message-pill"
+          onClick={() => {
+            toBottom()
+            setUnseen(0)
+          }}
+          className="absolute bottom-3 left-1/2 z-[2] flex h-8 -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full border-0 bg-accent px-3.5 text-[12.5px] font-semibold text-onaccent shadow-pop"
+        >
+          ↓ {unseen === 1 ? 'New message' : `${unseen} new messages`}
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        onScroll={(e) => nearBottom(e.currentTarget) && unseen > 0 && setUnseen(0)}
+        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto', phone ? 'px-3.5 pb-4 pt-3.5' : 'px-[18px] py-3.5')}
+      >
         {!phone && (
           <div className="flex flex-col gap-1.5">
             <h2 data-testid="thread-subject" className="m-0 text-[19px] font-[650] leading-[1.35]">
@@ -338,6 +375,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
             {m === lastUser && <DeliveryLine m={m} session={session} />}
           </div>
         ))}
+      </div>
       </div>
 
       <ReplyBox
