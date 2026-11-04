@@ -135,11 +135,15 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
       const zoom = parseFloat((document.getElementById('root') as HTMLElement).style.zoom || '1')
       const first = rects.length ? rects[0]! : r
       const vw = window.innerWidth / zoom
-      const below = first.top / zoom < 48 // no room above: under the selection instead
+      // On touch the OS toolbar (copy / look up / share) sits above the selection, so go under it,
+      // clear of the end drag handle; fall back to above (past the toolbar) at the bottom edge.
+      const touch = window.matchMedia('(pointer: coarse)').matches
+      const vh = window.innerHeight / zoom
+      const below = touch ? r.bottom / zoom + 30 + 32 + 8 <= vh : first.top / zoom < 48 // no room above: under the selection instead
       setQuote({
         text,
         x: Math.min(Math.max(r.right / zoom, 100), vw - 8), // the bubble's right edge sits at the selection's end
-        y: below ? r.bottom / zoom + 6 : first.top / zoom - 6,
+        y: below ? r.bottom / zoom + (touch ? 30 : 6) : first.top / zoom - (touch ? 44 : 6),
         below,
       })
     }
@@ -449,6 +453,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
           type="button"
           data-testid="quote-reply"
           onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => e.preventDefault()} // a tap must not clear the selection before the click
           onClick={quoteIntoReply}
           style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
           className="fixed z-[30] flex h-8 items-center gap-1.5 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] font-semibold text-fg shadow-pop hover:bg-raised"

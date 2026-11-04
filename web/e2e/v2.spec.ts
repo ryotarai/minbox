@@ -727,6 +727,30 @@ test('selecting text in a thread offers Reply, which quotes it into the reply bo
   await page.getByTestId('message').getByText('Please review the retry logic').click({ clickCount: 3 })
   await page.getByTestId('quote-reply').click()
   await expect(box).toHaveValue(/Add a jitter\.\n\n> Please review the retry logic\n\n$/)
+  // With a mouse the bubble sits above the selected text.
+  await page.getByTestId('message').getByText('Please review the retry logic').click({ clickCount: 3 })
+  const b = await page.getByTestId('quote-reply').boundingBox()
+  const t = await page.getByTestId('message').getByText('Please review the retry logic').boundingBox()
+  expect(b!.y + b!.height).toBeLessThanOrEqual(t!.y)
+})
+
+test.describe('touch device (coarse pointer, wide layout)', () => {
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } })
+
+  test('the Reply bubble sits below the selection, clear of the OS toolbar', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'quote-touch')
+    await expectTerminal(page, 'ready>')
+    await typeInTerminal(page, 'say Please review the retry logic')
+    await page.getByTestId('thread-row').first().click()
+    const text = page.getByTestId('message').getByText('Please review the retry logic')
+    await text.click({ clickCount: 3 })
+    const bubble = page.getByTestId('quote-reply')
+    await expect(bubble).toBeVisible()
+    const b = (await bubble.boundingBox())!
+    const t = (await text.boundingBox())!
+    expect(b.y).toBeGreaterThanOrEqual(t.y + t.height + 20)
+  })
 })
 
 test('coming back to the page loads what arrived meanwhile, into the open thread too', async ({ page, minbox }) => {
