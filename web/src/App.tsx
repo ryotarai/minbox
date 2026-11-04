@@ -91,30 +91,42 @@ function Desktop() {
   const width = useWindowWidth() / ((settings.text_size || 13) / 13)
   const showInbox = !!session && session.kind !== 'shell' && !layout.inboxCollapsed
   // An open file takes the center: the session list folds into its rail.
-  // A narrow window shrinks the side columns first, then folds the list too.
+  // A narrow window gives way in this order: the session list narrows, then folds into its rail,
+  // then the inbox narrows. The inbox keeps the width it was dragged to as long as it fits, so a
+  // drag moves the edge 1:1 (shrinking both columns at once made it follow at half the distance).
   const MIN_CENTER = 420
   let sidebarW = layout.sidebarW
   let inboxW = showInbox ? (route.f ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
   let rail = layout.rail || !!route.f
-  const side = () => (rail ? 60 : sidebarW)
-  if (side() + inboxW + MIN_CENTER > width) {
-    const over = side() + inboxW + MIN_CENTER - width
-    if (showInbox) inboxW = Math.max(320, inboxW - Math.ceil(over / 2))
-    if (!rail) sidebarW = Math.max(216, sidebarW - (side() + inboxW + MIN_CENTER - width))
-    if (side() + inboxW + MIN_CENTER > width) rail = true
+  const over = () => (rail ? 60 : sidebarW) + inboxW + MIN_CENTER - width
+  if (!rail && over() > 0) sidebarW = Math.max(216, sidebarW - over())
+  if (!rail && over() > 0) rail = true
+  if (showInbox && over() > 0) inboxW = Math.max(320, inboxW - over())
+  // The browser reports a drag in screen pixels; the columns are in zoomed ones.
+  const zoom = (settings.text_size || 13) / 13
+  // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
+  const cur = useRef({ sidebarW, inboxW })
+  cur.current = { sidebarW, inboxW }
+  const dragSidebar = (dx: number) => {
+    cur.current.sidebarW = clamp(cur.current.sidebarW + dx / zoom, 216, 480)
+    setLayout({ sidebarW: cur.current.sidebarW })
+  }
+  const dragInbox = (dx: number) => {
+    cur.current.inboxW = clamp(cur.current.inboxW - dx / zoom, 320, 760)
+    setLayout({ inboxW: cur.current.inboxW })
   }
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
       <div style={{ width: rail ? 60 : sidebarW }} className="shrink-0 border-r border-line">
         <Sidebar forceRail={rail} />
       </div>
-      {!rail && <Resizer onDrag={(dx) => setLayout({ sidebarW: clamp(layout.sidebarW + dx, 216, 480) })} />}
+      {!rail && <Resizer onDrag={dragSidebar} />}
       <main className="min-w-0 flex-1">
         {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
       </main>
       {showInbox && (
         <>
-          <Resizer grip onDrag={(dx) => setLayout({ inboxW: clamp(layout.inboxW - dx, 320, 760) })} />
+          <Resizer grip onDrag={dragInbox} />
           <div style={{ width: inboxW }} className="shrink-0">
             <InboxPane session={session} />
           </div>
