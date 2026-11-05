@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
 
 // A browser that reaches minbox over the network (here: requests carrying
 // X-Forwarded-For, as through tailscale serve) pairs its key first; a browser
@@ -43,7 +43,7 @@ test('a remote browser pairs with a code accepted in Settings › Devices, and R
 
 test('a paired remote browser signs in again by itself after the server forgets its cookie (a restart)', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'home', 'shell')
+  await createShellSession(page, minbox, 'home')
 
   const remote = await browser.newContext({ extraHTTPHeaders: { 'X-Forwarded-For': '100.64.0.8' }, viewport: { width: 1280, height: 800 } })
   const phone = await remote.newPage()

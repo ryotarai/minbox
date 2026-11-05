@@ -1,20 +1,40 @@
-import { createSession, expect, expectTerminal, phoneSelectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
-// New › Shell opens the host's own login shell: a terminal with no inbox.
+// Shell sessions (the host's own login shell: a terminal with no inbox) can no longer be created;
+// ones an older build left behind keep working.
 // Claude Code sessions carry the title Claude sets with set_session_title.
 
-test('New › Shell opens a plain login shell with no inbox', async ({ page, minbox }) => {
+test('an existing shell session is a plain login shell with no inbox', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'plain', 'shell')
+  await createShellSession(page, minbox, 'plain')
   await expect(sessionStatus(page)).toHaveText('Shell')
   await expect(page.getByTestId('thread-pane')).toBeVisible()
   await typeInTerminal(page, 'echo "kind=$MINBOX_SESSION_ID/$((6*7))"')
   await expectTerminal(page, 'kind=/42') // a real shell, without minbox's mod variables
+})
 
-  // The choice is remembered for the next New.
-  await page.getByTestId('new-session').click()
-  await expect(page.getByTestId('new-session-kind-shell')).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByTestId('new-session-start')).toContainText('Start shell')
+test('New session offers no Shell choice, on desktop and phone, and the API refuses one', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'first')
+  const dialogHasNoShell = async () => {
+    await page.getByTestId('new-session').click()
+    await expect(page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))).toBeVisible()
+    await expect(page.getByTestId('new-session-kind')).toHaveCount(0)
+    await expect(page.getByTestId('new-session-kind-shell')).toHaveCount(0)
+    await expect(page.getByRole('radio')).toHaveCount(0)
+    await expect(page.getByTestId('new-session-start')).toContainText('Start Claude Code')
+    await expect(page.getByText('Shell', { exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('new-session-start')).toBeHidden()
+  }
+  await dialogHasNoShell()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#')
+  await dialogHasNoShell()
+
+  const r = await fetch(minbox.url + '/api/sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd: minbox.dataDir, kind: 'shell' }) })
+  expect(r.status).toBe(400)
+  expect((await r.json()).error).toContain('no longer')
 })
 
 test("Claude's session title shows in the session list", async ({ page, minbox }) => {
@@ -29,7 +49,7 @@ test("Claude's session title shows in the session list", async ({ page, minbox }
 
 test('phone: with the keyboard up, the terminal takes the screen and shows the cursor', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'pocket-shell', 'shell')
+  await createShellSession(page, minbox, 'pocket-shell')
   // Fill the screen so the cursor sits on the last rows.
   await typeInTerminal(page, 'clear; for i in $(seq 1 80); do echo line$i; done')
   await expectTerminal(page, 'line80')
@@ -64,7 +84,7 @@ test('phone: with the keyboard up, the terminal takes the screen and shows the c
 
 test('the PTY takes the smallest open screen, and grows back when it closes', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'shared', 'shell')
+  await createShellSession(page, minbox, 'shared')
   const size = page.getByTestId('pty-size')
   await expect(size).toHaveText(/\d+×\d+/)
   const desktop = (await size.textContent())!
@@ -93,7 +113,7 @@ test('the PTY takes the smallest open screen, and grows back when it closes', as
 test('a phone limits the PTY only while its terminal is shown', async ({ page, browser, minbox }) => {
   test.setTimeout(120_000)
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'shared', 'shell')
+  await createShellSession(page, minbox, 'shared')
   const size = page.getByTestId('pty-size')
   await expect(size).toHaveText(/\d+×\d+/)
   const desktop = (await size.textContent())!
@@ -169,7 +189,7 @@ test('phone: a swipe scrolls the terminal, or reaches a program that tracks the 
 
 test('phone: a swipe scrolls a shell through its scrollback', async ({ page: desk, browser, minbox }) => {
   await desk.goto(minbox.url)
-  await createSession(desk, minbox.dataDir, 'scrollback', 'shell')
+  await createShellSession(desk, minbox, 'scrollback')
   await typeInTerminal(desk, 'for i in $(seq 1 300); do echo row$i; done')
   await expectTerminal(desk, 'row300')
   await desk.close()
@@ -193,7 +213,7 @@ test('phone: a swipe scrolls a shell through its scrollback', async ({ page: des
 test('on a Mac only ⌘K opens quick actions; Ctrl+K stays the terminal’s', async ({ page, minbox }) => {
   test.skip(process.platform !== 'darwin', 'the Mac binding')
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'keys', 'shell')
+  await createShellSession(page, minbox, 'keys')
   await typeInTerminal(page, 'echo first')
   await expectTerminal(page, /^first$/m)
   // Ctrl+K in the shell kills the rest of the line, and no palette opens.
@@ -241,7 +261,7 @@ test("Claude's open_url opens the page in the person's browser, or offers it whe
 
 test('desktop with a mouse: no on-screen terminal keys', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'mouse-shell', 'shell')
+  await createShellSession(page, minbox, 'mouse-shell')
   await typeInTerminal(page, 'echo ready-$((1+1))')
   await expectTerminal(page, 'ready-2')
   await expect(page.getByTestId('desktop')).toBeVisible()
@@ -253,7 +273,7 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
 
   test('the wide layout shows the terminal keys and they reach the shell', async ({ page, minbox }) => {
     await page.goto(minbox.url)
-    await createSession(page, minbox.dataDir, 'fold-shell', 'shell')
+    await createShellSession(page, minbox, 'fold-shell')
     await expect(page.getByTestId('desktop')).toBeVisible()
     await expect(page.getByTestId('term-key-esc')).toBeVisible()
     await expect(page.getByTestId('term-key-tab')).toBeVisible()

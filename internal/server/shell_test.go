@@ -85,11 +85,16 @@ func TestCompanionShellDeleteAndKinds(t *testing.T) {
 		t.Fatal("shell survived delete")
 	}
 
+	// Creating a shell session through the API is rejected.
 	code, obj, _ := e.do("POST", "/api/sessions", map[string]string{"cwd": e.dir, "kind": "shell"}, nil)
-	if code != 201 {
+	if code != 400 || !strings.Contains(obj["error"].(string), "no longer") {
 		t.Fatal(code, obj)
 	}
-	sh, _ := e.st.GetSession(ctx, obj["id"].(string))
+	// An old shell session already in the database is still a shell kind.
+	sh, err := e.st.CreateSessionKind(ctx, store.LocalHostID, store.KindShell, "old", e.dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := e.srv.sessions.ensureShell(ctx, sh); err == nil {
 		t.Fatal("shell session got a companion shell")
 	}
