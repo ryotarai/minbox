@@ -314,6 +314,15 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, th)
 }
 
+// cleanTitle makes a thread title: one line, whitespace collapsed, 120 characters at most.
+func cleanTitle(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 120 {
+		return string(r[:119]) + "…"
+	}
+	return s
+}
+
 func firstLine(s string, max int) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
 	s = strings.TrimSpace(strings.TrimLeft(s, "#>*- "))
@@ -665,7 +674,8 @@ func (s *Server) agentOpen(w http.ResponseWriter, r *http.Request, sess *store.S
 func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.Session) {
 	var req struct {
 		ThreadID    string     `json:"thread_id"`
-		Subject     string     `json:"subject"`
+		ThreadTitle string     `json:"thread_title"`
+		Subject     string     `json:"subject"` // the old name of thread_title
 		Body        string     `json:"body"`
 		Name        string     `json:"name"`
 		Attachments []string   `json:"attachments"`
@@ -715,6 +725,10 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	}
 	questions := question.Parse(body)
 	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions}
+	title := cleanTitle(req.ThreadTitle)
+	if title == "" {
+		title = cleanTitle(req.Subject)
+	}
 	var threadID, messageID string
 	isNew := req.ThreadID == ""
 	if !isNew {
@@ -729,8 +743,14 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			return
 		}
 		threadID, messageID = th.ID, msg.ID
+		if title != "" && title != th.Subject {
+			if err := s.store.UpdateThread(ctx, th.ID, &title, nil); err != nil {
+				storeError(w, err)
+				return
+			}
+		}
 	} else {
-		subject := strings.TrimSpace(req.Subject)
+		subject := title
 		if subject == "" {
 			subject = firstLine(body, 60)
 		}

@@ -42,6 +42,19 @@ test('archiving a thread hides it; Undo restores it; Claude writing brings it ba
   await expect(page.getByTestId('archived-notice')).toContainText('wrote after you archived it')
 })
 
+test('a message with thread_title renames the thread in the list and the open header', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'retitle')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say First note')
+  await openThread(page, 'Note')
+  await typeInTerminal(page, 'retitle Now about the deploy')
+  await expect(page.getByTestId('thread-subject')).toHaveText('Now about the deploy')
+  await page.getByTestId('thread-back').click()
+  await expect(page.getByTestId('thread-row').filter({ hasText: 'Now about the deploy' })).toBeVisible()
+  await expect(page.getByTestId('thread-row').filter({ hasText: 'Note' })).toHaveCount(0)
+})
+
 test('Mark read sets the thread aside in Quiet and closes its questions; Move back undoes it', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'mr')

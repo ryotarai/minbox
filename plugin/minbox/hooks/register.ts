@@ -281,7 +281,7 @@ export const register: Register = (on) => {
     if (!body.trim()) return { deny: 'body is required.' }
     const res = await api($, 'POST', '/api/agent/messages', {
       body,
-      subject: typeof e.subject === 'string' ? e.subject : undefined,
+      thread_title: typeof e.thread_title === 'string' && e.thread_title ? e.thread_title : typeof e.subject === 'string' ? e.subject : undefined,
       thread_id: typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : undefined,
       name: typeof e.name === 'string' && e.name ? e.name : undefined,
       attachments: Array.isArray(e.attachments) ? e.attachments.filter((a: unknown) => typeof a === 'string') : undefined,
