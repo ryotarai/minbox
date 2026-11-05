@@ -33,7 +33,7 @@ var slackType = Type{
 			{Value: EventsAction, Label: "Only messages that need your answer"},
 		}},
 	},
-	new: func(cfg map[string]any, c *http.Client) (Notifier, error) {
+	new: func(cfg map[string]any, c *http.Client, _ Env) (Notifier, error) {
 		u, _ := cfg["webhook_url"].(string)
 		if u == "" {
 			return nil, errors.New("no webhook URL")

@@ -88,6 +88,7 @@ func (s *Store) UpdateDestination(ctx context.Context, d *Destination) error {
 }
 
 func (s *Store) DeleteDestination(ctx context.Context, id string) error {
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE destination_id=?`, id)
 	return s.exec(ctx, `DELETE FROM notification_destinations WHERE id=?`, id)
 }
 
@@ -97,4 +98,33 @@ func (s *Store) RecordDelivery(ctx context.Context, id string, at time.Time, err
 		return s.exec(ctx, `UPDATE notification_destinations SET last_ok_at=?, last_error='', last_error_at=NULL WHERE id=?`, ms(at), id)
 	}
 	return s.exec(ctx, `UPDATE notification_destinations SET last_error=?, last_error_at=? WHERE id=?`, errText, ms(at), id)
+}
+
+// SlackThread is the Slack message that parents the replies for one minbox thread.
+type SlackThread struct {
+	ChannelID string
+	TS        string
+}
+
+// GetSlackThread finds the stored Slack parent (ok=false when there is none).
+func (s *Store) GetSlackThread(ctx context.Context, destID, threadID string) (SlackThread, bool, error) {
+	var t SlackThread
+	err := s.db.QueryRowContext(ctx, `SELECT channel_id, ts FROM notification_slack_threads WHERE destination_id=? AND minbox_thread_id=?`, destID, threadID).Scan(&t.ChannelID, &t.TS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SlackThread{}, false, nil
+	}
+	return t, err == nil, err
+}
+
+// PutSlackThread stores (or replaces) the Slack parent of a minbox thread.
+func (s *Store) PutSlackThread(ctx context.Context, destID, threadID string, t SlackThread) error {
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at) VALUES(?,?,?,?,?)`,
+		destID, threadID, t.ChannelID, t.TS, ms(s.now()))
+	return err
+}
+
+// DeleteSlackThreads forgets every Slack parent of a destination (its channel changed).
+func (s *Store) DeleteSlackThreads(ctx context.Context, destID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE destination_id=?`, destID)
+	return err
 }
