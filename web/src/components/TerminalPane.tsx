@@ -63,7 +63,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
             className="h-7 w-44 rounded-sm border border-accent bg-sunken px-2 text-[13.5px] text-fg outline-none"
           />
         ) : (
-          <span className="min-w-0 truncate text-[14px] font-semibold" data-testid="terminal-session-name" title="Double-click to rename" onDoubleClick={() => setRenaming(session.name)}>
+          <span className="max-w-[45%] shrink-0 truncate text-[14px] font-semibold" data-testid="terminal-session-name" title="Double-click to rename" onDoubleClick={() => setRenaming(session.name)}>
             {session.name}
           </span>
         )}
@@ -73,7 +73,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
           </span>
         )}
         <HostTag name={session.host_name} />
-        <span className="mono hidden min-w-0 truncate text-[12px] text-subtle xl:inline">{homeRelative(session.cwd)}</span>
+        <span className="mono hidden min-w-0 truncate text-[12px] text-subtle min-[1800px]:inline">{homeRelative(session.cwd)}</span>
         <span data-testid="session-status" className="flex">
           <StatusPill s={session} waits={waitsOnPerson(session)} />
         </span>
