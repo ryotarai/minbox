@@ -128,15 +128,19 @@ type Session struct {
 	ProjectID       string     `json:"project_id"`
 	IsMain          bool       `json:"is_main"` // the project's main session
 	// Derived.
-	Unread        int        `json:"unread"`
-	OpenQuestions int        `json:"open_questions"`
-	Waiting       int        `json:"waiting"` // threads waiting on the person
-	Section       string     `json:"section"`
-	Stopped       int        `json:"stopped"`
-	Holding       int        `json:"holding"`
-	Undelivered   int        `json:"undelivered"`
-	LastActivity  time.Time  `json:"last_activity"`
-	TopThread     *TopThread `json:"top_thread"`
+	Unread        int    `json:"unread"`
+	OpenQuestions int    `json:"open_questions"`
+	Waiting       int    `json:"waiting"` // threads waiting on the person
+	Section       string `json:"section"`
+	Stopped       int    `json:"stopped"`
+	Holding       int    `json:"holding"`
+	Undelivered   int    `json:"undelivered"`
+	// The mod's last call (any /api/agent/*, the long poll included); filled by the server, nil before the first one since it started.
+	ModSeenAt *time.Time `json:"mod_seen_at"`
+	// ModSilent: a Claude Code session whose mod has not called for a while (the server's modSilentAfter).
+	ModSilent    bool       `json:"mod_silent"`
+	LastActivity time.Time  `json:"last_activity"`
+	TopThread    *TopThread `json:"top_thread"`
 }
 
 // TopThread is the thread a session row shows.

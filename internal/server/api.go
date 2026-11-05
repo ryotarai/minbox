@@ -32,6 +32,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	names := s.hostNames(r.Context())
 	for i := range sessions {
 		sessions[i].HostName = names[sessions[i].HostID]
+		s.withModSeen(&sessions[i])
 	}
 	writeJSON(w, 200, sessions)
 }
@@ -586,7 +587,9 @@ func (s *Server) agent(h agentHandler) http.HandlerFunc {
 			httpError(w, 401, "unknown session token")
 			return
 		}
+		s.touchMod(sess.ID)
 		h(w, r, sess)
+		s.touchMod(sess.ID)
 	}
 }
 
@@ -886,6 +889,10 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 		case <-deadline:
 			s.withAttachedLines(r, pending)
 			writeJSON(w, 200, pending)
+			return
+		case <-s.closing:
+			// the server is shutting down: end the poll cleanly, the mod reconnects
+			writeJSON(w, 200, []store.PendingDelivery{})
 			return
 		case <-r.Context().Done():
 			return
