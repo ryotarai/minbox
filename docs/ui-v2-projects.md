@@ -50,7 +50,7 @@ Below 1400 px (or by the collapse button) the project column shrinks to 56 px ti
 name in the tooltip).
 
 Selecting a project scopes the threads list, the session filter, the composer targets and the session
-chips to it. In `All projects` every row shows a project chip (`api`) before the session chip.
+chips to it. List rows carry no project or session chip, also in `All projects`.
 
 ## Composer target
 
