@@ -88,9 +88,9 @@ export class Minbox {
     this.killHost()
     // Fake claude processes left behind by a killed host.
     try {
-      // Only this checkout's fake (its absolute path is in the command line), so suites in
-      // other worktrees can run at the same time.
-      execSync(`pkill -f "${FAKE}" || true`)
+      // Only this server's fakes: the command line carries `--plugin-dir <dataDir>/plugin/...`, so
+      // suites in other worktrees and tests of other workers keep their own.
+      execSync(`pkill -f "${FAKE}.*${this.dataDir}" || true`)
     } catch {
       /* none */
     }
