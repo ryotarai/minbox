@@ -21,6 +21,7 @@ import {
   IconSend,
   IconThumb,
   IconUnfold,
+  IconTerminal,
   IconPaperclip,
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
@@ -34,6 +35,8 @@ type Props = {
   /** The session's threads in list order, for J/K. */
   siblings: Thread[] | null
   onBack: () => void
+  /** Tablet: shows the Terminal button in the header (opens [thread | terminal]). */
+  onTerminal?: () => void
   phone?: boolean
 }
 
@@ -74,7 +77,7 @@ function openKeys(m: Message): Set<string> {
   return out
 }
 
-export function ThreadView({ session, threadId, siblings, onBack, phone }: Props) {
+export function ThreadView({ session, threadId, siblings, onBack, onTerminal, phone }: Props) {
   const { navigate, route, toast, error, setOverlay, sessions } = useApp()
   const [thread] = useThread(threadId)
   const draft = useReplyDraft(threadId)
@@ -305,6 +308,19 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
     <div className="flex h-full flex-col" data-testid="thread-view" data-thread-id={thread.id}>
       {!phone && (
         <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
+          {onTerminal && (
+            <button
+              type="button"
+              data-testid="tablet-terminal"
+              aria-label={`Open ${session.name}'s terminal`}
+              title="Show the terminal next to this thread"
+              onClick={onTerminal}
+              className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
+            >
+              <IconTerminal size={14} />
+              Terminal
+            </button>
+          )}
           <button
             type="button"
             data-testid="mark-read"

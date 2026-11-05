@@ -8,7 +8,7 @@ import { GuidedReview } from './components/GuidedReview'
 import { ThreadPane } from './components/ThreadPane'
 import { ThreadsPane } from './components/ThreadsPane'
 import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
-import { PhoneApp } from './components/Phone'
+import { PhoneApp, PhoneShell } from './components/Phone'
 import { ProjectRail } from './components/ProjectRail'
 import { selectProject, useSelectedProject } from './lib/projects'
 import { NewSessionDialog } from './components/NewSession'
@@ -30,7 +30,7 @@ export function App() {
 }
 
 function Root() {
-  const { route, sessions, navigate, isPhone, overlay, setOverlay, undoLast, settings } = useApp()
+  const { route, sessions, navigate, isPhone, isTablet, overlay, setOverlay, undoLast, settings } = useApp()
 
   // Desktop: keep a session selected (the one that needs you most, in the selected project), and drop a deleted one.
   // A session outside the selected project: when the person switched project, pick one inside it;
@@ -58,6 +58,10 @@ function Root() {
     if (!first && !route.s) return
     navigate({ s: first?.id ?? null, t: null, f: null })
   }, [sessions, route.s, isPhone, navigate, projectId])
+  // The terminal view (tab=terminal) is a phone and tablet state; three columns always show the terminal.
+  useEffect(() => {
+    if (!isPhone && !isTablet && route.tab === 'terminal') navigate({ tab: 'inbox' }, { push: false })
+  }, [isPhone, isTablet, route.tab, navigate])
   // The old All inbox page is the main screen's list now.
   useEffect(() => {
     if ((route.view as string) === 'inbox') navigate({ view: 'main' }, { push: false })
@@ -91,6 +95,8 @@ function Root() {
         <BoardPage />
       ) : isPhone ? (
         <PhoneApp />
+      ) : isTablet ? (
+        <Tablet />
       ) : (
         <Desktop />
       )}
@@ -183,23 +189,8 @@ function Desktop() {
   // dx is positive when the edge moves right and widens the column on its left.
   const dragThread = (dx: number) => drag('thread', dx)
   const dragShell = (dx: number) => drag('shell', dx)
-  // Ctrl+` shows and hides the shell pane; it works inside the terminals too, so it is caught
-  // before they see it.
   const canShell = !!session && session.kind !== 'shell'
-  const toggleShell = useRef<() => void>(() => {})
-  toggleShell.current = () => {
-    if (canShell) setLayout({ shellPane: !layout.shellPane })
-  }
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
-      e.preventDefault()
-      e.stopPropagation()
-      toggleShell.current()
-    }
-    window.addEventListener('keydown', on, true)
-    return () => window.removeEventListener('keydown', on, true)
-  }, [])
+  useShellHotkey(canShell, () => setLayout({ shellPane: !layout.shellPane }))
   // CSS order, not element order: swapping the panes does not remount the terminal.
   const swap = !settings.swap_panes
   const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
@@ -231,6 +222,87 @@ function Desktop() {
   )
 }
 
+/** Ctrl+` shows and hides the shell pane; it works inside the terminals too, so it is caught before they see it. */
+function useShellHotkey(canShell: boolean, toggle: () => void) {
+  const cur = useRef(() => {})
+  cur.current = () => {
+    if (canShell) toggle()
+  }
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
+      e.preventDefault()
+      e.stopPropagation()
+      cur.current()
+    }
+    window.addEventListener('keydown', on, true)
+    return () => window.removeEventListener('keydown', on, true)
+  }, [])
+}
+
+/**
+ * Tablet (SINGLE_COLUMN_BELOW <= width < THREE_COLUMN_FROM): two panes next to the 56 px project tiles.
+ * List view: [projects | threads | thread]. Terminal view (route tab=terminal): [projects | thread | terminal];
+ * the list is hidden and the terminal is mounted only while shown (only displayed terminals own the pty size).
+ * The shell is the phone's full-screen overlay.
+ */
+function Tablet() {
+  const { route, sessions, navigate, layout, setLayout, settings } = useApp()
+  const session = sessions?.find((s) => s.id === route.s) ?? null
+  const zoom = (settings.text_size || 13) / 13
+  const width = useWindowWidth() / zoom
+  const terminal = !!session && route.tab === 'terminal'
+  const PROJ = 56
+  // The two panes share width - PROJ - the resizer; the flexible one keeps its minimum.
+  const avail = width - PROJ - 9
+  // [thread | terminal] starts as an even split (this window only); [list | thread] uses the stored list width.
+  const [split, setSplit] = useState(0.5)
+  const left = terminal ? split * avail : layout.sidebarW
+  const leftMin = terminal ? MIN_W.thread : MIN_W.list
+  const rightMin = terminal ? TABLET_MIN_TERMINAL : MIN_W.thread
+  const leftW = clamp(left, leftMin, Math.max(leftMin, avail - rightMin))
+  const cur = useRef(leftW)
+  cur.current = leftW
+  const drag = (dx: number) => {
+    cur.current = clamp(cur.current + dx / zoom, leftMin, Math.max(leftMin, avail - rightMin))
+    if (terminal) setSplit(cur.current / avail)
+    else setLayout({ sidebarW: cur.current })
+  }
+  const canShell = !!session && session.kind !== 'shell'
+  useShellHotkey(canShell, () => setLayout({ shellPane: !layout.shellPane }))
+  const showShell = canShell && session.status !== 'ended' && layout.shellPane
+  const enter = () => navigate({ tab: 'terminal' }, { push: true })
+  const leave = () => navigate({ tab: 'inbox' }, { push: false })
+  const viewer = route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : null
+  return (
+    <div className="relative flex h-full w-full overflow-hidden bg-bg" data-testid="tablet" data-view={terminal ? 'terminal' : 'list'}>
+      <div style={{ width: PROJ }} className="shrink-0 border-r border-line">
+        <ProjectRail narrow />
+      </div>
+      {terminal ? (
+        <>
+          <div style={{ width: leftW }} className="shrink-0">
+            <ThreadPane session={session} onBack={leave} />
+          </div>
+          <Resizer grip onDrag={drag} />
+          <main className="min-w-0 flex-1">{viewer ?? <TerminalPane session={session} onThreads={leave} />}</main>
+        </>
+      ) : (
+        <>
+          <div style={{ width: leftW }} className="shrink-0 border-r border-line">
+            <ThreadsPane />
+          </div>
+          <Resizer onDrag={drag} />
+          <div className="min-w-0 flex-1">
+            {viewer ?? <ThreadPane session={session} onTerminal={session ? enter : undefined} />}
+          </div>
+        </>
+      )}
+      {showShell && session && <PhoneShell session={session} typing={false} onClose={() => setLayout({ shellPane: false })} />}
+    </div>
+  )
+}
+
 function useWindowWidth(): number {
   const [w, setW] = useState(window.innerWidth)
   useEffect(() => {
@@ -243,6 +315,8 @@ function useWindowWidth(): number {
 
 /** Each pane's minimum width (CSS px); there are no maximums. The project column is fixed (56 or 176). */
 export const MIN_W = { list: 240, thread: 320, terminal: 360, shell: 280 }
+/** The tablet's terminal pane may be narrower than the desktop's (a 700 px window leaves 315). */
+const TABLET_MIN_TERMINAL = 300
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))
