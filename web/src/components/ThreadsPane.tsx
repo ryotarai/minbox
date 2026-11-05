@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ATTENTION, SECTION_LABEL, api, type Project, type Section, type Session, type Thread } from '../api'
+import { ATTENTION, THREAD_STATUS_LABEL, THREAD_STATUS_ORDER, api, type Project, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
@@ -13,7 +13,7 @@ import { PairRequestBanner } from './Devices'
 import { NewSessionDialog } from './NewSession'
 import { NextStep } from './NextStep'
 import { NotificationAsk, Logo, groupSessions, waitsOnPerson } from './Sidebar'
-import { ThreadRow, sortThreads, useAllThreads } from './ThreadList'
+import { ThreadRow, useAllThreads } from './ThreadList'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, StatusDot, cx, statusOf } from './ui'
 import { PhoneSessionSheet } from './PhoneSessions'
 import { PhoneProjectButton } from './PhoneProjects'
@@ -38,7 +38,7 @@ export function useVisibleThreads(): { all: Thread[] | null; groups: { key: stri
     }
     let groups: { key: string; label: string; session?: Session; items: Thread[] }[]
     if (filter.group === 'status') {
-      groups = sortThreads(shown).map((g) => ({ key: g.section, label: SECTION_LABEL[g.section as Section], items: g.items }))
+      groups = THREAD_STATUS_ORDER.map((st) => ({ key: st, label: THREAD_STATUS_LABEL[st], items: shown.filter((t) => t.status === st).sort(byActivity) })).filter((g) => g.items.length > 0)
     } else if (filter.group === 'session') {
       const by = new Map<string, Thread[]>()
       for (const t of [...shown].sort(byActivity)) by.set(t.session_id, [...(by.get(t.session_id) ?? []), t])
@@ -133,7 +133,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                     data-testid="group-header"
                     className={cx(
                       'mt-3 flex h-7 items-center gap-2 px-2 text-[11px] font-bold uppercase tracking-[0.06em]',
-                      ['stopped', 'holding', 'waiting'].includes(g.key) ? 'text-wait' : 'text-subtle',
+                      g.key === 'need_action' ? 'text-wait' : 'text-subtle',
                     )}
                   >
                     {g.session && <StatusDot s={g.session} waits={waitsOnPerson(g.session)} size={6} ring={false} />}
@@ -345,7 +345,7 @@ function FilterRow({ v, phone, onSheet }: { v: ReturnType<typeof useVisibleThrea
         {(
           [
             ['activity', 'Recent activity'],
-            ['status', 'Status sections'],
+            ['status', 'Status'],
             ['session', 'Session'],
           ] as const
         ).map(([g, label]) => (

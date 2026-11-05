@@ -6,6 +6,7 @@ and echoes what it receives to the terminal, without a real model.
 Typed commands (one per line):
   ask        send a message with a question block
   say <text> send a plain message
+  mark <status> [text]  send a message that sets the thread's status (working|need_action|finished)
   work       status working: queued messages wait (idle ends it)
   exit       quit
 """
@@ -171,6 +172,17 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     elif line.startswith("retitle "):
         r = api("POST", "/api/agent/messages", {"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
         out(f"retitled {r['thread_id']}")
+    elif line.startswith("mark "):
+        # mark <status> [text]: a message in the last thread (or a new one) that sets the thread's status
+        status, _, text = line[5:].partition(" ")
+        body = {"body": text or f"Marked {status}", "status": status}
+        if last_thread:
+            body["thread_id"] = last_thread
+        else:
+            body["subject"] = "Status note"
+        r = api("POST", "/api/agent/messages", body)
+        last_thread = r["thread_id"]
+        out(f"marked {r['thread_id']}")
     elif line.startswith("say "):
         body = {"body": line[4:]}
         if last_thread:

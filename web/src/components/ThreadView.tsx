@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
+import { THREAD_STATUS_ORDER, api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
 import { ALL_THREADS, threadLink, useApp } from '../lib/app'
 import { clearReplyDraft, getReplyDraft, setReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
@@ -25,7 +25,7 @@ import {
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
-import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, StatusDot, cx } from './ui'
+import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, StatusDot, ThreadStatusBadge, cx } from './ui'
 import { waitsOnPerson } from './Sidebar'
 
 type Props = {
@@ -370,6 +370,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
               {thread.subject}
             </h2>
             <div className="flex flex-wrap items-center gap-2 text-[12px] text-subtle">
+              <ThreadStatusBadge status={thread.status} />
               <ThreadName thread={thread} />
               <span>
                 {plural(thread.message_count ?? n, 'message')} · {span(thread.created_at, thread.updated_at)}
@@ -630,6 +631,11 @@ function ThreadMoreMenu({
         >
           {thread.pinned_at ? 'Unpin thread' : 'Pin thread'}
         </MenuItem>
+        {THREAD_STATUS_ORDER.filter((st) => st !== thread.status).map((st) => (
+          <MenuItem key={st} testid={`thread-mark-${st}`} onClick={() => (close(), api.setThreadStatus(thread.id, st).catch(error))}>
+            {st === 'finished' ? 'Mark as finished' : st === 'working' ? 'Mark as working' : 'Mark as needs action'}
+          </MenuItem>
+        ))}
         <MenuItem
           testid="thread-unread"
           onClick={() => {

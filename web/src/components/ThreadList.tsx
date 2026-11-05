@@ -4,7 +4,7 @@ import { useApp } from '../lib/app'
 import { oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
 import { IconPaperclip, IconPin } from './icons'
-import { StatusDot, cx } from './ui'
+import { StatusDot, ThreadStatusBadge, cx } from './ui'
 import { waitsOnPerson } from './Sidebar'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
@@ -88,6 +88,7 @@ export function ThreadRow({ t, focused, onOpen, phone, session, project, onOpenS
             ?{t.open_questions}
           </span>
         )}
+        {t.status && <ThreadStatusBadge status={t.status} />}
         <span className="shrink-0 text-[12px] text-subtle">{shortTime(t.updated_at)}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">

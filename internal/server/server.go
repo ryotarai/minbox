@@ -160,6 +160,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/threads/{id}/unarchive", s.threadOp(func(ctx context.Context, id string) error { return s.store.SetThreadArchived(ctx, id, false) }))
 	mux.HandleFunc("POST /api/threads/{id}/pin", s.threadOp(func(ctx context.Context, id string) error { return s.store.SetThreadPinned(ctx, id, true) }))
 	mux.HandleFunc("POST /api/threads/{id}/unpin", s.threadOp(func(ctx context.Context, id string) error { return s.store.SetThreadPinned(ctx, id, false) }))
+	mux.HandleFunc("POST /api/threads/{id}/status", s.setThreadStatus)
 	mux.HandleFunc("POST /api/threads/{id}/snooze", s.snoozeThread)
 	mux.HandleFunc("POST /api/threads/{id}/unsnooze", s.threadOp(func(ctx context.Context, id string) error { return s.store.SnoozeThread(ctx, id, nil) }))
 	mux.HandleFunc("POST /api/threads/{id}/reask", s.reask)

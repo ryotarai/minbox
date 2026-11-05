@@ -284,6 +284,7 @@ export const register: Register = (on) => {
       thread_title: typeof e.thread_title === 'string' && e.thread_title ? e.thread_title : typeof e.subject === 'string' ? e.subject : undefined,
       thread_id: typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : undefined,
       name: typeof e.name === 'string' && e.name ? e.name : undefined,
+      status: typeof e.status === 'string' && e.status ? e.status : undefined,
       attachments: Array.isArray(e.attachments) ? e.attachments.filter((a: unknown) => typeof a === 'string') : undefined,
       review: e.review && typeof e.review === 'object' ? e.review : undefined,
     })
