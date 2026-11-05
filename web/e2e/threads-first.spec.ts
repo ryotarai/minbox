@@ -226,15 +226,15 @@ test('phone: the thread list is home; a thread flips to its terminal; the compos
   // Open a thread: the header shows the session chip, which flips to the terminal.
   await row(page, 'Pick a database').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
-  await expect(page.getByTestId('phone-session-chip')).toContainText('alpha')
-  await page.getByTestId('phone-session-chip').click()
+  await expect(page.getByTestId('phone-session-name')).toContainText('alpha')
+  await page.getByTestId('thread-open-terminal').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
   await expect(page.getByTestId('term-key-esc')).toBeVisible()
   // Thread | Terminal switch while a thread is open; the shell overlay is one tap away.
   await page.getByTestId('mobile-tab-inbox').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
-  await page.getByTestId('phone-session-chip').click()
+  await page.getByTestId('thread-open-terminal').click()
   await page.getByTestId('shell-toggle').click()
   await expect(page.getByTestId('phone-shell')).toBeVisible()
   await page.getByTestId('shell-close').click()
@@ -249,7 +249,7 @@ test('phone: the thread list is home; a thread flips to its terminal; the compos
   await page.getByTestId('quick-body').fill('from the phone')
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
-  await expect(page.getByTestId('phone-session-chip')).toContainText('beta')
+  await expect(page.getByTestId('phone-session-name')).toContainText('beta')
   await expect(page.getByTestId('phone-thread-subject')).toHaveText('from the phone')
 })
 
