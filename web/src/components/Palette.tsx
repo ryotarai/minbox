@@ -95,7 +95,7 @@ function Highlight({ text, idx }: { text: string; idx: number[] }) {
 
 /** ⌘K / "/": jump to a session or thread, or run an action. */
 export function Palette({ onClose }: { onClose: () => void }) {
-  const { projects, reloadProjects, reloadSessions, route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, threadsVersion, error, toast } = useApp()
+  const { projects, reloadProjects, reloadSessions, route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, isTablet, threadsVersion, error, toast } = useApp()
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [threads, setThreads] = useState<Thread[]>([])
@@ -151,6 +151,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
         'Go to terminal',
         () => {
           if (isPhone) navigate({ view: 'main', tab: 'terminal', t: null, f: null })
+          else if (isTablet) navigate({ view: 'main', tab: 'terminal', f: null })
           else {
             navigate({ view: 'main', f: null })
             focusTerminal()
@@ -181,7 +182,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (size > 12) act('text-down', 'Smaller text', () => saveSettings({ text_size: size - 1 }), { keywords: 'text size font zoom decrease' })
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
-  }, [current, isClaude, isPhone, layout.shellPane, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
+  }, [current, isClaude, isPhone, isTablet, layout.shellPane, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 
@@ -201,12 +202,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
           waiting: ATTENTION.includes(sectionOf(s)),
           run: () => {
             remember({ k: 'session', id: s.id })
-            navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'inbox' })
-            if (!isPhone) focusTerminal()
+            navigate({ s: s.id, t: null, f: null, view: 'main', tab: isTablet && s.kind === 'shell' ? 'terminal' : 'inbox' })
+            if (!isPhone && !isTablet) focusTerminal()
           },
         }
       }),
-    [sessions, projects, navigate, isPhone],
+    [sessions, projects, navigate, isPhone, isTablet],
   )
 
   const projectItems = useMemo<Item[]>(

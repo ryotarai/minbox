@@ -26,7 +26,7 @@ export type Route = {
   view: View
   /** Guided review: the attachment shown full screen. */
   r: string | null
-  /** Phone: the session screen's tab. */
+  /** Phone and tablet: the session screen's tab ('terminal' = the terminal view). */
   tab: 'inbox' | 'terminal'
   /** Settings section. */
   ss: string
@@ -66,22 +66,29 @@ export function threadLink(sessionId: string, threadId: string): string {
 // ---- phone ----
 
 /**
- * Single-column navigation (the phone layout: list, thread, terminal, one at a time) below this
- * width. It is where the three columns [Threads | Thread | Terminal] no longer fit: the narrowest
- * they get is the project tiles 56 + list 240 + thread 380 + terminal 360 + gaps 18 = 1054, and
- * 1100 leaves some room. Wide touch screens (tablets, unfolded foldables) follow the same width rule.
+ * Width bands (CSS px), purely width-based so touch tablets, foldables and small desktop windows
+ * behave alike:
+ *   < SINGLE_COLUMN_BELOW                      phone: one column at a time (list, thread, terminal)
+ *   SINGLE_COLUMN_BELOW .. THREE_COLUMN_FROM-1 tablet: two panes [list | thread], or [thread | terminal]
+ *   >= THREE_COLUMN_FROM                       desktop: [Threads | Thread | Terminal (| Shell)]
+ * The narrowest three columns get is project tiles 56 + list 240 + thread 380 + terminal 360 + gaps
+ * 18 = 1054, and 1100 leaves some room.
  */
-export const SINGLE_COLUMN_BELOW = 1100
+export const SINGLE_COLUMN_BELOW = 700
+export const THREE_COLUMN_FROM = 1100
 const phoneQuery = window.matchMedia(`(max-width: ${SINGLE_COLUMN_BELOW - 1}px)`)
-export function useIsPhone(): boolean {
+const tabletQuery = window.matchMedia(`(min-width: ${SINGLE_COLUMN_BELOW}px) and (max-width: ${THREE_COLUMN_FROM - 1}px)`)
+function useQuery(q: MediaQueryList): boolean {
   return useSyncExternalStore(
     (l) => {
-      phoneQuery.addEventListener('change', l)
-      return () => phoneQuery.removeEventListener('change', l)
+      q.addEventListener('change', l)
+      return () => q.removeEventListener('change', l)
     },
-    () => phoneQuery.matches,
+    () => q.matches,
   )
 }
+export const useIsPhone = () => useQuery(phoneQuery)
+export const useIsTablet = () => useQuery(tabletQuery)
 
 // ---- layout preferences (this browser) ----
 
@@ -166,6 +173,7 @@ type AppState = {
   overlay: Overlay
   setOverlay: (o: Overlay) => void
   isPhone: boolean
+  isTablet: boolean
 }
 
 const Ctx = createContext<AppState | null>(null)
@@ -183,6 +191,7 @@ export function attentionOf(s: Session): number {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const isPhone = useIsPhone()
+  const isTablet = useIsTablet()
   const [route, setRoute] = useState<Route>(readRoute)
   const [sessions, setSessions] = useState<Session[] | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
@@ -449,8 +458,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       overlay,
       setOverlay,
       isPhone,
+      isTablet,
     }),
-    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, cardsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone],
+    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, cardsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone, isTablet],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
