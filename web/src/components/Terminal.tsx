@@ -683,8 +683,8 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         data-testid="terminal-focus-ring"
         data-focused={focused ? 'true' : 'false'}
         className={cx(
-          'pointer-events-none absolute inset-0 z-10 rounded-[8px] border-2 transition-colors',
-          focused ? 'border-accent' : 'border-transparent',
+          'pointer-events-none absolute inset-0 z-10 rounded-[8px] border transition-colors',
+          focused ? 'border-[color-mix(in_srgb,var(--mb-accent)_55%,transparent)]' : 'border-transparent',
         )}
       />
       {state !== 'open' && (
