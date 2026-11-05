@@ -510,3 +510,84 @@ func plural(n int, word string) string {
 	}
 	return fmt.Sprintf("%d %ss", n, word)
 }
+
+// Readable returns the message body with every question block replaced by plain Markdown a
+// reader outside minbox (a Slack message, an email) can follow: the prompt in bold, the context,
+// the choices as a list (the recommended one marked), and the recommendation. The prose around the
+// blocks is kept as written.
+func Readable(body string) string {
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	var out []string
+	inFence := false
+	for i := 0; i < len(lines); i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "```") {
+			inFence = !inFence
+			out = append(out, lines[i])
+			continue
+		}
+		m := openRe.FindStringSubmatch(lines[i])
+		if inFence || m == nil {
+			out = append(out, lines[i])
+			continue
+		}
+		var block []string
+		j := i + 1
+		for ; j < len(lines) && !closeRe.MatchString(lines[j]); j++ {
+			block = append(block, lines[j])
+		}
+		i = j
+		var qs []Question
+		if m[1] == "actions" {
+			qs = parseActions(block)
+		} else if q, ok := parseBlock(m[1], block); ok {
+			qs = []Question{q}
+		}
+		if len(qs) == 0 {
+			out = append(out, block...)
+			continue
+		}
+		out = append(out, readableQuestions(qs)...)
+	}
+	return strings.Join(out, "\n")
+}
+
+func readableQuestions(qs []Question) []string {
+	var out []string
+	for _, q := range qs {
+		switch q.Kind {
+		case Action:
+			out = append(out, "- ☐ "+q.Prompt)
+			continue
+		case Multi:
+			out = append(out, "**❓ "+q.Prompt+"** (choose any)")
+		case Text:
+			out = append(out, "**❓ "+q.Prompt+"** (free answer)")
+		default:
+			out = append(out, "**❓ "+q.Prompt+"**")
+		}
+		if q.Context != "" {
+			out = append(out, q.Context)
+		}
+		if q.Stopped != "" {
+			out = append(out, "Stopped: "+q.Stopped)
+		}
+		if len(q.HoldsUp) > 0 {
+			out = append(out, "Holds up: "+strings.Join(q.HoldsUp, "; "))
+		}
+		for _, c := range q.Choices {
+			line := "- " + c.Label
+			if c.Description != "" {
+				line += " — " + c.Description
+			}
+			if c.Recommended {
+				line += " (recommended)"
+			}
+			out = append(out, line)
+		}
+		if q.RecommendedText != "" {
+			out = append(out, "Recommended: "+q.RecommendedText)
+		}
+		out = append(out, "")
+	}
+	return out
+}
