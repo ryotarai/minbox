@@ -69,7 +69,7 @@ func TestSectionsAndSessionTop(t *testing.T) {
 	if _, err := s.AddMessage(ctx, hold.ID, agentMsg("more")); err != nil {
 		t.Fatal(err)
 	}
-	if th := get(hold.ID); !th.CameBack || th.Section != SectionNew || th.ArchivedAt == nil {
+	if th := get(hold.ID); !th.CameBack || th.Section != SectionWaiting || th.Status != ThreadNeedAction || th.ArchivedAt == nil {
 		t.Fatalf("came back = %+v", th)
 	}
 

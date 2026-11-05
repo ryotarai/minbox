@@ -99,6 +99,18 @@ test('send_message posts the message and says the reply comes by itself', async 
   expect(post?.body.thread_title).toBe('Plan')
 })
 
+test('send_message forwards status, and omits it when not given', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'done', status: 'finished' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'more' } as any)
+  const posts = server.calls.filter((c) => c.path === '/api/agent/messages')
+  expect(posts[0]?.body.status).toBe('finished')
+  expect(posts[1]?.body.status).toBeUndefined()
+})
+
 test('send_message still forwards the old subject parameter as thread_title', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })

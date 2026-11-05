@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { Session } from '../api'
+import { THREAD_STATUS_LABEL, type Session, type ThreadStatus } from '../api'
 
 export function cx(...v: (string | false | null | undefined)[]): string {
   return v.filter(Boolean).join(' ')
@@ -68,6 +68,32 @@ export function StatusDot({ s, waits, size = 8, ring = true }: { s: Session; wai
       style={{ width: size, height: size }}
       className={cx('inline-block shrink-0 rounded-full box-border', st.dot, ring && st.ring, s.status === 'working' && 'mb-pulse')}
     />
+  )
+}
+
+const THREAD_STATUS_STYLE: Record<ThreadStatus, { text: string; bg: string }> = {
+  need_action: { text: 'text-wait', bg: 'bg-wait/12' },
+  working: { text: 'text-work', bg: 'bg-work/12' },
+  finished: { text: 'text-subtle', bg: 'bg-chip' },
+}
+
+/** A thread's status: pulsing dot while working, amber when it needs action, a muted check when finished. */
+export function ThreadStatusBadge({ status, className }: { status: ThreadStatus; className?: string }) {
+  const st = THREAD_STATUS_STYLE[status] ?? THREAD_STATUS_STYLE.finished
+  return (
+    <span
+      data-testid="thread-status"
+      data-status={status}
+      title={`Status: ${THREAD_STATUS_LABEL[status]}`}
+      className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold', st.bg, st.text, className)}
+    >
+      {status === 'finished' ? (
+        <span aria-hidden="true">✓</span>
+      ) : (
+        <span aria-hidden="true" className={cx('inline-block h-[6px] w-[6px] rounded-full', status === 'working' ? 'mb-pulse bg-work' : 'bg-wait')} />
+      )}
+      {THREAD_STATUS_LABEL[status]}
+    </span>
   )
 }
 

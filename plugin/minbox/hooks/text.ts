@@ -12,6 +12,7 @@ export const SEND_DESCRIPTION = [
   'Their reply arrives later as a new message in this conversation; meanwhile keep working on what does not depend on it, or end your turn.',
   'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
   'Pass `thread_title` (short, under 60 characters) when you start a thread and whenever the thread\'s topic has changed, so the title in the inbox list shows what it is about now; leave it out to keep the title as it is.',
+  'Pass `status` (working | need_action | finished) to set the thread\'s status: `working` when you start working on it, `need_action` when you need the person to decide or do something, `finished` when its task is done; leave it out to keep the current status.',
   'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
 ].join(' ')
 
@@ -52,6 +53,12 @@ export const SEND_SCHEMA = {
       type: 'string',
       description:
         "The thread's title in the inbox list (short, under 60 characters). Pass it when you start a thread and whenever its topic has changed; it replaces the current title, also on a reply with thread_id. Omit to leave the title as it is (a new thread then takes the first line of body).",
+    },
+    status: {
+      type: 'string',
+      enum: ['working', 'need_action', 'finished'],
+      description:
+        "The thread's status, shown as a badge in the inbox. Set `working` when you start working on the thread, `need_action` when you need the person to decide or do something, `finished` when the thread's task is done. Omit to keep the current status (a message with questions sets need_action by itself; the person's reply sets working).",
     },
     subject: {
       type: 'string',
