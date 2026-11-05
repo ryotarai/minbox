@@ -351,8 +351,52 @@ func (l *Local) TranscriptExists(ctx context.Context, cwd, id string) bool {
 	if env.ClaudeConfigDir == "" || id == "" {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(env.ClaudeConfigDir, "projects", ProjectDirName(cwd), id+".jsonl"))
-	return err == nil
+	return findTranscript(filepath.Join(env.ClaudeConfigDir, "projects"), cwd, id) != ""
+}
+
+// findTranscript locates <id>.jsonl under projects: first for the raw cwd, then
+// for the symlink-resolved cwd (Claude Code names the folder after the real
+// path: /tmp is -private-tmp on macOS), last in any project folder (ids are
+// UUIDs, so unique). It returns "" if there is none.
+func findTranscript(projects, cwd, id string) string {
+	if id == "" || strings.ContainsAny(id, `/\`) {
+		return ""
+	}
+	name := id + ".jsonl"
+	try := func(dir string) string {
+		p := filepath.Join(projects, dir, name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+		return ""
+	}
+	if cwd != "" {
+		if p := try(ProjectDirName(cwd)); p != "" {
+			return p
+		}
+		if real, err := filepath.EvalSymlinks(cwd); err == nil {
+			if p := try(ProjectDirName(real)); p != "" {
+				return p
+			}
+		}
+		if c := filepath.Clean(cwd); c != cwd {
+			if p := try(ProjectDirName(c)); p != "" {
+				return p
+			}
+		}
+	}
+	entries, err := os.ReadDir(projects)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			if p := try(e.Name()); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // WriteFile creates area/rel (exclusive) from r.
