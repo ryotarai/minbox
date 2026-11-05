@@ -573,7 +573,7 @@ function ThreadName({ thread }: { thread: Thread }) {
   )
 }
 
-function ThreadMoreMenu({
+export function ThreadMoreMenu({
   thread,
   anchor,
   onClose,

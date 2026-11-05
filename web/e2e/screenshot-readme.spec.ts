@@ -304,7 +304,7 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   await expect(ph.getByTestId('question-card').first()).toBeVisible()
   await showCard(ph)
   await shot('_phone-2', ph)
-  await ph.getByTestId('phone-session-chip').click()
+  await ph.getByTestId('thread-open-terminal').click()
   await expect(ph.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
   const tfile2 = join(specDir, 'transcript-phone.txt')
   writeFileSync(tfile2, PHONE_TRANSCRIPT)

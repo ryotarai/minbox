@@ -41,7 +41,7 @@ async function walk(page: Page, shots?: (n: string) => Promise<void>) {
   await noOverflow(page)
   await shots?.('n-02-narrow-thread')
 
-  await page.getByTestId('phone-session-chip').click()
+  await page.getByTestId('thread-open-terminal').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
   await noOverflow(page)

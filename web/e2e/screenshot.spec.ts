@@ -119,6 +119,6 @@ test('screenshots', async ({ page, minbox }) => {
   await page.getByRole('button', { name: 'Cancel' }).click()
   await page.getByTestId('thread-row').filter({ hasText: 'Archive rules' }).click()
   await shot('22-phone-thread')
-  await page.getByTestId('phone-session-chip').click()
+  await page.getByTestId('thread-open-terminal').click()
   await shot('23-phone-terminal')
 })

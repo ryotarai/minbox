@@ -286,7 +286,7 @@ test('phone: the thread list is home; a thread flips to its session\'s terminal;
   await page.getByTestId('reply-send').click()
   await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
 
-  await page.getByTestId('phone-session-chip').click()
+  await page.getByTestId('thread-open-terminal').click()
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
   await expect(page.getByTestId('term-key-esc')).toBeVisible()
   // Only the phone is open now: the PTY is sized to it.
