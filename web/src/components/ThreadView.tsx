@@ -1063,6 +1063,65 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   )
 }
 
+/** Up to three drafted replies above the reply box: click sends, the pencil puts the text in the box. */
+function SuggestionChips({ threadId, lastId, onEdit }: { threadId: string; lastId: string; onEdit: (text: string) => void }) {
+  const { error } = useApp()
+  const [items, setItems] = useState<string[] | null>(null) // null: still drafting
+  const [sent, setSent] = useState(false)
+  useEffect(() => {
+    let live = true
+    api
+      .suggestions(threadId)
+      .then((r) => live && setItems(r.suggestions ?? []))
+      .catch(() => live && setItems([]))
+    return () => {
+      live = false
+    }
+  }, [threadId, lastId])
+  if (sent || (items && items.length === 0)) return null
+  if (!items)
+    return (
+      <div data-testid="reply-suggestions-loading" aria-hidden className="flex gap-1.5">
+        <span className="h-7 w-28 animate-pulse rounded-full bg-chip" />
+        <span className="h-7 w-20 animate-pulse rounded-full bg-chip" />
+      </div>
+    )
+  const send = (text: string) => {
+    setSent(true)
+    api.reply(threadId, { words: text }).catch((err) => {
+      setSent(false)
+      error(err)
+    })
+  }
+  return (
+    <div data-testid="reply-suggestions" role="group" aria-label="Suggested replies" className="flex flex-wrap gap-1.5">
+      {items.slice(0, 3).map((t, i) => (
+        <span key={i} className="inline-flex max-w-full items-center overflow-hidden rounded-full border border-linestrong bg-sunken text-[12.5px] text-fg2">
+          <button
+            type="button"
+            data-testid="reply-suggestion"
+            title={t}
+            onClick={() => send(t)}
+            className="min-w-0 max-w-[60ch] truncate border-0 bg-transparent py-1 pl-3 pr-1.5 text-left hover:bg-raised hover:text-fg"
+          >
+            {t}
+          </button>
+          <button
+            type="button"
+            data-testid="reply-suggestion-edit"
+            aria-label={`Edit: ${t}`}
+            title="Edit before sending"
+            onClick={() => onEdit(t)}
+            className="shrink-0 border-0 bg-transparent py-1 pl-1 pr-2.5 text-subtle hover:bg-raised hover:text-fg"
+          >
+            ✎
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function ReplyBox({
   session,
   thread,
@@ -1090,7 +1149,7 @@ function ReplyBox({
   sessions: Session[]
   onCompose: () => void
 }) {
-  const { error, toast } = useApp()
+  const { error, toast, settings } = useApp()
   const draft = useReplyDraft(thread.id)
   const [sending, setSending] = useState(false)
   const [whereAnchor, setWhereAnchor] = useState<HTMLElement | null>(null)
@@ -1141,6 +1200,19 @@ function ReplyBox({
       />
     </>
   )
+  const lastMsg = thread.messages?.[thread.messages.length - 1]
+  const wantChips = settings.reply_suggestions && lastMsg?.author === 'agent' && openCount === 0 && session.status !== 'ended' && !words.trim()
+  const chips = wantChips && lastMsg ? (
+    <SuggestionChips
+      key={lastMsg.id}
+      threadId={thread.id}
+      lastId={lastMsg.id}
+      onEdit={(text) => {
+        updateReplyDraft(thread.id, (d) => ({ ...d, words: text }))
+        replyRef.current?.focus()
+      }}
+    />
+  ) : null
   const actionsDone = (target?.questions ?? []).filter((q) => q.kind === 'action' && answers.some((a) => a.key === q.key)).length
 
   const send = async (opts: { resume?: boolean; forward_to?: string; keep?: boolean } = {}) => {
@@ -1288,6 +1360,7 @@ function ReplyBox({
   if (phone) {
     return (
       <div className={cx('flex flex-col gap-2 border-t border-line bg-surface px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
+        {chips}
         {counter}
         {fileTiles}
         <div className={cx('flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
@@ -1317,6 +1390,7 @@ function ReplyBox({
 
   return (
     <div className={cx('flex flex-col gap-2 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
+      {chips}
       <span className="text-[12px] text-muted">Reply to Claude Code in {session.name}</span>
       <div className={cx('flex flex-col gap-2 rounded-[10px] border border-linestrong bg-sunken px-3 py-2.5 focus-within:border-accent', full && 'min-h-0 flex-1')}>
         {textarea}

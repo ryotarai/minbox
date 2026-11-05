@@ -511,14 +511,15 @@ func serve(args []string) error {
 	}
 
 	cfg := server.Config{
-		Addr:          *addr,
-		DataDir:       *dataDir,
-		ClaudeCommand: strings.Fields(*claudeCmd),
-		PluginDir:     pluginDir,
-		ServerFile:    filepath.Join(*dataDir, "server.json"),
-		ScratchDir:    filepath.Join(*dataDir, "scratch"),
-		HostURL:       "unix://" + socketPath(*dataDir),
-		ListenAny:     listenAny,
+		Addr:           *addr,
+		DataDir:        *dataDir,
+		ClaudeCommand:  strings.Fields(*claudeCmd),
+		SuggestCommand: strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
+		PluginDir:      pluginDir,
+		ServerFile:     filepath.Join(*dataDir, "server.json"),
+		ScratchDir:     filepath.Join(*dataDir, "scratch"),
+		HostURL:        "unix://" + socketPath(*dataDir),
+		ListenAny:      listenAny,
 	}
 	if *tsServe {
 		if *tsLogin == "" {
