@@ -73,7 +73,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     host?.kill('SIGTERM')
     host = null
     try {
-      execFileSync('pkill', ['-f', `fake-claude.py.*`])
+      execFileSync('pkill', ['-f', join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.py')])
     } catch {
       /* none */
     }
