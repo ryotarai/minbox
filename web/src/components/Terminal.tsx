@@ -99,6 +99,8 @@ export type TerminalHandle = {
 
 type Props = {
   sessionId: string
+  /** Attach to the session's companion shell instead of its Claude Code terminal. */
+  shell?: boolean
   /** Focus the terminal once it opens (not on a phone: that raises the keyboard). */
   autoFocus?: boolean
   fontSize?: number
@@ -114,7 +116,7 @@ type Props = {
  * terminal host (through the server).
  */
 export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalView(
-  { sessionId, autoFocus = true, fontSize = 13, newlineOnShiftEnter = true, onSize, onNotice, className },
+  { sessionId, shell = false, autoFocus = true, fontSize = 13, newlineOnShiftEnter = true, onSize, onNotice, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -133,6 +135,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
+    const testKey = shell ? '__minboxShellTerminal' : '__minboxTerminal'
     let disposed = false
     let ws: WebSocket | null = null
     let stopReconnect: (() => void) | null = null
@@ -221,7 +224,8 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       el.appendChild(ime)
       if (autoFocus) term.focus()
       // For end-to-end tests: the terminal draws on a canvas, so its text is read from the buffer.
-      ;(window as unknown as { __minboxTerminal?: GhosttyTerminal }).__minboxTerminal = term
+      // The companion shell is kept apart, so it never replaces the session's own terminal here.
+      ;(window as unknown as Record<string, GhosttyTerminal | undefined>)[testKey] = term
 
       api.current = { send, focus: () => term?.focus() }
 
@@ -267,7 +271,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         })
       }
       const openNow = () => {
-        const sock = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/terminal`)
+        const sock = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/${shell ? 'shell/' : ''}terminal`)
         ws = sock
         sock.binaryType = 'arraybuffer'
         const reconnecting = attempts > 0
@@ -650,12 +654,12 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       ime.remove()
       observer?.disconnect()
       ws?.close()
-      const w = window as unknown as { __minboxTerminal?: GhosttyTerminal }
-      if (w.__minboxTerminal === term) delete w.__minboxTerminal
+      const w = window as unknown as Record<string, GhosttyTerminal | undefined>
+      if (w[testKey] === term) delete w[testKey]
       term?.dispose()
       api.current = { send: () => {}, focus: () => {} }
     }
-  }, [sessionId, autoFocus, fontSize])
+  }, [sessionId, shell, autoFocus, fontSize])
 
   return (
     <div ref={boxRef} className={cx('relative h-full w-full overflow-hidden', className)}>

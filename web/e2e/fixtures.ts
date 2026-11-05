@@ -98,9 +98,9 @@ export const test = base.extend<{ minbox: Minbox }>({
 export { expect }
 
 /** The terminal's visible text (it is drawn on a canvas). */
-export async function terminalText(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const term = (window as any).__minboxTerminal
+export async function terminalText(page: Page, which: 'session' | 'shell' = 'session'): Promise<string> {
+  return page.evaluate((which) => {
+    const term = (window as any)[which === 'shell' ? '__minboxShellTerminal' : '__minboxTerminal']
     if (!term) return ''
     const buf = term.buffer.active
     const lines: string[] = []
@@ -117,7 +117,7 @@ export async function terminalText(page: Page): Promise<string> {
       lines.push(s.trimEnd())
     }
     return lines.join('\n')
-  })
+  }, which)
 }
 
 export async function expectTerminal(page: Page, re: RegExp | string) {

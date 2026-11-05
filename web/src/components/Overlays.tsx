@@ -53,6 +53,7 @@ const KEYS: [string, string, boolean?][] = [
   ['Search', '⌘K  /'],
   ['Shortcuts', '?'],
   ['Sidebar', '⌘B'],
+  ['Shell pane', 'Ctrl+`'],
   ['Close layer', 'Esc'],
   ['List', '', true],
   ['Thread', '', true],

@@ -13,6 +13,7 @@ import { NewSessionDialog } from './components/NewSession'
 import { DeviceGate } from './components/Devices'
 import { SearchPalette } from './components/SearchPalette'
 import { SettingsPage } from './components/Settings'
+import { ShellPane } from './components/ShellPane'
 import { Sidebar } from './components/Sidebar'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -101,20 +102,26 @@ function Desktop() {
   // then the thread pane narrows, then the inbox. A column keeps the width it was dragged to as
   // long as it fits, so a drag moves the edge 1:1.
   const MIN_CENTER = 420
+  // The shell pane (far right, Claude Code sessions only) gives way first: it narrows to 280, and
+  // disappears when even then the other columns cannot make room.
+  const showShell = !!session && session.kind !== 'shell' && session.status !== 'ended' && layout.shellPane
+  let shellW = showShell ? layout.shellW : 0
   let sidebarW = layout.sidebarW
   let inboxW = showInbox ? (route.f && !wide ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
   let threadW = wide ? layout.threadW : 0
   let rail = layout.rail || !!route.f
-  const over = () => (rail ? 60 : sidebarW) + inboxW + threadW + MIN_CENTER - width
+  const over = () => (rail ? 60 : sidebarW) + inboxW + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER - width
+  if (shellW && over() > 0) shellW = Math.max(280, shellW - over())
   if (!rail && over() > 0) sidebarW = Math.max(216, sidebarW - over())
   if (!rail && over() > 0) rail = true
   if (wide && over() > 0) threadW = Math.max(360, threadW - over())
   if (showInbox && over() > 0) inboxW = Math.max(320, inboxW - over())
+  if (shellW && over() > 0) shellW = 0
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
-  const cur = useRef({ sidebarW, inboxW, threadW })
-  cur.current = { sidebarW, inboxW, threadW }
+  const cur = useRef({ sidebarW, inboxW, threadW, shellW })
+  cur.current = { sidebarW, inboxW, threadW, shellW }
   const dragSidebar = (dx: number) => {
     cur.current.sidebarW = clamp(cur.current.sidebarW + dx / zoom, 216, 480)
     setLayout({ sidebarW: cur.current.sidebarW })
@@ -128,6 +135,27 @@ function Desktop() {
     cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 360, 900)
     setLayout({ threadW: cur.current.threadW })
   }
+  const dragShell = (dx: number) => {
+    cur.current.shellW = clamp(cur.current.shellW + dx / zoom, 280, 900)
+    setLayout({ shellW: cur.current.shellW })
+  }
+  // Ctrl+` shows and hides the shell pane; it works inside the terminals too, so it is caught
+  // before they see it.
+  const canShell = !!session && session.kind !== 'shell'
+  const toggleShell = useRef<() => void>(() => {})
+  toggleShell.current = () => {
+    if (canShell) setLayout({ shellPane: !layout.shellPane })
+  }
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
+      e.preventDefault()
+      e.stopPropagation()
+      toggleShell.current()
+    }
+    window.addEventListener('keydown', on, true)
+    return () => window.removeEventListener('keydown', on, true)
+  }, [])
   // The inbox column (and on a wide screen the thread pane after it), with their drag edges:
   // right of the terminal, or left of it when the panes are swapped.
   const swap = settings.swap_panes
@@ -167,6 +195,14 @@ function Desktop() {
         {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
       </main>
       {!swap && panes}
+      {shellW > 0 && session && (
+        <>
+          <Resizer grip onDrag={(dx) => dragShell(-dx)} />
+          <div style={{ width: shellW }} className="shrink-0">
+            <ShellPane session={session} onClose={() => setLayout({ shellPane: false })} />
+          </div>
+        </>
+      )}
     </div>
   )
 }

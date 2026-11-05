@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -102,12 +103,35 @@ const terminalPingEvery = 15 * time.Second
 
 // terminalWS bridges the browser's WebSocket to the terminal host's attach socket.
 func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	sess, err := s.store.GetSession(r.Context(), id)
+	sess, err := s.store.GetSession(r.Context(), r.PathValue("id"))
 	if err != nil {
 		storeError(w, err)
 		return
 	}
+	s.bridgeTerminal(w, r, sess, sess.ID)
+}
+
+// shellWS bridges to the session's companion shell, starting it on first attach.
+func (s *Server) shellWS(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.store.GetSession(r.Context(), r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if err := s.sessions.ensureShell(r.Context(), sess); err != nil {
+		var ce *clientError
+		if errors.As(err, &ce) {
+			httpError(w, ce.status, ce.msg)
+		} else {
+			httpError(w, 503, err.Error())
+		}
+		return
+	}
+	s.bridgeTerminal(w, r, sess, shellTermID(sess.ID))
+}
+
+// bridgeTerminal attaches to the host terminal id of a session and pipes it to the browser.
+func (s *Server) bridgeTerminal(w http.ResponseWriter, r *http.Request, sess *store.Session, id string) {
 	hc, err := s.sessions.hostOf(sess)
 	if err != nil {
 		httpError(w, 503, err.Error())

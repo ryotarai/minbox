@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ATTENTION, SECTION_LABEL, uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconArchive, IconBack, IconChevronRight, IconImage, IconMail, IconMore, IconPlus, IconSearch } from './icons'
+import { IconArchive, IconBack, IconChevronRight, IconClose, IconTerminal, IconImage, IconMail, IconMore, IconPlus, IconSearch } from './icons'
 import { InboxPhone } from './PhoneInbox'
 import { AllInboxLink, SessionMenu, groupSessions, sectionOf, waitsOnPerson, Logo } from './Sidebar'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
@@ -51,7 +51,7 @@ export function PhoneApp() {
   const { h, keyboard } = useViewport()
   const session = sessions?.find((s) => s.id === route.s) ?? null
   return (
-    <div className="flex w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" style={{ height: h ?? '100dvh' }} data-testid="phone" data-keyboard={keyboard || undefined}>
+    <div className="relative flex w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" style={{ height: h ?? '100dvh' }} data-testid="phone" data-keyboard={keyboard || undefined}>
       {session ? <PhoneSession session={session} keyboard={keyboard} /> : <PhoneSessions />}
     </div>
   )
@@ -212,8 +212,10 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
   // Typing in the terminal: the keyboard takes half the screen, so the
   // terminal takes the rest (the header and tabs come back with the keyboard down).
   const typing = keyboard && (route.tab === 'terminal' || session.kind === 'shell')
+  const [shellOpen, setShellOpen] = useState(false)
   return (
     <>
+      {shellOpen && session.kind !== 'shell' && session.status !== 'ended' && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
       <header className={cx('flex h-14 shrink-0 items-center gap-0.5 px-1.5', inThread && 'border-b border-line', typing && 'hidden')}>
         <button
           type="button"
@@ -279,7 +281,19 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 {st.label}
               </span>
             </div>
-            <span className="w-[52px]" />
+            {session.kind !== 'shell' ? (
+              <button
+                type="button"
+                data-testid="shell-toggle"
+                aria-label="Open shell"
+                onClick={() => setShellOpen(true)}
+                className="flex h-11 w-[52px] items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
+              >
+                <IconTerminal size={20} />
+              </button>
+            ) : (
+              <span className="w-[52px]" />
+            )}
           </>
         )}
       </header>
@@ -297,6 +311,28 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
       </div>}
       {route.tab === 'inbox' && session.kind !== 'shell' ? <InboxPhone session={session} /> : <PhoneTerminal session={session} typing={typing} />}
     </>
+  )
+}
+
+/** The companion shell, full screen in front of everything. It is mounted only while shown: the shell itself lives on. */
+function PhoneShell({ session, typing, onClose }: { session: Session; typing: boolean; onClose: () => void }) {
+  const { toast } = useApp()
+  const term = useRef<TerminalHandle>(null)
+  const wrap = useRef<HTMLDivElement>(null)
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col bg-surface pt-[env(safe-area-inset-top)]" data-testid="phone-shell">
+      <header className={cx('flex h-14 shrink-0 items-center gap-2 px-3', typing && 'hidden')}>
+        <span className="text-[16px] font-[650]">Shell</span>
+        <span className="mono min-w-0 flex-1 truncate text-[12px] text-subtle">{homeRelative(session.cwd)}</span>
+        <button type="button" data-testid="shell-close" aria-label="Close shell" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
+          <IconClose size={20} />
+        </button>
+      </header>
+      <div ref={wrap} className={cx('relative min-h-0 flex-1 overflow-hidden border-line bg-[var(--mb-term-bg)]', typing ? 'border-y pl-1.5 pt-1' : 'mx-3 rounded-[10px] border pl-3 pt-2.5')}>
+        <TerminalView key={session.id} ref={term} sessionId={session.id} shell autoFocus={false} fontSize={11} onNotice={(t, e) => toast(t, { error: e })} />
+      </div>
+      <TerminalKeys term={term} wrap={wrap} className="mt-2 border-t border-line2 bg-[#1a1a1f] px-2 py-1.5 [[data-theme=light]_&]:bg-raised pb-[max(6px,env(safe-area-inset-bottom))]" />
+    </div>
   )
 }
 
