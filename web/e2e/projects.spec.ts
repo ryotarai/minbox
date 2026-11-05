@@ -358,3 +358,22 @@ test("the composer defaults to the project's main session; another session can b
   await expect(page.getByTestId('menu-set-main')).toBeDisabled()
   await page.keyboard.press('Escape')
 })
+
+test('a project without sessions: Send is enabled and starts the New session dialog, then sends', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, folder(minbox, 'api'), 'alpha')
+  const billing = folder(minbox, 'billing')
+  await page.getByTestId('project-new').click()
+  await page.getByTestId('new-session-cwd').fill(billing)
+  await page.getByTestId('new-session-name').fill('Billing')
+  await page.getByTestId('new-session-start').click()
+  await expect(item(page, 'Billing')).toHaveAttribute('data-selected', 'true')
+
+  await expect(page.getByTestId('composer-target-name')).toHaveCount(0)
+  await page.getByTestId('quick-body').fill('First thread')
+  await expect(page.getByTestId('quick-send')).toBeEnabled()
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('new-session-project-info')).toContainText(billing)
+  await page.getByTestId('new-session-start').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('First thread')
+})

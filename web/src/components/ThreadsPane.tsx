@@ -533,9 +533,14 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
   const io = fileInputHandlers(addFiles, addPastedText)
   const uploading = files.some((f) => f.state === 'uploading')
   const hasFiles = files.some((f) => f.state === 'done')
-  const canSend = !!target && (!!body.trim() || hasFiles) && !uploading && !sending
+  const canSend = (!!body.trim() || hasFiles) && !uploading && !sending
   const send = async (to: Session | null = target) => {
-    if (!to || sending || uploading || (!body.trim() && !hasFiles)) return
+    if (sending || uploading || (!body.trim() && !hasFiles)) return
+    if (!to) {
+      // No session in this project yet: start one, then send into it (NewSessionDialog's onCreated).
+      setCreating(true)
+      return
+    }
     setSending(true)
     try {
       const th = await api.createThread(to.id, '', body.trim(), undefined, uploadIds(filesId))
@@ -550,7 +555,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
     }
   }
   const hint = !target
-    ? 'Start a session to write to Claude Code'
+    ? 'Sending starts a new session'
     : target.status === 'ended'
       ? 'Session ended: Claude gets this after Resume'
       : target.status === 'working'
@@ -621,7 +626,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
         onChange={setBody}
         onSubmit={() => void send()}
         {...io}
-        placeholder={target ? 'Start a new thread with Claude Code… (@ agents, / skills)' : 'Pick or start a session above to write to Claude Code'}
+        placeholder={target ? 'Start a new thread with Claude Code… (@ agents, / skills)' : 'Write here: sending starts a new session for Claude Code'}
       />
       <div className="mt-1.5 flex items-center gap-2">
         <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileRef.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
