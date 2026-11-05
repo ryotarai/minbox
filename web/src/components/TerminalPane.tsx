@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconPanelLeft, IconPanelRight, IconTerminal } from './icons'
+import { IconMore, IconTerminal } from './icons'
 import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
-import { Button, IconButton, StatusPill, cx } from './ui'
-import { waitsOnPerson } from './Sidebar'
+import { Button, HostTag, IconButton, StatusPill, cx } from './ui'
+import { SessionMenu, waitsOnPerson } from './Sidebar'
 
 /** The center column: the session's terminal with its header and the ended bar. */
 export function TerminalPane({ session }: { session: Session | null }) {
-  const { layout, setLayout, toast, error, settings } = useApp()
+  const { layout, setLayout, toast, error, reloadSessions } = useApp()
+  const [menu, setMenu] = useState<HTMLElement | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
   const touch = useTouchPrimary()
   const term = useRef<TerminalHandle>(null)
@@ -38,16 +40,43 @@ export function TerminalPane({ session }: { session: Session | null }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
       <div className="flex h-14 shrink-0 items-center gap-3 pl-5 pr-3">
-        <span className="min-w-0 truncate text-[14px] font-semibold" data-testid="terminal-session-name">
-          {session.name}
-        </span>
+        {renaming !== null ? (
+          <input
+            autoFocus
+            aria-label="Session name"
+            data-testid="rename-input"
+            value={renaming}
+            onChange={(e) => setRenaming(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setRenaming(null)
+              }
+            }}
+            onBlur={() => {
+              const v = renaming.trim()
+              setRenaming(null)
+              if (v && v !== session.name) api.renameSession(session.id, v).then(reloadSessions).catch(error)
+            }}
+            className="h-7 w-44 rounded-sm border border-accent bg-sunken px-2 text-[13.5px] text-fg outline-none"
+          />
+        ) : (
+          <span className="max-w-[45%] shrink-0 truncate text-[14px] font-semibold" data-testid="terminal-session-name" title="Double-click to rename" onDoubleClick={() => setRenaming(session.name)}>
+            {session.name}
+          </span>
+        )}
         {session.title && (
           <span className="min-w-0 truncate text-[13.5px] text-fg2" data-testid="terminal-session-title" title={session.title}>
             {session.title}
           </span>
         )}
-        <span className="mono hidden min-w-0 truncate text-[12px] text-subtle xl:inline">{homeRelative(session.cwd)}</span>
-        <StatusPill s={session} waits={waitsOnPerson(session)} />
+        <HostTag name={session.host_name} />
+        <span className="mono hidden min-w-0 truncate text-[12px] text-subtle min-[1800px]:inline">{homeRelative(session.cwd)}</span>
+        <span data-testid="session-status" className="flex">
+          <StatusPill s={session} waits={waitsOnPerson(session)} />
+        </span>
         <span className="flex-1" />
         {size && (
           <span className="sr-only" data-testid="pty-size">
@@ -66,15 +95,10 @@ export function TerminalPane({ session }: { session: Session | null }) {
             <IconTerminal />
           </IconButton>
         )}
-        <IconButton
-          aria-label={layout.inboxCollapsed ? 'Show inbox' : 'Collapse inbox'}
-          title={layout.inboxCollapsed ? 'Show inbox' : 'Collapse inbox'}
-          data-testid="toggle-inbox"
-          onClick={() => setLayout({ inboxCollapsed: !layout.inboxCollapsed })}
-          className={cx('border border-line2', layout.inboxCollapsed && 'text-wait')}
-        >
-          {settings.swap_panes ? <IconPanelLeft /> : <IconPanelRight />}
+        <IconButton aria-label="Session actions" title="Session actions" data-testid="session-menu" onClick={(e) => setMenu(e.currentTarget)} className="border border-line2">
+          <IconMore />
         </IconButton>
+        <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(session.name)} />
       </div>
       <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[18px] py-4">
         {/* A resumed session is a new process: the key change reattaches. */}

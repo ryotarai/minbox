@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, type Host, type SessionKind } from '../api'
+import { api, type Host, type Session, type SessionKind } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative, isMac } from '../lib/format'
 import { Button, HostTag, IconButton, MenuItem, Modal, Popover, cx } from './ui'
@@ -64,7 +64,7 @@ function when(ms: number): string {
 const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 
 /** New session: pick a folder (recent ones, or browse) and start Claude Code in it. */
-export function NewSessionDialog({ onClose }: { onClose: () => void }) {
+export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; onCreated?: (s: Session) => void }) {
   const { sessions, setSessions, navigate, error, isPhone, hosts } = useApp()
   const [hostId, setHostId] = useState(() => localStorage.getItem('minbox:last-host') ?? '')
   const [hostAnchor, setHostAnchor] = useState<HTMLElement | null>(null)
@@ -85,7 +85,7 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
   const [mkdir, setMkdir] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(!isPhone)
   const [claudeCmd, setClaudeCmd] = useState('claude')
-  const [kind, setKindState] = useState<SessionKind>(() => (localStorage.getItem('minbox:last-kind') === 'shell' ? 'shell' : 'claude'))
+  const [kind, setKindState] = useState<SessionKind>(() => (!onCreated && localStorage.getItem('minbox:last-kind') === 'shell' ? 'shell' : 'claude'))
   const setKind = (k: SessionKind) => {
     setKindState(k)
     localStorage.setItem('minbox:last-kind', k)
@@ -149,7 +149,8 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
       const s = await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
       rememberCwd(cwd.trim(), hostId)
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
-      navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
+      if (onCreated) onCreated(s)
+      else navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
       onClose()
     } catch (err) {
       error(err)
@@ -404,7 +405,8 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
       </div>
     )
 
-  const kindPicker = (
+  // Started from the composer, the session must be Claude Code: a message goes to it.
+  const kindPicker = onCreated ? null : (
     <div className="flex flex-col gap-1.5">
       <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>Run</span>
       <div role="radiogroup" aria-label="Run" data-testid="new-session-kind" className="inline-flex gap-0.5 self-start rounded-[9px] border border-line2 bg-sunken p-[3px]">
