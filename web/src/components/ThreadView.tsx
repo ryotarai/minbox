@@ -241,7 +241,7 @@ export function ThreadView({ session, threadId, siblings, onBack, phone }: Props
     const list = siblings ?? []
     const i = list.findIndex((t) => t.id === threadId)
     const next = list[i + d]
-    if (next) navigate({ t: next.id, f: null })
+    if (next) navigate({ s: next.session_id, t: next.id, f: null })
   }
   const scrollTo = (sel: string) => scrollRef.current?.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 

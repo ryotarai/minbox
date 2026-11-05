@@ -49,9 +49,9 @@ function Snippet({ text, words }: { text: string; words: string[] }) {
 
 /** ⌘K / "/": search threads, messages and files, in one session or all. */
 export function SearchPalette({ onClose }: { onClose: () => void }) {
-  const { route, sessions, navigate, error } = useApp()
+  const { sessions, navigate, error } = useApp()
   const [q, setQ] = useState('')
-  const [scope, setScope] = useState<string>(route.s ?? '')
+  const [scope, setScope] = useState<string>('')
   const [status, setStatus] = useState('')
   const [from, setFrom] = useState('')
   const [res, setRes] = useState<SearchResult | null>(null)
@@ -83,6 +83,15 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
 
   const words = q.trim().split(/\s+/).filter(Boolean)
   const limit = showAll ? 50 : 6
+  // Sessions match by name on this side; they open the session's terminal without a thread.
+  const sessionHits = useMemo<SearchHit[]>(() => {
+    const w = q.trim().toLowerCase()
+    if (!w) return []
+    return (sessions ?? [])
+      .filter((s) => !s.archived_at && (!scope || s.id === scope) && `${s.name} ${s.title ?? ''}`.toLowerCase().includes(w))
+      .slice(0, 5)
+      .map((s) => ({ thread_id: '', session_id: s.id, session_name: s.name, subject: s.name, snippet: s.title || s.cwd, archived: false, section: 'quiet' as const, created_at: s.updated_at }))
+  }, [sessions, q, scope])
   const groups = useMemo(
     () =>
       res
@@ -90,17 +99,22 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
             ['Threads', res.threads.slice(0, limit), '≡'],
             ['Messages', res.messages.slice(0, limit), '✉'],
             ['Files', res.files.slice(0, limit), ''],
+            ['Sessions', sessionHits, '▸'],
           ] as [string, SearchHit[], string][]).filter((g) => g[1].length > 0)
         : [],
-    [res, limit],
+    [res, limit, sessionHits],
   )
   const flat = groups.flatMap((g) => g[1])
-  const total = res ? res.threads.length + res.messages.length + res.files.length : 0
+  const total = res ? res.threads.length + res.messages.length + res.files.length + sessionHits.length : 0
   const scopeName = scope ? (sessions?.find((s) => s.id === scope)?.name ?? 'this session') : 'All sessions'
 
   const open = (h: SearchHit) => {
     remember(q.trim())
     onClose()
+    if (!h.thread_id) {
+      navigate({ s: h.session_id, t: null, f: null, view: 'main', tab: 'terminal' })
+      return
+    }
     navigate({ s: h.session_id, t: h.thread_id, f: h.attachment_id ?? null, view: 'main', tab: 'inbox' })
     if (h.message_id) {
       setTimeout(() => document.querySelector(`[data-message-id="${h.message_id}"]`)?.scrollIntoView({ block: 'center' }), 400)
@@ -224,7 +238,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
               const i = flat.indexOf(h)
               return (
                 <button
-                  key={`${title}-${h.thread_id}-${h.message_id ?? ''}-${h.attachment_id ?? ''}`}
+                  key={`${title}-${h.session_id}-${h.thread_id}-${h.message_id ?? ''}-${h.attachment_id ?? ''}`}
                   type="button"
                   data-testid="search-result"
                   onMouseEnter={() => setSel(i)}
