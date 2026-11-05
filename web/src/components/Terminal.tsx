@@ -212,7 +212,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         fontSize,
         fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
         theme: THEME,
-        cursorBlink: true,
+        cursorBlink: false,
         scrollback: 10000,
       })
       fit = new FitAddon()
