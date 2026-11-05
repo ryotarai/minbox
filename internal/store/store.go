@@ -765,6 +765,9 @@ func statusAfter(cur string, m NewMessage) string {
 		return ThreadWorking
 	case m.Author == AuthorAgent && len(m.Questions) > 0:
 		return ThreadNeedAction
+	case m.Author == AuthorAgent:
+		// No status given (a mod from before status was required): the agent reported something, so it is not working on it any more.
+		return ThreadFinished
 	}
 	if cur == "" {
 		return ThreadFinished

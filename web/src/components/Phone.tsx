@@ -142,6 +142,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 onClose={() => setMoreAnchor(null)}
                 onBack={home}
                 openQuestions={0}
+                onShell={session.kind !== 'shell' && session.status !== 'ended' ? () => setShellOpen(true) : undefined}
                 onArchive={() => {
                   const id = thread.id
                   api

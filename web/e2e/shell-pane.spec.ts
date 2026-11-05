@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, terminalText, test } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, terminalText, test, typeInTerminal } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // A Claude Code session has a companion shell: a pane at the far right (desktop) or a full-screen
@@ -107,4 +107,23 @@ test('phone: the shell opens full screen, closes, and reopens with its scrollbac
   await page.getByTestId('shell-toggle').click()
   await expect(page.getByTestId('phone-shell')).toBeVisible()
   await expectShell(page, 'phone-42')
+})
+
+test('phone and tablet: the thread menu opens the shell without going to the terminal first', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'menu')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Hello thread')
+  await expectTerminal(page, /sent .*thr_/)
+  for (const width of [390, 900]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto(minbox.url + '/#')
+    if (width === 390) await phoneSelectSession(page, 'menu')
+    await page.getByTestId('thread-row').first().click()
+    await page.getByTestId('thread-more').first().click()
+    await page.getByTestId('thread-open-shell').click()
+    await expect(page.getByTestId('phone-shell')).toBeVisible()
+    await page.getByTestId('shell-close').click()
+    await expect(page.getByTestId('phone-shell')).toHaveCount(0)
+  }
 })

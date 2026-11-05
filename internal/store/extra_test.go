@@ -10,6 +10,11 @@ import (
 	"github.com/ryotarai/minbox/internal/question"
 )
 
+func withStatus(m NewMessage, status string) NewMessage {
+	m.Status = status
+	return m
+}
+
 func agentMsg(body string) NewMessage {
 	return NewMessage{Author: AuthorAgent, Body: body, Questions: question.Parse(body)}
 }
@@ -66,7 +71,7 @@ func TestSectionsAndSessionTop(t *testing.T) {
 	if th := get(hold.ID); th.Section != SectionArchived || th.Messages[0].Closed == nil {
 		t.Fatalf("archived = %+v", th)
 	}
-	if _, err := s.AddMessage(ctx, hold.ID, agentMsg("more")); err != nil {
+	if _, err := s.AddMessage(ctx, hold.ID, withStatus(agentMsg("more"), ThreadNeedAction)); err != nil {
 		t.Fatal(err)
 	}
 	if th := get(hold.ID); !th.CameBack || th.Section != SectionWaiting || th.Status != ThreadNeedAction || th.ArchivedAt == nil {

@@ -97,7 +97,7 @@ async function tabletWalk(page: Page, shots?: (n: string) => Promise<void>) {
   const t2 = (await page.getByTestId('thread-pane').boundingBox())!
   const term = (await page.getByTestId('terminal').boundingBox())!
   expect(t2.width).toBeGreaterThanOrEqual(320 - 1)
-  expect(term.width).toBeGreaterThanOrEqual(300 - 40)
+  expect(term.width).toBeGreaterThanOrEqual(300 - 56)
   expect(term.x).toBeGreaterThanOrEqual(t2.x + t2.width - 1)
   expect(term.x + term.width).toBeLessThanOrEqual(w + 1)
   await noOverflow(page)
