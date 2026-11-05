@@ -45,6 +45,27 @@ const (
 	DeliveryUndelivered = "undelivered" // the session ended before it was delivered
 )
 
+// Thread statuses: what the thread is doing, set by the person's messages, the
+// agent's send_message `status`, and by hand.
+const (
+	ThreadWorking    = "working"
+	ThreadNeedAction = "need_action"
+	ThreadFinished   = "finished"
+)
+
+// NormalizeThreadStatus maps a status (or an alias) to its canonical value.
+func NormalizeThreadStatus(v string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "working", "in_progress", "in-progress", "inprogress":
+		return ThreadWorking, true
+	case "need_action", "needs_action", "need-action", "waiting":
+		return ThreadNeedAction, true
+	case "finished", "done", "complete", "completed":
+		return ThreadFinished, true
+	}
+	return "", false
+}
+
 // Thread list sections, in the order the person should look at them.
 const (
 	SectionStopped  = "stopped" // an open question stops Claude's work
@@ -121,6 +142,7 @@ type Session struct {
 // TopThread is the thread a session row shows.
 type TopThread struct {
 	ID            string    `json:"id"`
+	Status        string    `json:"status"`
 	Subject       string    `json:"subject"`
 	Section       string    `json:"section"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -145,6 +167,8 @@ type Thread struct {
 	PinnedAt     *time.Time `json:"pinned_at"`
 	SnoozedUntil *time.Time `json:"snoozed_until"`
 	MarkedReadAt *time.Time `json:"marked_read_at"`
+	// Status: working | need_action | finished (stored).
+	Status string `json:"status"`
 	// Derived.
 	Unread          int        `json:"unread"`
 	OpenQuestions   int        `json:"open_questions"`
@@ -351,6 +375,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"threads", "pinned_at", "INTEGER"},
 	{"threads", "snoozed_until", "INTEGER"},
 	{"threads", "marked_read_at", "INTEGER"},
+	{"threads", "status", "TEXT"},
 	{"messages", "kind", "TEXT NOT NULL DEFAULT 'message'"},
 	{"messages", "urgent", "INTEGER NOT NULL DEFAULT 0"},
 	{"messages", "annotations", "TEXT NOT NULL DEFAULT '[]'"},
@@ -399,6 +424,9 @@ func migrate(db *sql.DB) error {
 	}
 	if err := migrateProjects(context.Background(), db); err != nil {
 		return fmt.Errorf("projects: %w", err)
+	}
+	if err := migrateThreadStatus(context.Background(), db); err != nil {
+		return fmt.Errorf("thread status: %w", err)
 	}
 	// Hosts added with a shared token (before pairing) must be paired again.
 	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
@@ -578,7 +606,7 @@ func deriveSession(sess *Session, threads []Thread) {
 		if t.Section != SectionArchived && t.Section != SectionSnoozed {
 			sess.Unread += t.Unread
 			if sess.TopThread == nil {
-				sess.TopThread = &TopThread{ID: t.ID, Subject: t.Subject, Section: t.Section, UpdatedAt: t.UpdatedAt,
+				sess.TopThread = &TopThread{ID: t.ID, Status: t.Status, Subject: t.Subject, Section: t.Section, UpdatedAt: t.UpdatedAt,
 					LastAuthor: t.LastAuthor, LastDelivery: t.LastDelivery, OpenQuestions: t.OpenQuestions, Stopped: t.Stopped, HoldsUp: t.HoldsUp}
 			}
 		}
@@ -696,6 +724,26 @@ type NewMessage struct {
 	Kind        string // KindMessage when empty
 	Urgent      bool
 	Annotations []Annotation
+	// Status: the thread's new status (canonical); empty keeps it (see statusAfter).
+	Status string
+}
+
+// statusAfter is the thread's status after message m: the message's own
+// status; else the person's message means working; else an agent message with
+// questions needs action; else the status stays (cur).
+func statusAfter(cur string, m NewMessage) string {
+	switch {
+	case m.Status != "":
+		return m.Status
+	case m.Author == AuthorUser && m.Kind != KindNote:
+		return ThreadWorking
+	case m.Author == AuthorAgent && len(m.Questions) > 0:
+		return ThreadNeedAction
+	}
+	if cur == "" {
+		return ThreadFinished
+	}
+	return cur
 }
 
 // CreateThread creates a thread with its first message.
@@ -704,14 +752,14 @@ func (s *Store) CreateThread(ctx context.Context, sessionID, subject string, m N
 		return nil, nil, err
 	}
 	now := s.now()
-	th := &Thread{ID: NewID("thr"), SessionID: sessionID, Subject: subject, CreatedAt: now, UpdatedAt: now}
+	th := &Thread{ID: NewID("thr"), SessionID: sessionID, Subject: subject, CreatedAt: now, UpdatedAt: now, Status: statusAfter("", m)}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO threads(id,session_id,subject,created_at,updated_at) VALUES(?,?,?,?,?)`,
-		th.ID, th.SessionID, th.Subject, ms(now), ms(now)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO threads(id,session_id,subject,created_at,updated_at,status) VALUES(?,?,?,?,?,?)`,
+		th.ID, th.SessionID, th.Subject, ms(now), ms(now), th.Status); err != nil {
 		return nil, nil, err
 	}
 	msg, err := insertMessage(ctx, tx, th.ID, m, now)
@@ -746,11 +794,16 @@ func insertMessage(ctx context.Context, tx *sql.Tx, threadID string, m NewMessag
 		msg.ID, threadID, m.Author, m.Body, m.Words, jsonOf(m.Questions), jsonOf(m.Answers), m.AnswersFor, ms(now), m.Kind, m.Urgent, jsonOf(m.Annotations)); err != nil {
 		return nil, err
 	}
-	q := `UPDATE threads SET updated_at=? WHERE id=?`
-	if m.Author == AuthorUser {
-		q = `UPDATE threads SET updated_at=?, snoozed_until=NULL WHERE id=?` // a reply ends a snooze
+	var cur sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM threads WHERE id=?`, threadID).Scan(&cur); err != nil {
+		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, q, ms(now), threadID); err != nil {
+	status := statusAfter(cur.String, m)
+	q := `UPDATE threads SET updated_at=?, status=? WHERE id=?`
+	if m.Author == AuthorUser {
+		q = `UPDATE threads SET updated_at=?, status=?, snoozed_until=NULL WHERE id=?` // a reply ends a snooze
+	}
+	if _, err := tx.ExecContext(ctx, q, ms(now), status, threadID); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -811,7 +864,7 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 
 func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]Thread, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.session_id, t.subject, t.created_at, t.updated_at, s.status,
-	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at, COALESCE(s.project_id,''), COALESCE(p.name,'')
+	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at, COALESCE(s.project_id,''), COALESCE(p.name,''), COALESCE(t.status,'')
 	  FROM threads t JOIN sessions s ON s.id=t.session_id LEFT JOIN projects p ON p.id=s.project_id WHERE `+where+` ORDER BY t.updated_at DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -823,7 +876,7 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 		var created, updated int64
 		var st string
 		var archived, pinned, snoozed, marked sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked, &t.ProjectID, &t.ProjectName); err != nil {
+		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked, &t.ProjectID, &t.ProjectName, &t.Status); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -988,11 +1041,11 @@ func derive(t *Thread, sessionStatus string, now time.Time) {
 		t.Section = SectionSnoozed
 	case markedRead:
 		t.Section = SectionQuiet
-	case t.Stopped:
+	case t.Status == ThreadNeedAction && t.Stopped:
 		t.Section = SectionStopped
-	case t.HoldsUp > 0:
+	case t.Status == ThreadNeedAction && t.HoldsUp > 0:
 		t.Section = SectionHolding
-	case t.OpenQuestions > 0 || t.OpenActions > 0:
+	case t.Status == ThreadNeedAction:
 		t.Section = SectionWaiting
 	case t.Unread > 0:
 		t.Section = SectionNew
@@ -1030,6 +1083,35 @@ func deliveryOf(m *Message, sessionStatus string) string {
 	default:
 		return DeliveryQueued
 	}
+}
+
+// SetThreadStatus sets a thread's status; status must be canonical.
+func (s *Store) SetThreadStatus(ctx context.Context, id, status string) error {
+	v, ok := NormalizeThreadStatus(status)
+	if !ok {
+		return fmt.Errorf("unknown status %q (working, need_action or finished)", status)
+	}
+	return s.exec(ctx, `UPDATE threads SET status=? WHERE id=?`, v, id)
+}
+
+// migrateThreadStatus gives threads without a status one: need_action when a
+// question or action is open, else finished. Idempotent: only NULL rows.
+func migrateThreadStatus(ctx context.Context, db *sql.DB) error {
+	s := &Store{db: db, now: time.Now}
+	threads, err := s.loadThreads(ctx, `t.status IS NULL`)
+	if err != nil {
+		return err
+	}
+	for _, t := range threads {
+		v := ThreadFinished
+		if t.OpenQuestions > 0 || t.OpenActions > 0 {
+			v = ThreadNeedAction
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE threads SET status=? WHERE id=?`, v, t.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ListThreads lists a session's threads (with messages and derived state), newest first.

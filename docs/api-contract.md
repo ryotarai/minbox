@@ -628,3 +628,20 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
   another live Claude Code session, unless `?promote=<session id>` names one (made main in the same request). A last
   Claude session leaves the project without main. Ending/stopping a session never changes main.
 - Migration picks one per project (live > ended > archived, newest first, never a shell).
+
+## Thread status
+
+Every thread has a stored `status` (thread JSON `status`; also `top_thread.status` on sessions): `working`, `need_action` or `finished`. Column `threads.status TEXT`.
+
+Set by:
+
+1. The person's message (reply, answers, new thread, forwarded reply) -> `working`. A note (`kind: note`: re-ask, thumbs up) does not count.
+2. The agent's `POST /api/agent/messages` with `status` (the `send_message` tool's `status`) -> that value. Unknown values: 400. Aliases are accepted silently: `in_progress`/`in-progress` -> working, `done`/`complete`/`completed`/`finished` -> finished, `needs_action`/`need-action`/`waiting` -> need_action. The tool schema documents only the three canonical values.
+3. An agent message without `status`: unchanged, except that a message with questions (`:::question` blocks) sets `need_action`. A new agent thread with neither starts `finished`.
+4. By hand: `POST /api/threads/{id}/status {status}` (aliases accepted; 400 on unknown). The thread view's More menu has "Mark as ...".
+
+Migration (idempotent, only rows with a NULL status): a thread with an open question or action -> `need_action`, otherwise `finished`. Archived/snoozed state is independent.
+
+`need_action` is the single source of the "Waiting" notion: the sections `stopped`, `holding` and `waiting` apply only to a thread whose status is `need_action` (stopped/holding when it also has open questions with `Stopped:` / `Holds up:`), so the session `waiting` count, the Waiting filter, the amber badges, the project rail aggregates and the palette pill all follow the status. `open_questions` stays about questions (the `?n` chip, decision mode). Follow-up agent messages without `status` do not clear `need_action`; the agent (or the person, by hand) does that.
+
+Changes are published like other thread changes (`thread`, `threads`, `sessions` SSE events). The threads pane groups by status in the order `need_action`, `working`, `finished`.

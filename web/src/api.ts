@@ -2,6 +2,10 @@
 
 export type SessionStatus = 'starting' | 'working' | 'idle' | 'ended'
 export type Section = 'stopped' | 'holding' | 'waiting' | 'sent' | 'new' | 'quiet' | 'snoozed' | 'archived'
+export type ThreadStatus = 'working' | 'need_action' | 'finished'
+/** Display order and labels of thread statuses. */
+export const THREAD_STATUS_ORDER: ThreadStatus[] = ['need_action', 'working', 'finished']
+export const THREAD_STATUS_LABEL: Record<ThreadStatus, string> = { need_action: 'Needs action', working: 'Working', finished: 'Finished' }
 export type Delivery = 'queued' | 'sending' | 'delivered' | 'undelivered'
 
 export const SECTION_ORDER: Section[] = ['stopped', 'holding', 'waiting', 'sent', 'new', 'quiet', 'snoozed', 'archived']
@@ -20,6 +24,7 @@ export const ATTENTION: Section[] = ['stopped', 'holding', 'waiting']
 
 export type TopThread = {
   id: string
+  status?: ThreadStatus
   subject: string
   section: Section
   updated_at: string
@@ -233,6 +238,8 @@ export type Thread = {
   created_at: string
   updated_at: string
   messages?: Message[]
+  /** What the thread is doing; set by messages and by hand. */
+  status: ThreadStatus
   unread: number
   open_questions: number
   section: Section
@@ -461,6 +468,7 @@ export const api = {
   markRead: (id: string) => call<Ok>('POST', `/api/threads/${id}/mark-read`),
   unmarkRead: (id: string) => call<Ok>('POST', `/api/threads/${id}/unmark-read`),
   archiveThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/archive`),
+  setThreadStatus: (id: string, status: ThreadStatus) => call<Ok>('POST', `/api/threads/${id}/status`, { status }),
   unarchiveThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/unarchive`),
   pinThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/pin`),
   unpinThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/unpin`),

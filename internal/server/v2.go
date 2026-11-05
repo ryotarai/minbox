@@ -158,6 +158,24 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 
+// setThreadStatus sets a thread's status by hand.
+func (s *Server) setThreadStatus(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Status string `json:"status"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	v, ok := store.NormalizeThreadStatus(req.Status)
+	if !ok {
+		httpError(w, 400, "unknown status "+req.Status+" (working, need_action or finished)")
+		return
+	}
+	s.threadOp(func(ctx context.Context, id string) error {
+		return s.store.SetThreadStatus(ctx, id, v)
+	})(w, r)
+}
+
 func (s *Server) snoozeThread(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Until time.Time `json:"until"`
