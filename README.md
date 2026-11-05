@@ -1,30 +1,47 @@
 # minbox
 
-minbox puts your Claude Code sessions, their terminals and an inbox on one screen.
-Claude sends questions and reports to the inbox and keeps working; you answer when you have a
+minbox puts your Claude Code sessions, their terminals and a threaded inbox on one screen.
+Claude sends questions and reports as threads and keeps working; you answer when you have a
 moment, from your desk or your phone, and the answer reaches Claude as a new turn.
 
-<p align="center"><img src="docs/images/layout.svg" alt="The minbox screen: sessions on the left, the session's terminal in the middle, its inbox on the right" width="880"></p>
+<p align="center"><img src="docs/img/v2/tb-01-list-thread.png" alt="minbox at tablet width: the project column, the threads list, and an open thread with a question card" width="640"></p>
 
-- **Sessions** run in real terminals (PTYs). The list is sorted by who is waiting on whom
-  (Stopped on you → Holding up work → Waiting on you → Sent → New → Quiet → Archived), and
-  shows the title Claude gives each session.
-- **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
-  full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
-  and types its path.
-- **Inbox**: Claude's messages, with question cards (single, multiple and free-text choice),
+- **Threads first.** One list of every thread, newest activity first. Each thread has a status
+  (**working**, **need action**, **finished**) that Claude sets and you can change by hand.
+  Filter by Waiting or Unread, group by activity, status or session.
+- **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one; each
+  project has a main session that new threads go to by default.
+- **Thread**: Claude's messages with question cards (single, multiple and free-text choice),
   action items, attachments you can annotate, and guided reviews of its changes. Your reply
   reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is
-  safe.
+  safe. Haiku can draft up to three one-click replies.
+- **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
+  full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
+  and types its path. Each Claude session also has a companion shell (Ctrl+`).
 - **Shells** sit next to Claude sessions: **+ New → Shell** opens the host's own `$SHELL`.
 - **One binary**. The web UI, the server, the terminal host and the Claude Code mod are all in
   `minbox`, with SQLite for storage.
-- **Anywhere**. Serve minbox on your tailnet and pair your phone. You can also run sessions on
-  other machines (remote hosts).
+- **Anywhere**. Serve minbox on your tailnet and pair your phone, get Slack notifications, and run
+  sessions on other machines (remote hosts).
 
 minbox works with Claude Code only. It talks to Claude through a Claude Code mod (a hooks
 module), not by typing into the terminal. Background and design goals: [WHAT.md](WHAT.md)
 (Japanese).
+
+## The screen
+
+Columns, left to right: **projects | threads | thread | terminal** (the thread and the terminal
+swap places with **Settings → Swap terminal and thread**). The layout follows the window width:
+
+| Width | Layout |
+| --- | --- |
+| 1100 px and up | Three columns next to the project column, plus the companion shell pane (Ctrl+`) beside the terminal. Column edges can be dragged. |
+| 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
+| below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay. |
+
+Resizing across a band keeps the selected thread, session and draft. A session's `...` menu
+(Rename, Resume / **Restart**, Stop, Archive, Delete) sits over its terminal. Restart kills the
+running Claude and resumes the conversation in one step; a running turn is interrupted.
 
 ## Quick start
 
@@ -35,9 +52,9 @@ make build                 # builds web/dist and embeds it in bin/minbox
 ./bin/minbox start         # runs in the background and opens http://127.0.0.1:4848
 ```
 
-Click **+ New** and pick a directory. minbox starts `claude` there with its mod loaded. When
-Claude needs something from you, the session moves up the list and the question shows in the
-inbox.
+Click **+ New** and pick a directory (it becomes a project). minbox starts `claude` there with
+its mod loaded. When Claude needs something from you, its thread is marked **need action**, moves
+up the list and shows the question.
 
 ```sh
 ./bin/minbox status        # running? its URL and log (exit code 3 when stopped)
@@ -46,6 +63,7 @@ inbox.
                               # sessions' claude stops and resumes (running turns are interrupted)
 ./bin/minbox stop          # stop the server; sessions keep running in the terminal host
 ./bin/minbox start --foreground   # stay in the foreground, logs on stderr
+./bin/minbox host stop     # stop the terminal host too: every session's claude ends
 ```
 
 `start` daemonizes. It returns once the server answers, and logs go to `<data-dir>/minbox.log`.
@@ -77,8 +95,9 @@ inbox.
   - The server starts it when none is running.
   - Restarting or upgrading the server leaves the running sessions alone.
   - The two check each other's protocol version and restart the host only when they must.
-  - After a reboot, sessions that were open resume with `claude --resume`. Sessions you stopped,
-    or that Claude ended itself, stay stopped.
+  - When the host is gone (after a reboot, or `minbox restart --host`), the server starts a new
+    one and the sessions that were open resume with `claude --resume`. Sessions you stopped, or
+    that Claude ended itself, stay stopped.
 - **The PTY** takes the size of the smallest screen attached to it, and grows back when that
   screen leaves.
 - **The minbox mod** (`plugin/minbox`) is embedded in the binary and loaded with
@@ -86,9 +105,9 @@ inbox.
 
   | Tool | What it does |
   | --- | --- |
-  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review to the inbox |
+  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review to a thread. `thread_title` sets the thread's title, `status` (`working` / `need_action` / `finished`) its status. |
   | `read_thread` | Read a thread (or list them) |
-  | `set_session_title` | Set the title shown in the session list |
+  | `set_session_title` | Set the title of the session |
   | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |
   | `card` | Create and update cards on the Board (when it is on) |
 
@@ -98,30 +117,51 @@ inbox.
   - a reminder on the first prompt.
 
   They ask Claude to send every question, decision or request for action to the inbox. If a
-  turn still ends with a question asked only in the chat, the mod reminds Claude once.
+  turn still ends with a question asked only in the chat, the mod reminds Claude once. By default
+  (**Settings → Prompts**) they also ask the main agent to run one subagent per thread and to use
+  git worktrees for the subagents' changes (the orchestrator prompt); you can add your own
+  extra instructions there.
+
+  **Thread status** becomes `working` when you write, `need action` when Claude sends a
+  question, and Claude sets it with `status`, e.g. `finished` when it is done. You can change it
+  by hand from the thread's `...` menu (**Mark as**).
 
 ### A question and its answer
 
 <p align="center"><img src="docs/images/message-flow.svg" alt="Message flow: Claude sends a question with send_message; the server notifies the inbox; the person answers; the mod long-polls, claims the reply once Claude is idle, submits it as a new turn and marks it delivered" width="920"></p>
 
 1. **Claude asks.** It calls `send_message`, which returns at once.
-2. **You answer.** The inbox shows the question, and you answer it at any time, on any device.
+2. **You answer.** The thread shows the question (with reply suggestions, if on), and you answer it at any time, on any device.
 3. **The mod waits for a quiet moment.** It long-polls for your reply and waits until Claude is
    idle (or delivers at once if you pressed *Send now*).
 4. **The reply arrives once.** The mod claims the reply, submits it as a plugin turn
    (`$.prompt.submit`) and marks it delivered.
    - Claude receives the answers under "## Answers to your questions".
    - If the submit fails, the claim is released, so a reply is never lost or delivered twice.
+   - A reply queued behind a working turn can be cancelled, or sent now. If the mod has gone
+     quiet, the thread offers **Restart** for the session.
 
 ## Notifications
 
-**Settings → Notifications** sends every new message from Claude to a Slack channel (an
-[incoming webhook](https://api.slack.com/messaging/webhooks)), with the full message text, whether or not a
-browser is open. You can limit it to messages that need your answer, send only the title, and set your
-Tailscale URL there so each notification has an "Open thread" link. The webhook URL stays on the server and is
-never shown again in full. A destination can also be a **Slack app** (bot token + channel): all notifications
-of one thread are grouped as replies in one Slack thread, and "Send test" checks the token and shows the
-workspace and bot name. See `docs/api-contract.md` ("Notifications") for the format and retry rules.
+**Settings → Notifications** sends every new message from Claude to Slack, with the full message
+text (questions as readable Markdown), whether or not a browser is open. A destination is either:
+
+- an [incoming webhook](https://api.slack.com/messaging/webhooks); or
+- a **Slack app** (bot token + channel): all messages of one thread are grouped as replies in one
+  Slack thread, and "Send test" checks the token and shows the workspace and bot name.
+
+You can limit a destination to messages that need your answer, or send only the title. Set the
+**public URL** (e.g. your Tailscale URL) there so each notification has an "Open thread" link.
+Secrets stay on the server and are shown masked. Browser notifications, a sound and the tab-title
+count are separate settings under **Settings → General**. Format and retry rules:
+[docs/api-contract.md](docs/api-contract.md) ("Notifications").
+
+## Search and quick actions
+
+`⌘K` (or `/`) opens a quick-open palette: actions, projects, sessions and threads in one
+fuzzy-searched list. Start with a prefix to search one kind: `>` actions, `@` sessions,
+`#` threads, `!` projects. Threads match their title and the session and project names;
+sessions match name, title and folder. `↵` runs the highlighted row.
 
 ## Other devices and machines
 
@@ -137,8 +177,9 @@ in one of these places:
 - with `minbox pair accept <code>`.
 
 The browser keeps a device key, and after pairing it signs in by itself. On a phone, minbox
-opens as a session list and a session view with Inbox and Terminal tabs. The terminal fits the
-screen, scrolls with a swipe, and stays visible above the keyboard.
+opens as the thread list; a thread opens full screen, with a Thread | Terminal switch. The
+terminal fits the screen, scrolls with a swipe, and stays visible above the keyboard.
+Attachments open in a full-screen viewer (close with the x button, back or Escape).
 
 ### Sessions on another machine
 
@@ -147,6 +188,7 @@ Run a host there and add it in **Settings → Hosts**:
 ```sh
 minbox host --tailscale             # on the other machine: https://<it>.<tailnet>.ts.net:14849
 minbox host --listen 0.0.0.0:4849   # or directly, over TCP
+minbox pair list                    # servers and browsers waiting to be paired
 ```
 
 1. The server asks to pair; accept with `minbox pair accept <code>` on that machine.
@@ -158,29 +200,51 @@ server back through the same connection.
 
 ## Keyboard
 
-Press `?` for the full list. ⌘ is Ctrl on Linux and Windows.
+Press `?` for the full list. ⌘ is Ctrl on Linux and Windows. Single-key shortcuts can be turned
+off in **Settings → General**.
 
 | Keys | |
 | --- | --- |
-| `⌘K` / `/` | Quick actions: type to find a session, thread or action, `↵` runs it (`>` actions, `@` sessions, `#` threads) |
-| `⌘B` | Fold the session list |
-| `↑` `↓` / `J` `K`, `↵` | Move, open |
-| `N` / `Q` | First unread / the open question |
+| `⌘K` / `/` | Quick open (`>` actions, `@` sessions, `#` threads, `!` projects) |
+| ``Ctrl+` `` | Companion shell pane (overlay on phone and tablet) |
+| `Esc` | Close the top layer |
+| `↑` `↓`, `↵` | Move, open |
+| `J` / `K` | Next / previous thread |
+| `N` / `Q` | First new thread / open questions |
 | `R`, `⌘↵` | Reply, send |
-| `E` / `⇧E` / `Z` | Mark read / archive / undo |
+| `E` / `⇧E` / `Z` | Mark read / archive thread / undo |
+| `⇧F10` | Row menu |
 | `]` `[` / `O` / `F` | Next, previous attachment / the latest / full screen |
 
-While the terminal has focus, only `⌘K` is minbox's (Ctrl+K stays the shell's). In Claude Code's
-full-screen UI, clicks and the wheel go to Claude Code; Shift+drag selects text.
+While the terminal has focus, only `⌘K` is minbox's (Ctrl+K stays the shell's), and Shift+Enter
+types a newline in Claude Code. In Claude Code's full-screen UI, clicks and the wheel go to
+Claude Code; Shift+drag selects text. The terminal and the event stream reconnect by
+themselves after a network drop or a server restart, and the open thread reloads.
+
+## Settings
+
+Text size and theme (light, dark, match system), swapping the terminal and thread columns,
+browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
+suggestions), **Notifications**, **Hosts**, **Devices**, optional parts (Board, Decision mode),
+archived sessions and threads, storage and About.
+
+**Reply suggestions** (on by default): when the last message of a thread is Claude's, minbox asks
+Haiku through `claude -p` for up to three short replies and shows them as chips. The recent text
+of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**.
 
 ## Development
 
 ```sh
 make test-go        # Go unit tests
-make test-mod       # the mod's tests (claude plugin test)
-make test-e2e       # Playwright, against a fake claude (no model calls)
+make test-mod       # the mod's tests (claude plugin test plugin/minbox)
+make test-e2e       # builds, then Playwright (cd web && npx playwright test) against a fake claude (no model calls)
 cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # a real Claude Code (Haiku)
 ```
+
+The e2e suites start their own servers on free ports, so several can run at once, and their cleanup kills only their own fake-claude processes.
+
+Contributing: do not add or lock an npm package version published less than 72 hours ago
+(`web/.npmrc` enforces it for `npm install`); see [CLAUDE.md](CLAUDE.md).
 
 For the frontend, run the server on port 4848 and `cd web && npm run dev`. Vite proxies `/api`
 to the server.
@@ -188,13 +252,13 @@ to the server.
 Layout:
 
 ```
-cmd/minbox/         CLI: start/stop/status/restart, host, pair
+cmd/minbox/         CLI: start/stop/restart/status, host, pair
 internal/server/    HTTP API, SSE, agent API, sessions, hosts, pairing
 internal/termhost/  the terminal host (PTYs, attach protocol)
 internal/store/     SQLite store
 plugin/minbox/      the Claude Code mod (hooks module)
 web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
-docs/               API contract, design notes, diagrams
+docs/               API contract, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
 ```
 
 ## License
