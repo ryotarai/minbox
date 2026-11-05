@@ -475,11 +475,10 @@ test('the threads list holds every session\'s threads; picking one opens its ses
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Second idea for beta')
 
-  // Both are in the one list, each with its session chip.
+  // Both are in the one list.
   const rows = page.getByTestId('thread-list').getByTestId('thread-row')
   await expect(rows).toHaveCount(2)
-  await expect(rows.filter({ hasText: 'First idea for alpha' }).getByTestId('thread-session')).toHaveText('alpha')
-  await expect(rows.filter({ hasText: 'Second idea for beta' }).getByTestId('thread-session')).toHaveText('beta')
+  await expect(rows.getByTestId('thread-session')).toHaveCount(0)
 
   // Picking a thread of another session switches the thread view and the terminal together.
   await rows.filter({ hasText: 'First idea for alpha' }).click()

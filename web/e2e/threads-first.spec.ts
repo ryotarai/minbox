@@ -81,15 +81,15 @@ test('a thread of another session switches the thread view and the terminal; the
   await expect.poll(() => page.url()).toMatch(/#s=.*&t=/)
 })
 
-test('the session chip of a row opens that session without a thread', async ({ page, minbox }) => {
+test('rows carry no session chip; the thread view shows the session and its terminal', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox.dataDir)
-  await row(page, 'Pick a database').click()
-  await expect(page.getByTestId('thread-subject')).toBeVisible()
-  await row(page, 'Beta note').getByTestId('thread-session').click()
+  await expect(page.getByTestId('thread-row')).toHaveCount(3)
+  await expect(page.getByTestId('thread-session')).toHaveCount(0)
+  await expect(page.getByTestId('thread-project')).toHaveCount(0)
+  await row(page, 'Beta note').click()
+  await expect(page.getByTestId('thread-back')).toContainText('beta')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
-  await expect(page.getByTestId('thread-empty')).toBeVisible()
-  await expect(page.getByTestId('recent-session')).toHaveCount(0)
 })
 
 test('composer: the target is the current session, can be switched, and a new thread starts there', async ({ page, minbox }) => {
@@ -122,7 +122,6 @@ test('composer: the target is the current session, can be switched, and a new th
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('hello beta')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
-  await expect(row(page, 'hello beta').getByTestId('thread-session')).toHaveText('beta')
   await expectTerminal(page, '<<< inbox [hello beta]')
 })
 
@@ -141,7 +140,6 @@ test('composer: + New session… creates a session and sends the typed message i
   await expect(page.getByTestId('terminal-session-name')).toHaveText('fresh')
   await expect(page.getByTestId('composer-target-name')).toHaveText('fresh')
   await expect(page.getByTestId('thread-subject')).toHaveText('Start the migration')
-  await expect(row(page, 'Start the migration').getByTestId('thread-session')).toHaveText('fresh')
   await expectTerminal(page, '<<< inbox [Start the migration]')
   // The first session's box did not keep the text.
   await selectSession(page, 'first')
@@ -209,7 +207,8 @@ test('phone: the thread list is home; a thread flips to its terminal; the compos
   await page.goto(minbox.url + '/#')
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'home')
   await expect(page.getByTestId('thread-row')).toHaveCount(3)
-  await expect(page.getByTestId('thread-row').first().getByTestId('thread-session')).toBeVisible()
+  await expect(page.getByTestId('thread-session')).toHaveCount(0)
+  await expect(page.getByTestId('thread-project')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
   // Filters work on the phone, and the session sheet filters by session.
