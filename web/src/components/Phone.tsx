@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ATTENTION, SECTION_LABEL, uploadImage, type Session } from '../api'
+import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconArchive, IconBack, IconChevronRight, IconClose, IconTerminal, IconImage, IconMail, IconMore, IconPlus, IconSearch } from './icons'
-import { InboxPhone } from './PhoneInbox'
-import { AllInboxLink, SessionMenu, groupSessions, sectionOf, waitsOnPerson, Logo } from './Sidebar'
+import { IconArchive, IconBack, IconClose, IconTerminal, IconImage, IconMail } from './icons'
+import { waitsOnPerson } from './Sidebar'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
-import { ConnectionBanner } from './Banners'
-import { PairRequestBanner } from './Devices'
-import { HostTag, Segmented, StatusDot, cx, statusOf } from './ui'
+import { Segmented, StatusDot, cx, statusOf } from './ui'
 import { api } from '../api'
-import { useThread } from './ThreadView'
-import { unreadElsewhere } from './ThreadView'
-import { useThreads } from './ThreadList'
+import { ThreadView, unreadElsewhere, useThread } from './ThreadView'
+import { useAllThreads } from './ThreadList'
+import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
 import { TerminalKeys } from './TerminalKeys'
 
 /**
@@ -50,168 +47,39 @@ export function PhoneApp() {
   const { route, sessions } = useApp()
   const { h, keyboard } = useViewport()
   const session = sessions?.find((s) => s.id === route.s) ?? null
+  // Home is the thread list; a thread opens over it; its session's terminal is one flip away.
+  const screen = session && route.tab === 'terminal' ? 'terminal' : session && route.t ? 'thread' : 'home'
   return (
-    <div className="relative flex w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" style={{ height: h ?? '100dvh' }} data-testid="phone" data-keyboard={keyboard || undefined}>
-      {session ? <PhoneSession session={session} keyboard={keyboard} /> : <PhoneSessions />}
-    </div>
-  )
-}
-
-function PhoneSessions() {
-  const { sessions, setOverlay, navigate } = useApp()
-  const [showArchived, setShowArchived] = useState(false)
-  const groups = useMemo(() => groupSessions(sessions ?? []), [sessions])
-  const need = groups.filter((g) => ATTENTION.includes(g.section))
-  const others = groups.filter((g) => !ATTENTION.includes(g.section) && g.section !== 'archived')
-  const archived = groups.find((g) => g.section === 'archived')?.rows ?? []
-  return (
-    <>
-      <header className="flex h-14 shrink-0 items-center gap-1 pl-4 pr-2">
-        <Logo size={24} />
-        <h1 className="sr-only">minbox</h1>
-        <span className="flex-1" />
-        <button type="button" aria-label="Search" onClick={() => setOverlay({ kind: 'search' })} className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
-          <IconSearch size={20} />
-        </button>
-        <button
-          type="button"
-          aria-label="New session"
-          data-testid="new-session"
-          onClick={() => setOverlay({ kind: 'new-session' })}
-          className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
-        >
-          <IconPlus size={20} />
-        </button>
-      </header>
-      <ConnectionBanner />
-      <PairRequestBanner />
-      <div data-testid="session-list" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-        <AllInboxLink phone />
-        {need.length > 0 && (
-          <>
-            <div className="px-4 pb-1.5 pt-2.5 text-[12px] font-bold uppercase tracking-[0.06em] text-wait">{need.map((g) => SECTION_LABEL[g.section]).join(' · ')}</div>
-            {need.flatMap((g) => g.rows).map((s) => (
-              <PhoneSessionRow key={s.id} s={s} strong onOpen={() => navigate({ s: s.id, tab: 'inbox' }, { push: true })} />
-            ))}
-          </>
-        )}
-        {others.length > 0 && (
-          <>
-            <div className="px-4 pb-1.5 pt-4 text-[12px] font-bold uppercase tracking-[0.06em] text-subtle">{others.map((g) => SECTION_LABEL[g.section]).join(' · ')}</div>
-            {others.flatMap((g) => g.rows).map((s) => (
-              <PhoneSessionRow key={s.id} s={s} onOpen={() => navigate({ s: s.id, tab: 'inbox' }, { push: true })} />
-            ))}
-          </>
-        )}
-        {archived.length > 0 && (
-          <>
-            <button
-              type="button"
-              data-testid="archived-section"
-              aria-expanded={showArchived}
-              onClick={() => setShowArchived((v) => !v)}
-              className="mx-2.5 mt-3.5 flex h-12 shrink-0 items-center gap-2.5 rounded-[10px] border-0 bg-raised px-3.5 text-left text-[14px] text-muted"
-            >
-              <IconArchive size={16} />
-              <span className="flex-1">Archived</span>
-              <span className="text-subtle">{archived.length}</span>
-              <IconChevronRight size={14} className={cx('transition-transform', showArchived && 'rotate-90')} />
-            </button>
-            {showArchived && archived.map((s) => <PhoneSessionRow key={s.id} s={s} onOpen={() => navigate({ s: s.id, tab: 'inbox' }, { push: true })} />)}
-          </>
-        )}
-      </div>
-    </>
-  )
-}
-
-function PhoneSessionRow({ s, strong, onOpen }: { s: Session; strong?: boolean; onOpen: () => void }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const [renaming, setRenaming] = useState(false)
-  const { error, reloadSessions } = useApp()
-  const [name, setName] = useState(s.name)
-  const ref = useRef<HTMLDivElement>(null)
-  const st = statusOf(s, waitsOnPerson(s))
-  return (
-    <div
-      ref={ref}
-      data-testid="session-row"
-      data-session-id={s.id}
-      className={cx('mx-2.5 flex items-center', strong ? 'mb-1.5 min-h-[68px] rounded-xl border border-wait/28 bg-wait/8' : 'min-h-16 border-b border-[#1f1f24] [[data-theme=light]_&]:border-line')}
-    >
-      {renaming ? (
-        <input
-          autoFocus
-          aria-label="Session name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => {
-            setRenaming(false)
-            if (name.trim() && name.trim() !== s.name) api.renameSession(s.id, name.trim()).then(reloadSessions).catch(error)
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          className="mx-3 h-11 flex-1 rounded-md border border-accent bg-sunken px-3 outline-none"
-        />
+    <div className="relative flex w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" style={{ height: h ?? '100dvh' }} data-testid="phone" data-screen={screen} data-keyboard={keyboard || undefined}>
+      {screen === 'home' ? (
+        <div className="min-h-0 flex-1 pb-[env(safe-area-inset-bottom)]" data-testid="phone-home">
+          <ThreadsPane phone />
+        </div>
       ) : (
-        <button type="button" onClick={onOpen} className={cx('flex min-w-0 flex-1 flex-col gap-1 border-0 bg-transparent pl-3.5 pr-1 text-left', strong ? 'py-3' : 'py-2.5')}>
-          <div className="flex items-center gap-2">
-            <StatusDot s={s} waits={strong ?? false} size={9} ring={!!strong} />
-            <span data-testid="session-name" className={cx('min-w-0 flex-1 truncate', strong ? 'text-[16px] font-[650]' : 'text-[15.5px] font-medium', s.status === 'ended' && 'text-muted')}>
-              {s.name}
-            </span>
-            <HostTag name={s.host_name} phone />
-            {s.open_questions > 0 && (
-              <span data-testid="badge-questions" className="flex h-[22px] items-center rounded-full bg-accent px-2 text-[12.5px] font-extrabold text-onaccent">
-                ?{s.open_questions}
-              </span>
-            )}
-            {s.unread > 0 && (
-              <span data-testid="badge-unread" className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#3a3a42] px-1.5 text-[12.5px] font-bold text-white">
-                {s.unread}
-              </span>
-            )}
-          </div>
-          {s.title && (
-            <span data-testid="session-title" className={cx('truncate pl-[17px] text-[14.5px] font-semibold', s.status === 'ended' ? 'text-muted' : 'text-fg')}>
-              {s.title}
-            </span>
-          )}
-          <div className="flex gap-2 pl-[17px] text-[13px]">
-            <span className={cx('shrink-0', st.text, strong && 'font-medium')} data-testid="session-status">
-              {st.label}
-            </span>
-            <span className="mono truncate text-[12px] text-subtle">{homeRelative(s.cwd)}</span>
-          </div>
-        </button>
+        <PhoneSession session={session!} keyboard={keyboard} />
       )}
-      <button
-        type="button"
-        aria-label="Session menu"
-        data-testid="session-menu"
-        onClick={() => setAnchor(ref.current)}
-        className="mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent text-muted"
-      >
-        <IconMore size={18} />
-      </button>
-      <SessionMenu s={s} anchor={anchor} onClose={() => setAnchor(null)} onRename={() => setRenaming(true)} />
     </div>
   )
 }
 
 function PhoneSession({ session, keyboard }: { session: Session; keyboard: boolean }) {
-  const { route, navigate, sessions, error, toast } = useApp()
+  const { route, navigate, error, toast } = useApp()
   const [thread] = useThread(route.t)
-  const sessionThreads = useThreads(session.id)
-  const othersWaiting = (sessions ?? []).filter((s) => s.id !== session.id && !s.archived_at && sectionOf(s) !== 'archived' && waitsOnPerson(s)).length
+  const all = useAllThreads()
+  const v = useVisibleThreads()
+  const siblings = useMemo(() => v.groups.flatMap((g) => g.items), [v.groups])
   const st = statusOf(session, waitsOnPerson(session))
+  const terminal = route.tab === 'terminal'
+  const inThread = !terminal && !!route.t
+  const home = () => navigate({ t: null, f: null, tab: 'inbox' }, { push: false })
   const back = () => {
-    if (route.tab === 'inbox' && route.t) navigate({ t: null }, { push: false })
-    else navigate({ s: null, t: null, tab: 'inbox' }, { push: false })
+    if (terminal && route.t) navigate({ tab: 'inbox' }, { push: false })
+    else home()
   }
-  const inThread = route.tab === 'inbox' && !!route.t
+  const othersUnread = unreadElsewhere(all, route.t)
   // Typing in the terminal: the keyboard takes half the screen, so the
   // terminal takes the rest (the header and tabs come back with the keyboard down).
-  const typing = keyboard && (route.tab === 'terminal' || session.kind === 'shell')
+  const typing = keyboard && (terminal || session.kind === 'shell')
   const [shellOpen, setShellOpen] = useState(false)
   return (
     <>
@@ -220,32 +88,39 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
         <button
           type="button"
           data-testid="mobile-back"
-          aria-label={inThread ? 'Back to threads' : 'Back to sessions'}
+          aria-label={terminal && route.t ? 'Back to the thread' : 'Back to threads'}
           onClick={back}
           className="flex h-11 min-w-11 items-center gap-0.5 rounded-[10px] border-0 bg-transparent px-1.5 text-fg2"
         >
           <IconBack size={20} />
-          {!inThread && othersWaiting > 0 && (
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-extrabold text-onaccent">{othersWaiting}</span>
-          )}
-          {inThread && unreadElsewhere(sessionThreads, route.t) > 0 && (
+          {othersUnread > 0 && (
             <span data-testid="back-badge" title="Other threads have new messages" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-extrabold text-onaccent">
-              {unreadElsewhere(sessionThreads, route.t)}
+              {othersUnread}
             </span>
           )}
         </button>
         {inThread ? (
           <>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span data-testid="phone-thread-subject" className="truncate text-[15.5px] font-[650]">
+            <div className="flex min-w-0 flex-1 flex-col items-start">
+              <span data-testid="phone-thread-subject" className="max-w-full truncate text-[15.5px] font-[650]">
                 {thread?.subject ?? '…'}
               </span>
-              <span className="mono text-[11.5px] text-subtle">{session.name}</span>
+              <button
+                type="button"
+                data-testid="phone-session-chip"
+                aria-label={`Open ${session.name}'s terminal`}
+                onClick={() => navigate({ tab: 'terminal' }, { push: false })}
+                className="mono flex max-w-full items-center gap-1.5 rounded-[5px] border-0 bg-chip px-1.5 text-[11.5px] leading-[18px] text-fg2"
+              >
+                <StatusDot s={session} waits={waitsOnPerson(session)} size={6} ring={false} />
+                <span className="truncate">{session.name}</span>
+                <IconTerminal size={11} />
+              </button>
             </div>
             <button
               type="button"
               aria-label="Mark unread"
-              onClick={() => route.t && api.markUnread(route.t).then(back).catch(error)}
+              onClick={() => route.t && api.markUnread(route.t).then(home).catch(error)}
               className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
             >
               <IconMail size={19} />
@@ -261,7 +136,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                   .archiveThread(id)
                   .then(() => {
                     toast(`Archived · "${thread?.subject ?? ''}"`, { action: 'Undo', undo: true, onAction: () => api.unarchiveThread(id).catch(error) })
-                    back()
+                    home()
                   })
                   .catch(error)
               }}
@@ -297,19 +172,27 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
           </>
         )}
       </header>
-      {session.kind !== 'shell' && !typing && <div className="mx-3 mb-2 mt-0.5 shrink-0" role="tablist">
-        <Segmented
-          size="lg"
-          value={route.tab}
-          onChange={(tab) => navigate({ tab }, { push: false })}
-          testidPrefix="mobile-tab"
-          options={[
-            { value: 'inbox', label: 'Inbox' },
-            { value: 'terminal', label: 'Terminal' },
-          ]}
-        />
-      </div>}
-      {route.tab === 'inbox' && session.kind !== 'shell' ? <InboxPhone session={session} /> : <PhoneTerminal session={session} typing={typing} />}
+      {terminal && route.t && !typing && (
+        <div className="mx-3 mb-2 mt-0.5 shrink-0" role="tablist">
+          <Segmented
+            size="lg"
+            value={route.tab}
+            onChange={(tab) => navigate({ tab }, { push: false })}
+            testidPrefix="mobile-tab"
+            options={[
+              { value: 'inbox', label: 'Thread' },
+              { value: 'terminal', label: 'Terminal' },
+            ]}
+          />
+        </div>
+      )}
+      {inThread ? (
+        <section data-testid="inbox-pane" className="flex min-h-0 flex-1 flex-col">
+          <ThreadView key={route.t!} session={session} threadId={route.t!} siblings={siblings} onBack={home} phone />
+        </section>
+      ) : (
+        <PhoneTerminal session={session} typing={typing} />
+      )}
     </>
   )
 }

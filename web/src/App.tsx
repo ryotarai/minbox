@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
-import { AllInboxPage } from './components/AllInbox'
 import { BoardPage } from './components/Board'
 import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
-import { InboxPane, ThreadPane } from './components/InboxPane'
+import { ThreadPane } from './components/ThreadPane'
+import { ThreadsPane } from './components/ThreadsPane'
 import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
 import { PhoneApp } from './components/Phone'
 import { NewSessionDialog } from './components/NewSession'
@@ -14,7 +14,7 @@ import { DeviceGate } from './components/Devices'
 import { SearchPalette } from './components/SearchPalette'
 import { SettingsPage } from './components/Settings'
 import { ShellPane } from './components/ShellPane'
-import { Sidebar } from './components/Sidebar'
+import { Rail, groupSessions } from './components/Sidebar'
 import { TerminalPane } from './components/TerminalPane'
 
 export function App() {
@@ -30,17 +30,21 @@ export function App() {
 function Root() {
   const { route, sessions, navigate, isPhone, overlay, setOverlay, undoLast, settings } = useApp()
 
-  // Desktop: keep a session selected (the first live one), and drop a deleted one.
+  // Desktop: keep a session selected (the one that needs you most), and drop a deleted one.
   useEffect(() => {
     if (!sessions) return
     if (route.s && sessions.some((s) => s.id === route.s)) return
     if (isPhone) {
-      if (route.s) navigate({ s: null }, { push: false })
+      if (route.s) navigate({ s: null, t: null }, { push: false })
       return
     }
-    const first = sessions.find((s) => !s.archived_at) ?? sessions[0]
+    const first = groupSessions(sessions.filter((s) => !s.archived_at))[0]?.rows[0] ?? sessions[0]
     navigate({ s: first?.id ?? null, t: null, f: null })
   }, [sessions, route.s, isPhone, navigate])
+  // The old All inbox page is the main screen's list now.
+  useEffect(() => {
+    if ((route.view as string) === 'inbox') navigate({ view: 'main' }, { push: false })
+  }, [route.view, navigate])
 
   // First run: nothing to show yet, so offer to start a session.
   const offered = useRef(false)
@@ -68,8 +72,6 @@ function Root() {
         <SettingsPage />
       ) : route.view === 'board' ? (
         <BoardPage />
-      ) : route.view === 'inbox' ? (
-        <AllInboxPage />
       ) : isPhone ? (
         <PhoneApp />
       ) : (
@@ -88,51 +90,45 @@ function Root() {
   )
 }
 
+/**
+ * Threads first: [Threads | Thread | Terminal | Shell]. The threads list holds every session's
+ * threads; picking one selects its session too, so the thread and the terminal move together.
+ * The terminal is the flexible column. Swapped panes put the thread on the far right.
+ */
 function Desktop() {
   const { route, sessions, layout, setLayout, settings } = useApp()
   const session = sessions?.find((s) => s.id === route.s) ?? null
   // Text size zooms the page: columns are measured in zoomed pixels.
   const width = useWindowWidth() / ((settings.text_size || 13) / 13)
-  const showInbox = !!session && session.kind !== 'shell' && !layout.inboxCollapsed
-  // A wide screen has four panes: the thread opens in its own pane beside the inbox list.
-  const WIDE_MIN = 1680
-  const wide = showInbox && width >= WIDE_MIN
-  // An open file takes the center: the session list folds into its rail.
-  // A narrow window gives way in this order: the session list narrows, then folds into its rail,
-  // then the thread pane narrows, then the inbox. A column keeps the width it was dragged to as
-  // long as it fits, so a drag moves the edge 1:1.
-  const MIN_CENTER = 420
-  // The shell pane (far right, Claude Code sessions only) gives way first: it narrows to 280, and
-  // disappears when even then the other columns cannot make room.
+  // A narrow window gives way in this order: the shell pane narrows and goes, the threads list
+  // narrows then folds into its rail, the thread pane narrows. The terminal keeps MIN_CENTER.
+  // A column keeps the width it was dragged to as long as it fits, so a drag moves the edge 1:1.
+  const MIN_CENTER = 360
   const showShell = !!session && session.kind !== 'shell' && session.status !== 'ended' && layout.shellPane
   let shellW = showShell ? layout.shellW : 0
-  let sidebarW = layout.sidebarW
-  let inboxW = showInbox ? (route.f && !wide ? Math.min(layout.inboxW, 400) : layout.inboxW) : 0
-  let threadW = wide ? layout.threadW : 0
+  let listW = layout.sidebarW
+  let threadW = layout.threadW
+  // An open file takes the center: the threads list folds into its rail.
   let rail = layout.rail || !!route.f
-  const over = () => (rail ? 60 : sidebarW) + inboxW + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER - width
+  const over = () => (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
   if (shellW && over() > 0) shellW = Math.max(280, shellW - over())
-  if (!rail && over() > 0) sidebarW = Math.max(216, sidebarW - over())
-  if (!rail && over() > 0) rail = true
-  if (wide && over() > 0) threadW = Math.max(360, threadW - over())
-  if (showInbox && over() > 0) inboxW = Math.max(320, inboxW - over())
+  if (!rail && over() > 0) listW = Math.max(280, listW - over())
+  if (over() > 0) threadW = Math.max(380, threadW - over())
   if (shellW && over() > 0) shellW = 0
+  if (!rail && over() > 0) rail = true
+  if (over() > 0) threadW = Math.max(320, threadW - over())
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
-  const cur = useRef({ sidebarW, inboxW, threadW, shellW })
-  cur.current = { sidebarW, inboxW, threadW, shellW }
-  const dragSidebar = (dx: number) => {
-    cur.current.sidebarW = clamp(cur.current.sidebarW + dx / zoom, 216, 480)
-    setLayout({ sidebarW: cur.current.sidebarW })
+  const cur = useRef({ listW, threadW, shellW })
+  cur.current = { listW, threadW, shellW }
+  const dragList = (dx: number) => {
+    cur.current.listW = clamp(cur.current.listW + dx / zoom, 280, 560)
+    setLayout({ sidebarW: cur.current.listW })
   }
   // dx is positive when the edge moves right and widens the column on its left.
-  const dragInbox = (dx: number) => {
-    cur.current.inboxW = clamp(cur.current.inboxW + dx / zoom, 320, 760)
-    setLayout({ inboxW: cur.current.inboxW })
-  }
   const dragThread = (dx: number) => {
-    cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 360, 900)
+    cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 320, 900)
     setLayout({ threadW: cur.current.threadW })
   }
   const dragShell = (dx: number) => {
@@ -156,49 +152,27 @@ function Desktop() {
     window.addEventListener('keydown', on, true)
     return () => window.removeEventListener('keydown', on, true)
   }, [])
-  // The inbox column (and on a wide screen the thread pane after it), with their drag edges:
-  // right of the terminal, or left of it when the panes are swapped.
+  useHotkeys({ 'mod+b': () => setLayout({ rail: !layout.rail }) })
+  // CSS order, not element order: swapping the panes does not remount the terminal.
   const swap = settings.swap_panes
-  const inboxCol = showInbox && (
-    <div style={{ width: inboxW }} className="shrink-0">
-      <InboxPane session={session} wide={wide} />
-    </div>
-  )
-  const threadCol = wide && (
-    <div style={{ width: threadW }} className="shrink-0">
-      <ThreadPane session={session} />
-    </div>
-  )
-  const panes = !showInbox ? null : swap ? (
-    <>
-      {inboxCol}
-      <Resizer grip onDrag={dragInbox} />
-      {threadCol}
-      {wide && <Resizer grip onDrag={dragThread} />}
-    </>
-  ) : (
-    <>
-      <Resizer grip onDrag={(dx) => dragInbox(-dx)} />
-      {inboxCol}
-      {wide && <Resizer grip onDrag={(dx) => dragThread(-dx)} />}
-      {threadCol}
-    </>
-  )
+  const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
-      <div style={{ width: rail ? 60 : sidebarW }} className="shrink-0 border-r border-line">
-        <Sidebar forceRail={rail} />
+      <div style={{ width: rail ? 60 : listW, order: 0 }} className="shrink-0 border-r border-line">
+        {rail ? <Rail /> : <ThreadsPane />}
       </div>
-      {!rail && <Resizer onDrag={dragSidebar} />}
-      {swap && panes}
-      <main className="min-w-0 flex-1">
+      {!rail && <Resizer order={1} onDrag={dragList} />}
+      <div style={{ width: threadW, order: o.thread }} className="shrink-0">
+        <ThreadPane session={session} />
+      </div>
+      <Resizer grip order={o.rzThread} onDrag={(dx) => dragThread(swap ? -dx : dx)} />
+      <main style={{ order: o.main }} className="min-w-0 flex-1">
         {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
       </main>
-      {!swap && panes}
       {shellW > 0 && session && (
         <>
-          <Resizer grip onDrag={(dx) => dragShell(-dx)} />
-          <div style={{ width: shellW }} className="shrink-0">
+          <Resizer grip order={o.rzShell} onDrag={(dx) => dragShell(-dx)} />
+          <div style={{ width: shellW, order: o.shell }} className="shrink-0">
             <ShellPane session={session} onClose={() => setLayout({ shellPane: false })} />
           </div>
         </>
@@ -222,11 +196,12 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /** A column edge: drag to resize. */
-function Resizer({ onDrag, grip }: { onDrag: (dx: number) => void; grip?: boolean }) {
+function Resizer({ onDrag, grip, order }: { onDrag: (dx: number) => void; grip?: boolean; order?: number }) {
   const last = useRef<number | null>(null)
   return (
     <div
       aria-hidden="true"
+      style={{ order }}
       data-testid="resizer"
       onPointerDown={(e) => {
         last.current = e.clientX
