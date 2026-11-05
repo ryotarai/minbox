@@ -170,6 +170,18 @@ Tap a thread: thread screen. Header: back (with badge = other threads with unrea
 header back (to the thread if one is open, else home), session name + status, shell button (the existing
 full-screen overlay); a `Thread | Terminal` segmented control shows when a thread is open.
 
+**Attachments on the phone.** Tapping an attachment that opens beside the thread (image thumbnail, file tile, the
+Artifacts grid, a link in a message body) sets `route.f`; the phone layout then renders `AttachmentViewer` (`phone`
+prop) as a full-screen overlay (`data-testid=phone-attachment`) in front of the phone UI, inside the phone container
+so the visual-viewport height and safe-area insets apply. Header: file name, `i/n` file stepper, `Open in`, and a 44 px
+close button (`close-file`). The annotation panel is always the bottom sheet behind the `Comments n` button; the comment
+box spans the screen width; the body scrolls and allows pinch-zoom (`touch-action: pan-x pan-y pinch-zoom`), with the
+image toolbar's Fit / Actual size as the zoom toggle. The open pushes a history entry (marked `state.viewer`), so the
+back gesture, Escape and the close button all return to the thread: close does `history.back()` when the viewer was
+pushed (no stacked entries), else replaces `f` away; stepping between files replaces. The thread stays mounted under the
+overlay, so its scroll and draft survive. Files that download (PDF, other) still go through `window.open`.
+Covered by `e2e/phone-attachments.spec.ts` (touch taps). Screenshots: `img/v2/ph-viewer-image.png`, `ph-viewer-markdown.png`.
+
 ## 5. Cmd+K
 
 Unchanged search (threads, messages, files). Threads group comes first as before; a **Sessions** group (client
