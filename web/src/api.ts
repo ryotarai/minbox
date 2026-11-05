@@ -291,6 +291,8 @@ export type Settings = {
   /** The inbox pane left of the terminal (the default) instead of right of it. */
   swap_panes: boolean
   prompt_extra: string
+  /** The address this minbox is reached at from outside (Tailscale URL): notifications link to it. */
+  public_url: string
   list: ListOptions
 }
 
@@ -305,7 +307,33 @@ export const DEFAULT_SETTINGS: Settings = {
   decision_mode: false,
   swap_panes: true,
   prompt_extra: '',
+  public_url: '',
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
+}
+
+/** One config field of a notification destination type: the form is built from these. */
+export type NotifyField = {
+  key: string
+  label: string
+  kind: 'text' | 'secret' | 'bool' | 'select'
+  required?: boolean
+  default?: unknown
+  placeholder?: string
+  hint?: string
+  options?: { value: string; label: string }[]
+}
+export type NotifyType = { id: string; label: string; fields: NotifyField[] }
+export type NotifyDestination = {
+  id: string
+  type: string
+  name: string
+  enabled: boolean
+  /** Secrets come masked ("https://hooks.slack.com/…ab12"). */
+  config: Record<string, unknown>
+  created_at: string
+  last_ok_at: string | null
+  last_error: string
+  last_error_at: string | null
 }
 
 export type SearchHit = {
@@ -343,7 +371,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -493,6 +521,11 @@ export const api = {
 
   settings: () => call<Settings>('GET', '/api/settings'),
   saveSettings: (patch: Partial<Settings>) => call<Settings>('PUT', '/api/settings', patch),
+  notifications: () => call<{ types: NotifyType[]; destinations: NotifyDestination[] }>('GET', '/api/notifications'),
+  createNotification: (b: { type: string; name: string; enabled?: boolean; config: Record<string, unknown> }) => call<NotifyDestination>('POST', '/api/notifications', b),
+  updateNotification: (id: string, b: { name?: string; enabled?: boolean; config?: Record<string, unknown> }) => call<NotifyDestination>('PATCH', `/api/notifications/${id}`, b),
+  deleteNotification: (id: string) => call<Ok>('DELETE', `/api/notifications/${id}`),
+  testNotification: (id: string) => call<{ ok: boolean; error?: string }>('POST', `/api/notifications/${id}/test`),
   storage: () => call<Storage>('GET', '/api/storage'),
   clearScratch: () => call<{ removed: number }>('POST', '/api/storage/clear-scratch'),
   about: () => call<About>('GET', '/api/about'),

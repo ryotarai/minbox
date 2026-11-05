@@ -332,6 +332,17 @@ CREATE TABLE IF NOT EXISTS projects (
   archived_at INTEGER,
   pinned_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS notification_destinations (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  config TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  last_ok_at INTEGER,
+  last_error TEXT NOT NULL DEFAULT '',
+  last_error_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

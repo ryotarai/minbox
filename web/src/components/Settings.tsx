@@ -8,9 +8,11 @@ import { IconBack } from './icons'
 import { Button, Segmented, Switch, cx } from './ui'
 import { HostsSection } from './Hosts'
 import { DevicesSection } from './Devices'
+import { NotificationsSection } from './Notifications'
 
 const NAV: { id: string; label: string }[] = [
   { id: 'general', label: 'General' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'hosts', label: 'Hosts' },
   { id: 'devices', label: 'Devices' },
   { id: 'prompts', label: 'Prompts' },
@@ -63,6 +65,7 @@ export function SettingsPage() {
           {section === 'general' && about && <span className="mono text-[12px] text-subtle">minbox {about.version}</span>}
         </div>
         {section === 'general' && <General />}
+        {section === 'notifications' && <NotificationsSection />}
         {section === 'hosts' && <HostsSection />}
         {section === 'devices' && <DevicesSection />}
         {section === 'prompts' && <Prompts />}

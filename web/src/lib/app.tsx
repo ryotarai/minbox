@@ -301,6 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (ev.type === 'cards') setCardsVersion((v) => v + 1)
         if (ev.type === 'settings') loadSettings()
         if (ev.type === 'hosts') reloadHosts()
+        if (ev.type === 'notifications') window.dispatchEvent(new Event('minbox:notifications'))
         if (ev.type === 'devices') setDevicesVersion((v) => v + 1)
         if (ev.type === 'open' && ev.url) openForClaude.current(ev.url, ev.session_id)
       },
