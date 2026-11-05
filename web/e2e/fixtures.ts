@@ -10,7 +10,8 @@ const ROOT = resolve(__dirname, '../..')
 const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 
-let nextPort = 4870
+// E2E_PORT_BASE keeps suites in several worktrees from fighting over the same ports.
+let nextPort = Number(process.env.E2E_PORT_BASE ?? 4870)
 
 /** A minbox server with its own data directory, run with the fake claude. */
 export class Minbox {
