@@ -678,7 +678,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
 
   return (
     <div ref={boxRef} className={cx('relative h-full w-full overflow-hidden', className)}>
-      <div ref={hostRef} data-testid="terminal" className="mb-term absolute inset-0" />
+      <div ref={hostRef} data-testid="terminal" className="mb-term absolute inset-[6px]" />
       <div
         data-testid="terminal-focus-ring"
         data-focused={focused ? 'true' : 'false'}
