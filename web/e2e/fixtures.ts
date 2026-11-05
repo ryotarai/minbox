@@ -145,5 +145,24 @@ export async function createSession(page: Page, cwd: string, name: string, kind:
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
   await page.getByTestId('new-session-start').click()
-  await expect(page.getByTestId('session-row').filter({ hasText: name })).toBeVisible()
+  await expect(page.getByTestId('terminal-session-name').or(page.getByTestId('phone'))).toBeVisible()
+  await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
 }
+
+/** Desktop: selects a session (the threads list shows only its threads, the terminal follows). */
+export async function selectSession(page: Page, name: string) {
+  await page.getByTestId('session-filter').click()
+  await page.getByTestId('session-option').filter({ hasText: name }).first().click()
+  await expect(page.getByTestId('terminal-session-name')).toHaveText(name)
+}
+
+/** Phone: the session sheet from the home list; `open` picks what the row does. */
+export async function phoneSelectSession(page: Page, name: string, open: 'filter' | 'terminal' = 'filter') {
+  await page.getByTestId('session-filter').click()
+  const row = page.getByTestId('session-row').filter({ hasText: name })
+  if (open === 'terminal') await row.getByTestId('session-terminal').click()
+  else await row.getByTestId('session-name').click()
+}
+
+/** Desktop: the session header's status text. */
+export const sessionStatus = (page: Page) => page.getByTestId('session-status')

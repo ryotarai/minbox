@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, phoneSelectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
 // New › Shell opens the host's own login shell: a terminal with no inbox.
 // Claude Code sessions carry the title Claude sets with set_session_title.
@@ -6,9 +6,8 @@ import { createSession, expect, expectTerminal, terminalText, test, typeInTermin
 test('New › Shell opens a plain login shell with no inbox', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'plain', 'shell')
-  const row = page.getByTestId('session-row').filter({ hasText: 'plain' })
-  await expect(row.getByTestId('session-status')).toHaveText('Shell')
-  await expect(page.getByTestId('inbox-pane')).toHaveCount(0)
+  await expect(sessionStatus(page)).toHaveText('Shell')
+  await expect(page.getByTestId('thread-pane')).toBeVisible()
   await typeInTerminal(page, 'echo "kind=$MINBOX_SESSION_ID/$((6*7))"')
   await expectTerminal(page, 'kind=/42') // a real shell, without minbox's mod variables
 
@@ -23,10 +22,9 @@ test("Claude's session title shows in the session list", async ({ page, minbox }
   await createSession(page, minbox.dataDir, 'work')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'title Fix   the login redirect loop')
-  const row = page.getByTestId('session-row').filter({ hasText: 'work' })
-  await expect(row.getByTestId('session-title')).toHaveText('Fix the login redirect loop')
+  await expect(page.getByTestId('terminal-session-title')).toHaveText('Fix the login redirect loop')
   await typeInTerminal(page, 'title Add search')
-  await expect(row.getByTestId('session-title')).toHaveText('Add search')
+  await expect(page.getByTestId('terminal-session-title')).toHaveText('Add search')
 })
 
 test('phone: with the keyboard up, the terminal takes the screen and shows the cursor', async ({ page, minbox }) => {
@@ -38,7 +36,7 @@ test('phone: with the keyboard up, the terminal takes the screen and shows the c
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
-  await page.getByTestId('session-row').filter({ hasText: 'pocket-shell' }).click()
+  await phoneSelectSession(page, 'pocket-shell', 'terminal')
   await expect(page.getByTestId('term-key-esc')).toBeVisible()
   await expect(page.getByTestId('mobile-back')).toBeVisible()
 
@@ -75,14 +73,14 @@ test('the PTY takes the smallest open screen, and grows back when it closes', as
   const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const phone = await phoneCtx.newPage()
   await phone.goto(minbox.url)
-  await phone.getByTestId('session-row').filter({ hasText: 'shared' }).click()
+  await phoneSelectSession(phone, 'shared', 'terminal')
   const phoneSize = () => phone.evaluate(() => {
     const t = (window as unknown as { __minboxTerminal?: { cols: number; rows: number } }).__minboxTerminal
     return t ? `${t.cols}×${t.rows}` : ''
   })
   await expect.poll(phoneSize).toMatch(/\d+×\d+/)
   // Both show the phone's width; the desktop draws the smaller terminal.
-  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! * 0.8)
   await expect.poll(phoneSize).toBe((await size.textContent())!)
   await typeInTerminal(page, 'echo cols=$(tput cols)')
   await expectTerminal(page, new RegExp(`cols=${(await size.textContent())!.split('×')[0]}`))
@@ -104,8 +102,8 @@ test('a phone limits the PTY only while its terminal is shown', async ({ page, b
   const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const phone = await phoneCtx.newPage()
   await phone.goto(minbox.url)
-  await phone.getByTestId('session-row').filter({ hasText: 'shared' }).click()
-  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  await phoneSelectSession(phone, 'shared', 'terminal')
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! * 0.8)
 
   // Back to the inbox on the phone: the desktop's size returns.
   await phone.getByTestId('mobile-back').click()
@@ -113,8 +111,8 @@ test('a phone limits the PTY only while its terminal is shown', async ({ page, b
 
   // Open it again, then hide the page (phone locked): it stops repeating its size (a lease the
   // host lets lapse after 15 s, the socket staying open), so the size returns.
-  await phone.getByTestId('session-row').filter({ hasText: 'shared' }).click()
-  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  await phoneSelectSession(phone, 'shared', 'terminal')
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! * 0.8)
   const setVisibility = (state: 'hidden' | 'visible') =>
     phone.evaluate((state) => {
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
@@ -124,7 +122,7 @@ test('a phone limits the PTY only while its terminal is shown', async ({ page, b
   await expect(size).toHaveText(desktop, { timeout: 30_000 })
   // Shown again: it tells its size at once and limits the PTY once more.
   await setVisibility('visible')
-  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! * 0.8)
   await phoneCtx.close()
   await expect(size).toHaveText(desktop)
 })
@@ -153,8 +151,7 @@ test('phone: a swipe scrolls the terminal, or reaches a program that tracks the 
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
   const page = await ctx.newPage()
   await page.goto(minbox.url)
-  await page.getByTestId('session-row').filter({ hasText: 'swipe' }).click()
-  await page.getByTestId('mobile-tab-terminal').click()
+  await phoneSelectSession(page, 'swipe', 'terminal')
   await expectTerminal(page, 'ready>')
 
   // A full-screen program that tracks the mouse gets wheel events.
@@ -179,7 +176,7 @@ test('phone: a swipe scrolls a shell through its scrollback', async ({ page: des
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
   const page = await ctx.newPage()
   await page.goto(minbox.url)
-  await page.getByTestId('session-row').filter({ hasText: 'scrollback' }).click()
+  await phoneSelectSession(page, 'scrollback', 'terminal')
   await expectTerminal(page, 'row300')
   const viewportY = () =>
     page.evaluate(() => (window as unknown as { __minboxTerminal: { getViewportY(): number } }).__minboxTerminal.getViewportY()) // lines back from the bottom
@@ -224,7 +221,7 @@ test("Claude's open_url opens the page in the person's browser, or offers it whe
     window.open = () => null
   })
   await blocked.goto(minbox.url)
-  await expect(blocked.getByTestId('session-list')).toBeVisible()
+  await expect(blocked.getByTestId('threads-pane')).toBeVisible()
 
   const target = `${minbox.url}/?opened-by-claude`
   const popup = page.waitForEvent('popup')
@@ -282,10 +279,10 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     await expectTerminal(page, 'after-42')
   })
 
-  test('a finger drag on the inbox/terminal edge resizes the inbox (the inbox is on the left by default)', async ({ page, minbox }) => {
+  test('a finger drag on the thread/terminal edge resizes the thread pane', async ({ page, minbox }) => {
     await page.goto(minbox.url)
     await createSession(page, minbox.dataDir, 'fold-claude')
-    const inbox = page.getByTestId('inbox-pane')
+    const inbox = page.getByTestId('thread-pane')
     await expect(inbox).toBeVisible()
     const before = (await inbox.boundingBox())!.width
     const edge = (await page.getByTestId('resizer').last().boundingBox())!
@@ -293,10 +290,10 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     // A real touch sequence (not mouse events): without touch-action: none the browser takes it as a pan.
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
-    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 8 * i, y }] })
+    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 6 * i, y }] })
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    // The edge follows the finger 1:1 (it dragged 80px).
-    await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(78)
-    expect((await inbox.boundingBox())!.width - before).toBeLessThanOrEqual(82)
+    // The edge follows the finger 1:1 (it dragged 60px left: the thread pane is that much narrower).
+    await expect.poll(async () => Math.round(before - (await inbox.boundingBox())!.width)).toBeGreaterThanOrEqual(58)
+    expect(before - (await inbox.boundingBox())!.width).toBeLessThanOrEqual(62)
   })
 })

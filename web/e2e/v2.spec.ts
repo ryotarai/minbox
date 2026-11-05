@@ -1,18 +1,23 @@
 import type { Page } from '@playwright/test'
-import { createSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
 // attachments and reviews, search, settings, Board, Decision mode, phone.
 
 /** Moves focus out of the terminal, so single-key shortcuts work. */
 async function blurTerminal(page: Page) {
-  await page.getByTestId('inbox-pane').click({ position: { x: 5, y: 5 } })
+  await page.getByTestId('threads-pane').click({ position: { x: 5, y: 5 } })
 }
 
 async function openThread(page: Page, subject: string) {
-  if (await page.getByTestId('thread-back').isVisible()) await page.getByTestId('thread-back').click()
-  await page.getByTestId('thread-row').filter({ hasText: subject }).click()
+  await page.getByTestId('thread-row').filter({ hasText: subject }).first().click()
   await expect(page.getByTestId('thread-subject')).toHaveText(subject)
+}
+
+/** The threads pane's ⋯ menu holds Settings, Board, Decide and Drafts. */
+async function fromMenu(page: Page, testid: 'open-settings' | 'open-board' | 'open-decide' | 'drafts') {
+  await page.getByTestId('list-options').click()
+  await page.getByTestId(testid).click()
 }
 
 test('archiving a thread hides it; Undo restores it; Claude writing brings it back', async ({ page, minbox }) => {
@@ -63,7 +68,7 @@ test('Mark read sets the thread aside in Quiet and closes its questions; Move ba
   await openThread(page, 'Pick a database')
   await page.getByTestId('mark-read').click()
   await expect(page.getByTestId('notice')).toContainText('Marked read')
-  await expect(page.locator('[data-testid="thread-list"]')).toContainText('Quiet')
+  await expect(page.getByTestId('filter-waiting-count')).toHaveText('0')
   await openThread(page, 'Pick a database')
   await expect(page.getByTestId('question-state').first()).toHaveText('Closed')
   await page.getByTestId('thread-back').click()
@@ -72,7 +77,7 @@ test('Mark read sets the thread aside in Quiet and closes its questions; Move ba
   await openThread(page, 'Pick a database')
   await page.getByTestId('thread-more').click()
   await page.getByTestId('thread-unread').click()
-  await expect(page.locator('[data-testid="thread-list"]')).toContainText('Waiting on you')
+  await expect(page.getByTestId('filter-waiting-count')).toHaveText('1')
 })
 
 test('a stopped question puts the session under Stopped on you', async ({ page, minbox }) => {
@@ -80,9 +85,9 @@ test('a stopped question puts the session under Stopped on you', async ({ page, 
   await createSession(page, minbox.dataDir, 'stopper')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'stop')
-  const section = page.locator('[data-section="stopped"]')
-  await expect(section.getByTestId('session-row').filter({ hasText: 'stopper' })).toBeVisible()
-  await expect(section.getByTestId('badge-stopped')).toBeVisible()
+  const row = page.getByTestId('thread-row').filter({ hasText: 'Archive rules' })
+  await expect(row).toContainText('Stopped')
+  await expect(page.getByTestId('filter-waiting-count')).toHaveText('1')
   await openThread(page, 'Archive rules')
   await expect(page.getByTestId('thread-view')).toContainText('Holds up 2')
   await expect(page.getByTestId('question-card').first()).toContainText('Stopped: migration 0007 waits on this.')
@@ -162,7 +167,7 @@ test('a guided review shows the diff and takes comments on lines', async ({ page
   await expect(page.getByTestId('annotations-chip')).toContainText('1 annotation')
 })
 
-test('search finds Japanese words, in this session or all of them', async ({ page, minbox }) => {
+test('search finds Japanese words across every session', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'jp')
   await expectTerminal(page, 'ready>')
@@ -176,8 +181,6 @@ test('search finds Japanese words, in this session or all of them', async ({ pag
 
   await page.keyboard.press('Meta+k')
   await page.getByTestId('search-input').fill('アーカイブ 扱い')
-  await expect(page.getByTestId('search-empty')).toBeVisible()
-  await page.getByRole('button', { name: 'Search all sessions' }).click()
   const hit = page.getByTestId('search-result').first()
   await expect(hit).toContainText('jp')
   await hit.click()
@@ -190,43 +193,44 @@ test('an ended session can be archived; Resume brings it back', async ({ page, m
   await createSession(page, minbox.dataDir, 'old')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  const row = page.getByTestId('session-row').filter({ hasText: 'old' })
-  await expect(row).toContainText('Ended')
-  await row.hover()
+  await expect(sessionStatus(page)).toContainText('Ended')
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-archive').click()
-  await expect(page.locator('[data-section="archived"]')).toContainText('old')
-  await row.hover()
+  const archived = async () => (await (await page.request.get(minbox.url + '/api/sessions')).json())[0].archived_at
+  await expect.poll(archived).toBeTruthy()
+  // An archived session is not offered in the session list.
+  await page.getByTestId('session-filter').click()
+  await expect(page.getByTestId('session-option').filter({ hasText: 'old' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-restart').click()
-  await expect(page.locator('[data-section="archived"]')).toHaveCount(0)
-  await expect(row).not.toContainText('Ended')
+  await expect.poll(archived).toBeFalsy()
+  await expect(sessionStatus(page)).not.toContainText('Ended')
+  await page.getByTestId('session-filter').click()
+  await expect(page.getByTestId('session-option').filter({ hasText: 'old' })).toHaveCount(1)
 })
 
-test('rename in place; delete through a dialog', async ({ page, minbox }) => {
+test('rename in the session header; delete through a dialog', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'temp')
-  const row = page.getByTestId('session-row').filter({ hasText: 'temp' })
-  await row.hover()
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-rename').click()
   await page.getByTestId('rename-input').fill('renamed')
   await page.getByTestId('rename-input').press('Enter')
-  const renamed = page.getByTestId('session-row').filter({ hasText: 'renamed' })
-  await expect(renamed).toBeVisible()
-  await renamed.hover()
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('renamed')
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-delete').click()
   await expect(page.getByRole('dialog')).toContainText('Delete renamed?')
   await page.getByTestId('delete-confirm').click()
-  await expect(page.getByTestId('session-row')).toHaveCount(0)
+  await expect(page.getByTestId('terminal-session-name')).toHaveCount(0)
+  expect(await (await page.request.get(minbox.url + '/api/sessions')).json()).toHaveLength(0)
 })
 
 test('settings: the theme and the Board persist on the server; Claude can add cards', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'cfg')
   await expectTerminal(page, 'ready>')
-  await page.getByTestId('open-settings').click()
+  await fromMenu(page, 'open-settings')
   await page.getByTestId('theme-light').click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.reload()
@@ -236,7 +240,7 @@ test('settings: the theme and the Board persist on the server; Claude can add ca
   await page.getByTestId('settings-back').click()
   await typeInTerminal(page, 'card Ship the archive')
   await expectTerminal(page, /card card_/)
-  await page.getByTestId('open-board').click()
+  await fromMenu(page, 'open-board')
   await expect(page.getByTestId('board-col-building').getByTestId('board-card')).toContainText('Ship the archive')
 })
 
@@ -250,8 +254,8 @@ test('Decision mode answers open questions by number and sends per thread', asyn
   await createSession(page, minbox.dataDir, 'decide')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'ask')
-  await expect(page.getByTestId('badge-questions')).toHaveText('?2')
-  await page.getByTestId('open-decide').click()
+  await expect(page.getByTestId('thread-questions')).toHaveText('?2')
+  await fromMenu(page, 'open-decide')
   await expect(page.getByTestId('decide')).toContainText('1 of 2')
   await page.keyboard.press('1')
   await page.getByPlaceholder('Your answer…').fill('Nightly backups')
@@ -260,7 +264,7 @@ test('Decision mode answers open questions by number and sends per thread', asyn
   await expectTerminal(page, '<<< inbox [Pick a database] Answered 2 questions.')
 })
 
-test('phone: sessions, then the session with Inbox and Terminal tabs; the PTY fits the phone', async ({ page, minbox }) => {
+test('phone: the thread list is home; a thread flips to its session\'s terminal; the PTY fits the phone', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'pocket')
   await expectTerminal(page, 'ready>')
@@ -271,15 +275,16 @@ test('phone: sessions, then the session with Inbox and Terminal tabs; the PTY fi
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
   await expect(page.getByTestId('phone')).toBeVisible()
-  await page.getByTestId('session-row').filter({ hasText: 'pocket' }).click()
-  await expect(page.getByTestId('mobile-tab-inbox')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'home')
   await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
+  await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
   await page.getByTestId('question-card').first().getByTestId('accept-recommended').click()
   await page.getByTestId('question-card').nth(1).getByTestId('question-text-input').fill('Weekly')
   await page.getByTestId('reply-send').click()
   await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
 
-  await page.getByTestId('mobile-tab-terminal').click()
+  await page.getByTestId('phone-session-chip').click()
+  await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
   await expect(page.getByTestId('term-key-esc')).toBeVisible()
   // Only the phone is open now: the PTY is sized to it.
   await expect
@@ -292,7 +297,9 @@ test('phone: sessions, then the session with Inbox and Terminal tabs; the PTY fi
   await page.getByTestId('term-key-enter').click()
 
   await page.getByTestId('mobile-back').click()
-  await expect(page.getByTestId('session-list')).toBeVisible()
+  await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
+  await page.getByTestId('mobile-back').click()
+  await expect(page.getByTestId('phone-home')).toBeVisible()
 })
 
 test('pin, snooze, forward to another session, list options, rail, and the settings pages', async ({ page, minbox }) => {
@@ -302,7 +309,7 @@ test('pin, snooze, forward to another session, list options, rail, and the setti
   await typeInTerminal(page, 'say Hello from alpha')
   await createSession(page, minbox.dataDir, 'beta')
   await expectTerminal(page, 'ready>')
-  await page.getByTestId('session-row').filter({ hasText: 'alpha' }).click()
+  await selectSession(page, 'alpha')
 
   // Pin, then snooze: the thread leaves the list for Snoozed.
   await openThread(page, 'Note')
@@ -319,31 +326,31 @@ test('pin, snooze, forward to another session, list options, rail, and the setti
   // alpha ends; a reply to it can go to beta instead.
   await page.getByTestId('terminal').click()
   await typeInTerminal(page, 'exit')
-  await expect(page.getByTestId('session-row').filter({ hasText: 'alpha' })).toContainText('Ended')
+  await expect(sessionStatus(page)).toContainText('Ended')
   await openThread(page, 'Note')
   await page.getByTestId('reply-box').fill('Please take this over')
   await page.getByTestId('reply-send').click()
   await expect(page.getByTestId('where-reply')).toContainText('alpha has ended.')
   await page.getByTestId('where-forward').click()
   await expect(page.getByTestId('notice')).toContainText('Sent to Claude Code · in beta')
-  await page.getByTestId('session-row').filter({ hasText: 'beta' }).click()
+  await selectSession(page, 'beta')
   await expectTerminal(page, '<<< inbox [Note] Please take this over')
 
   // List options: compact rows drop the second line.
   await page.getByTestId('list-options').click()
   await page.getByRole('menuitemcheckbox', { name: 'Compact rows' }).click()
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Compact rows' })).toHaveAttribute('aria-checked', 'true')
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('session-row').first().locator('[data-testid="badge-unread"]')).toHaveCount(0)
 
   // ⌘B folds the list into the rail.
-  await page.getByTestId('inbox-pane').click({ position: { x: 5, y: 5 } })
+  await page.getByTestId('threads-pane').click({ position: { x: 5, y: 5 } })
   await page.keyboard.press('Meta+b')
   await expect(page.getByTestId('session-rail')).toBeVisible()
   await expect(page.getByTestId('rail-session')).toHaveCount(2)
   await page.keyboard.press('Meta+b')
 
   // Settings: prompts are saved on the server; About and Storage answer.
-  await page.getByTestId('open-settings').click()
+  await fromMenu(page, 'open-settings')
   await page.getByTestId('settings-nav-prompts').click()
   await page.getByTestId('prompt-extra').fill('質問は日本語で')
   await page.getByRole('button', { name: 'Save' }).click()
@@ -402,7 +409,7 @@ test('New session: browse folders, make one, catch a missing one, and pick a rec
   await expect(page.getByTestId('new-session-cwd')).toHaveValue(/projects\/beta$/)
   await expect(page.getByTestId('new-session-name')).toHaveAttribute('placeholder', 'beta')
   await page.getByTestId('new-session-cwd').press('Meta+Enter')
-  await expect(page.getByTestId('session-row').filter({ hasText: 'beta' })).toBeVisible()
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   await expect.poll(async () => (await terminalText(page)).replace(/\n/g, ''), { timeout: 15_000 }).toMatch(/cwd=.*projects\/beta/)
 
   // Again: the folder is under Recent.
@@ -458,7 +465,7 @@ test("a click and a drag reach a program that tracks the mouse (Claude Code's fu
   expect(await page.evaluate(() => (window as any).__minboxTerminal.getSelection())).toBe('')
 })
 
-test('All inbox lists every session\'s threads; picking one opens its session and the thread', async ({ page, minbox }) => {
+test('the threads list holds every session\'s threads; picking one opens its session and the thread', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'alpha')
   await expectTerminal(page, 'ready>')
@@ -471,14 +478,13 @@ test('All inbox lists every session\'s threads; picking one opens its session an
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Second idea for beta')
 
-  // The entry is the first row of the session list.
-  await page.getByTestId('open-all-inbox').click()
-  const rows = page.getByTestId('all-thread-list').getByTestId('thread-row')
+  // Both are in the one list, each with its session chip.
+  const rows = page.getByTestId('thread-list').getByTestId('thread-row')
   await expect(rows).toHaveCount(2)
   await expect(rows.filter({ hasText: 'First idea for alpha' }).getByTestId('thread-session')).toHaveText('alpha')
   await expect(rows.filter({ hasText: 'Second idea for beta' }).getByTestId('thread-session')).toHaveText('beta')
 
-  // Picking a thread of another session goes to the main screen with that session and thread open.
+  // Picking a thread of another session switches the thread view and the terminal together.
   await rows.filter({ hasText: 'First idea for alpha' }).click()
   await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
   await expect(page.getByTestId('thread-subject')).toHaveText('First idea for alpha')
@@ -628,7 +634,7 @@ test('the new-thread box can fill the pane\'s height, and goes back', async ({ p
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'tall')
   const box = page.getByTestId('quick-body')
-  const pane = page.getByTestId('inbox-pane')
+  const pane = page.getByTestId('threads-pane')
   const small = (await box.boundingBox())!.height
   await box.fill('draft text')
   await page.getByTestId('quick-full').click()
@@ -669,28 +675,29 @@ test('Shift+Enter is a newline for Claude Code (ESC CR) and still Enter in a she
   expect(sent.join('')).not.toContain('[27,13]')
 })
 
-test('settings: the inbox is left of the terminal by default; swapping puts it right, and the edge still drags', async ({ page, minbox }) => {
+test('settings: the thread is left of the terminal by default; swapping puts it right, and the edge still drags', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'swap')
   await expectTerminal(page, 'ready>')
-  const inbox = page.getByTestId('inbox-pane')
+  const thread = page.getByTestId('thread-pane')
   const main = page.locator('main')
-  expect((await inbox.boundingBox())!.x).toBeLessThan((await main.boundingBox())!.x)
-  await page.getByTestId('open-settings').click()
-  await page.getByRole('switch', { name: 'Swap terminal and inbox' }).click()
-  await expect(page.getByRole('switch', { name: 'Swap terminal and inbox' })).toHaveAttribute('aria-checked', 'false')
+  expect((await page.getByTestId('threads-pane').boundingBox())!.x).toBeLessThan((await thread.boundingBox())!.x)
+  expect((await thread.boundingBox())!.x).toBeLessThan((await main.boundingBox())!.x)
+  await fromMenu(page, 'open-settings')
+  await page.getByRole('switch', { name: 'Swap terminal and thread' }).click()
+  await expect(page.getByRole('switch', { name: 'Swap terminal and thread' })).toHaveAttribute('aria-checked', 'false')
   await page.goto(minbox.url)
-  await expect(inbox).toBeVisible()
-  expect((await inbox.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x)
-  // Dragging the edge left widens the inbox when it is on the right.
-  const before = (await inbox.boundingBox())!.width
+  await expect(thread).toBeVisible()
+  expect((await thread.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x)
+  // The terminal stays between the list and the thread; dragging the edge left widens the thread.
+  const before = (await thread.boundingBox())!.width
   const edge = (await page.getByTestId('resizer').last().boundingBox())!
   const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x - 60, y, { steps: 6 })
   await page.mouse.up()
-  await expect.poll(async () => Math.round((await inbox.boundingBox())!.width - before)).toBeGreaterThanOrEqual(58)
+  await expect.poll(async () => Math.round((await thread.boundingBox())!.width - before)).toBeGreaterThanOrEqual(58)
 })
 
 test('the reply box grows with the text and can fill the pane', async ({ page, minbox }) => {
@@ -723,27 +730,26 @@ test('the reply box grows with the text and can fill the pane', async ({ page, m
   await expectTerminal(page, 'full reply')
 })
 
-test.describe('wide screen: four panes', () => {
+test.describe('wide screen', () => {
   test.use({ viewport: { width: 1920, height: 1000 } })
 
-  test('the thread opens in its own pane beside the inbox list', async ({ page, minbox }) => {
+  test('threads | thread | terminal, left to right; the thread opens beside the list', async ({ page, minbox }) => {
     await page.goto(minbox.url)
     await createSession(page, minbox.dataDir, 'wide')
     await expectTerminal(page, 'ready>')
     await typeInTerminal(page, 'say first wide message')
-    const inbox = page.getByTestId('inbox-pane')
+    const list = page.getByTestId('threads-pane')
     const threadPane = page.getByTestId('thread-pane')
     await expect(threadPane).toBeVisible()
     await expect(threadPane).toContainText('Pick a thread')
-    // Inbox | thread | terminal, left to right (the default layout).
-    const [i, t, m] = await Promise.all([inbox.boundingBox(), threadPane.boundingBox(), page.locator('main').boundingBox()])
+    const [i, t, m] = await Promise.all([list.boundingBox(), threadPane.boundingBox(), page.locator('main').boundingBox()])
     expect(i!.x).toBeLessThan(t!.x)
     expect(t!.x).toBeLessThan(m!.x)
-    await inbox.getByTestId('thread-row').first().click()
+    await list.getByTestId('thread-row').first().click()
     await expect(threadPane.getByTestId('thread-subject')).toHaveText('Note')
-    // The list stays beside it, the picked row marked.
-    await expect(inbox.getByTestId('thread-row')).toHaveCount(1)
-    await expect(inbox.getByTestId('thread-view')).toHaveCount(0)
+    // The list stays beside it.
+    await expect(list.getByTestId('thread-row')).toHaveCount(1)
+    await expect(list.getByTestId('thread-view')).toHaveCount(0)
     // Closing the thread empties the pane again.
     await threadPane.getByTestId('thread-back').click()
     await expect(threadPane).toContainText('Pick a thread')
@@ -763,13 +769,6 @@ test.describe('wide screen: four panes', () => {
     await page.mouse.up()
     await expect.poll(async () => Math.round((await threadPane.boundingBox())!.width - before)).toBeGreaterThanOrEqual(48)
   })
-})
-
-test('a narrower screen keeps one inbox pane', async ({ page, minbox }) => {
-  await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'not-wide')
-  await expect(page.getByTestId('inbox-pane')).toBeVisible()
-  await expect(page.getByTestId('thread-pane')).toHaveCount(0)
 })
 
 test('selecting text in a thread offers Reply, which quotes it into the reply box and focuses it', async ({ page, minbox }) => {
@@ -876,7 +875,6 @@ for (const [name, size] of [['desktop', { width: 1280, height: 800 }], ['phone',
     if (name === 'phone') {
       await page.setViewportSize(size)
       await page.goto(minbox.url + '/#')
-      await page.getByTestId('session-row').filter({ hasText: 'keep' }).click()
     }
     const box = page.getByTestId('quick-body')
     await box.fill('first note')
@@ -929,7 +927,6 @@ test('phone: a queued reply can be cancelled', async ({ page, minbox }) => {
   await queueUp(page, minbox, 'pocketcancel')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
-  await page.getByTestId('session-row').filter({ hasText: 'pocketcancel' }).click()
   await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
   await page.getByTestId('reply-box').fill('on the phone')
   await page.getByTestId('reply-send').click()
