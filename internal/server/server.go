@@ -31,10 +31,12 @@ type Config struct {
 	Addr          string   // listen address, e.g. 127.0.0.1:4848
 	DataDir       string   // ~/.minbox
 	ClaudeCommand []string // e.g. ["claude"]
-	PluginDir     string   // the extracted minbox mod
-	ServerFile    string   // where the server writes its URL for the mod
-	ScratchDir    string   // pasted images go here
-	HostURL       string   // how the built-in host is shown (unix://…)
+	// SuggestCommand starts the reply-suggestions generator (MINBOX_SUGGEST_COMMAND); empty: the first word of ClaudeCommand.
+	SuggestCommand []string
+	PluginDir      string // the extracted minbox mod
+	ServerFile     string // where the server writes its URL for the mod
+	ScratchDir     string // pasted images go here
+	HostURL        string // how the built-in host is shown (unix://…)
 	// Tailscale: requests through tailscale serve must come from this login
 	// (empty: any). PublicHosts are the Host names the server answers to
 	// besides loopback (its MagicDNS name).
@@ -48,6 +50,7 @@ type Server struct {
 	store    *store.Store
 	hub      *hub
 	sessions *sessionManager
+	suggest  *suggester
 	web      fs.FS
 	handler  http.Handler
 
@@ -107,6 +110,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 			}},
 		},
 	}
+	s.suggest = newSuggester(s.runClaudeSuggest)
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)
@@ -171,6 +175,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/threads", s.listThreads)
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)
+	mux.HandleFunc("GET /api/threads/{id}/suggestions", s.threadSuggestions)
 	mux.HandleFunc("POST /api/threads/{id}/read", s.markRead)
 	mux.HandleFunc("POST /api/threads/{id}/unread", s.markUnread)
 	mux.HandleFunc("POST /api/threads/{id}/reply", s.reply)

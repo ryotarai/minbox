@@ -210,6 +210,12 @@ function Prompts() {
       >
         <Switch label="Orchestrator prompt" on={settings.orchestrator_prompt} onChange={(v) => saveSettings({ orchestrator_prompt: v })} />
       </Row>
+      <Row
+        label="Suggest replies"
+        desc="Sends the recent messages of the open thread to claude (Haiku) to draft replies. Runs on this machine; costs a little per thread."
+      >
+        <Switch label="Suggest replies" on={settings.reply_suggestions} onChange={(v) => saveSettings({ reply_suggestions: v })} />
+      </Row>
     </Group>
   )
 }

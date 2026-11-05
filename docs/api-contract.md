@@ -133,12 +133,41 @@ Settings (one JSON object; PUT merges top-level keys):
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
+  reply_suggestions: bool,     (default true; see "Reply suggestions")
   orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
                                 block to --append-system-prompt; read per spawn, running sessions keep theirs)
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
 ```
 
 Defaults: system, 13, true, true, true, true, false, false, "", {true,false,false,false,false}.
+
+## Reply suggestions
+
+`GET /api/threads/{id}/suggestions` -> `{suggestions: string[0..3], reason?: "disabled"|"not_needed", error?: string}`.
+Always 200 for generation problems (error = short reason, suggestions empty); 404 for an unknown thread.
+
+- `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent.
+- Otherwise the request blocks (up to 50 s) for one claude run and returns it. Results are cached in memory per
+  (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
+  (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
+  Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
+- The UI (ThreadView) requests it when a thread opens or its last message changes and the reply box is empty and no
+  question is open; it shows up to 3 chips (`reply-suggestions` / `reply-suggestion`). Click sends, the pencil edits.
+- Generator (always on the minbox server machine, also for remote hosts): the executable is `MINBOX_SUGGEST_COMMAND`
+  (split on spaces; tests) or else the first word of `--claude` only, so the person's own flags (--model...) are not
+  used. Run in a fresh empty temp directory, prompt on stdin:
+  `claude -p --model haiku --effort low --system-prompt "<one line>" --tools "" --no-session-persistence
+  --setting-sources "" --strict-mcp-config --disable-slash-commands --output-format json --json-schema '<schema>'`.
+  `--system-prompt` replaces the default prompt; `--tools ""` disables all tools; `--setting-sources ""` loads no
+  settings/CLAUDE.md; `--bare` is not used (it needs an ANTHROPIC_API_KEY, not the person's login). Verified with
+  claude 2.1.318. Schema: `{suggestions: string[1..3] (each <=200 chars)}`.
+- Envelope (`--output-format json`): one object `{"type":"result","subtype":"success","is_error":false,"result":"<the JSON as text>",
+  "structured_output":{"suggestions":[...]}, ...}`; we read `structured_output`, else parse `result`.
+- Prompt: last 12 messages (each cut at 1,500 chars, PERSON/AGENT), the open questions and options of a final agent
+  message, then the instruction (<=3 distinct short replies in the person's language, each <200 chars).
+  Result parsing trims, dedupes (case-insensitive), drops empties, caps 3 and 200 chars.
+- Privacy/cost: the thread's recent text goes to Anthropic through claude (Haiku, low effort), once per agent message
+  opened. Turn it off with the setting.
 
 ## Browser routes (added)
 

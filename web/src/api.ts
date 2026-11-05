@@ -304,10 +304,15 @@ export type Settings = {
   prompt_extra: string
   /** Append the orchestration block to the system prompt of sessions started or resumed from now on. */
   orchestrator_prompt: boolean
+  /** Draft up to three replies with Haiku when a thread opens (sends its recent messages to claude). */
+  reply_suggestions: boolean
   /** The address this minbox is reached at from outside (Tailscale URL): notifications link to it. */
   public_url: string
   list: ListOptions
 }
+
+/** Drafted replies for a thread (the server caches them per last message). */
+export type SuggestResult = { suggestions: string[]; reason?: 'disabled' | 'not_needed'; error?: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -321,6 +326,7 @@ export const DEFAULT_SETTINGS: Settings = {
   swap_panes: true,
   prompt_extra: '',
   orchestrator_prompt: true,
+  reply_suggestions: true,
   public_url: '',
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
@@ -507,6 +513,7 @@ export const api = {
   snoozeThread: (id: string, until: Date) => call<Ok>('POST', `/api/threads/${id}/snooze`, { until: until.toISOString() }),
   unsnoozeThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/unsnooze`),
   reask: (id: string) => call<Message>('POST', `/api/threads/${id}/reask`),
+  suggestions: (threadId: string) => call<SuggestResult>('GET', `/api/threads/${threadId}/suggestions`),
   reply: (threadId: string, req: ReplyRequest) =>
     call<Message & { forwarded_thread_id?: string; thread_id: string }>('POST', `/api/threads/${threadId}/reply`, req),
   sendNow: (messageId: string) => call<Ok>('POST', `/api/messages/${messageId}/send-now`),

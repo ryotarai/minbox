@@ -10,6 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '../..')
 const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
+const FAKE_SUGGEST = join(__dirname, 'fake-suggest.py')
 
 // Concurrent suites (other worktrees, other runs) must not share a server: ask the OS for a free
 // port per instance. MINBOX_E2E_PORT, if set, is the first port to use (then counts up).
@@ -42,6 +43,7 @@ export class Minbox {
   async start() {
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', `python3 ${FAKE}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}` },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
