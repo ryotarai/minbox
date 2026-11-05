@@ -168,7 +168,7 @@ func (s *Server) setThreadStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	v, ok := store.NormalizeThreadStatus(req.Status)
 	if !ok {
-		httpError(w, 400, "unknown status "+req.Status+" (working, need_action or finished)")
+		httpError(w, 400, "unknown status "+req.Status+" (working, need_action, blocked or finished)")
 		return
 	}
 	s.threadOp(func(ctx context.Context, id string) error {

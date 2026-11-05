@@ -217,7 +217,7 @@ the selected session) since the list is global.
 - Session `Rename / Stop / Resume / Archive / Delete` live in the terminal header menu (and the phone session sheet);
   an archived session is no longer listed anywhere (resume it from its header while it is still selected).
 - Screenshots: `docs/img/v2/` (made by `web/e2e/screenshot-v2.spec.ts`, `SCREENSHOTS=1 SCREENSHOT_DIR=...`).
-- Thread status (`working` / `need_action` / `finished`, see api-contract "Thread status"): a compact badge on every
+- Thread status (`working` / `need_action` / `blocked` / `finished`, see api-contract "Thread status"): a compact badge on every
   thread row and in the thread header (pulsing blue dot, amber dot, muted check). "Waiting" (chip, badges, rails,
-  palette) is `need_action`. Grouping "Status" lists Needs action, Working, Finished. The thread's More menu has
+  palette) is `need_action`. Grouping "Status" lists Needs action, Working, Blocked, Finished. The thread's More menu has
   "Mark as ...". There is no Working filter chip (keeps the chip row short on phones).

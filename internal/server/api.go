@@ -709,7 +709,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if strings.TrimSpace(req.Status) != "" {
 		v, ok := store.NormalizeThreadStatus(req.Status)
 		if !ok {
-			httpError(w, 400, "unknown status "+req.Status+" (working, need_action or finished)")
+			httpError(w, 400, "unknown status "+req.Status+" (working, need_action, blocked or finished)")
 			return
 		}
 		status = v

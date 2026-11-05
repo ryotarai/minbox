@@ -12,7 +12,7 @@ export const SEND_DESCRIPTION = [
   'Their reply arrives later as a new message in this conversation, headed with its thread id (usable with `read_thread` for the earlier messages); meanwhile keep working on what does not depend on it, or end your turn.',
   'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
   'Pass `thread_title` (short, under 60 characters) when you start a thread and whenever the thread\'s topic has changed, so the title in the inbox list shows what it is about now; leave it out to keep the title as it is.',
-  'Pass `status` (working | need_action | finished) to set the thread\'s status: `working` when you start working on it, `need_action` when you need the person to decide or do something, `finished` when its task is done; it is required on every message.',
+  'Pass `status` (working | need_action | blocked | finished) to set the thread\'s status: `working` when you start working on it, `need_action` when you need the person to decide or do something, `blocked` when you cannot go on until something outside the person happens (a CI run, another session, a server coming up), `finished` when its task is done; it is required on every message.',
   'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
 ].join(' ')
 
@@ -56,9 +56,9 @@ export const SEND_SCHEMA = {
     },
     status: {
       type: 'string',
-      enum: ['working', 'need_action', 'finished'],
+      enum: ['working', 'need_action', 'blocked', 'finished'],
       description:
-        "The thread's status, shown as a badge in the inbox. Set `working` when you start working on the thread, `need_action` when you need the person to decide or do something, `finished` when the thread's task is done. Required on every message: say where the thread stands after it. A message that asks the person something is need_action; a report that the work is done is finished; a progress note while you carry on is working.",
+        "The thread's status, shown as a badge in the inbox. Set `working` when you start working on the thread, `need_action` when you need the person to decide or do something, `blocked` when you wait on something outside the person (CI, another session, a server), `finished` when the thread's task is done. Required on every message: say where the thread stands after it. A message that asks the person something is need_action; a report that the work is done is finished; a progress note while you carry on is working.",
     },
     subject: {
       type: 'string',

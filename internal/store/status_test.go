@@ -79,7 +79,7 @@ func TestThreadStatusRules(t *testing.T) {
 	if err := s.SetThreadStatus(ctx, a.ID, "bogus"); err == nil {
 		t.Fatal("bogus status accepted")
 	}
-	for in, want := range map[string]string{"done": ThreadFinished, "complete": ThreadFinished, "needs_action": ThreadNeedAction, "waiting": ThreadNeedAction, "WORKING": ThreadWorking} {
+	for in, want := range map[string]string{"done": ThreadFinished, "complete": ThreadFinished, "needs_action": ThreadNeedAction, "waiting": ThreadNeedAction, "WORKING": ThreadWorking, "blocked": ThreadBlocked, "stuck": ThreadBlocked} {
 		if v, ok := NormalizeThreadStatus(in); !ok || v != want {
 			t.Fatalf("%s -> %s", in, v)
 		}
