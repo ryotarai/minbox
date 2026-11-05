@@ -40,6 +40,8 @@ type sessionManager struct {
 	localFS *hostfs.Local
 
 	mu sync.Mutex
+	// shellMu serialises starting companion shells (two attaches must not spawn twice).
+	shellMu sync.Mutex
 	// stopping holds sessions the person stopped: their exit is a close.
 	stopping map[string]bool
 }
@@ -335,6 +337,7 @@ func (m *sessionManager) Stop(ctx context.Context, id string) error {
 	m.stopping[id] = true
 	m.mu.Unlock()
 	err = host.Kill(ctx, id)
+	m.endShell(ctx, id)
 	// The exit event marks it ended; make sure even if the host had no such terminal.
 	if sess, gerr := m.store.GetSession(ctx, id); gerr == nil && sess.Status != store.StatusEnded {
 		_ = m.store.SetSessionEnded(ctx, id, -1)
@@ -355,6 +358,8 @@ func (m *sessionManager) Delete(ctx context.Context, id string) error {
 		m.mu.Unlock()
 		_ = host.Kill(ctx, id)
 		_ = host.Remove(ctx, id)
+		_ = host.Kill(ctx, shellTermID(id))
+		_ = host.Remove(ctx, shellTermID(id))
 	}
 	err := m.store.DeleteSession(ctx, id)
 	m.hub.publish(Event{Type: "sessions"})
@@ -364,9 +369,13 @@ func (m *sessionManager) Delete(ctx context.Context, id string) error {
 // onExit handles a terminal's exit: the session is closed (the person stopped
 // it, or Claude Code quit on its own). Either way it is not resumed later.
 func (m *sessionManager) onExit(ctx context.Context, id string, code int) {
+	if isShellTermID(id) {
+		return // a companion shell ending is not a session ending
+	}
 	m.mu.Lock()
 	delete(m.stopping, id)
 	m.mu.Unlock()
+	m.endShell(ctx, id)
 	if err := m.store.SetSessionEnded(ctx, id, code); err != nil && !errors.Is(err, store.ErrNotFound) {
 		log.Printf("mark %s ended: %v", id, err)
 	}
@@ -467,4 +476,74 @@ func (m *sessionManager) Run(ctx context.Context, connect func(context.Context) 
 		m.hosts.local().setOffline(err)
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// shellSuffix marks a session's companion shell: a second terminal on the
+// session's host, in its folder, with the id "<session id>:shell". It is not
+// a session: nothing in the store, the lists or the inbox knows it.
+const shellSuffix = ":shell"
+
+func shellTermID(sessionID string) string { return sessionID + shellSuffix }
+
+func isShellTermID(id string) bool { return strings.HasSuffix(id, shellSuffix) }
+
+// clientError is an error with the HTTP status to answer.
+type clientError struct {
+	status int
+	msg    string
+}
+
+func (e *clientError) Error() string { return e.msg }
+
+// ensureShell starts the session's companion shell unless one is running.
+// An exited one (the person typed exit) is forgotten and started again.
+func (m *sessionManager) ensureShell(ctx context.Context, sess *store.Session) error {
+	if sess.Kind == store.KindShell {
+		return &clientError{400, "a shell session is a shell already"}
+	}
+	if sess.Status == store.StatusEnded {
+		return &clientError{409, "session has ended"}
+	}
+	host, err := m.hostOf(sess)
+	if err != nil {
+		return err
+	}
+	m.shellMu.Lock()
+	defer m.shellMu.Unlock()
+	id := shellTermID(sess.ID)
+	if terms, err := host.List(ctx); err == nil {
+		for _, t := range terms {
+			if t.ID == id && t.Running {
+				return nil
+			}
+		}
+	}
+	_ = host.Remove(ctx, id)
+	shell := *sess
+	shell.Kind = store.KindShell
+	_, err = host.Spawn(ctx, termhost.SpawnRequest{
+		ID:         id,
+		Argv:       shellArgv,
+		Cwd:        sess.Cwd,
+		Env:        m.sessionEnv(&shell),
+		InheritEnv: true,
+		Cols:       120,
+		Rows:       36,
+	})
+	return err
+}
+
+// endShell ends and forgets the companion shell of a session.
+func (m *sessionManager) endShell(ctx context.Context, sessionID string) {
+	sess, err := m.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return
+	}
+	host, err := m.hostOf(sess)
+	if err != nil {
+		return
+	}
+	id := shellTermID(sessionID)
+	_ = host.Kill(ctx, id)
+	_ = host.Remove(ctx, id)
 }

@@ -206,6 +206,18 @@ visible and sends it at once when shown again). A `resize` without `lease` never
 PTY returns to the size it was started with.
 A phone view does not send `resize` unless the person asks ("Fit to this screen").
 
+### Companion shell
+
+`GET /api/sessions/{id}/shell/terminal` (WebSocket, same frames as `/terminal`) attaches to a
+login shell that belongs to a Claude Code session: same host, started in the session's `cwd`
+(the host's `$SHELL -l`, like a `shell` session). It is a second host terminal with id
+`<session id>:shell`, started on the first attach and kept running while no client is attached
+(a reattach replays its scrollback). If the person exits it, the next attach starts a new one.
+It is not a session: it is in no list, status, rail or inbox logic, and its exit changes nothing
+on the session. It ends when the session is stopped, ends, is deleted, or its host is removed.
+Errors: 400 for a `shell` session, 409 when the session has ended, 503 when the host is away.
+No host protocol change (the id is opaque to the host; `RemoteProtocol` is not bumped).
+
 ## Attachments v2 (match Plannotator Inbox)
 
 No size or count limits on agent attachments. Refused: folders, non-regular files, the

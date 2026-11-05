@@ -665,6 +665,7 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) {
 						s.sessions.stopping[sess.ID] = true
 						s.sessions.mu.Unlock()
 						_ = h.Kill(r.Context(), sess.ID)
+						_ = h.Kill(r.Context(), shellTermID(sess.ID))
 					}
 				}
 			}

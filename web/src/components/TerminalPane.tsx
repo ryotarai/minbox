@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
@@ -16,6 +16,14 @@ export function TerminalPane({ session }: { session: Session | null }) {
   const term = useRef<TerminalHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const onNotice = useCallback((text: string, isError?: boolean) => toast(text, { error: isError }), [toast])
+
+  // Closing the shell pane hands the keyboard back to this terminal.
+  const shellOpen = layout.shellPane
+  const wasShellOpen = useRef(shellOpen)
+  useEffect(() => {
+    if (wasShellOpen.current && !shellOpen) term.current?.focus()
+    wasShellOpen.current = shellOpen
+  }, [shellOpen])
 
   if (!session) {
     return (
@@ -45,6 +53,18 @@ export function TerminalPane({ session }: { session: Session | null }) {
           <span className="sr-only" data-testid="pty-size">
             {size.cols}×{size.rows}
           </span>
+        )}
+        {session.kind !== 'shell' && (
+          <IconButton
+            aria-label={layout.shellPane ? 'Hide shell' : 'Show shell'}
+            title={layout.shellPane ? 'Hide shell (Ctrl+`)' : 'Show shell (Ctrl+`)'}
+            data-testid="shell-toggle"
+            aria-pressed={layout.shellPane}
+            onClick={() => setLayout({ shellPane: !layout.shellPane })}
+            className={cx('border border-line2', layout.shellPane && 'text-wait')}
+          >
+            <IconTerminal />
+          </IconButton>
         )}
         <IconButton
           aria-label={layout.inboxCollapsed ? 'Show inbox' : 'Collapse inbox'}
