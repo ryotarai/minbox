@@ -285,7 +285,7 @@ test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
     const inbox = page.getByTestId('thread-pane')
     await expect(inbox).toBeVisible()
     const before = (await inbox.boundingBox())!.width
-    const edge = (await page.getByTestId('resizer').last().boundingBox())!
+    const edge = (await page.getByTestId('resizer').nth(1).boundingBox())!
     const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
     // A real touch sequence (not mouse events): without touch-action: none the browser takes it as a pan.
     const cdp = await page.context().newCDPSession(page)
