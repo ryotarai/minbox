@@ -6,6 +6,7 @@ import {
   subscribe,
   type ConnectionState,
   type Host,
+  type Project,
   type Session,
   type Settings,
 } from '../api'
@@ -80,7 +81,8 @@ export function useIsPhone(): boolean {
 /** In `threadVersion`: bumped when every open thread should load again. */
 export const ALL_THREADS = '*'
 
-export type Layout = { sidebarW: number; inboxW: number; threadW: number; rail: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean }
+/** projectsRail: the project column shows 56 px tiles instead of names. */
+export type Layout = { sidebarW: number; inboxW: number; threadW: number; projectsRail?: boolean; rail: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean }
 function defaultLayout(): Layout {
   const w = window.innerWidth
   if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, rail: false, inboxCollapsed: false, shellW: 560, shellPane: false }
@@ -120,7 +122,9 @@ export type Overlay =
   | { kind: 'compose'; sessionId?: string; draftId?: string }
   | { kind: 'delete-session'; session: Session }
   | { kind: 'drafts' }
-  | { kind: 'new-session' }
+  | { kind: 'new-session'; projectId?: string }
+  | { kind: 'new-project' }
+  | { kind: 'edit-project'; project: Project }
   | null
 
 type AppState = {
@@ -132,6 +136,9 @@ type AppState = {
   reloadSessions: () => void
   hosts: Host[]
   reloadHosts: () => void
+  /** Live projects (pinned first, then recent activity); null while loading. */
+  projects: Project[] | null
+  reloadProjects: () => void
   settings: Settings
   saveSettings: (patch: Partial<Settings>) => void
   conn: ConnectionState
@@ -170,6 +177,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[] | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [hosts, setHosts] = useState<Host[]>([])
+  const [projects, setProjects] = useState<Project[] | null>(null)
   const [conn, setConn] = useState<ConnectionState>({ connected: true, attempts: 0, since: null })
   const [threadsVersion, setThreadsVersion] = useState(0)
   const [threadVersion, setThreadVersion] = useState<Record<string, number>>({})
@@ -242,6 +250,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         /* older server: no hosts */
       })
   }, [])
+  const reloadProjects = useCallback(() => {
+    api
+      .projects()
+      .then(setProjects)
+      .catch(() => {
+        /* older server: no projects */
+        setProjects([])
+      })
+  }, [])
   const loadSettings = useCallback(() => {
     api
       .settings()
@@ -274,9 +291,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reloadSessions()
     loadSettings()
     reloadHosts()
+    reloadProjects()
     return subscribe(
       (ev) => {
         if (ev.type === 'sessions') reloadSessions()
+        if (ev.type === 'projects') reloadProjects()
         if (ev.type === 'threads') setThreadsVersion((v) => v + 1)
         if (ev.type === 'thread' && ev.thread_id) setThreadVersion((m) => ({ ...m, [ev.thread_id!]: (m[ev.thread_id!] ?? 0) + 1 }))
         if (ev.type === 'cards') setCardsVersion((v) => v + 1)
@@ -289,13 +308,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reloadSessions()
         loadSettings()
         reloadHosts()
+        reloadProjects()
         setThreadsVersion((v) => v + 1)
         setThreadVersion((m) => ({ ...m, [ALL_THREADS]: (m[ALL_THREADS] ?? 0) + 1 })) // events were missed: the open thread too
         setCardsVersion((v) => v + 1)
       },
       setConn,
     )
-  }, [reloadSessions, loadSettings, reloadHosts])
+  }, [reloadSessions, loadSettings, reloadHosts, reloadProjects])
 
   // The page comes back after a while hidden (a phone unlocked, a tab switched back to): what
   // arrived meanwhile may not have been delivered, so load it again.
@@ -401,6 +421,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveSettings,
       hosts,
       reloadHosts,
+      projects,
+      reloadProjects,
       conn,
       threadsVersion,
       threadVersion,
@@ -417,7 +439,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setOverlay,
       isPhone,
     }),
-    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, conn, threadsVersion, threadVersion, cardsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone],
+    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, cardsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -9,6 +9,8 @@ import { ThreadPane } from './components/ThreadPane'
 import { ThreadsPane } from './components/ThreadsPane'
 import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
 import { PhoneApp } from './components/Phone'
+import { ProjectRail } from './components/ProjectRail'
+import { selectProject, useSelectedProject } from './lib/projects'
 import { NewSessionDialog } from './components/NewSession'
 import { DeviceGate } from './components/Devices'
 import { Palette } from './components/Palette'
@@ -30,17 +32,32 @@ export function App() {
 function Root() {
   const { route, sessions, navigate, isPhone, overlay, setOverlay, undoLast, settings } = useApp()
 
-  // Desktop: keep a session selected (the one that needs you most), and drop a deleted one.
+  // Desktop: keep a session selected (the one that needs you most, in the selected project), and drop a deleted one.
+  // A session outside the selected project: when the person switched project, pick one inside it;
+  // when the route moved there (palette, link), the project follows the session.
+  const { id: projectId } = useSelectedProject()
+  const lastProject = useRef(projectId)
   useEffect(() => {
     if (!sessions) return
-    if (route.s && sessions.some((s) => s.id === route.s)) return
+    const switched = lastProject.current !== projectId
+    lastProject.current = projectId
+    const cur = sessions.find((s) => s.id === route.s)
     if (isPhone) {
-      if (route.s) navigate({ s: null, t: null }, { push: false })
+      if (route.s && !cur) navigate({ s: null, t: null }, { push: false })
       return
     }
-    const first = groupSessions(sessions.filter((s) => !s.archived_at))[0]?.rows[0] ?? sessions[0]
+    if (cur && (!projectId || cur.project_id === projectId)) return
+    if (cur && !switched && cur.project_id) {
+      selectProject(cur.project_id)
+      return
+    }
+    const live = sessions.filter((s) => !s.archived_at && (!projectId || s.project_id === projectId))
+    // Opening a project shows its main session's terminal.
+    const main = projectId ? live.find((s) => s.is_main) : undefined
+    const first = main ?? groupSessions(live)[0]?.rows[0] ?? (projectId ? undefined : sessions[0])
+    if (!first && !route.s) return
     navigate({ s: first?.id ?? null, t: null, f: null })
-  }, [sessions, route.s, isPhone, navigate])
+  }, [sessions, route.s, isPhone, navigate, projectId])
   // The old All inbox page is the main screen's list now.
   useEffect(() => {
     if ((route.view as string) === 'inbox') navigate({ view: 'main' }, { push: false })
@@ -84,7 +101,9 @@ function Root() {
       {overlay?.kind === 'compose' && <Compose sessionId={overlay.sessionId} draftId={overlay.draftId} onClose={close} />}
       {overlay?.kind === 'delete-session' && <DeleteSession session={overlay.session} onClose={close} />}
       {overlay?.kind === 'drafts' && <DraftsList onClose={close} />}
-      {overlay?.kind === 'new-session' && <NewSessionDialog onClose={close} />}
+      {overlay?.kind === 'new-session' && <NewSessionDialog projectId={overlay.projectId} onClose={close} />}
+      {overlay?.kind === 'new-project' && <NewSessionDialog mode="project" onClose={close} />}
+      {overlay?.kind === 'edit-project' && <NewSessionDialog mode="project-edit" project={overlay.project} onClose={close} />}
       <Toasts />
     </>
   )
@@ -110,7 +129,19 @@ function Desktop() {
   let threadW = layout.threadW
   // An open file takes the center: the threads list folds into its rail.
   let rail = layout.rail || !!route.f
-  const over = () => (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
+  // The project column (far left): names, or 56 px tiles when the window is narrow or the person asks.
+  const projNarrow = layout.projectsRail ?? width < 1400
+  const projW = projNarrow ? 56 : 176
+  // The project column is paid for by the thread pane first (down to 440), then the threads list
+  // (down to 280), so the terminal keeps about the width it had before projects.
+  {
+    let rest = projW
+    const fromThread = Math.min(rest, Math.max(0, threadW - 440))
+    threadW -= fromThread
+    rest -= fromThread
+    listW -= Math.min(rest, Math.max(0, listW - 280))
+  }
+  const over = () => projW + (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
   const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
   if (shellW && over() > 0) shellW = shrink(shellW, 280)
   if (!rail && over() > 0) listW = shrink(listW, 240)
@@ -159,6 +190,9 @@ function Desktop() {
   const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
+      <div style={{ width: projW, order: -1 }} className="shrink-0 border-r border-line">
+        <ProjectRail narrow={projNarrow} />
+      </div>
       <div style={{ width: rail ? 60 : listW, order: 0 }} className="shrink-0 border-r border-line">
         {rail ? <Rail /> : <ThreadsPane />}
       </div>

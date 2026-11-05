@@ -10,7 +10,7 @@ import (
 
 // Event tells the browser what changed, so it reloads that part.
 type Event struct {
-	Type      string `json:"type"` // "sessions" | "threads" | "thread"
+	Type      string `json:"type"` // "sessions" | "threads" | "thread" | "projects" | ...
 	SessionID string `json:"session_id,omitempty"`
 	ThreadID  string `json:"thread_id,omitempty"`
 	URL       string `json:"url,omitempty"` // "open": a page Claude opens in the person's browser
