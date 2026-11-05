@@ -113,6 +113,14 @@ inbox.
    - Claude receives the answers under "## Answers to your questions".
    - If the submit fails, the claim is released, so a reply is never lost or delivered twice.
 
+## Notifications
+
+**Settings → Notifications** sends every new message from Claude to a Slack channel (an
+[incoming webhook](https://api.slack.com/messaging/webhooks)), with the full message text, whether or not a
+browser is open. You can limit it to messages that need your answer, send only the title, and set your
+Tailscale URL there so each notification has an "Open thread" link. The webhook URL stays on the server and is
+never shown again in full. See `docs/api-contract.md` ("Notifications") for the format and retry rules.
+
 ## Other devices and machines
 
 ### Your phone and other browsers

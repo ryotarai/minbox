@@ -617,3 +617,60 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
   another live Claude Code session, unless `?promote=<session id>` names one (made main in the same request). A last
   Claude session leaves the project without main. Ending/stopping a session never changes main.
 - Migration picks one per project (live > ended > archived, newest first, never a shell).
+
+## Notifications (Slack incoming webhook first)
+
+Every message the AGENT stores in a thread (`POST /api/agent/messages`, new thread or not) is sent to the enabled
+notification destinations. The person's own replies and system changes are never sent. Code: `internal/notify`
+(types, Slack format, dispatcher with retries), `internal/server/notifications.go` (API), `internal/store/notifications.go`.
+
+### Store
+
+Table `notification_destinations(id, type, name, enabled, config JSON, created_at, last_ok_at, last_error, last_error_at)`
+(additive; `CREATE TABLE IF NOT EXISTS`). `config` holds the type's fields including secrets. Global setting
+`public_url` (in `/api/settings`, default `""`; must be empty or an http(s) URL, else 400) is the address minbox is reached
+at from outside, e.g. the Tailscale URL.
+
+### API
+
+- `GET /api/notifications` -> `{types, destinations}`. `types`: `[{id, label, fields:[{key, label, kind: text|secret|bool|select,
+  required?, default?, placeholder?, hint?, options?:[{value,label}]}]}]` (the UI builds its form from it; adding a type adds no UI
+  code). `destinations`: `[{id, type, name, enabled, config, created_at, last_ok_at, last_error, last_error_at}]`.
+- `POST /api/notifications` `{type, name?, enabled?=true, config}` -> 201 destination. Unknown type or invalid config: 400.
+- `PATCH /api/notifications/{id}` `{name?, enabled?, config?}` -> destination. `config` is merged onto the stored one.
+- `DELETE /api/notifications/{id}`; 404 for an unknown id (also for PATCH and test).
+- `POST /api/notifications/{id}/test` sends a sample once (no retries; works while disabled) and answers 200
+  `{ok: true}` or `{ok: false, error}`; the result is recorded like any send.
+- SSE `notifications` fires when a destination changes or a send's result was recorded.
+
+### Slack config
+
+`{webhook_url (secret, required, http(s)), include_body (default true: the full message; false: title only), events}` with
+`events` = `all` (every agent message, default) or `action` (only messages with open questions, i.e. `:::question` blocks).
+Another type declares its own fields; `events` is read for every type.
+
+### Secrecy
+
+The webhook URL is never returned in full, by the API or the UI: a `secret` field comes back as scheme + host + `/…` + its last
+4 characters (`https://hooks.slack.com/…aB3d`). In `PATCH`, a secret that is missing, empty or equal to its masked form keeps
+the stored value; anything else replaces it. It is never logged, and error texts (stored in `last_error`, returned by test)
+have the request URL stripped.
+
+### Delivery
+
+Asynchronous: the request that stored the message does not wait. Per destination: 1 attempt, then up to 3 retries after
+1 s, 5 s, 20 s (so 4 attempts) for network errors, 5xx and 429; a `Retry-After` (seconds, capped at 60) replaces the wait.
+Other 4xx: no retry. One notification per message (no merging or debounce). The result is stored per destination:
+success sets `last_ok_at` and clears `last_error`; failure sets `last_error` and `last_error_at`. Not persistent: a restart
+drops sends still waiting for a retry.
+
+### Slack format
+
+JSON `{text, blocks}`. `text` (what push notifications show): `<project> / <session>: <title>` and the first 280 characters of the
+body, plain. `blocks`: a section `*<project> / <session>*: <title>`; the body converted to mrkdwn (below) in consecutive
+section blocks of at most 2,900 characters, split at line ends (a code fence cut by a split is closed and reopened), at most 50
+blocks in all, a longer body ends with `…` (and "open the thread" when there is a link); a context line `Claude · needs your answer`
+(+ the thread status when it has one); an actions block with an `Open thread` button to `<public_url>/#s=<session>&t=<thread>`
+when `public_url` is set. `&`, `<`, `>` are escaped (`&amp;` `&lt;` `&gt;`). Conversion: `**x**`/`__x__` -> `*x*`, `*x*` -> `_x_`,
+`~~x~~` -> `~x~`, `[t](u)` -> `<u|t>`, headings -> bold lines, `-`/`*` lists -> `•`, rules -> a line, tables -> a code block, code
+and fences kept. With `include_body` off only the header, context and button are sent.

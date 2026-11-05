@@ -742,7 +742,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if title == "" {
 		title = cleanTitle(req.Subject)
 	}
-	var threadID, messageID string
+	var threadID, messageID, subject string
 	isNew := req.ThreadID == ""
 	if !isNew {
 		th, err := s.store.GetThread(ctx, req.ThreadID)
@@ -755,15 +755,16 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			storeError(w, err)
 			return
 		}
-		threadID, messageID = th.ID, msg.ID
+		threadID, messageID, subject = th.ID, msg.ID, th.Subject
 		if title != "" && title != th.Subject {
+			subject = title
 			if err := s.store.UpdateThread(ctx, th.ID, &title, nil); err != nil {
 				storeError(w, err)
 				return
 			}
 		}
 	} else {
-		subject := title
+		subject = title
 		if subject == "" {
 			subject = firstLine(body, 60)
 		}
@@ -811,6 +812,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		}
 	}
 	s.publishThread(sess.ID, threadID)
+	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body, len(questions) > 0)
 	type qInfo struct {
 		Key    string `json:"key"`
 		Kind   string `json:"kind"`
