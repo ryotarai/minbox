@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -227,6 +228,7 @@ func (c *Remote) GitDiff(ctx context.Context, cwd, path, base string) (string, e
 func (c *Remote) TranscriptExists(ctx context.Context, cwd, id string) bool {
 	var v struct{ Exists bool }
 	if err := c.getJSON(ctx, "/fs/transcript", url.Values{"cwd": {cwd}, "id": {id}}, &v); err != nil {
+		log.Printf("hostfs: transcript check for %s on the remote host failed: %v", id, err)
 		return false
 	}
 	return v.Exists

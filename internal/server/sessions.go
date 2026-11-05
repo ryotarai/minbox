@@ -241,7 +241,10 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	if resume && sess.ClaudeSessionID != "" {
 		if f, err := m.fsOf(sess.HostID); err == nil {
 			exists = f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID)
+		} else {
+			log.Printf("session %s (%s): cannot check for a transcript on host %q (%v)", sess.ID, sess.Name, sess.HostID, err)
 		}
+		log.Printf("session %s (%s): resume check: conversation %s, cwd %q, host %q, transcript found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, sess.HostID, exists)
 	}
 	if resume && sess.ClaudeSessionID != "" && !exists {
 		log.Printf("session %s (%s): no transcript for conversation %s found (looked for %s.jsonl under ~/.claude/projects/%s/, the symlink-resolved cwd, and every project folder on host %q): starting a NEW conversation with --session-id",
