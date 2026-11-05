@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -45,7 +45,18 @@ type sessionManager struct {
 	shellMu sync.Mutex
 	// stopping holds sessions the person stopped: their exit is a close.
 	stopping map[string]bool
+	// restarting holds sessions being restarted: the exit of their old
+	// terminal is not a close (see Restart).
+	restarting map[string]*restartState
 }
+
+type restartState struct {
+	exited chan struct{}
+	once   sync.Once
+}
+
+// errRestartInProgress is Restart's answer to a second restart of a session (HTTP 409).
+var errRestartInProgress = errors.New("a restart is already in progress")
 
 func newUUID() string {
 	b := make([]byte, 16)
@@ -349,24 +360,94 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	return m.store.SetSessionStatus(ctx, sess.ID, store.StatusStarting)
 }
 
-// Restart starts an ended session again, resuming its conversation.
+// Restart starts a session again, resuming its conversation. An ended session
+// is simply resumed. A running one is stopped first: its terminal is killed
+// (the exit is marked as part of the restart, so it does not close the
+// session), the exit is awaited (up to restartWait), then it is resumed
+// through the usual spawn (plugin dir, prompt and settings are read again; a
+// shell starts fresh). The companion shell keeps running: only the main
+// terminal is replaced. A second restart meanwhile fails with
+// errRestartInProgress.
 func (m *sessionManager) Restart(ctx context.Context, id string) error {
 	sess, err := m.store.GetSession(ctx, id)
 	if err != nil {
 		return err
 	}
+	m.mu.Lock()
+	if m.restarting[id] != nil {
+		m.mu.Unlock()
+		return errRestartInProgress
+	}
+	st := &restartState{exited: make(chan struct{})}
+	m.restarting[id] = st
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		delete(m.restarting, id)
+		m.mu.Unlock()
+	}()
+
 	if sess.Status != store.StatusEnded {
-		return fmt.Errorf("session is running")
+		if err := m.stopForRestart(ctx, sess, st); err != nil {
+			return err
+		}
 	}
 	if err := m.store.RestartSession(ctx, id); err != nil {
 		return err
 	}
+	m.hub.publish(Event{Type: "sessions"})
 	err = m.spawn(ctx, sess, true)
 	if err != nil {
 		_ = m.store.SetSessionEnded(ctx, id, -1)
 	}
 	m.hub.publish(Event{Type: "sessions"})
 	return err
+}
+
+// restartWait bounds how long Restart waits for the old terminal to exit.
+var restartWait = 10 * time.Second
+
+func (m *sessionManager) stopForRestart(ctx context.Context, sess *store.Session, st *restartState) error {
+	host, err := m.hostOf(sess)
+	if err != nil {
+		return err
+	}
+	if err := host.Kill(ctx, sess.ID); err != nil {
+		return err
+	}
+	deadline := time.NewTimer(restartWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	gone := 0
+	for {
+		select {
+		case <-st.exited:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("the terminal did not exit within %s", restartWait)
+		case <-tick.C:
+			// The exit event is the signal; the terminal list is the fallback if
+			// the event got lost: not running for a second counts as exited.
+			terms, err := host.List(ctx)
+			if err != nil {
+				continue
+			}
+			running := false
+			for _, t := range terms {
+				if t.ID == sess.ID && t.Running {
+					running = true
+				}
+			}
+			if running {
+				gone = 0
+			} else if gone++; gone >= 10 {
+				return nil
+			}
+		}
+	}
 }
 
 // Stop ends a running session at the person's request; it is not resumed automatically.
@@ -426,6 +507,11 @@ func (m *sessionManager) onExit(ctx context.Context, id string, code int) {
 		return // a companion shell ending is not a session ending
 	}
 	m.mu.Lock()
+	if st := m.restarting[id]; st != nil {
+		m.mu.Unlock()
+		st.once.Do(func() { close(st.exited) }) // the restart goes on from here
+		return
+	}
 	delete(m.stopping, id)
 	m.mu.Unlock()
 	m.endShell(ctx, id)

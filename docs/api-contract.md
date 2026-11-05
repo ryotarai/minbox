@@ -145,6 +145,11 @@ Defaults: system, 13, true, true, true, true, false, false, "", {true,false,fals
 ```
 POST  /api/sessions/{id}/archive            409 unless ended
 POST  /api/sessions/{id}/unarchive          (restart also unarchives)
+POST  /api/sessions/{id}/restart            ended: resume (claude --resume). Running: kills the terminal (the exit is
+                                              not a close), waits up to 10 s for it to exit, then resumes; the plugin dir,
+                                              prompt and settings are read again, a shell starts fresh; the companion shell
+                                              keeps running. Status: running -> starting (sessions events). A restart already
+                                              in flight for the session: 409. Terminal does not exit in time: 400.
 POST  /api/sessions/{id}/threads            body adds name
 POST  /api/sessions/{id}/files              any file; header X-Filename; → {path}
 GET   /api/sessions/{id}/completions        → {agents:[{name,description}], skills:[...], commands:[...]}

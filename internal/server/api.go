@@ -98,6 +98,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) restartSession(w http.ResponseWriter, r *http.Request) {
 	if err := s.sessions.Restart(r.Context(), r.PathValue("id")); err != nil {
+		if errors.Is(err, errRestartInProgress) {
+			httpError(w, 409, err.Error())
+			return
+		}
 		httpError(w, 400, err.Error())
 		return
 	}
