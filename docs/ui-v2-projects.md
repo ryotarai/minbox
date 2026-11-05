@@ -72,8 +72,9 @@ With a project selected the target defaults to the project's **main session** (m
 
 `+ New session...` in a project opens the dialog with the folder and host fixed to the project (shown as
 a read-only line; only the name is asked). In `All projects` the dialog first asks which project
-(select; or `+ New project` there). The plain `+ New` in the threads bar (which can start a shell too)
-behaves the same.
+(select; or `+ New project` there). The plain `+ New` in the threads bar behaves the same.
+New sessions are always Claude Code; plain shell sessions can no longer be created (the companion shell
+replaces them), and ones from older builds keep working.
 
 ## New project dialog
 

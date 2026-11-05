@@ -114,22 +114,26 @@ func (m *sessionManager) remote(hostID string) bool {
 	return hostID != "" && hostID != store.LocalHostID
 }
 
+var errShellCreate = errors.New("shell sessions can no longer be created; use the companion shell (Ctrl+`)")
+
 // Create records a new session and starts Claude Code in it.
 func (m *sessionManager) Create(ctx context.Context, name, cwd, hostID string) (*store.Session, error) {
 	return m.CreateKind(ctx, store.KindClaude, name, cwd, hostID, "")
 }
 
-// CreateKind records a new session of a kind: Claude Code (store.KindClaude)
-// or the host's own login shell (store.KindShell), and starts it. With a projectID the session
+// CreateKind records a new Claude Code session and starts it. Shell sessions can no longer be
+// created (the companion shell replaces them); old ones in a database keep working. With a projectID the session
 // belongs to that project: its host, and its folder unless cwd names another one. Without, the
 // project is the one for (host, folder), created on first use.
 func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID, projectID string) (*store.Session, error) {
 	switch kind {
 	case "":
 		kind = store.KindClaude
-	case store.KindClaude, store.KindShell:
+	case store.KindClaude:
+	case store.KindShell:
+		return nil, errShellCreate
 	default:
-		return nil, fmt.Errorf("unknown kind: %s (claude or shell)", kind)
+		return nil, fmt.Errorf("unknown kind: %s (only claude)", kind)
 	}
 	var project *store.Project
 	if projectID != "" {
@@ -163,9 +167,6 @@ func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID
 		name = filepath.Base(cwd)
 	}
 	claudeID := newUUID()
-	if kind == store.KindShell {
-		claudeID = ""
-	}
 	var sess *store.Session
 	if project != nil {
 		sess, err = m.store.CreateSessionIn(ctx, project.ID, kind, name, cwd, claudeID)

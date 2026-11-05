@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, selectSession, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, selectSession, test, typeInTerminal } from './fixtures'
 
 // Not a check: screenshots of the threads-first UI for a look (SCREENSHOTS=1 SCREENSHOT_DIR=...).
 test('screenshots: threads-first UI', async ({ page, minbox }) => {
@@ -31,7 +31,7 @@ test('screenshots: threads-first UI', async ({ page, minbox }) => {
   await createSession(page, minbox.dataDir, 'docs-site')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'say Draft of the install guide is ready.')
-  await createSession(page, minbox.dataDir, 'scratch-shell', 'shell')
+  await createShellSession(page, minbox, 'scratch-shell')
   await expect(page.getByTestId('thread-row')).toHaveCount(5)
 
   // 1500px: a waiting question open, the composer's session selector open.

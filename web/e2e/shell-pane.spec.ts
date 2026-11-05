@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import { createSession, expect, expectTerminal, phoneSelectSession, terminalText, test } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, terminalText, test } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // A Claude Code session has a companion shell: a pane at the far right (desktop) or a full-screen
@@ -57,7 +57,7 @@ test('desktop: the shell pane is hidden, opens by button and Ctrl+`, runs in the
 
 test('desktop: no shell pane or button for a shell session', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'plain', 'shell')
+  await createShellSession(page, minbox, 'plain')
   await expect(page.getByTestId('shell-toggle')).toHaveCount(0)
   await page.getByTestId('terminal').click()
   await page.keyboard.press('Control+`')

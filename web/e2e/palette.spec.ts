@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { createSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
 
 // ⌘K quick actions: one list of actions, sessions and threads, narrowed as you type.
 
@@ -89,7 +89,7 @@ test('> shows only actions; New session opens the dialog; # and @ filter threads
 
 test('arrows and Ctrl+N/P move, Enter on no result does nothing, Esc closes without reaching the terminal', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'esc', 'shell')
+  await createShellSession(page, minbox, 'esc')
   await typeInTerminal(page, 'echo first')
   await expectTerminal(page, /^first$/m)
   await page.keyboard.type('echo kept')

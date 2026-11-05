@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
 
 // Text size zooms the page (CSS zoom on #root). A drag in the terminal must
 // select the row under the mouse, not one lower by the zoom's share.
@@ -6,7 +6,7 @@ test.use({ deviceScaleFactor: 2 }) // a Retina screen, where the offset showed
 test('under a larger text size, a drag selects the row under the mouse', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'zoomed', 'shell')
+  await createShellSession(page, minbox, 'zoomed')
   await typeInTerminal(page, 'for i in $(seq 1 120); do echo "row$i"; done')
   await expectTerminal(page, 'row120')
   await page.evaluate(() => ((document.getElementById('root') as HTMLElement).style.zoom = '1.2'))
