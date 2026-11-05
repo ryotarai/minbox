@@ -585,6 +585,7 @@ func serve(args []string) error {
 	}
 
 	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
+	hs.RegisterOnShutdown(srv.Close)
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

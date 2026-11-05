@@ -58,6 +58,10 @@ export type Session = {
   stopped?: number
   holding?: number
   undelivered?: number
+  /** When the mod last called the server (null: not since the server started). */
+  mod_seen_at?: string | null
+  /** A Claude Code session whose mod has been silent for a while (45 s). */
+  mod_silent?: boolean
   last_activity?: string
   top_thread?: TopThread | null
   host_id?: string
