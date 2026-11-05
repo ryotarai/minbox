@@ -171,7 +171,6 @@ export function Palette({ onClose }: { onClose: () => void }) {
     }
     if (!isPhone) {
       if (isClaude) act('shell-pane', layout.shellPane ? 'Hide shell pane' : 'Show shell pane', () => setLayout({ shellPane: !layout.shellPane }), { keywords: 'companion terminal toggle', shortcut: 'Ctrl+`' })
-      act('sidebar', layout.rail ? 'Expand sidebar' : 'Collapse sidebar', () => setLayout({ rail: !layout.rail }), { keywords: 'rail sessions list toggle', shortcut: '⌘B' })
       act('swap', 'Swap terminal and inbox', () => saveSettings({ swap_panes: !settings.swap_panes }), { keywords: 'panes layout left right' })
     }
     act('theme-dark', 'Theme: Dark', () => saveSettings({ theme: 'dark' }), { keywords: 'appearance color mode night' })
@@ -182,7 +181,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (size > 12) act('text-down', 'Smaller text', () => saveSettings({ text_size: size - 1 }), { keywords: 'text size font zoom decrease' })
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
-  }, [current, isClaude, isPhone, layout.shellPane, layout.rail, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
+  }, [current, isClaude, isPhone, layout.shellPane, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 

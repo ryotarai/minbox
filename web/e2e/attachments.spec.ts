@@ -8,6 +8,8 @@ import { createSession, expect, expectTerminal, terminalText, test, typeInTermin
 const joined = async (page: import('@playwright/test').Page) => (await terminalText(page)).replace(/\n/g, '')
 
 test('each kind of attached file opens in its own viewer; a code line comment reaches Claude', async ({ page, minbox }) => {
+  // The list no longer folds away for a file: the viewer keeps its annotation panel only with room.
+  await page.setViewportSize({ width: 2200, height: 1000 })
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'kinds')
   await expectTerminal(page, 'ready>')

@@ -9,7 +9,7 @@ resources under a project. The project is the top-level scope of the UI, left of
 | --- | --- |
 | Identity | A project has `id`, `name`, `dir`, `host_id`. `(host_id, dir)` is unique among non-archived projects. |
 | Session -> project | `sessions.project_id` (nullable in SQLite, always set by the code). A thread reaches its project through its session; the thread JSON carries `project_id` and `project_name` (joined, no stored column). |
-| Who creates projects | The person (`+` in the rail), or implicitly: `POST /api/sessions` without `project_id` finds the project for `(host_id, resolved cwd)` and creates it on first use. Every session in minbox is created by that one path (UI, `minbox` CLI, API). The Claude Code plugin/hooks never create sessions, they attach to one by token, so they need no change. |
+| Who creates projects | The person (`+` in the project column), or implicitly: `POST /api/sessions` without `project_id` finds the project for `(host_id, resolved cwd)` and creates it on first use. Every session in minbox is created by that one path (UI, `minbox` CLI, API). The Claude Code plugin/hooks never create sessions, they attach to one by token, so they need no change. |
 | Session sub-directory | `POST /api/sessions` with `project_id` and no `cwd` starts in the project's dir. A `cwd` is still accepted (a sub-folder override, e.g. a git worktree); it is stored on the session as before and the session stays in the project. The UI does not offer the override: the dialog takes dir and host from the project. |
 | Edit | Rename always. `dir` and `host_id` only while the project has no sessions (409 otherwise). |
 | Archive | Only when no session is live (not ended, not archived). Archiving also archives the project's ended sessions (same timestamp); unarchiving restores exactly those. Unarchiving or restarting a session, or creating a session in it, unarchives its project. |
@@ -46,7 +46,7 @@ Rail entry = status dot of its busiest session, **name**, dir shortened to `~/..
 host badge for a remote host, and an aggregate badge: amber number = threads waiting on the person, grey
 number = unread. `All projects` is the first entry (sum of both). Below the list: `+` (new project).
 Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), Pin, Archive, Delete.
-Below 1400 px (or by the collapse button) the rail shrinks to 56 px tiles (two letters, badge on the tile,
+Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, badge on the tile,
 name in the tooltip).
 
 Selecting a project scopes the threads list, the session filter, the composer targets and the session

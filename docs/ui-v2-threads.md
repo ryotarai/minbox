@@ -45,12 +45,14 @@ beside the terminal without squeezing. Column order is `Threads | Thread | Termi
 with CSS `order`, so toggling it does not remount the terminal.) Every column edge has a Resizer (mouse and
 touch) as before; the terminal is the flexible column.
 
-Narrow windows give way in this order: shell pane (to 280, then hidden), threads list (to 280, then it folds
-into the rail), thread pane (to 380), terminal minimum 360.
+Narrow windows give way in this order: shell pane (to 280, then hidden), threads list (to 240), thread pane (to 380), terminal minimum 360.
+When even that does not fit (viewport below `SINGLE_COLUMN_BELOW` = 1100 px, `lib/app.tsx`; the narrowest the three
+columns plus the 56 px project tiles get is 1054 px) the desktop layout is not used at all: see *Single-column
+navigation* below. There is no collapsed rail any more.
 
 ## 1. Threads pane (far left)
 
-**Top bar** (48 px): logo (click toggles rail, also Cmd+B), search (Cmd+K), `+ New` (new session),
+**Top bar** (48 px): logo, search (Cmd+K), `+ New` (new session),
 `...` menu. The menu holds everything the old sidebar footer/options had: Settings, Board (if enabled),
 Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through Settings as before.
 
@@ -69,23 +71,27 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
 session's terminal without a thread: `navigate({s, t:null})`), kept unread dot, `?n` question badge,
 Stopped / Holds-up badges, time. Waiting rows keep the amber tint.
 
-**Rail (collapsed)**: 60 px column of session tiles (the old rail: initials, status ring, amber badge when
-waiting) plus search / new / settings. Clicking a tile opens that session's top thread (or just its terminal).
-Forced while an attachment is open in the centre, as before.
+**Single-column navigation** (viewport below 1100 px, on any device: narrow desktop windows, touch tablets,
+foldables): the phone layout (`Phone.tsx`). Home = the threads pane full width; picking a thread opens the
+thread full width with a back button (badge = other threads with news); the terminal is behind the session chip
+in the thread header and a Thread | Terminal tab; the project switcher is the header sheet. There is no
+two-column middle mode. The switch follows the viewport live: the route (`s`, `t`) and drafts live outside the
+layout, so resizing keeps the selected thread/session/draft. The old 60 px tile rail (Cmd+B, `layout.rail`) is
+removed; an old `rail` value in `minbox:layout` is ignored.
 
 ## 2. Terminal pane (right) and session header
 
 Header: session name (double-click or menu > Rename), Claude's title, cwd, status pill; right side:
 shell toggle (Ctrl+`), `...` session menu (Rename, Stop / Resume, Archive, Delete). The ended bar with
-`Resume` stays in the terminal. The `toggle-inbox` button is gone (the rail replaces it).
+`Resume` stays in the terminal. The `toggle-inbox` button is gone.
 
 The terminal element sits at a fixed position in the tree and is keyed by session id, so moving between
 threads of one session never remounts it. A thread of another session reattaches the terminal.
 
-**No thread selected** (`t` null): the thread pane shows an empty state (`Pick a thread, or start one below`)
-and the sessions that need attention/recent ones as buttons; the terminal still shows `route.s`. With no
+**No thread selected** (`t` null): the thread pane shows a quiet empty hint (icon and `Pick a thread to read it
+here.`, no session list); the terminal still shows `route.s`. With no
 session selected on load we pick the most urgent session. Opening a terminal without a thread: session chip
-in a row, the session filter popover, Cmd+K > a session, rail tile.
+in a row, the session filter popover, Cmd+K > a session, the project's main session.
 
 ## 3. Composer (bottom of the threads pane)
 
@@ -129,13 +135,13 @@ the selected session) since the list is global.
 
 | Old | v2 |
 | --- | --- |
-| Sidebar session list with sections | Gone from the main screen. Session filter popover / phone session sheet; rail keeps session tiles |
+| Sidebar session list with sections | Gone from the main screen. Session filter popover / phone session sheet; the 60 px session-tile rail was removed later |
 | Per-session inbox column (`InboxPane`) and its thread list | Replaced by the global Threads pane; `InboxPane`, `PhoneInbox` removed |
 | All inbox page (`open-all-inbox`, `v=inbox`) | Merged into the home list; `v=inbox` links open the main screen |
 | `New` button on the session list | `+ New` in the threads top bar, `+ New session...` in the target selector |
 | Sidebar footer (Settings, Board, Decide, Drafts) and list options | `...` menu in the threads top bar |
 | Session `...` menu on a row (Rename, Stop, Archive, Delete) | Session header `...` over the terminal; phone session sheet rows |
-| `toggle-inbox` button | Removed (Cmd+B rail instead) |
+| `toggle-inbox` button | Removed |
 | `layout.inboxW` | Unused; `sidebarW` = threads width, `threadW` = thread width |
 | Search default scope = selected session | All sessions |
 | Phone session list as home | Phone thread list as home; session list is a sheet |
