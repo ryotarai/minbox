@@ -103,6 +103,22 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         })
         last_thread = r["thread_id"]
         out(f"sent actions in {r['thread_id']}")
+    elif line.startswith("send "):
+        # send <file.json>: post that JSON as an agent message (used by the README screenshots)
+        with open(line[5:]) as f:
+            spec = json.load(f)
+        if last_thread and "subject" not in spec and "thread_id" not in spec:
+            spec["thread_id"] = last_thread
+        r = api("POST", "/api/agent/messages", spec)
+        last_thread = r["thread_id"]
+        out(f"sent in {r['thread_id']}")
+    elif line.startswith("transcript "):
+        # transcript <file>: clear the screen and print a canned Claude Code-like transcript
+        with open(line[11:]) as f:
+            text = f.read()
+        sys.stdout.write("\x1b[2J\x1b[H")
+        out(text)
+        continue
     elif line.startswith("title "):
         r = api("POST", "/api/agent/title", {"title": line[len("title "):]})
         out(f"titled {r['title']}")

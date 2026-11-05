@@ -4,7 +4,7 @@ minbox puts your Claude Code sessions, their terminals and a threaded inbox on o
 Claude sends questions and reports as threads and keeps working; you answer when you have a
 moment, from your desk or your phone, and the answer reaches Claude as a new turn.
 
-<p align="center"><img src="docs/img/v2/tb-01-list-thread.png" alt="minbox at tablet width: the project column, the threads list, and an open thread with a question card" width="640"></p>
+<p align="center"><img src="docs/img/readme/hero-desktop.png" alt="minbox on a desktop: projects on the left, the threads list, an open thread with Claude's question card, and the session's terminal" width="900"></p>
 
 - **Threads first.** One list of every thread, newest activity first. Each thread has a status
   (**working**, **need action**, **finished**) that Claude sets and you can change by hand.
@@ -38,6 +38,8 @@ swap places with **Settings → Swap terminal and thread**). The layout follows 
 | 1100 px and up | Three columns next to the project column, plus the companion shell pane (Ctrl+`) beside the terminal. Column edges can be dragged. |
 | 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
 | below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay. |
+
+<p align="center"><img src="docs/img/readme/tablet.png" alt="minbox on a tablet: the threads list beside a finished thread with reply suggestions" width="480"></p>
 
 Resizing across a band keeps the selected thread, session and draft. A session's `...` menu
 (Rename, Resume / **Restart**, Stop, Archive, Delete) sits over its terminal. Restart kills the
@@ -143,6 +145,8 @@ up the list and shows the question.
 
 ## Notifications
 
+<p align="center"><img src="docs/img/readme/notifications.png" alt="Settings, Notifications: two Slack destinations with masked webhook URLs and the link address" width="720"></p>
+
 **Settings → Notifications** sends every new message from Claude to Slack, with the full message
 text (questions as readable Markdown), whether or not a browser is open. A destination is either:
 
@@ -158,6 +162,8 @@ count are separate settings under **Settings → General**. Format and retry rul
 
 ## Search and quick actions
 
+<p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>
+
 `⌘K` (or `/`) opens a quick-open palette: actions, projects, sessions and threads in one
 fuzzy-searched list. Start with a prefix to search one kind: `>` actions, `@` sessions,
 `#` threads, `!` projects. Threads match their title and the session and project names;
@@ -166,6 +172,8 @@ sessions match name, title and folder. `↵` runs the highlighted row.
 ## Other devices and machines
 
 ### Your phone and other browsers
+
+<p align="center"><img src="docs/img/readme/phone-trio.png" alt="minbox on a phone: the thread list, a thread with a question card, and the terminal" width="720"></p>
 
 ```sh
 minbox start --tailscale            # https://<this machine>.<tailnet>.ts.net
@@ -239,6 +247,7 @@ make test-go        # Go unit tests
 make test-mod       # the mod's tests (claude plugin test plugin/minbox)
 make test-e2e       # builds, then Playwright (cd web && npx playwright test) against a fake claude (no model calls)
 cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # a real Claude Code (Haiku)
+cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts   # regenerate docs/img/readme/
 ```
 
 The e2e suites start their own servers on free ports, so several can run at once, and their cleanup kills only their own fake-claude processes.
