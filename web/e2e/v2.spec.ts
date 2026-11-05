@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { chooseFolder, createSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
 // attachments and reviews, search, settings, Board, Decision mode, phone.
@@ -493,7 +493,7 @@ test('the terminal reconnects by itself after its connection drops', async ({ pa
     routed.push(ws)
   })
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'flaky', 'shell')
+  await createShellSession(page, minbox, 'flaky')
   await typeInTerminal(page, 'echo before-$((1+1))')
   await expectTerminal(page, 'before-2')
   expect(routed.length).toBe(1)
@@ -520,7 +520,7 @@ test('a terminal socket stuck connecting is replaced without a reload', async ({
     } as typeof WebSocket
   })
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'hung', 'shell')
+  await createShellSession(page, minbox, 'hung')
   // Keystrokes typed into the hung socket go nowhere: wait for the replacement to be up.
   await expect.poll(() => page.evaluate(() => (window as unknown as { __wsCount: number }).__wsCount), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
   await page.waitForTimeout(3000)
@@ -549,7 +549,7 @@ test('a silent but open terminal socket is replaced after the silence limit', as
     })
   })
   await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'quiet', 'shell')
+  await createShellSession(page, minbox, 'quiet')
   await typeInTerminal(page, 'echo before-$((1+1))')
   await expectTerminal(page, 'before-2')
   expect(n).toBe(1)
@@ -663,7 +663,7 @@ test('Shift+Enter is a newline for Claude Code (ESC CR) and still Enter in a she
   sent.length = 0
   await page.keyboard.press('Shift+Enter')
   await expect.poll(() => sent.join('')).toContain('[27,13]')
-  await createSession(page, minbox.dataDir, 'nl-shell', 'shell')
+  await createShellSession(page, minbox, 'nl-shell')
   await page.getByTestId('terminal').click()
   sent.length = 0
   await page.keyboard.press('Shift+Enter')

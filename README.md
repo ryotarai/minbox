@@ -18,7 +18,6 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
 - **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
   full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
   and types its path. Each Claude session also has a companion shell (Ctrl+`).
-- **Shells** sit next to Claude sessions: **+ New → Shell** opens the host's own `$SHELL`.
 - **One binary**. The web UI, the server, the terminal host and the Claude Code mod are all in
   `minbox`, with SQLite for storage.
 - **Anywhere**. Serve minbox on your tailnet and pair your phone, get Slack notifications, and run

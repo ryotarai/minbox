@@ -643,6 +643,9 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
 
 - `Session.project_id` and `Thread.project_id` / `Thread.project_name` (thread rows join through the session). `project_id` is
   `''` only for a row the migration has not seen, which cannot happen after startup.
+- `POST /api/sessions` no longer creates shell sessions: `kind: "shell"` is answered with 400 (`shell sessions can no longer be
+  created; use the companion shell`), and the UI offers no Shell choice. Shell-kind sessions already in a database keep
+  working (list, terminal, restart, archive, delete). `kind` is `claude` (default) only.
 - `POST /api/sessions` takes `project_id?`. With it the session belongs to that project, starts on its host
   (`host_id`, if sent, must match, else 400) and in its `dir`; a `cwd` is still accepted and is kept on the session as a
   sub-folder override. Without it (old clients, the `minbox` CLI) the project is the one for `(host_id, resolved cwd)`,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, type Host, type Project, type Session, type SessionKind } from '../api'
+import { api, type Host, type Project, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir } from '../lib/projects'
 import { homeRelative, isMac } from '../lib/format'
@@ -97,12 +97,7 @@ export function NewSessionDialog({
   const [mkdir, setMkdir] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(!isPhone)
   const [claudeCmd, setClaudeCmd] = useState('claude')
-  const [kind, setKindState] = useState<SessionKind>(() => (!onCreated && localStorage.getItem('minbox:last-kind') === 'shell' ? 'shell' : 'claude'))
-  const setKind = (k: SessionKind) => {
-    setKindState(k)
-    localStorage.setItem('minbox:last-kind', k)
-  }
-  const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : kind === 'shell' ? 'Start shell' : 'Start Claude Code'
+  const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : 'Start Claude Code'
   // A project fixes host and folder: the browser is only for a new folder or a project.
   const showFolder = !proj
   const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New session'
@@ -158,7 +153,7 @@ export function NewSessionDialog({
         onClose()
         return
       }
-      const s = proj ? await api.createSessionIn(proj.id, name.trim(), kind, makeMain) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
+      const s = proj ? await api.createSessionIn(proj.id, name.trim(), 'claude', makeMain) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, 'claude')
       if (!proj) rememberCwd(cwd.trim(), hostId)
       reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
@@ -369,37 +364,6 @@ export function NewSessionDialog({
       </div>
     )
 
-  // Started from the composer, the session must be Claude Code: a message goes to it.
-  const kindPicker = onCreated || mode !== 'session' ? null : (
-    <div className="flex flex-col gap-1.5">
-      <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>Run</span>
-      <div role="radiogroup" aria-label="Run" data-testid="new-session-kind" className="inline-flex gap-0.5 self-start rounded-[9px] border border-line2 bg-sunken p-[3px]">
-        {(
-          [
-            ['claude', 'Claude Code'],
-            ['shell', 'Shell'],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            role="radio"
-            aria-checked={kind === k}
-            data-testid={`new-session-kind-${k}`}
-            onClick={() => setKind(k)}
-            className={cx(
-              'rounded-[6px] border-0 px-3 font-semibold',
-              isPhone ? 'h-10 text-[15px]' : 'h-[30px] text-[12.5px]',
-              kind === k ? 'bg-sel text-fg' : 'bg-transparent text-muted hover:text-fg',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-
   const cwdInput = (
     <label className={cx('flex flex-col gap-1.5 text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>
       Working directory
@@ -494,7 +458,7 @@ export function NewSessionDialog({
             A folder without a project yet…
           </MenuItem>
         </Popover>
-        {proj && kind === 'claude' && proj.main_session_id && (
+        {proj && proj.main_session_id && (
           <label className="flex items-center gap-2 text-[12.5px] text-muted">
             <input type="checkbox" data-testid="new-session-make-main" checked={makeMain} onChange={(e) => setMakeMain(e.target.checked)} />
             Make main session (new threads go to it)
@@ -513,7 +477,6 @@ export function NewSessionDialog({
   if (isPhone) {
     return <PhoneSheet onClose={onClose} title={title} body={
       <>
-        {kindPicker}
         {projectPicker}
         {showFolder && (
           <>
@@ -558,8 +521,7 @@ export function NewSessionDialog({
       </div>
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>
         <div className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-4">
-          {kindPicker}
-          {projectPicker}
+            {projectPicker}
           {showFolder && (
             <>
               {hostPicker}
@@ -573,8 +535,8 @@ export function NewSessionDialog({
       <div className="flex h-16 shrink-0 items-center gap-2.5 border-t border-line2 px-5">
         <span className="mono min-w-0 flex-1 truncate text-[12px] text-subtle">
           {proj
-            ? `${proj.host_name ?? proj.host_id} · ${kind === 'shell' ? '$SHELL' : claudeCmd} · ${proj.dir || '~'}`
-            : `${host ? `${host.name} · ` : ''}${mode !== 'session' ? '' : kind === 'shell' ? '$SHELL · ' : `${claudeCmd} · `}${listing ? listing.display : cwd}`}
+            ? `${proj.host_name ?? proj.host_id} · ${claudeCmd} · ${proj.dir || '~'}`
+            : `${host ? `${host.name} · ` : ''}${mode !== 'session' ? '' : `${claudeCmd} · `}${listing ? listing.display : cwd}`}
         </span>
         <Button variant="quiet" className="h-[38px] text-[13.5px]" onClick={onClose}>
           Cancel
