@@ -189,19 +189,13 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
 // ---- top bar ----
 
 function TopBar({ phone }: { phone?: boolean }) {
-  const { setLayout, setOverlay } = useApp()
+  const { setOverlay } = useApp()
   const { id: projectId } = useSelectedProject()
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const size = phone ? 44 : 34
   return (
     <div className={cx('flex shrink-0 items-center gap-1', phone ? 'h-14 pl-4 pr-2' : 'h-12 pl-3 pr-2.5')}>
-      {phone ? (
-        <Logo size={24} />
-      ) : (
-        <button type="button" aria-label="Collapse to rail (⌘B)" title="Collapse to rail (⌘B)" data-testid="collapse-rail" onClick={() => setLayout({ rail: true })} className="border-0 bg-transparent p-0">
-          <Logo />
-        </button>
-      )}
+      <Logo size={phone ? 24 : undefined} />
       {phone ? (
         <>
           <h1 className="sr-only">minbox</h1>

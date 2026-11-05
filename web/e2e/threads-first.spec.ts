@@ -89,7 +89,7 @@ test('the session chip of a row opens that session without a thread', async ({ p
   await row(page, 'Beta note').getByTestId('thread-session').click()
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   await expect(page.getByTestId('thread-empty')).toBeVisible()
-  await expect(page.getByTestId('thread-empty').getByTestId('recent-session').first()).toBeVisible()
+  await expect(page.getByTestId('recent-session')).toHaveCount(0)
 })
 
 test('composer: the target is the current session, can be switched, and a new thread starts there', async ({ page, minbox }) => {
