@@ -668,7 +668,7 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
 
 ## Thread status
 
-Every thread has a stored `status` (thread JSON `status`; also `top_thread.status` on sessions): `working`, `need_action` or `finished`. Column `threads.status TEXT`.
+Every thread has a stored `status` (thread JSON `status`; also `top_thread.status` on sessions): `working`, `need_action`, `blocked` (waiting on something outside the person: CI, another session, a server; alias `stuck`, `on_hold`) or `finished`. Column `threads.status TEXT`.
 
 Set by:
 
@@ -681,7 +681,7 @@ Migration (idempotent, only rows with a NULL status): a thread with an open ques
 
 `need_action` is the single source of the "Waiting" notion: the sections `stopped`, `holding` and `waiting` apply only to a thread whose status is `need_action` (stopped/holding when it also has open questions with `Stopped:` / `Holds up:`), so the session `waiting` count, the Waiting filter, the amber badges, the project rail aggregates and the palette pill all follow the status. `open_questions` stays about questions (the `?n` chip, decision mode). Follow-up agent messages without `status` do not clear `need_action`; the agent (or the person, by hand) does that.
 
-Changes are published like other thread changes (`thread`, `threads`, `sessions` SSE events). The threads pane groups by status in the order `need_action`, `working`, `finished`.
+Changes are published like other thread changes (`thread`, `threads`, `sessions` SSE events). The threads pane groups by status in the order `need_action`, `working`, `blocked`, `finished`.
 
 
 ## Notifications (Slack incoming webhook, Slack app)

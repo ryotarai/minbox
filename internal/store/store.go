@@ -51,6 +51,7 @@ const (
 	ThreadWorking    = "working"
 	ThreadNeedAction = "need_action"
 	ThreadFinished   = "finished"
+	ThreadBlocked    = "blocked" // waiting on something outside the person: CI, another session, a server
 )
 
 // NormalizeThreadStatus maps a status (or an alias) to its canonical value.
@@ -60,6 +61,8 @@ func NormalizeThreadStatus(v string) (string, bool) {
 		return ThreadWorking, true
 	case "need_action", "needs_action", "need-action", "waiting":
 		return ThreadNeedAction, true
+	case "blocked", "stuck", "on_hold", "on-hold":
+		return ThreadBlocked, true
 	case "finished", "done", "complete", "completed":
 		return ThreadFinished, true
 	}
@@ -1112,7 +1115,7 @@ func deliveryOf(m *Message, sessionStatus string) string {
 func (s *Store) SetThreadStatus(ctx context.Context, id, status string) error {
 	v, ok := NormalizeThreadStatus(status)
 	if !ok {
-		return fmt.Errorf("unknown status %q (working, need_action or finished)", status)
+		return fmt.Errorf("unknown status %q (working, need_action, blocked or finished)", status)
 	}
 	return s.exec(ctx, `UPDATE threads SET status=? WHERE id=?`, v, id)
 }

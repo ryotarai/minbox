@@ -74,6 +74,7 @@ export function StatusDot({ s, waits, size = 8, ring = true }: { s: Session; wai
 const THREAD_STATUS_STYLE: Record<ThreadStatus, { text: string; bg: string }> = {
   need_action: { text: 'text-wait', bg: 'bg-wait/12' },
   working: { text: 'text-work', bg: 'bg-work/12' },
+  blocked: { text: 'text-muted', bg: 'bg-chip' },
   finished: { text: 'text-subtle', bg: 'bg-chip' },
 }
 
@@ -90,7 +91,7 @@ export function ThreadStatusBadge({ status, className }: { status: ThreadStatus;
       {status === 'finished' ? (
         <span aria-hidden="true">✓</span>
       ) : (
-        <span aria-hidden="true" className={cx('inline-block h-[6px] w-[6px] rounded-full', status === 'working' ? 'mb-pulse bg-work' : 'bg-wait')} />
+        <span aria-hidden="true" className={cx('inline-block h-[6px] w-[6px] rounded-full', status === 'working' ? 'mb-pulse bg-work' : status === 'blocked' ? 'bg-muted' : 'bg-wait')} />
       )}
       {THREAD_STATUS_LABEL[status]}
     </span>

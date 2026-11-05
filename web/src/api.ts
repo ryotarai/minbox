@@ -2,10 +2,10 @@
 
 export type SessionStatus = 'starting' | 'working' | 'idle' | 'ended'
 export type Section = 'stopped' | 'holding' | 'waiting' | 'sent' | 'new' | 'quiet' | 'snoozed' | 'archived'
-export type ThreadStatus = 'working' | 'need_action' | 'finished'
+export type ThreadStatus = 'working' | 'need_action' | 'blocked' | 'finished'
 /** Display order and labels of thread statuses. */
-export const THREAD_STATUS_ORDER: ThreadStatus[] = ['need_action', 'working', 'finished']
-export const THREAD_STATUS_LABEL: Record<ThreadStatus, string> = { need_action: 'Needs action', working: 'Working', finished: 'Finished' }
+export const THREAD_STATUS_ORDER: ThreadStatus[] = ['need_action', 'working', 'blocked', 'finished']
+export const THREAD_STATUS_LABEL: Record<ThreadStatus, string> = { need_action: 'Needs action', working: 'Working', blocked: 'Blocked', finished: 'Finished' }
 export type Delivery = 'queued' | 'sending' | 'delivered' | 'undelivered'
 
 export const SECTION_ORDER: Section[] = ['stopped', 'holding', 'waiting', 'sent', 'new', 'quiet', 'snoozed', 'archived']

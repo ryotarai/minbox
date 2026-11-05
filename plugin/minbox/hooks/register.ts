@@ -358,8 +358,8 @@ export const register: Register = (on) => {
     if (!conn) return { deny: 'minbox is not connected in this session.' }
     const body = typeof e.body === 'string' ? e.body : ''
     if (!body.trim()) return { deny: 'body is required.' }
-    if (e.status !== 'working' && e.status !== 'need_action' && e.status !== 'finished') {
-      return { deny: 'status is required: working (you carry on), need_action (you need the person) or finished (the task is done). Send the message again with it.' }
+    if (e.status !== 'working' && e.status !== 'need_action' && e.status !== 'blocked' && e.status !== 'finished') {
+      return { deny: 'status is required: working (you carry on), need_action (you need the person), blocked (you wait on something outside them) or finished (the task is done). Send the message again with it.' }
     }
     const res = await api($, 'POST', '/api/agent/messages', {
       body,
