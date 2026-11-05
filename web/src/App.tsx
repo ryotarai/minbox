@@ -16,7 +16,7 @@ import { DeviceGate } from './components/Devices'
 import { Palette } from './components/Palette'
 import { SettingsPage } from './components/Settings'
 import { ShellPane } from './components/ShellPane'
-import { Rail, groupSessions } from './components/Sidebar'
+import { groupSessions } from './components/Sidebar'
 import { TerminalPane } from './components/TerminalPane'
 
 export function App() {
@@ -120,15 +120,13 @@ function Desktop() {
   // Text size zooms the page: columns are measured in zoomed pixels.
   const width = useWindowWidth() / ((settings.text_size || 13) / 13)
   // A narrow window gives way in this order: the shell pane narrows and goes, the threads list
-  // narrows then folds into its rail, the thread pane narrows. The terminal keeps MIN_CENTER.
+  // narrows, the thread pane narrows. Below SINGLE_COLUMN_BELOW the phone layout takes over. The terminal keeps MIN_CENTER.
   // A column keeps the width it was dragged to as long as it fits, so a drag moves the edge 1:1.
   const MIN_CENTER = 360
   const showShell = !!session && session.kind !== 'shell' && session.status !== 'ended' && layout.shellPane
   let shellW = showShell ? layout.shellW : 0
   let listW = layout.sidebarW
   let threadW = layout.threadW
-  // An open file takes the center: the threads list folds into its rail.
-  let rail = layout.rail || !!route.f
   // The project column (far left): names, or 56 px tiles when the window is narrow or the person asks.
   const projNarrow = layout.projectsRail ?? width < 1400
   const projW = projNarrow ? 56 : 176
@@ -141,13 +139,12 @@ function Desktop() {
     rest -= fromThread
     listW -= Math.min(rest, Math.max(0, listW - 280))
   }
-  const over = () => projW + (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
+  const over = () => projW + listW + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
   const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
   if (shellW && over() > 0) shellW = shrink(shellW, 280)
-  if (!rail && over() > 0) listW = shrink(listW, 240)
+  if (over() > 0) listW = shrink(listW, 240)
   if (over() > 0) threadW = shrink(threadW, 380)
   if (shellW && over() > 0) shellW = 0
-  if (!rail && over() > 0) rail = true
   if (over() > 0) threadW = shrink(threadW, 320)
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
@@ -184,7 +181,6 @@ function Desktop() {
     window.addEventListener('keydown', on, true)
     return () => window.removeEventListener('keydown', on, true)
   }, [])
-  useHotkeys({ 'mod+b': () => setLayout({ rail: !layout.rail }) })
   // CSS order, not element order: swapping the panes does not remount the terminal.
   const swap = !settings.swap_panes
   const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
@@ -193,10 +189,10 @@ function Desktop() {
       <div style={{ width: projW, order: -1 }} className="shrink-0 border-r border-line">
         <ProjectRail narrow={projNarrow} />
       </div>
-      <div style={{ width: rail ? 60 : listW, order: 0 }} className="shrink-0 border-r border-line">
-        {rail ? <Rail /> : <ThreadsPane />}
+      <div style={{ width: listW, order: 0 }} className="shrink-0 border-r border-line">
+        <ThreadsPane />
       </div>
-      {!rail && <Resizer order={1} onDrag={dragList} />}
+      <Resizer order={1} onDrag={dragList} />
       <div style={{ width: threadW, order: o.thread }} className="shrink-0">
         <ThreadPane session={session} />
       </div>

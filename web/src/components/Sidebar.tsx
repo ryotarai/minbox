@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { ATTENTION, SECTION_ORDER, api, type Section, type Session } from '../api'
 import { attentionOf, useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
-import { initials } from '../lib/format'
-import { IconInbox, IconPlus, IconSearch, IconSettings } from './icons'
-import { Button, IconButton, MenuItem, MenuSep, Popover, StatusDot, cx, statusOf } from './ui'
+import { IconInbox } from './icons'
+import { Button, MenuItem, MenuSep, Popover, StatusDot } from './ui'
 
 export function sectionOf(s: Session): Section {
   if (s.archived_at) return 'archived'
@@ -183,84 +182,6 @@ export function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
       </div>
       <div className="px-1 pt-1.5 text-[11.5px] text-subtle">↵ save · Esc cancel</div>
     </div>
-  )
-}
-
-/** The collapsed session rail (⌘B): initials, amber when a session waits on the person. */
-export function Rail() {
-  const { sessions, route, navigate, setLayout, setOverlay } = useApp()
-  const onNew = () => setOverlay({ kind: 'new-session' })
-  const live = groupSessions(sessions ?? []).filter((g) => g.section !== 'archived')
-  return (
-    <nav aria-label="Sessions" data-testid="session-rail" className="flex h-full w-[60px] flex-col items-center gap-1.5 bg-surface pt-2.5">
-      <button type="button" aria-label="Expand sidebar (⌘B)" title="Expand sidebar (⌘B)" onClick={() => setLayout({ rail: false })} className="mb-0.5 border-0 bg-transparent p-0">
-        <Logo size={26} />
-      </button>
-      {/* Full width + top padding: overflow-y-auto clips both axes, and the corner badge,
-          its outline and the working ring sit up to 6px outside each tile. */}
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto pt-1.5">
-        {live.flatMap((g) =>
-          g.rows.map((s) => {
-            const sel = s.id === route.s
-            const waits = waitsOnPerson(s)
-            const stopped = !!s.top_thread?.stopped || (s.stopped ?? 0) > 0
-            // Status shows without reading the title: border colour / weight / style, a
-            // pulsing ring while working, and a corner dot (red + "!" when stopped).
-            const border = stopped
-              ? 'border-2 border-danger'
-              : s.status === 'ended'
-                ? 'border border-dashed border-faint'
-                : s.status === 'starting'
-                  ? 'border-2 border-dashed border-muted'
-                  : s.status === 'working'
-                    ? 'border-2 border-work'
-                    : waits
-                      ? 'border-2 border-wait'
-                      : 'border border-line2'
-            return (
-              <button
-                key={s.id}
-                type="button"
-                title={`${s.name}${s.title ? ` — ${s.title}` : ''} · ${stopped ? 'Stopped' : statusOf(s, waits).label}`}
-                data-testid="rail-session"
-                data-status={stopped ? 'stopped' : s.status === 'idle' && waits ? 'waiting' : s.status}
-                onClick={() => navigate({ s: s.id, t: s.top_thread?.id ?? null, f: null, view: 'main' })}
-                className={cx(
-                  'relative box-border flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[13px]',
-                  border,
-                  sel ? 'bg-sel font-[650]' : waits ? 'bg-wait/10 font-[650]' : 'bg-raised',
-                  s.status === 'ended' ? 'text-subtle' : waits || sel ? 'text-waitfg' : 'text-fg2',
-                  s.status === 'working' && 'shadow-[0_0_0_3px_color-mix(in_srgb,var(--mb-work)_18%,transparent)]',
-                )}
-              >
-                {initials(s.name)}
-                {s.status === 'working' && <span aria-hidden="true" className="mb-pulse pointer-events-none absolute -inset-[3px] rounded-[12px] border-2 border-work" />}
-                {stopped ? (
-                  <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-danger text-[10px] font-bold leading-none text-onaccent outline outline-2 outline-surface">
-                    !
-                  </span>
-                ) : (
-                  (waits || s.status === 'working' || s.status === 'starting') && (
-                    <span className="absolute -right-1 -top-1 rounded-full outline outline-2 outline-surface">
-                      <StatusDot s={s} waits={waits} size={10} />
-                    </span>
-                  )
-                )}
-              </button>
-            )
-          }),
-        )}
-      </div>
-      <IconButton size={40} aria-label="Search" onClick={() => setOverlay({ kind: 'palette' })}>
-        <IconSearch />
-      </IconButton>
-      <IconButton size={40} aria-label="New session" onClick={onNew}>
-        <IconPlus />
-      </IconButton>
-      <IconButton size={40} aria-label="Settings" className="mb-2" onClick={() => navigate({ view: 'settings' })}>
-        <IconSettings />
-      </IconButton>
-    </nav>
   )
 }
 
