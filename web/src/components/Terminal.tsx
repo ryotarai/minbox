@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { FitAddon, Ghostty, Terminal as GhosttyTerminal } from 'ghostty-web'
-import { uploadImage } from '../api'
+import { ensureSession, uploadImage } from '../api'
 import { cx } from './ui'
 
 const THEME = {
@@ -255,8 +255,18 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         attempts++
         retry = setTimeout(openSocket, Math.min(1000 * attempts, 10000))
       }
+      // A reconnect first makes sure the browser is still signed in (the server may have restarted
+      // and forgotten its cookie; a failed handshake does not say so), then opens the socket.
+      let gen = 0
       const openSocket = () => {
         retry = null
+        const g = ++gen
+        if (attempts === 0) return openNow()
+        void ensureSession().then(() => {
+          if (!disposed && g === gen) openNow()
+        })
+      }
+      const openNow = () => {
         const sock = new WebSocket(`${proto}://${location.host}/api/sessions/${sessionId}/terminal`)
         ws = sock
         sock.binaryType = 'arraybuffer'
