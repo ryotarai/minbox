@@ -72,10 +72,13 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
   } finally {
     host?.kill('SIGTERM')
     host = null
-    try {
-      execFileSync('pkill', ['-f', join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.py')])
-    } catch {
-      /* none */
+    // Only the fakes of this test's servers: a bare fake-claude.py pattern killed other workers' sessions.
+    for (const d of [dir, minbox.dataDir]) {
+      try {
+        execFileSync('pkill', ['-f', `fake-claude.py.*${d}`])
+      } catch {
+        /* none */
+      }
     }
     rmSync(dir, { recursive: true, force: true })
   }
