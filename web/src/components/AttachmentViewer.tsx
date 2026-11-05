@@ -22,7 +22,7 @@ const CODE_HIGHLIGHT_MAX_CHARS = 100_000
 const CODE_WRAP_LINE_CHARS = 1000
 const FOLD_PANEL_BELOW = 780
 
-export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { attachmentId: string; sessionName: string; sessionCwd: string }) {
+export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone }: { attachmentId: string; sessionName: string; sessionCwd: string; phone?: boolean }) {
   const { navigate, error, route } = useApp()
   const [detail, setDetail] = useState<AttachmentDetail | null>(null)
   const [version, setVersion] = useState<Version>('current')
@@ -68,11 +68,12 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
   const sender = detail?.author === 'user' ? 'you' : 'Claude Code'
   const idx = siblings.findIndex((a) => a.id === attachmentId)
 
-  const close = () => navigate({ f: null })
+  // On a phone the viewer was pushed as a history entry: closing goes back through it (no stacked entries).
+  const close = () => (phone && history.state?.viewer ? history.back() : navigate({ f: null }, { push: false }))
   const step = (d: 1 | -1) => {
     if (siblings.length < 2) return
     const next = siblings[(idx + d + siblings.length) % siblings.length]
-    if (next) navigate({ f: next.id })
+    if (next) navigate({ f: next.id }, { push: false })
   }
   useHotkeys({
     f: () => setFull((v) => !v),
@@ -103,11 +104,27 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
   }
 
   const t = detail ? typeOf(detail) : null
-  const folded = paneW - 300 < FOLD_PANEL_BELOW - 300 || paneW < FOLD_PANEL_BELOW
+  const folded = phone || paneW < FOLD_PANEL_BELOW
 
   return (
-    <div ref={paneRef} className={cx('flex h-full min-w-0 bg-sunken', full && 'fixed inset-0 z-40')} data-testid="attachment-viewer" data-type={t ?? ''}>
+    <div ref={paneRef} className={cx('relative flex min-w-0 bg-sunken', phone ? 'min-h-0 flex-1' : 'h-full', full && !phone && 'fixed inset-0 z-40')} data-testid="attachment-viewer" data-type={t ?? ''}>
       <div className="flex min-w-0 flex-1 flex-col">
+        {phone ? (
+          <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line bg-surface pl-4 pr-1.5" data-testid="phone-viewer-header">
+            <span className="min-w-0 flex-1 truncate text-[15.5px] font-[650]">{detail?.name ?? '…'}</span>
+            {siblings.length > 1 && (
+              <button type="button" onClick={(e) => setListAnchor(e.currentTarget)} className="mono h-11 shrink-0 border-0 bg-transparent px-1.5 text-[12.5px] text-muted">
+                {idx + 1}/{siblings.length} ⌄
+              </button>
+            )}
+            <button type="button" onClick={(e) => setOpenAnchor(e.currentTarget)} className="h-11 shrink-0 border-0 bg-transparent px-2 text-[13px] text-muted">
+              Open in ▾
+            </button>
+            <button type="button" aria-label="Close file" data-testid="close-file" onClick={close} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
+              <IconClose size={20} />
+            </button>
+          </div>
+        ) : (
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line bg-surface pl-4 pr-2.5">
           <div role="tablist" className="flex min-w-0 gap-0.5 rounded-lg bg-bg p-[3px]">
             <button type="button" role="tab" aria-selected={false} data-testid="tab-terminal" onClick={close} className="h-7 shrink-0 rounded-[6px] border-0 bg-transparent px-2.5 text-[12.5px] text-muted hover:text-fg">
@@ -134,10 +151,11 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
             <IconClose />
           </IconButton>
         </div>
+        )}
         <Popover anchor={listAnchor} open={!!listAnchor} onClose={() => setListAnchor(null)} className="w-[280px]">
           <MenuLabel>Files in this thread</MenuLabel>
           {siblings.map((a, i) => (
-            <MenuItem key={a.id} active={a.id === attachmentId} hint={`${i + 1} of ${siblings.length}`} onClick={() => (setListAnchor(null), navigate({ f: a.id }))}>
+            <MenuItem key={a.id} active={a.id === attachmentId} hint={`${i + 1} of ${siblings.length}`} onClick={() => (setListAnchor(null), navigate({ f: a.id }, { push: false }))}>
               {a.name}
             </MenuItem>
           ))}
@@ -155,7 +173,7 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
 
         {detail && <VersionLine d={detail} version={version} sender={sender} onVersion={setVersion} />}
 
-        <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-auto px-7 py-[18px]" data-testid="attachment-body">
+        <div ref={bodyRef} className={cx('relative min-h-0 flex-1 overflow-auto', phone ? 'px-3 py-3 [touch-action:pan-x_pan-y_pinch-zoom]' : 'px-7 py-[18px]')} data-testid="attachment-body">
           {!detail || !t ? (
             <div className="text-[13px] text-subtle">Loading…</div>
           ) : t === 'pdf' || t === 'file' ? (
@@ -174,7 +192,7 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
             <DocView d={detail} version={version} quotes={annotations.map((a) => a.quote ?? '')} bodyRef={bodyRef} onComment={(p) => setPending(p)} sessionCwd={sessionCwd} />
           )}
 
-          {pending && <CommentBox pending={pending} onCancel={() => setPending(null)} onSave={savePending} />}
+          {pending && <CommentBox phone={phone} pending={pending} onCancel={() => setPending(null)} onSave={savePending} />}
         </div>
       </div>
 
@@ -183,13 +201,13 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd }: { at
           <button
             type="button"
             onClick={() => setSheet((v) => !v)}
-            className="absolute bottom-3 right-3 z-10 h-9 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] shadow-pop"
+            className={cx('absolute z-10 rounded-lg border border-linestrong bg-overlay px-3 shadow-pop', phone ? 'bottom-[max(12px,env(safe-area-inset-bottom))] right-3 h-11 text-[14px]' : 'bottom-3 right-3 h-9 text-[12.5px]')}
             data-testid="comments-toggle"
           >
             Comments {annotations.length}
           </button>
           {sheet && (
-            <aside className="absolute bottom-14 right-3 z-10 max-h-[60%] w-[300px] overflow-y-auto rounded-xl border border-linestrong bg-surface shadow-pop">
+            <aside data-testid="comments-sheet" className={cx('absolute z-10 overflow-y-auto border border-linestrong bg-surface shadow-pop', phone ? 'inset-x-0 bottom-0 max-h-[65%] rounded-t-xl pb-[calc(60px+env(safe-area-inset-bottom))]' : 'bottom-14 right-3 max-h-[60%] w-[300px] rounded-xl')}>
               <CommentsPanel annotations={annotations} threadId={detail?.thread_id ?? ''} pending={pending} onSeek={seekVideo} />
             </aside>
           )}
@@ -833,7 +851,7 @@ function VideoView({ d, version, annotations, onComment }: { d: AttachmentDetail
 
 // ---- comment box & panel ----
 
-function CommentBox({ pending, onCancel, onSave }: { pending: Pending; onCancel: () => void; onSave: (comment: string, images?: { path: string; name: string }[]) => void }) {
+function CommentBox({ phone, pending, onCancel, onSave }: { phone?: boolean; pending: Pending; onCancel: () => void; onSave: (comment: string, images?: { path: string; name: string }[]) => void }) {
   const { error } = useApp()
   const [text, setText] = useState('')
   const [big, setBig] = useState(false)
@@ -846,8 +864,8 @@ function CommentBox({ pending, onCancel, onSave }: { pending: Pending; onCancel:
   }
   return (
     <div
-      className={cx('absolute z-10 flex flex-col rounded-xl border border-[#3a3a42] bg-overlay shadow-pop', big ? 'w-[560px]' : 'w-[380px]')}
-      style={{ left: Math.max(8, pending.x), top: pending.y }}
+      className={cx('absolute z-10 flex flex-col rounded-xl border border-[#3a3a42] bg-overlay shadow-pop', phone ? 'inset-x-2' : big ? 'w-[560px]' : 'w-[380px]')}
+      style={{ left: phone ? undefined : Math.max(8, pending.x), top: pending.y }}
       data-testid="annotation-box"
       onMouseUp={(e) => e.stopPropagation()}
     >

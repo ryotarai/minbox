@@ -11,6 +11,7 @@ import { ThreadView, unreadElsewhere, useThread } from './ThreadView'
 import { useAllThreads } from './ThreadList'
 import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
 import { TerminalKeys } from './TerminalKeys'
+import { AttachmentViewer } from './AttachmentViewer'
 
 /**
  * Follows the visual viewport, so bars stay above the on-screen keyboard, and
@@ -57,6 +58,11 @@ export function PhoneApp() {
         </div>
       ) : (
         <PhoneSession session={session!} keyboard={keyboard} />
+      )}
+      {route.f && session && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-surface pt-[env(safe-area-inset-top)]" data-testid="phone-attachment">
+          <AttachmentViewer key={route.f} attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} phone />
+        </div>
       )}
     </div>
   )
