@@ -223,6 +223,32 @@ func (s *Server) sendNow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+// cancelMessage deletes the person's queued message, so it is never delivered.
+// 409 when it is delivered already (or being delivered), or is not the person's.
+func (s *Server) cancelMessage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	threadID, err := s.store.ThreadOfMessage(ctx, id)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	th, thErr := s.store.GetThread(ctx, threadID)
+	deleted, err := s.store.CancelMessage(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			httpError(w, 409, "that message is delivered already, or is not yours")
+			return
+		}
+		storeError(w, err)
+		return
+	}
+	if thErr == nil {
+		s.publishThread(th.SessionID, threadID)
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "thread_id": threadID, "thread_deleted": deleted})
+}
+
 func oneLine(s string, max int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > max {

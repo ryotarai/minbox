@@ -1075,6 +1075,41 @@ func (s *Store) SetUrgent(ctx context.Context, messageID string) error {
 	return s.exec(ctx, `UPDATE messages SET urgent=1 WHERE id=? AND author='user' AND delivered_at IS NULL`, messageID)
 }
 
+// CancelMessage deletes the person's message while it is still queued: not
+// delivered, and not claimed by a mod instance that may be submitting it right
+// now. ErrNotFound when it is gone, not the person's, delivered or in flight.
+// A thread left without messages (the person started it) is deleted too.
+func (s *Store) CancelMessage(ctx context.Context, messageID string) (threadDeleted bool, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var threadID string
+	err = tx.QueryRowContext(ctx, `SELECT thread_id FROM messages WHERE id=? AND author='user' AND delivered_at IS NULL
+	  AND (claimed_at IS NULL OR claimed_at<?)`, messageID, ms(s.now().Add(-ClaimTimeout))).Scan(&threadID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE id=?`, messageID); err != nil {
+		return false, err
+	}
+	var left int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE thread_id=?`, threadID).Scan(&left); err != nil {
+		return false, err
+	}
+	if left == 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM threads WHERE id=?`, threadID); err != nil {
+			return false, err
+		}
+		threadDeleted = true
+	}
+	return threadDeleted, tx.Commit()
+}
+
 // PendingDelivery is a message of the person waiting to be delivered to the agent.
 type PendingDelivery struct {
 	Message

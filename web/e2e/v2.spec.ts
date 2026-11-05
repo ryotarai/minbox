@@ -882,3 +882,46 @@ for (const [name, size] of [['desktop', { width: 1280, height: 800 }], ['phone',
     await expect(box).toHaveValue('')
   })
 }
+
+async function queueUp(page: Page, minbox: { dataDir: string }, name: string) {
+  await createSession(page, minbox.dataDir, name)
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'ask')
+  await typeInTerminal(page, 'work')
+  await expectTerminal(page, 'status work')
+}
+
+test('Cancel on a queued reply removes it, keeps the words in the draft, and it is never delivered', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await queueUp(page, minbox, 'canceller')
+  await openThread(page, 'Pick a database')
+  await page.getByTestId('reply-box').fill('hold this one')
+  await page.getByTestId('reply-send').click()
+  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'queued')
+  await expect(page.getByTestId('send-now')).toBeVisible()
+  await page.getByTestId('cancel-message').click()
+  await expect(page.getByTestId('delivery-line')).toHaveCount(0)
+  await expect(page.getByTestId('reply-box')).toHaveValue('hold this one')
+
+  // Claude's turn ends: only a later reply is delivered.
+  await typeInTerminal(page, 'idle')
+  await page.getByTestId('reply-box').fill('the second one')
+  await page.getByTestId('reply-send').click()
+  await expectTerminal(page, '<<< inbox [Pick a database] the second one')
+  expect(await terminalText(page)).not.toContain('hold this one')
+})
+
+test('phone: a queued reply can be cancelled', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await queueUp(page, minbox, 'pocketcancel')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#')
+  await page.getByTestId('session-row').filter({ hasText: 'pocketcancel' }).click()
+  await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
+  await page.getByTestId('reply-box').fill('on the phone')
+  await page.getByTestId('reply-send').click()
+  await expect(page.getByTestId('cancel-message')).toBeVisible()
+  await page.getByTestId('cancel-message').click()
+  await expect(page.getByTestId('delivery-line')).toHaveCount(0)
+  await expect(page.getByTestId('reply-box')).toHaveValue('on the phone')
+})

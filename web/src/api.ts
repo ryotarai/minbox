@@ -424,6 +424,7 @@ export const api = {
   reply: (threadId: string, req: ReplyRequest) =>
     call<Message & { forwarded_thread_id?: string; thread_id: string }>('POST', `/api/threads/${threadId}/reply`, req),
   sendNow: (messageId: string) => call<Ok>('POST', `/api/messages/${messageId}/send-now`),
+  cancelMessage: (messageId: string) => call<{ ok: boolean; thread_id: string; thread_deleted: boolean }>('POST', `/api/messages/${messageId}/cancel`),
 
   attachment: (id: string) => call<AttachmentDetail>('GET', `/api/attachments/${id}`),
   attachmentRawUrl: (id: string, v: 'sent' | 'current' = 'sent') => `/api/attachments/${id}/raw?v=${v}`,

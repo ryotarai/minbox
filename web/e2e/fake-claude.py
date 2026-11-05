@@ -6,6 +6,7 @@ and echoes what it receives to the terminal, without a real model.
 Typed commands (one per line):
   ask        send a message with a question block
   say <text> send a plain message
+  work       status working: queued messages wait (idle ends it)
   exit       quit
 """
 import json, os, sys, threading, time, urllib.error, urllib.request, uuid
@@ -17,6 +18,7 @@ args = sys.argv[1:]
 session_id = args[args.index("--session-id") + 1] if "--session-id" in args else (args[args.index("--resume") + 1] if "--resume" in args else "none")
 mode = "resume" if "--resume" in args else "new"
 last_thread = None
+busy = False  # "work": a turn is running; only urgent messages are taken
 
 
 def base():
@@ -46,6 +48,8 @@ def poll():
         try:
             pending = api("GET", f"/api/agent/pending?owner={owner}&wait=20")
             for p in pending:
+                if busy and not p.get("urgent"):
+                    continue
                 if api("POST", f"/api/agent/pending/{p['id']}/claim?owner={owner}")["claimed"]:
                     last_thread = p["thread_id"]
                     out(f"<<< inbox [{p['subject']}] {p['body']}")
@@ -65,6 +69,10 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     if line == "exit":
         out("bye")
         sys.exit(0)
+    elif line in ("work", "idle"):
+        busy = line == "work"
+        api("POST", "/api/agent/status", {"status": "working" if busy else "idle"})
+        out(f"status {line}")
     elif line == "ask":
         r = api("POST", "/api/agent/messages", {
             "subject": "Pick a database",
