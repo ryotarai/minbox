@@ -966,6 +966,7 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   let text: string
   let now = false
   let resume = false
+  let cancel = false
   if (d === 'delivered') text = `Delivered to Claude Code, ${hm(m.delivered_at ?? m.created_at)}`
   else if (d === 'sending') text = 'Sending to Claude Code…'
   else if (d === 'undelivered') {
@@ -982,7 +983,17 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
       now = true
     }
     else text = 'Queued · goes in when Claude Code is idle.'
+    cancel = true
   }
+  // Cancelling deletes the message; its words go back into the reply draft so nothing typed is lost.
+  const cancelIt = () =>
+    api
+      .cancelMessage(m.id)
+      .then(() => {
+        const words = (m.words ?? '').trim()
+        if (words) updateReplyDraft(m.thread_id, (d) => ({ ...d, words: d.words.trim() ? `${words}\n\n${d.words}` : words }))
+      })
+      .catch(error)
   return (
     <div data-testid="delivery-line" data-delivery={d} className="-mt-1 flex min-h-[30px] items-center justify-end gap-2.5 text-[12.5px] text-fg2">
       <span className={cx('w-[18px] text-center', v.color)}>{v.icon}</span>
@@ -990,6 +1001,11 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
       {now && (
         <button type="button" data-testid="send-now" onClick={() => api.sendNow(m.id).catch(error)} className="h-7 rounded-[6px] border border-danger bg-transparent px-2.5 text-[12px] text-danger">
           Send now
+        </button>
+      )}
+      {cancel && (
+        <button type="button" data-testid="cancel-message" onClick={cancelIt} className="h-7 rounded-[6px] border border-line bg-transparent px-2.5 text-[12px] text-fg2">
+          Cancel
         </button>
       )}
       {resume && (

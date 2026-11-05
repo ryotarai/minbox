@@ -157,6 +157,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/threads/{id}/unsnooze", s.threadOp(func(ctx context.Context, id string) error { return s.store.SnoozeThread(ctx, id, nil) }))
 	mux.HandleFunc("POST /api/threads/{id}/reask", s.reask)
 	mux.HandleFunc("POST /api/messages/{id}/send-now", s.sendNow)
+	mux.HandleFunc("POST /api/messages/{id}/cancel", s.cancelMessage)
 	mux.HandleFunc("POST /api/sessions/{id}/archive", s.archiveSession)
 	mux.HandleFunc("POST /api/sessions/{id}/unarchive", s.unarchiveSession)
 	mux.HandleFunc("POST /api/sessions/{id}/files", s.uploadFile)

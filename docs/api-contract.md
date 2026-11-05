@@ -161,6 +161,10 @@ POST  /api/threads/{id}/reply               body adds annotations, urgent, forwa
                                               starts a new thread there instead; → {thread_id, ...}), resume (bool:
                                               restart the ended session after storing). A reply unsnoozes.
 POST  /api/messages/{id}/send-now           urgent=true
+POST  /api/messages/{id}/cancel             deletes the person's message while it is still queued (not delivered, not
+                                              being delivered) so it is never delivered → {ok, thread_id, thread_deleted}
+                                              (a thread left empty is deleted too). 409 when delivered already / not
+                                              the person's; 404 unknown. Publishes `thread` and `threads` events.
 
 GET   /api/search?q=&session_id=&status=&from=agent|user&limit=
       → {threads: Hit[], messages: Hit[], files: Hit[]}
