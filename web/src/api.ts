@@ -59,6 +59,8 @@ export type Session = {
   host_name?: string
   /** The project (host + folder) the session belongs to. */
   project_id?: string
+  /** The project's main session: new threads go to it by default. */
+  is_main?: boolean
 }
 
 /** A folder on a host; sessions (and so threads) are resources under it. */
@@ -72,6 +74,8 @@ export type Project = {
   created_at: string
   archived_at: string | null
   pinned_at: string | null
+  /** The Claude Code session a new thread goes to by default ('' until the project has one). */
+  main_session_id: string
   session_count: number
   live_sessions: number
   last_activity: string
@@ -413,7 +417,8 @@ export const api = {
   sessions: () => call<Session[]>('GET', '/api/sessions'),
   createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind }),
   /** A session inside a project: its host and folder. */
-  createSessionIn: (project_id: string, name: string, kind?: SessionKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind }),
+  createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined }),
+  setMainSession: (project_id: string, session_id: string) => call<Project>('PATCH', `/api/projects/${project_id}`, { main_session_id: session_id }),
   projects: (archived = false) => call<Project[]>('GET', `/api/projects${archived ? '?archived=1' : ''}`),
   createProject: (p: { dir: string; host_id?: string; name?: string }) => call<Project>('POST', '/api/projects', p),
   patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string }) => call<Project>('PATCH', `/api/projects/${id}`, p),

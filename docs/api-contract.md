@@ -573,7 +573,7 @@ A project is `(host, dir)` plus a name; sessions (so threads, messages, attachme
 Design: `docs/ui-v2-projects.md`.
 
 ```
-Project: { id, name, dir, host_id, host_name, created_at, archived_at: string|null, pinned_at: string|null,
+Project: { id, name, dir, host_id, host_name, main_session_id: string  // '' = none yet; created_at, archived_at: string|null, pinned_at: string|null,
            session_count,   // every session of it, archived and ended too
            live_sessions,   // not ended, not archived
            last_activity }  // newest session or thread update
@@ -583,7 +583,8 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
                                         dir is resolved on the host (~ ok) and must be a folder there (400);
                                         name defaults to the last folder; names are unique, case-insensitive (400);
                                         a live project for (host, dir) exists → 409; an archived one is brought back
-PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?} → Project
+PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
+                                        main_session_id must be a Claude Code session of the project (400)
                                         dir/host_id change only while the project has no sessions (else 409)
 DELETE /api/projects/{id}             only with no sessions at all; else 409 ("archive it instead")
 POST   /api/projects/{id}/archive     409 while it has a live session; archives its ended sessions with it
@@ -601,3 +602,13 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
   creation made a project. Archive/unarchive also fire `sessions` and `threads`.
 - Migration of existing data (startup, in `store.Open`): see "Migration notes" in `docs/ui-v2-projects.md`. The change is
   additive (table `projects`, nullable column `sessions.project_id`).
+
+### Main session
+
+- `Session.is_main`; `Project.main_session_id`. At most one per project. The first Claude Code session created in a
+  project becomes main (also through `(host, cwd)` resolution, i.e. the plugin/CLI path). `POST /api/sessions` takes
+  `main?: bool` to promote the new session.
+- `POST /api/sessions/{id}/archive` and `DELETE /api/sessions/{id}` answer 409 for a main session while the project has
+  another live Claude Code session, unless `?promote=<session id>` names one (made main in the same request). A last
+  Claude session leaves the project without main. Ending/stopping a session never changes main.
+- Migration picks one per project (live > ended > archived, newest first, never a shell).

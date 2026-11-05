@@ -95,7 +95,7 @@ function Highlight({ text, idx }: { text: string; idx: number[] }) {
 
 /** ⌘K / "/": jump to a session or thread, or run an action. */
 export function Palette({ onClose }: { onClose: () => void }) {
-  const { projects, route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, threadsVersion, error, toast } = useApp()
+  const { projects, reloadProjects, reloadSessions, route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, threadsVersion, error, toast } = useApp()
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [threads, setThreads] = useState<Thread[]>([])
@@ -135,6 +135,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
       )
     }
     act('all-projects', 'All projects', () => selectProject(''), { keywords: 'project scope everything show' })
+    if (isClaude && current!.project_id && !current!.is_main)
+      act('set-main', "Set current session as project's main session", () => void api.setMainSession(current!.project_id!, current!.id).then(() => (reloadProjects(), reloadSessions())).catch(error), { keywords: `main default thread target project ${current!.name}` })
     act('inbox', 'Open All inbox', () => navigate({ view: 'inbox' }), { keywords: 'threads messages everything' })
     if (settings.board) act('board', 'Open Board', () => navigate({ view: 'board' }), { keywords: 'cards kanban' })
     act('settings', 'Open Settings', () => navigate({ view: 'settings', ss: 'general' }), { keywords: 'preferences options' })

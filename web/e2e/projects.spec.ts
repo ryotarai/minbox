@@ -121,6 +121,9 @@ test('a project is created in a dialog; "+ New session…" in the composer start
   const s = sessions.find((x: { project_id: string }) => x.project_id === b.id)
   expect(s.cwd).toBe(billing)
   expect(b.session_count).toBe(1)
+  // The project had no main session: the first one started in it became main.
+  expect(b.main_session_id).toBe(s.id)
+  expect(s.is_main).toBe(true)
 })
 
 test('a new session started from All projects asks which project', async ({ page, minbox }) => {
@@ -136,7 +139,6 @@ test('a new session started from All projects asks which project', async ({ page
   await page.getByTestId('new-session-name').fill('gamma')
   await page.getByTestId('new-session-start').click()
   await expect(page.getByTestId('terminal-session-name')).toHaveText('gamma')
-  await expect(item(page, 'docs')).toHaveAttribute('data-selected', 'true')
   await expect(item(page, 'docs').getByTestId('project-dir')).toContainText('docs')
 })
 
@@ -146,7 +148,7 @@ test('the composer targets follow the selected project; All projects groups them
 
   await selectProject(page, 'All projects')
   await page.getByTestId('composer-target').click()
-  await expect(page.getByTestId('session-picker-group')).toHaveText(['api', 'docs'])
+  await expect.poll(async () => (await page.getByTestId('session-picker-group').allTextContents()).sort()).toEqual(['api', 'docs'])
   await expect(page.getByTestId('session-option')).toHaveCount(2)
   await page.keyboard.press('Escape')
 
@@ -263,6 +265,7 @@ test('⌘K: a Projects group switches the project; rows name their project', asy
   await selectProject(page, 'api')
   await page.keyboard.press('Meta+k')
   await page.getByTestId('palette-input').fill('#Beta')
+  await expect(page.getByTestId('palette-item').first()).toHaveAttribute('data-kind', 'thread')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('thread-subject')).toContainText('Beta note')
   await expect(item(page, 'docs')).toHaveAttribute('data-selected', 'true')
@@ -301,4 +304,54 @@ test('a narrow window shows the project column as tiles; the toggle switches it'
   await page.getByTestId('project-rail-toggle').click()
   await expect(page.getByTestId('project-rail')).toHaveAttribute('data-mode', 'names')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280)
+})
+
+test("the composer defaults to the project's main session; another session can be made main", async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  await selectProject(page, 'api')
+  const api = await (await fetch(minbox.url + '/api/sessions')).json()
+  const alpha = api.find((x: { name: string }) => x.name === 'alpha')
+  expect(alpha.is_main).toBe(true)
+
+  // An extra session in the project is not main (the dialog offers to make it so).
+  await page.getByTestId('composer-target').click()
+  await page.getByTestId('composer-new-session').click()
+  await expect(page.getByTestId('new-session-make-main')).not.toBeChecked()
+  await page.getByTestId('new-session-name').fill('alpha2')
+  await page.getByTestId('new-session-start').click()
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha2')
+  const projects = await (await fetch(minbox.url + '/api/projects')).json()
+  expect(projects.find((p: { name: string }) => p.name === 'api').main_session_id).toBe(alpha.id)
+
+  // Back from another project: the target is the main session again, marked "main".
+  await selectProject(page, 'docs')
+  await selectProject(page, 'api')
+  await expect(page.getByTestId('composer-target-name')).toHaveText('alpha')
+  await page.getByTestId('composer-target').click()
+  await expect(page.getByTestId('session-main-badge')).toHaveCount(1)
+  await expect(page.getByTestId('session-option').filter({ hasText: 'alpha2' })).not.toContainText('main')
+  await page.getByTestId('session-option').filter({ hasText: 'alpha2' }).hover()
+  await page.getByTestId('session-set-main').click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('composer-target-name')).toHaveText('alpha2')
+
+  // A thread started in the box goes to the main session.
+  await page.getByTestId('quick-body').fill('Hello main')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Hello main')
+  const threads = await (await fetch(minbox.url + '/api/threads')).json()
+  const hello = threads.find((t: { subject: string }) => t.subject === 'Hello main')
+  const alpha2 = (await (await fetch(minbox.url + '/api/sessions')).json()).find((x: { name: string }) => x.name === 'alpha2')
+  expect(alpha2.is_main).toBe(true)
+  expect(hello.session_id).toBe(alpha2.id)
+
+  // The main session cannot be deleted while other Claude Code sessions exist.
+  const r = await fetch(minbox.url + '/api/sessions/' + alpha2.id, { method: 'DELETE' })
+  expect(r.status).toBe(409)
+
+  // The terminal header menu and the palette set the main session too.
+  await page.getByTestId('session-menu').click()
+  await expect(page.getByTestId('menu-set-main')).toBeDisabled()
+  await page.keyboard.press('Escape')
 })

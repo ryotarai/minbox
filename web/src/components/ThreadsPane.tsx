@@ -366,7 +366,7 @@ function FilterRow({ v, phone, onSheet }: { v: ReturnType<typeof useVisibleThrea
 
 /** A searchable list of sessions with status dots; `filter` adds "All sessions", otherwise "+ New session…". */
 export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: boolean; activeId: string; onPick: (s: Session | null) => void; onNew?: () => void }) {
-  const { sessions, projects } = useApp()
+  const { sessions, projects, reloadProjects, reloadSessions, toast, error } = useApp()
   const { id: projectId } = useSelectedProject()
   const [q, setQ] = useState('')
   const list = useMemo(() => {
@@ -416,18 +416,26 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
             {g.rows.map((s) => {
           const waits = waitsOnPerson(s)
           return (
+            <div key={s.id} className="group flex items-center gap-0.5">
             <button
-              key={s.id}
               type="button"
               role="menuitem"
               data-testid="session-option"
               data-session-id={s.id}
+              data-main={s.is_main || undefined}
               onClick={() => onPick(s)}
-              className={cx('flex min-h-9 w-full items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', s.id === activeId ? 'bg-sel' : 'bg-transparent')}
+              className={cx('flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', s.id === activeId ? 'bg-sel' : 'bg-transparent')}
             >
               <StatusDot s={s} waits={waits} size={7} ring={false} />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-[13px] text-fg">{s.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13px] text-fg">{s.name}</span>
+                  {s.is_main && (
+                    <span data-testid="session-main-badge" className="shrink-0 rounded-[5px] border border-linestrong px-1 text-[10px] font-semibold uppercase leading-[15px] tracking-[0.04em] text-muted">
+                      main
+                    </span>
+                  )}
+                </span>
                 <span className={cx('truncate text-[11.5px]', statusOf(s, waits).text)}>
                   {statusOf(s, waits).label}
                   {s.title ? ` · ${s.title}` : ''}
@@ -440,6 +448,23 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
                 <span className="rounded-full bg-chip px-1.5 text-[11px] font-bold text-fg2">{s.unread}</span>
               ) : null}
             </button>
+            {!filter && !s.is_main && s.project_id && (
+              <button
+                type="button"
+                data-testid="session-set-main"
+                title="Make this the project's main session"
+                onClick={() =>
+                  api
+                    .setMainSession(s.project_id!, s.id)
+                    .then(() => (reloadProjects(), reloadSessions(), toast(`${s.name} is now the main session`)))
+                    .catch(error)
+                }
+                className="hidden h-7 shrink-0 rounded-md border-0 bg-transparent px-1.5 text-[11px] text-muted hover:bg-sel hover:text-fg focus:block group-hover:block"
+              >
+                Set as main
+              </button>
+            )}
+            </div>
           )
         })}
           </div>
@@ -477,7 +502,7 @@ function EmptyThreads() {
 export function useComposeTarget(): Session | null {
   const { sessions, route } = useApp()
   const pick = useComposeTargetPick()
-  const { id: projectId } = useSelectedProject()
+  const { id: projectId, project } = useSelectedProject()
   return useMemo(() => {
     const ok = (s?: Session | null) => (s && s.kind !== 'shell' && !s.archived_at && (!projectId || s.project_id === projectId) ? s : null)
     const byId = (id: string | null) => ok(sessions?.find((s) => s.id === id))
@@ -485,8 +510,13 @@ export function useComposeTarget(): Session | null {
       const p = byId(pick.id)
       if (p) return p
     }
+    // Inside a project a new thread goes to its main session; in All projects, to the open session.
+    if (project) {
+      const main = byId(project.main_session_id)
+      if (main) return main
+    }
     return byId(route.s) ?? byId(pick.id) ?? groupSessions((sessions ?? []).filter((s) => ok(s))).flatMap((g) => g.rows)[0] ?? null
-  }, [sessions, route.s, pick, projectId])
+  }, [sessions, route.s, pick, projectId, project])
 }
 
 /** Quick-compose text per session, kept while the box is unmounted. */
