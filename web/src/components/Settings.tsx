@@ -201,6 +201,12 @@ function Prompts() {
           Revert
         </Button>
       </div>
+      <Row
+        label="Orchestrator prompt: ask the main agent to run a subagent per thread and use git worktrees for subagent changes"
+        desc="Applies to sessions started or resumed after the change"
+      >
+        <Switch label="Orchestrator prompt" on={settings.orchestrator_prompt} onChange={(v) => saveSettings({ orchestrator_prompt: v })} />
+      </Row>
     </Group>
   )
 }

@@ -133,6 +133,8 @@ Settings (one JSON object; PUT merges top-level keys):
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
+  orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
+                                block to --append-system-prompt; read per spawn, running sessions keep theirs)
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
 ```
 

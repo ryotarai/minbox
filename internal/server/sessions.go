@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -238,9 +239,34 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	}
 	// The mod adds these to the system prompt too (prompt.compose), but some
 	// environments skip that hook: the command line carries them as well.
-	argv = append(argv, "--append-system-prompt", AgentSystemPrompt)
+	prompt := AgentSystemPrompt
+	if m.orchestratorPrompt(ctx) {
+		prompt += "\n\n" + OrchestratorPrompt
+	}
+	argv = append(argv, "--append-system-prompt", prompt)
 	return argv
 }
+
+// orchestratorPrompt reports the orchestrator_prompt setting (on unless set to
+// false), read when a session is started or resumed.
+func (m *sessionManager) orchestratorPrompt(ctx context.Context) bool {
+	stored, err := m.store.Settings(ctx)
+	if err != nil {
+		return true
+	}
+	var on bool
+	if raw, ok := stored["orchestrator_prompt"]; ok && json.Unmarshal(raw, &on) == nil {
+		return on
+	}
+	return true
+}
+
+// OrchestratorPrompt is appended to AgentSystemPrompt while the
+// orchestrator_prompt setting is on: the main agent hands each thread to a
+// subagent and stays available.
+const OrchestratorPrompt = `# minbox: orchestration
+You are the main agent of this session and the person may send you many threads and messages at once. Do not let one task occupy you: unless the person says otherwise, start one subagent per thread (or per independent task) and let it do the work, while you stay available. Your own job is orchestration and coordination: split work, brief subagents fully (goal, files, constraints, how to verify), track progress, review and verify results, and report back in the thread (send_message). Do small lookups yourself. Run independent subagents in parallel; do not hold work back for fear of merge conflicts between them: conflicts are resolved when you merge their results, and you do the merging.
+When a subagent has to change anything other than reading (edit files, build, commit), and the working directory is in a git repository, tell it to work in its own git worktree (create one for it); read-only investigation needs no worktree. If the directory is not a git repository this does not apply.`
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
 // person through the inbox, keep the session's title current, and open pages
