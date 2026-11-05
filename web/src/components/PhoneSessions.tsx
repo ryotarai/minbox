@@ -3,6 +3,7 @@ import { ATTENTION, SECTION_LABEL, api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
 import { setThreadFilter, useThreadFilter } from '../lib/threadFilter'
+import { useSelectedProject } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconClose, IconMore, IconPlus, IconTerminal } from './icons'
 import { SessionMenu, groupSessions, waitsOnPerson } from './Sidebar'
 import { HostTag, StatusDot, cx, statusOf } from './ui'
@@ -15,7 +16,8 @@ export function PhoneSessionSheet({ onClose }: { onClose: () => void }) {
   const { sessions, navigate, setOverlay } = useApp()
   const filter = useThreadFilter()
   const [showArchived, setShowArchived] = useState(false)
-  const groups = useMemo(() => groupSessions(sessions ?? []), [sessions])
+  const { id: projectId } = useSelectedProject()
+  const groups = useMemo(() => groupSessions((sessions ?? []).filter((s) => !projectId || s.project_id === projectId)), [sessions, projectId])
   const need = groups.filter((g) => ATTENTION.includes(g.section))
   const others = groups.filter((g) => !ATTENTION.includes(g.section) && g.section !== 'archived')
   const archived = groups.find((g) => g.section === 'archived')?.rows ?? []

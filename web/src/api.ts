@@ -57,6 +57,24 @@ export type Session = {
   top_thread?: TopThread | null
   host_id?: string
   host_name?: string
+  /** The project (host + folder) the session belongs to. */
+  project_id?: string
+}
+
+/** A folder on a host; sessions (and so threads) are resources under it. */
+export type Project = {
+  id: string
+  name: string
+  /** '' for the catch-all "No project". */
+  dir: string
+  host_id: string
+  host_name?: string
+  created_at: string
+  archived_at: string | null
+  pinned_at: string | null
+  session_count: number
+  live_sessions: number
+  last_activity: string
 }
 
 export type Device = { id: string; name: string; fingerprint: string; created_at: string; last_seen: string | null; current: boolean }
@@ -205,6 +223,8 @@ export type Message = {
 export type Thread = {
   id: string
   session_id: string
+  project_id?: string
+  project_name?: string
   subject: string
   created_at: string
   updated_at: string
@@ -319,7 +339,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -392,6 +412,13 @@ export type ReplyRequest = {
 export const api = {
   sessions: () => call<Session[]>('GET', '/api/sessions'),
   createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind }),
+  /** A session inside a project: its host and folder. */
+  createSessionIn: (project_id: string, name: string, kind?: SessionKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind }),
+  projects: (archived = false) => call<Project[]>('GET', `/api/projects${archived ? '?archived=1' : ''}`),
+  createProject: (p: { dir: string; host_id?: string; name?: string }) => call<Project>('POST', '/api/projects', p),
+  patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string }) => call<Project>('PATCH', `/api/projects/${id}`, p),
+  deleteProject: (id: string) => call<Ok>('DELETE', `/api/projects/${id}`),
+  archiveProject: (id: string, archive = true) => call<Ok>('POST', `/api/projects/${id}/${archive ? 'archive' : 'unarchive'}`),
   hosts: () => call<Host[]>('GET', '/api/hosts'),
   deviceMe: () => call<DeviceMe>('GET', '/api/devices/me'),
   devices: () => call<{ devices: Device[]; requests: PairRequest[] }>('GET', '/api/devices'),

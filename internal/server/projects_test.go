@@ -81,6 +81,57 @@ func TestSessionsResolveTheirProjectByHostAndDir(t *testing.T) {
 	}
 }
 
+func TestMainSessionAPI(t *testing.T) {
+	e := newEnv(t)
+	dir := e.mkdir("main")
+	mk := func(extra map[string]any) map[string]any {
+		body := map[string]any{"cwd": dir}
+		for k, v := range extra {
+			body[k] = v
+		}
+		code, obj, _ := e.do("POST", "/api/sessions", body, nil)
+		if code != 201 {
+			t.Fatalf("create: %d %v", code, obj)
+		}
+		return obj
+	}
+	a := mk(nil)
+	b := mk(nil)
+	if a["is_main"] != true || b["is_main"] != false {
+		t.Fatalf("first is main: %v %v", a["is_main"], b["is_main"])
+	}
+	pid := a["project_id"].(string)
+	if ps := e.projects(""); ps[0]["main_session_id"] != a["id"] {
+		t.Fatalf("project main = %v", ps[0]["main_session_id"])
+	}
+	c := mk(map[string]any{"main": true, "project_id": pid})
+	if c["is_main"] != true {
+		t.Fatalf("main:true: %v", c)
+	}
+	// Promote with PATCH.
+	if code, got, _ := e.do("PATCH", "/api/projects/"+pid, map[string]any{"main_session_id": b["id"]}, nil); code != 200 || got["main_session_id"] != b["id"] {
+		t.Fatalf("promote: %d %v", code, got)
+	}
+	if code, _, _ := e.do("PATCH", "/api/projects/"+pid, map[string]any{"main_session_id": "ses_nope"}, nil); code != 400 {
+		t.Fatalf("promote unknown: %d", code)
+	}
+	// The main session cannot be archived or deleted without a successor.
+	bid := b["id"].(string)
+	e.do("POST", "/api/sessions/"+bid+"/stop", nil, nil)
+	if code, _, _ := e.do("POST", "/api/sessions/"+bid+"/archive", nil, nil); code != 409 {
+		t.Fatalf("archive main: %d", code)
+	}
+	if code, _, _ := e.do("DELETE", "/api/sessions/"+bid, nil, nil); code != 409 {
+		t.Fatalf("delete main: %d", code)
+	}
+	if code, _, _ := e.do("DELETE", "/api/sessions/"+bid+"?promote="+a["id"].(string), nil, nil); code != 200 {
+		t.Fatalf("delete main with promote: %d", code)
+	}
+	if ps := e.projects(""); ps[0]["main_session_id"] != a["id"] {
+		t.Fatalf("main after promote-delete = %v", ps[0]["main_session_id"])
+	}
+}
+
 func TestProjectsAPI(t *testing.T) {
 	e := newEnv(t)
 	web := e.mkdir("web")

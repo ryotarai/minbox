@@ -370,7 +370,11 @@ func (m *sessionManager) Stop(ctx context.Context, id string) error {
 }
 
 // Delete stops the session (if running) and removes it with its threads.
-func (m *sessionManager) Delete(ctx context.Context, id string) error {
+func (m *sessionManager) Delete(ctx context.Context, id, promote string) error {
+	// A main session goes only when another is promoted or it is the project's last Claude Code session.
+	if err := m.store.ReleaseMain(ctx, id, promote); err != nil {
+		return err
+	}
 	var host HostConn
 	if sess, err := m.store.GetSession(ctx, id); err == nil {
 		host, _ = m.hostOf(sess)

@@ -24,7 +24,7 @@ func oldDB(t *testing.T, path string) *sql.DB {
 		t.Fatal(err)
 	}
 	for _, c := range addedColumns {
-		if c.column == "project_id" {
+		if c.column == "project_id" || c.table == "projects" {
 			continue
 		}
 		if _, err := db.Exec("ALTER TABLE " + c.table + " ADD COLUMN " + c.column + " " + c.def); err != nil {
