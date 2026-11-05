@@ -171,6 +171,73 @@ test('notifications settings on a phone', async ({ page, minbox }) => {
   }
 })
 
+async function addSlackApp(page: Page, name: string, token: string, channel: string, opts: { threads?: boolean } = {}) {
+  await page.getByTestId('notif-add').click()
+  await page.getByTestId('notif-type').selectOption('slack_app')
+  await page.getByTestId('notif-form-name').fill(name)
+  await page.getByTestId('notif-field-bot_token').fill(token)
+  await page.getByTestId('notif-field-channel').fill(channel)
+  if (opts.threads === false) await page.getByTestId('notif-field-thread_replies').getByRole('switch').click()
+  await page.getByTestId('notif-save').click()
+  await expect(page.getByTestId('notif-row').filter({ hasText: name })).toBeVisible()
+}
+
+test('Slack app: help text, token masked, test reports the bot, messages group in one Slack thread, failures show', async ({ page, minbox }) => {
+  const api = minbox.slackApi
+  await openNotifications(page, minbox.url)
+  await page.getByTestId('notif-add').click()
+  await expect(page.getByTestId('notif-type')).toContainText('Slack app (bot token)')
+  await expect(page.getByTestId('notif-help')).toHaveCount(0) // the webhook type has none
+  await page.getByTestId('notif-type').selectOption('slack_app')
+  await expect(page.getByTestId('notif-help')).toBeVisible()
+  await expect(page.getByTestId('notif-help')).toContainText('api.slack.com/apps')
+  await expect(page.getByTestId('notif-help')).toContainText('chat:write')
+  await expect(page.getByTestId('notif-help')).toContainText('/invite')
+  await page.keyboard.press('Escape')
+
+  await addSlackApp(page, 'Alerts bot', 'xoxb-111-SECRETvalue-wxyz', '#alerts')
+  const row = page.getByTestId('notif-row').filter({ hasText: 'Alerts bot' })
+  await expect(row.getByTestId('notif-target')).toHaveText('#alerts · xoxb-…wxyz')
+  await expect(page.locator('body')).not.toContainText('SECRETvalue')
+  expect(JSON.stringify(await (await fetch(minbox.url + '/api/notifications')).json())).not.toContain('SECRETvalue')
+
+  // Send test: auth.test first, then a top-level message.
+  await row.getByTestId('notif-test').click()
+  await expect(row.getByTestId('notif-test-result')).toHaveText('Test sent. Connected to Acme as minbot')
+  expect(api.calls.map((c) => c.method)).toEqual(['auth.test', 'chat.postMessage'])
+  expect(api.calls[0].auth).toBe('Bearer xoxb-111-SECRETvalue-wxyz')
+  expect(api.posts[0].json.thread_ts).toBeUndefined()
+
+  // Two agent messages of one thread: parent, then a reply to it.
+  const dir = join(minbox.dataDir, 'work', 'proj')
+  mkdirSync(dir, { recursive: true })
+  await page.goto(minbox.url)
+  await createSession(page, dir, 'gamma')
+  await expectTerminal(page, 'ready>')
+  const before = api.posts.length
+  await typeInTerminal(page, 'say first note')
+  await expectTerminal(page, /sent .*thr_/)
+  await expect.poll(() => api.posts.length).toBe(before + 1)
+  await typeInTerminal(page, 'say second note')
+  await expect.poll(() => api.posts.length).toBe(before + 2)
+  const [parent, reply] = api.posts.slice(before)
+  expect(parent.json.thread_ts).toBeUndefined()
+  expect(parent.json.channel).toBe('#alerts')
+  expect(JSON.stringify(parent.json.blocks)).toContain('first note')
+  expect(reply.json.thread_ts).toBe('1700000000.000002') // the test message was ts ...001
+  expect(reply.json.channel).toBe('C0123ABCD')
+  expect(JSON.stringify(reply.json.blocks)).toContain('second note')
+
+  // A failing token shows in the list.
+  api.postError = 'invalid_auth'
+  await typeInTerminal(page, 'say third note')
+  await page.goto(`${minbox.url}/#v=settings&ss=notifications`)
+  const status = page.getByTestId('notif-row').filter({ hasText: 'Alerts bot' }).getByTestId('notif-status')
+  await expect(status).toHaveAttribute('data-state', 'failed')
+  await expect(status).toContainText('Failed')
+  await expect(status).toContainText('The token is invalid')
+})
+
 // Not a check: screenshots for docs/ui-v2-threads.md (SCREENSHOTS=1 SCREENSHOT_DIR=docs/img/v2).
 test('notification screenshots', async ({ page, minbox }) => {
   test.skip(process.env.SCREENSHOTS !== '1', 'set SCREENSHOTS=1')
@@ -200,3 +267,23 @@ test('notification screenshots', async ({ page, minbox }) => {
     await slack.close()
   }
 })
+
+// Not a check: screenshots of the Slack app destination (SCREENSHOTS=1 SCREENSHOT_DIR=docs/img/v2).
+test('slack app screenshots', async ({ page, minbox }) => {
+  test.skip(process.env.SCREENSHOTS !== '1', 'set SCREENSHOTS=1')
+  const out = process.env.SCREENSHOT_DIR ?? 'test-results'
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.setViewportSize({ width: 1300, height: 900 })
+  await openNotifications(page, minbox.url)
+  await addSlackApp(page, 'Alerts bot', 'xoxb-1234567890-abcdefWXYZ', '#alerts')
+  await page.getByTestId('notif-row').first().getByTestId('notif-test').click()
+  await expect(page.getByTestId('notif-test-result')).toBeVisible()
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${out}/notif-app-01-settings.png` })
+  await page.getByTestId('notif-add').click()
+  await page.getByTestId('notif-type').selectOption('slack_app')
+  await page.getByTestId('notif-form-name').fill('On-call bot')
+  await page.getByTestId('notif-field-channel').fill('C0123ABCD')
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/notif-app-02-add.png` })
+}) 

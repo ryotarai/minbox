@@ -371,6 +371,14 @@ CREATE TABLE IF NOT EXISTS notification_destinations (
   last_error TEXT NOT NULL DEFAULT '',
   last_error_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS notification_slack_threads (
+  destination_id TEXT NOT NULL,
+  minbox_thread_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (destination_id, minbox_thread_id)
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -1266,6 +1274,9 @@ func (s *Store) CancelMessage(ctx context.Context, messageID string) (threadDele
 	}
 	if left == 0 {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM threads WHERE id=?`, threadID); err != nil {
+			return false, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE minbox_thread_id=?`, threadID); err != nil {
 			return false, err
 		}
 		threadDeleted = true
