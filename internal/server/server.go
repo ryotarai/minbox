@@ -80,7 +80,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		files:     newFileState(),
 		devAuth:   newDeviceAuth(),
 		sessions: &sessionManager{
-			cfg: cfg, store: st, hub: h, stopping: map[string]bool{},
+			cfg: cfg, store: st, hub: h, stopping: map[string]bool{}, restarting: map[string]*restartState{},
 			hosts: newHostSet(),
 			localFS: &hostfs.Local{Areas: map[string]string{
 				hostfs.AreaScratch: cfg.ScratchDir,

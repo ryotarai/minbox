@@ -133,6 +133,8 @@ Settings (one JSON object; PUT merges top-level keys):
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
+  orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
+                                block to --append-system-prompt; read per spawn, running sessions keep theirs)
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
 ```
 
@@ -143,6 +145,11 @@ Defaults: system, 13, true, true, true, true, false, false, "", {true,false,fals
 ```
 POST  /api/sessions/{id}/archive            409 unless ended
 POST  /api/sessions/{id}/unarchive          (restart also unarchives)
+POST  /api/sessions/{id}/restart            ended: resume (claude --resume). Running: kills the terminal (the exit is
+                                              not a close), waits up to 10 s for it to exit, then resumes; the plugin dir,
+                                              prompt and settings are read again, a shell starts fresh; the companion shell
+                                              keeps running. Status: running -> starting (sessions events). A restart already
+                                              in flight for the session: 409. Terminal does not exit in time: 400.
 POST  /api/sessions/{id}/threads            body adds name
 POST  /api/sessions/{id}/files              any file; header X-Filename; → {path}
 GET   /api/sessions/{id}/completions        → {agents:[{name,description}], skills:[...], commands:[...]}

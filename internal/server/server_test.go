@@ -24,6 +24,8 @@ type fakeHost struct {
 	mu      sync.Mutex
 	terms   map[string]termhost.TerminalInfo
 	spawned []termhost.SpawnRequest
+	// stubborn is a terminal id that Kill leaves running.
+	stubborn string
 }
 
 func newFakeHost() *fakeHost { return &fakeHost{terms: map[string]termhost.TerminalInfo{}} }
@@ -50,6 +52,9 @@ func (f *fakeHost) Spawn(_ context.Context, req termhost.SpawnRequest) (termhost
 func (f *fakeHost) Kill(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if id == f.stubborn {
+		return nil // a terminal that does not exit (tests of Restart)
+	}
 	t := f.terms[id]
 	t.Running = false
 	f.terms[id] = t
