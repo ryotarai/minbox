@@ -42,11 +42,14 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Cwd    string `json:"cwd"`
 		HostID string `json:"host_id"`
 		Kind   string `json:"kind"` // "claude" (default) or "shell"
+		// ProjectID: start in this project (its host; its folder unless cwd is given). Without it
+		// the project is the one for (host_id, cwd), created on first use.
+		ProjectID string `json:"project_id"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	sess, err := s.sessions.CreateKind(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID))
+	sess, err := s.sessions.CreateKind(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID), strings.TrimSpace(req.ProjectID))
 	if err != nil {
 		httpError(w, 400, err.Error())
 		return
