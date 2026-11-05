@@ -516,6 +516,11 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 - `minbox restart [flags]` stops the server and starts it again (never opening the browser): with
   the flags given, or, given none but `--data-dir`, with those of the last successful `minbox start`
   (kept in `<data-dir>/start-args.json`).
+- `minbox restart --host [--yes|-y]` also stops the local terminal host (as `minbox host stop`)
+  between the stop and the start; the new server starts a fresh host and `Reconcile` resumes the
+  open sessions. If a host runs it first asks `[y/N]` (default No) with the number of running
+  terminals; `--yes`/`-y` skips that, and with stdin not a terminal and no `--yes` it refuses
+  (exit 2). Remote hosts are untouched. `--host` and `--yes` are not saved in `start-args.json`.
 - `minbox status` prints pid, uptime, URL, data dir, log and whether the terminal host answers;
   exit 3 when the server is not running.
 - `minbox` with no command prints the usage.
