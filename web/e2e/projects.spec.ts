@@ -61,8 +61,7 @@ test('All projects shows every thread with its project; a project scopes the lis
 
   await selectProject(page, 'All projects')
   await expect(rows(page)).toHaveCount(2)
-  await expect(rows(page).filter({ hasText: 'Pick a database' }).getByTestId('thread-project')).toHaveText('api')
-  await expect(rows(page).filter({ hasText: 'Beta note' }).getByTestId('thread-project')).toHaveText('docs')
+  await expect(page.getByTestId('thread-project')).toHaveCount(0)
   // The waiting question is the amber badge of api; docs has one unread thread.
   await expect(item(page, 'api').getByTestId('project-waiting')).toHaveText('1')
   await expect(item(page, 'docs').getByTestId('project-unread')).toHaveText('1')
@@ -70,7 +69,6 @@ test('All projects shows every thread with its project; a project scopes the lis
   await selectProject(page, 'api')
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page).first()).toContainText('Pick a database')
-  await expect(rows(page).first().getByTestId('thread-project')).toHaveCount(0)
   await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
   await expect(page.getByTestId('composer-target-name')).toHaveText('alpha')
 
@@ -169,7 +167,6 @@ test('rename; folder and host change only while empty; delete and archive are re
   await page.getByTestId('project-name-input').fill('manual')
   await page.getByTestId('project-rename-save').click()
   await expect(item(page, 'manual')).toBeVisible()
-  await expect(rows(page).filter({ hasText: 'Beta note' }).getByTestId('thread-project')).toHaveText('manual')
 
   await item(page, 'manual').getByTestId('project-menu').click({ force: true })
   await expect(page.getByTestId('project-edit')).toBeDisabled()

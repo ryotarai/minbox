@@ -67,9 +67,9 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
   Holding, Waiting, Sent, New, Quiet), `Session` (one header per session). Archived and snoozed threads are
   hidden from the flat list behind a `Snoozed / Archived n` fold at the bottom.
 
-**Row** = the existing `ThreadRow` plus: session chip (status dot + name; clicking the chip opens that
-session's terminal without a thread: `navigate({s, t:null})`), kept unread dot, `?n` question badge,
-Stopped / Holds-up badges, time. Waiting rows keep the amber tint.
+**Row** = the existing `ThreadRow` plus: kept unread dot, `?n` question badge,
+Stopped / Holds-up badges, time. Waiting rows keep the amber tint. Rows carry no session or project chip
+(the session lives in the thread header and the terminal; group-by-session keeps its group headers).
 
 **Single-column navigation** (viewport below 1100 px, on any device: narrow desktop windows, touch tablets,
 foldables): the phone layout (`Phone.tsx`). Home = the threads pane full width; picking a thread opens the
@@ -90,8 +90,8 @@ threads of one session never remounts it. A thread of another session reattaches
 
 **No thread selected** (`t` null): the thread pane shows a quiet empty hint (icon and `Pick a thread to read it
 here.`, no session list); the terminal still shows `route.s`. With no
-session selected on load we pick the most urgent session. Opening a terminal without a thread: session chip
-in a row, the session filter popover, Cmd+K > a session, the project's main session.
+session selected on load we pick the most urgent session. Opening a terminal without a thread: the session chip in the phone thread header,
+the session filter popover, Cmd+K > a session, the project's main session.
 
 ## 3. Composer (bottom of the threads pane)
 
