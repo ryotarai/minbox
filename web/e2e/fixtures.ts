@@ -10,7 +10,7 @@ const ROOT = resolve(__dirname, '../..')
 const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 
-let nextPort = 4870
+let nextPort = Number(process.env.MINBOX_E2E_PORT ?? 4870) // set it to run suites of several checkouts at once
 
 /** A minbox server with its own data directory, run with the fake claude. */
 export class Minbox {

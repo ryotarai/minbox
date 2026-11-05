@@ -693,9 +693,19 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		Name        string     `json:"name"`
 		Attachments []string   `json:"attachments"`
 		Review      *reviewReq `json:"review"`
+		Status      string     `json:"status"`
 	}
 	if !decode(w, r, &req) {
 		return
+	}
+	status := ""
+	if strings.TrimSpace(req.Status) != "" {
+		v, ok := store.NormalizeThreadStatus(req.Status)
+		if !ok {
+			httpError(w, 400, "unknown status "+req.Status+" (working, need_action or finished)")
+			return
+		}
+		status = v
 	}
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
@@ -737,7 +747,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		snaps = append(snaps, snap)
 	}
 	questions := question.Parse(body)
-	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions}
+	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions, Status: status}
 	title := cleanTitle(req.ThreadTitle)
 	if title == "" {
 		title = cleanTitle(req.Subject)

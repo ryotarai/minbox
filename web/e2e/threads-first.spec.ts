@@ -179,7 +179,7 @@ test('filters: Waiting, Unread, a session, and grouping', async ({ page, minbox 
   await expect(page.getByTestId('group-header')).toHaveCount(3)
   await page.getByTestId('group-by').click()
   await page.getByTestId('group-status').click()
-  await expect(page.getByTestId('group-header').first()).toContainText(/waiting/i)
+  await expect(page.getByTestId('group-header').first()).toContainText(/needs action/i)
 })
 
 test('⌘K still finds threads first, and sessions too', async ({ page, minbox }) => {
