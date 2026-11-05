@@ -19,6 +19,7 @@ import (
 
 	"github.com/ryotarai/minbox/internal/hostauth"
 	"github.com/ryotarai/minbox/internal/hostfs"
+	"github.com/ryotarai/minbox/internal/notify"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
 )
@@ -66,6 +67,9 @@ type Server struct {
 	pairPoll        time.Duration
 
 	devAuth *deviceAuth
+
+	// notifier sends the notifications of new agent messages.
+	notifier *notify.Dispatcher
 }
 
 // New builds a server. web holds the built frontend (index.html at its root).
@@ -109,6 +113,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	if err := st.EnsureLocalHost(context.Background(), hostURL); err != nil {
 		log.Printf("hosts: %v", err)
 	}
+	s.notifier = notify.NewDispatcher(st)
+	s.notifier.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.handler = s.routes()
 	return s
 }
@@ -192,6 +198,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("GET /api/notifications", s.listNotifications)
+	mux.HandleFunc("POST /api/notifications", s.createNotification)
+	mux.HandleFunc("PATCH /api/notifications/{id}", s.patchNotification)
+	mux.HandleFunc("DELETE /api/notifications/{id}", s.deleteNotification)
+	mux.HandleFunc("POST /api/notifications/{id}/test", s.testNotification)
 	mux.HandleFunc("GET /api/storage", s.storage)
 	mux.HandleFunc("POST /api/storage/clear-scratch", s.clearScratch)
 	mux.HandleFunc("GET /api/about", s.about)
