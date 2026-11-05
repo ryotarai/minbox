@@ -78,12 +78,26 @@ test('a reply is delivered once Claude is idle, then acknowledged', async ($, on
   expect(server.submitted[0]).toContain('minbox inbox: Plan (thread_id: thr_1)')
   expect(server.submitted[0]).toContain('Answer: A')
   expect(server.submitted[0]).toContain('mcp__minbox__send_message with thread_id thr_1')
+  expect(server.submitted[0].trimEnd().split('\n').pop()).toBe(
+    '(Thread thr_1. Earlier messages in this thread: call mcp__minbox__read_thread with this thread_id.)',
+  )
   expect([...server.delivered]).toEqual(['msg_r1'])
   // The hello carried the conversation id.
   expect(server.calls.find((c) => c.path === '/api/agent/hello')?.body).toEqual({ claude_session_id: 'claude-1' })
 
   await clock.advance(5000)
   expect(server.submitted.length).toBe(1)
+})
+
+test('each delivered message ends with a hint carrying its own thread id (new thread, urgent too)', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [{ ...REPLY, urgent: true }, { ...REPLY, id: 'msg_r2', thread_id: 'thr_7', new_thread: true, urgent: true }])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  const text = server.submitted[0]
+  expect(text).toContain('(Thread thr_1. Earlier messages in this thread: call mcp__minbox__read_thread with this thread_id.)')
+  expect(text).toContain('(Thread thr_7. Earlier messages in this thread: call mcp__minbox__read_thread with this thread_id.)')
 })
 
 test('send_message posts the message and says the reply comes by itself', async ($, on) => {
