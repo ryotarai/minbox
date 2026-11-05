@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ryotarai/minbox/internal/store"
 )
 
 // Notification is what a destination is told about.
@@ -61,8 +63,23 @@ type Type struct {
 	ID     string  `json:"id"`
 	Label  string  `json:"label"`
 	Fields []Field `json:"fields"`
+	// Help is a short text shown under the form (setup steps); lines are separated by \n.
+	Help string `json:"help,omitempty"`
 
-	new func(cfg map[string]any, c *http.Client) (Notifier, error)
+	new func(cfg map[string]any, c *http.Client, env Env) (Notifier, error)
+}
+
+// Env is what a notifier may need besides its config: the store (for state such as the Slack
+// thread of a minbox thread) and the destination's id.
+type Env struct {
+	Store  *store.Store
+	DestID string
+}
+
+// Tester is implemented by notifiers that do more than Send on "Send test": it verifies the
+// credentials and returns a short description of what it connected to.
+type Tester interface {
+	Test(ctx context.Context, n Notification) (info string, err error)
 }
 
 // Events filter values (the "events" field of every type).
@@ -71,7 +88,7 @@ const (
 	EventsAction = "action"
 )
 
-var types = []Type{slackType}
+var types = []Type{slackType, slackAppType}
 
 // Types lists the destination types.
 func Types() []Type { return types }
@@ -87,11 +104,11 @@ func Lookup(id string) (*Type, bool) {
 }
 
 // Notifier builds the sender for a stored config.
-func (t *Type) Notifier(cfg map[string]any, c *http.Client) (Notifier, error) {
+func (t *Type) Notifier(cfg map[string]any, c *http.Client, env Env) (Notifier, error) {
 	if c == nil {
 		c = http.DefaultClient
 	}
-	return t.new(cfg, c)
+	return t.new(cfg, c, env)
 }
 
 // MaskSecret shows where a secret URL points and its last 4 characters, never more.
@@ -102,6 +119,12 @@ func MaskSecret(s string) string {
 	tail := s
 	if len(tail) > 4 {
 		tail = tail[len(tail)-4:]
+	}
+	// A Slack token keeps its kind: xoxb-…abcd.
+	if strings.HasPrefix(s, "xox") {
+		if i := strings.IndexByte(s, '-'); i > 0 && i <= 5 {
+			return s[:i+1] + "…" + tail
+		}
 	}
 	if u, err := url.Parse(s); err == nil && u.Scheme != "" && u.Host != "" {
 		return u.Scheme + "://" + u.Host + "/…" + tail
@@ -208,6 +231,7 @@ type SendError struct {
 	Status     int
 	RetryAfter time.Duration
 	Retry      bool
+	code       string // Slack's error code, when there was one
 }
 
 func (e *SendError) Error() string { return e.Msg }

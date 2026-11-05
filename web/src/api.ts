@@ -336,7 +336,7 @@ export type NotifyField = {
   hint?: string
   options?: { value: string; label: string }[]
 }
-export type NotifyType = { id: string; label: string; fields: NotifyField[] }
+export type NotifyType = { id: string; label: string; fields: NotifyField[]; /** Setup steps shown under the form, one per line. */ help?: string }
 export type NotifyDestination = {
   id: string
   type: string
@@ -540,7 +540,7 @@ export const api = {
   createNotification: (b: { type: string; name: string; enabled?: boolean; config: Record<string, unknown> }) => call<NotifyDestination>('POST', '/api/notifications', b),
   updateNotification: (id: string, b: { name?: string; enabled?: boolean; config?: Record<string, unknown> }) => call<NotifyDestination>('PATCH', `/api/notifications/${id}`, b),
   deleteNotification: (id: string) => call<Ok>('DELETE', `/api/notifications/${id}`),
-  testNotification: (id: string) => call<{ ok: boolean; error?: string }>('POST', `/api/notifications/${id}/test`),
+  testNotification: (id: string) => call<{ ok: boolean; error?: string; message?: string }>('POST', `/api/notifications/${id}/test`),
   storage: () => call<Storage>('GET', '/api/storage'),
   clearScratch: () => call<{ removed: number }>('POST', '/api/storage/clear-scratch'),
   about: () => call<About>('GET', '/api/about'),
