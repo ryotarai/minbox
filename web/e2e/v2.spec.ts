@@ -931,3 +931,28 @@ test('phone: a queued reply can be cancelled', async ({ page, minbox }) => {
   await expect(page.getByTestId('delivery-line')).toHaveCount(0)
   await expect(page.getByTestId('reply-box')).toHaveValue('on the phone')
 })
+
+test('a queued reply the mod does not pick up shows a warning and Send now, though the session is idle', async ({ page, minbox }) => {
+  await page.addInitScript(() => {
+    ;(window as unknown as { __minboxTimings: object }).__minboxTimings = { queuedWarnMs: 1500 }
+  })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'deafmod')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'ask')
+  await typeInTerminal(page, 'deaf')
+  await expectTerminal(page, 'status deaf')
+  await openThread(page, 'Pick a database')
+  await page.getByTestId('reply-box').fill('are you there')
+  await page.getByTestId('reply-send').click()
+  const line = page.getByTestId('delivery-line')
+  await expect(line).toHaveAttribute('data-delivery', 'queued')
+  await expect(page.getByTestId('send-now')).toBeVisible({ timeout: 8000 })
+  await expect(line).toContainText('not picking this up')
+  await page.getByTestId('send-now').click()
+  await expect(line).toContainText('Send now pressed')
+  // The mod comes back: the urgent message goes in.
+  await typeInTerminal(page, 'listen')
+  await expectTerminal(page, '<<< inbox [Pick a database] are you there')
+  await expect(line).toHaveAttribute('data-delivery', 'delivered')
+})

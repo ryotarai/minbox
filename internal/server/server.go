@@ -53,6 +53,15 @@ type Server struct {
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}
 
+	// The mod's last contact per session, and the timers that publish the flip to "silent".
+	modMu          sync.Mutex
+	modSeen        map[string]time.Time
+	modTimers      map[string]*time.Timer
+	modSilentAfter time.Duration
+	startedAt      time.Time
+	closing        chan struct{}
+	closeOnce      sync.Once
+
 	files *fileState
 
 	hostsCtx context.Context
@@ -72,13 +81,18 @@ type Server struct {
 func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	h := newHub()
 	s := &Server{
-		cfg:       cfg,
-		store:     st,
-		hub:       h,
-		web:       web,
-		pendingCh: map[string]chan struct{}{},
-		files:     newFileState(),
-		devAuth:   newDeviceAuth(),
+		cfg:            cfg,
+		store:          st,
+		hub:            h,
+		web:            web,
+		pendingCh:      map[string]chan struct{}{},
+		modSeen:        map[string]time.Time{},
+		modTimers:      map[string]*time.Timer{},
+		modSilentAfter: modSilentAfterFromEnv(),
+		startedAt:      time.Now(),
+		closing:        make(chan struct{}),
+		files:          newFileState(),
+		devAuth:        newDeviceAuth(),
 		sessions: &sessionManager{
 			cfg: cfg, store: st, hub: h, stopping: map[string]bool{}, restarting: map[string]*restartState{},
 			hosts: newHostSet(),
@@ -109,6 +123,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	if err := st.EnsureLocalHost(context.Background(), hostURL); err != nil {
 		log.Printf("hosts: %v", err)
 	}
+	s.watchStartup()
 	s.handler = s.routes()
 	return s
 }

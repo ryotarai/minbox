@@ -57,12 +57,28 @@ import {
 const TICK_MS = 1000
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
+/** Every call gives up after this (the long poll waits POLL_WAIT_S on the server, plus a margin). */
+const CALL_TIMEOUT_MS = 8000
+const POLL_TIMEOUT_MS = (POLL_WAIT_S + 10) * 1000
+/** A poll running longer than this many ticks is abandoned (a backstop to the call timeouts). */
+const POLL_STUCK_TICKS = 60
+/**
+ * Claude counts as idle after this many ticks busy without a hook event (turn start, tool call):
+ * a missed turn.complete (Esc, an error) must not hold the person's messages for ever. A submit
+ * into a turn that is running after all just waits there: the engine runs it once idle.
+ */
+const BUSY_STALE_TICKS = 120
 
 type Conn = { token: string; serverFile: string; owner: string }
 
 let conn: Conn | null = null
 let baseUrl: string | null = null
 let polling = false
+/** Bumped when a stuck poll is abandoned: the abandoned run's late results are dropped. */
+let pollGen = 0
+let pollTicks = 0
+/** Ticks spent busy since the last hook event. */
+let busyTicks = 0
 let lastClaudeSessionId: string | null = null
 let sendToolName = `mcp__minbox__${SEND_TOOL}`
 let readToolName = `mcp__minbox__${READ_TOOL}`
@@ -101,7 +117,30 @@ async function readBaseUrl($: any, force: boolean): Promise<string | null> {
 type ApiResult = { ok: boolean; status: number; json: any }
 
 /** Calls the minbox API; re-reads the server file once when the server moved. */
-async function api($: any, method: string, path: string, body?: unknown): Promise<ApiResult> {
+async function api($: any, method: string, path: string, body?: unknown, timeoutMs = CALL_TIMEOUT_MS): Promise<ApiResult> {
+  if (!conn) return { ok: false, status: 0, json: { error: 'minbox is not connected' } }
+  // A server that restarted or a dropped connection can leave a fetch hanging for ever.
+  const failed: ApiResult = { ok: false, status: 0, json: { error: 'the minbox server is not reachable' } }
+  const res = await new Promise<ApiResult>((resolve) => {
+    const t = $.clock.after(timeoutMs, () => {
+      baseUrl = null // the server may have moved: read its file again next time
+      resolve(failed)
+    })
+    apiOnce($, method, path, body).then(
+      (r) => {
+        t.cancel()
+        resolve(r)
+      },
+      () => {
+        t.cancel()
+        resolve(failed)
+      },
+    )
+  })
+  return res
+}
+
+async function apiOnce($: any, method: string, path: string, body?: unknown): Promise<ApiResult> {
   if (!conn) return { ok: false, status: 0, json: { error: 'minbox is not connected' } }
   for (const force of [false, true]) {
     const url = await readBaseUrl($, force)
@@ -121,6 +160,7 @@ async function api($: any, method: string, path: string, body?: unknown): Promis
       return { ok: res.ok, status: res.status, json }
     } catch {
       // connection refused: the server may have restarted on another address
+      baseUrl = null
     }
   }
   return { ok: false, status: 0, json: { error: 'the minbox server is not reachable' } }
@@ -149,6 +189,13 @@ function pendingPath(id: string, action: 'claim' | 'release' | 'delivered'): str
 /** One tick: deliver the person's messages once Claude has been idle a while. */
 async function tick($: any): Promise<void> {
   if (!conn) return
+  if (busy && ++busyTicks >= BUSY_STALE_TICKS) {
+    // No hook event for a long while: a turn.complete was missed. Treat Claude as idle again.
+    busy = false
+    busyTicks = 0
+    idleTicks = IDLE_TICKS
+    status($, 'idle')
+  }
   idleTicks = busy ? 0 : idleTicks + 1
   if (nudgeNext && !busy && idleTicks >= IDLE_TICKS) {
     nudgeNext = false
@@ -159,14 +206,22 @@ async function tick($: any): Promise<void> {
       nudging = false
     }
   }
-  if (polling) return
+  if (polling) {
+    if (++pollTicks < POLL_STUCK_TICKS) return
+    pollGen++ // abandon the stuck poll; its late results are dropped
+    baseUrl = null
+  }
   polling = true
+  pollTicks = 0
+  const gen = pollGen
+  const stale = () => gen !== pollGen
   try {
     await hello($) // also follows /clear, which changes the conversation id
+    if (stale()) return
     // Wait on the server only while idle; while busy, just look.
     const wait = busy ? 0 : POLL_WAIT_S
-    const res = await api($, 'GET', `/api/agent/pending?owner=${encodeURIComponent(conn.owner)}&wait=${wait}`)
-    if (!res.ok || !Array.isArray(res.json) || res.json.length === 0) return
+    const res = await api($, 'GET', `/api/agent/pending?owner=${encodeURIComponent(conn.owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
+    if (stale() || !res.ok || !Array.isArray(res.json) || res.json.length === 0) return
     // Deliver only into a quiet session, so the person's own typing goes first;
     // an urgent message (Send now, or one that waited long) goes in anyway.
     const quiet = !busy && idleTicks >= IDLE_TICKS
@@ -177,7 +232,7 @@ async function tick($: any): Promise<void> {
       const c = await api($, 'POST', pendingPath(p.id, 'claim'))
       if (c.ok && c.json?.claimed) claimed.push(p)
     }
-    if (claimed.length === 0) return
+    if (stale() || claimed.length === 0) return
     // Re-check as late as possible: the submit cannot be taken back.
     if (busy) {
       const wait = claimed.filter((p) => !p.urgent)
@@ -194,7 +249,7 @@ async function tick($: any): Promise<void> {
     }
     for (const p of claimed) await api($, 'POST', pendingPath(p.id, 'delivered'))
   } finally {
-    polling = false
+    if (!stale()) polling = false
   }
 }
 
@@ -230,6 +285,7 @@ export const register: Register = (on) => {
   on('turn.start', async ($, e, next) => {
     if (conn && !e.agentId) {
       busy = true
+      busyTicks = 0
       idleTicks = 0
       sentThisTurn = false
       status($, 'working')
@@ -240,6 +296,7 @@ export const register: Register = (on) => {
   on('turn.complete', async ($, e, next) => {
     if (conn && !e.agentId) {
       busy = false
+      busyTicks = 0
       idleTicks = 0
       // Asked the person in the chat but not in the inbox: remind Claude once.
       const answered = e.reason === 'answer' && !e.isAborted
@@ -247,6 +304,12 @@ export const register: Register = (on) => {
       nudging = false
       status($, 'idle')
     }
+    return next(e)
+  })
+
+  // Any tool call shows the turn is alive (see BUSY_STALE_TICKS).
+  on('tool.call', async ($, e: any, next) => {
+    busyTicks = 0
     return next(e)
   })
 
