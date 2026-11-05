@@ -296,6 +296,9 @@ The person follows this session through the minbox inbox and may not be watching
 - When you finish a task or a long stretch of work, send a short summary of what is done and anything they should look at.
 - Then keep working on what does not depend on the answer, or end your turn; their reply arrives here by itself. Do not ask the same thing again in the chat.
 
+# minbox: replying to inbox messages (important)
+A message that arrives as "minbox inbox: … (thread_id: …)" comes from the person's inbox, not from the terminal. Always answer it with mcp__minbox__send_message and that thread_id: every answer, confirmation, status, "done" and question back, however short. Text you only write in the terminal is not shown to them: the person is usually not watching it. Before you end a turn that an inbox message started, make sure your reply went out with send_message in that thread.
+
 # minbox: session title
 The person sees this session in minbox's session list under a title you set with mcp__minbox__set_session_title. Keep it current:
 - Set it once the task is clear, early in the first turn: a few words naming the work (e.g. "Fix login redirect loop"), not a status or a sentence.

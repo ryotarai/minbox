@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { asksPerson, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCRIPTION, sentText, threadText } from './text'
+import { asksPerson, replyNudgeText, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCRIPTION, sentText, threadText } from './text'
 
 const SERVER_FILE = '/data/server.json'
 
@@ -363,5 +363,42 @@ test('a turn whose end was missed does not hold messages for ever', async ($, on
   await clock.advance(30000)
   expect(server.submitted.length).toBe(0) // working: the message waits
   await clock.advance(120000)
+  expect(server.submitted.length).toBe(1)
+})
+
+test('a turn that answered an inbox message without send_message is reminded once to reply in that thread', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(1) // the delivery
+
+  // The delivered message's turn ends with a plain chat answer: one reminder naming the thread.
+  await $.turn.start({ turnId: 't1', prompt: 'p' } as any)
+  await $.turn.complete({ turnId: 't1', answer: 'Done.', reason: 'answer', isAborted: false, durationMs: 1 } as any)
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(2)
+  expect(server.submitted[1]).toBe(replyNudgeText('mcp__minbox__send_message', ['thr_1']))
+  expect(server.submitted[1]).toContain('thread_id thr_1')
+
+  // The reminder's own turn does not remind again.
+  await $.turn.start({ turnId: 't2', prompt: 'p' } as any)
+  await $.turn.complete({ turnId: 't2', answer: 'Sent.', reason: 'answer', isAborted: false, durationMs: 1 } as any)
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(2)
+})
+
+test('a turn that answered an inbox message with send_message is not reminded', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(1)
+  await $.turn.start({ turnId: 't1', prompt: 'p' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'Done', thread_id: 'thr_1' } as any)
+  await $.turn.complete({ turnId: 't1', answer: 'Done.', reason: 'answer', isAborted: false, durationMs: 1 } as any)
+  await clock.advance(5000)
   expect(server.submitted.length).toBe(1)
 })
