@@ -270,6 +270,16 @@ web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright
 docs/               API contract, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
 ```
 
+## Acknowledgements
+
+minbox is heavily inspired by [Plannotator](https://github.com/backnotprop/plannotator) and its
+Inbox by [backnotprop](https://github.com/backnotprop): the idea of an inbox for a coding agent,
+the `:::question` block syntax for asking the person a decision, the attachment handling and the
+Claude Code mod (hooks module) approach all come from there, and parts of the design and code are
+ported from it. Thank you. minbox adds terminals, sessions on several machines and a phone-friendly
+screen, and does not depend on Plannotator at run time. Details of what was ported:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE). Parts are ported from Plannotator (MIT); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
