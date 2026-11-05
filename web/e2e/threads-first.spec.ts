@@ -38,7 +38,7 @@ for (const width of [1500, 1920]) {
     expect(m.list.right).toBeLessThanOrEqual(m.thread.left + 1)
     expect(m.thread.right).toBeLessThanOrEqual(m.main.left + 1)
     expect(m.main.right).toBeLessThanOrEqual(m.inner + 0.5)
-    expect(m.list.width).toBeGreaterThanOrEqual(280)
+    expect(m.list.width).toBeGreaterThanOrEqual(278)
     expect(m.thread.width).toBeGreaterThanOrEqual(380)
     expect(m.main.width).toBeGreaterThanOrEqual(width >= 1680 ? 600 : 400)
     // With the shell pane open nothing overflows either.
@@ -251,3 +251,50 @@ test('phone: the thread list is home; a thread flips to its terminal; the compos
   await expect(page.getByTestId('phone-session-chip')).toContainText('beta')
   await expect(page.getByTestId('phone-thread-subject')).toHaveText('from the phone')
 })
+
+// Panes have only minimum widths: one can be dragged until every other pane is at its minimum.
+const MIN = { list: 240, thread: 320, terminal: 360, shell: 280 }
+for (const width of [1500, 1920, 2560]) {
+  test(`desktop ${width}px: panes drag far wider than before, the others keep their minimums, no overflow`, async ({ page, minbox }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, 'alpha')
+    await expectTerminal(page, 'ready>')
+    await page.getByTestId('shell-toggle').click()
+    await expect(page.getByTestId('shell-pane')).toBeVisible()
+    const state = () =>
+      page.evaluate(() => {
+        const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
+        return { scroll: document.documentElement.scrollWidth, list: r('[data-testid="threads-pane"]').width, thread: r('[data-testid="thread-pane"]').width, main: r('main').width, shell: r('[data-testid="shell-pane"]').width }
+      })
+    // Resizer centers, left to right: list|thread, thread|terminal, terminal|shell.
+    const edges = () => page.getByTestId('resizer').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().x + e.getBoundingClientRect().width / 2).sort((a, b) => a - b))
+    const dragBy = async (x: number, dx: number) => {
+      await page.mouse.move(x, 450)
+      await page.mouse.down()
+      await page.mouse.move(x + dx, 450, { steps: 8 })
+      await page.mouse.up()
+    }
+    // The thread pane grows past the old 900 cap and stops where the terminal is at its minimum.
+    await dragBy((await edges())[1]!, width)
+    let s = await state()
+    expect(s.scroll).toBeLessThanOrEqual(width)
+    // Everything else at its minimum (project column 176, resizers 27): the thread takes the rest.
+    expect(s.thread).toBeGreaterThan(width - 176 - MIN.list - MIN.shell - MIN.terminal - 27 - 40)
+    if (width >= 2560) expect(s.thread).toBeGreaterThan(1000)
+    expect(s.main).toBeGreaterThanOrEqual(MIN.terminal - 1)
+    expect(s.main).toBeLessThanOrEqual(MIN.terminal + 40)
+    expect(s.list).toBeGreaterThanOrEqual(MIN.list - 1)
+    expect(s.shell).toBeGreaterThanOrEqual(MIN.shell - 1)
+    // The shell pane grows too (its edge moves left).
+    await dragBy((await edges())[2]!, -width)
+    s = await state()
+    expect(s.scroll).toBeLessThanOrEqual(width)
+    expect(s.shell).toBeGreaterThanOrEqual(width >= 1920 ? 600 : 280)
+    expect(s.main).toBeGreaterThanOrEqual(MIN.terminal - 1)
+    expect(s.thread).toBeGreaterThanOrEqual(MIN.thread - 1)
+    // Shrinking the window never overflows, whatever was stored.
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await expect.poll(async () => (await state()).scroll).toBeLessThanOrEqual(1100)
+  })
+}

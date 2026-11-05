@@ -408,10 +408,11 @@ test('New session: browse folders, make one, catch a missing one, and pick a rec
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   await expect.poll(async () => (await terminalText(page)).replace(/\n/g, ''), { timeout: 15_000 }).toMatch(/cwd=.*projects\/beta/)
 
-  // Again: the folder is under Recent.
+  // Again: the dialog has no Recent list.
   await page.getByTestId('new-session').click()
-  await page.getByTestId('new-session-recent').filter({ hasText: 'beta' }).click()
-  await expect(page.getByTestId('new-session-cwd')).toHaveValue(/projects\/beta$/)
+  await expect(dialog).toBeVisible()
+  await expect(page.getByTestId('new-session-recent')).toHaveCount(0)
+  await expect(dialog.getByText('Recent', { exact: true })).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
 })
