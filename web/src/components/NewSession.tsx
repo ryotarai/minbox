@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, type Host, type Project, type Session, type SessionKind } from '../api'
 import { useApp } from '../lib/app'
@@ -23,20 +23,7 @@ async function makeDir(path: string, hostId: string): Promise<{ path: string; di
   return json
 }
 
-const RECENT = 'minbox:recent-cwds'
-type Recent = { path: string; at: number; host?: string }
-
-function savedRecent(): Recent[] {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT) ?? '[]') as Recent[]
-  } catch {
-    return []
-  }
-}
-
 function rememberCwd(path: string, host: string) {
-  const list = [{ path, at: Date.now(), host }, ...savedRecent().filter((r) => !(r.path === path && (r.host ?? '') === host))].slice(0, 20)
-  localStorage.setItem(RECENT, JSON.stringify(list))
   localStorage.setItem('minbox:last-cwd', path)
   localStorage.setItem('minbox:last-host', host)
 }
@@ -52,21 +39,11 @@ function ago(iso: string): string {
   return min < 60 ? `${min} min` : min < 48 * 60 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`
 }
 
-function when(ms: number): string {
-  const d = new Date(ms)
-  const now = new Date()
-  const h = (now.getTime() - ms) / 3_600_000
-  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min ago`
-  if (d.toDateString() === now.toDateString()) return `${Math.round(h)} h ago`
-  if (new Date(now.getTime() - 86_400_000).toDateString() === d.toDateString()) return 'Yesterday'
-  return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' })
-}
-
 const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 
 /**
  * New session: choose a project (its host and folder are fixed), or a folder that has no project
- * yet (recent ones, or browse; the project is made from it). The same dialog makes a project
+ * yet (browse for it; the project is made from it). The same dialog makes a project
  * (mode "project": host, folder, name) and moves an empty one (mode "project-edit").
  */
 export function NewSessionDialog({
@@ -84,7 +61,7 @@ export function NewSessionDialog({
   /** The project being edited (mode "project-edit"). */
   project?: Project
 }) {
-  const { sessions, setSessions, navigate, error, isPhone, hosts, projects, reloadProjects, reloadSessions } = useApp()
+  const { setSessions, navigate, error, isPhone, hosts, projects, reloadProjects, reloadSessions } = useApp()
   // The project to start in: the one asked for, else the most recent; none (a folder) when there are none.
   const [pickedProject, setPickedProject] = useState<string>(() => {
     if (mode !== 'session') return ''
@@ -131,21 +108,6 @@ export function NewSessionDialog({
       .then((a) => setClaudeCmd((a as { claude_command?: string }).claude_command || 'claude'))
       .catch(() => {})
   }, [])
-
-  // Recent folders: where sessions ran, and where this browser started them.
-  const recent = useMemo(() => {
-    const m = new Map<string, { path: string; host: string; at: number }>()
-    const put = (path: string, host: string, at: number) => {
-      const k = `${host}\u0000${path}`
-      m.set(k, { path, host, at: Math.max(m.get(k)?.at ?? 0, at) })
-    }
-    for (const r of savedRecent()) put(homeRelative(r.path), r.host ?? '', r.at)
-    for (const s of sessions ?? []) put(homeRelative(s.cwd), s.host_id ?? '', new Date(s.created_at).getTime())
-    return [...m.values()]
-      .sort((a, b) => b.at - a.at)
-      .slice(0, isPhone ? 4 : 6)
-      .map((r) => ({ ...r, name: base(r.path), hostName: hosts.find((h) => h.id === r.host)?.name ?? (r.host ? '' : hosts.find((h) => h.builtin)?.name ?? '') }))
-  }, [sessions, isPhone, hosts])
 
   // The browser follows what is typed, once it names a folder.
   useEffect(() => {
@@ -235,55 +197,6 @@ export function NewSessionDialog({
       void start()
     }
   }
-
-  const recentList = (
-    <div className={cx('flex flex-col', isPhone ? 'gap-1.5' : 'gap-1')}>
-      {recent.length === 0 && <span className="px-2 text-[12.5px] text-subtle">Folders you start sessions in show up here.</span>}
-      {recent.map((r) => {
-        const on = (r.path === homeRelative(listing?.path ?? '') || r.path === cwd) && (!r.host || r.host === hostId)
-        return (
-          <button
-            key={r.path}
-            type="button"
-            data-testid="new-session-recent"
-            aria-pressed={on}
-            onClick={() => {
-              if (r.host && hosts.some((h) => h.id === r.host)) setHostId(r.host)
-              browse(r.path)
-            }}
-            onDoubleClick={() => void start()}
-            className={cx(
-              'box-border flex border text-left',
-              isPhone ? 'min-h-14 items-center gap-2.5 rounded-xl px-3.5' : 'min-h-12 flex-col gap-[3px] rounded-[9px] px-2.5 py-[9px]',
-              on ? 'border-wait/55 bg-wait/10' : isPhone ? 'border-line2 bg-surface' : 'border-transparent hover:bg-raised',
-            )}
-          >
-            {isPhone ? (
-              <>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[15.5px] font-semibold">{r.name}</span>
-                  <span className="mono truncate text-[12px] text-muted">
-                    {r.hostName ? `${r.hostName} · ` : ''}
-                    {r.path}
-                  </span>
-                </span>
-                <span className="text-[12.5px] text-subtle">{when(r.at)}</span>
-              </>
-            ) : (
-              <>
-                <span className="flex w-full items-center gap-2">
-                  <span className="flex-1 truncate text-[13.5px] font-semibold">{r.name}</span>
-                  {r.hostName && <HostTag name={r.hostName} />}
-                  <span className="shrink-0 text-[11.5px] text-subtle">{when(r.at)}</span>
-                </span>
-                <span className="mono w-full truncate text-[11.5px] text-muted">{r.path}</span>
-              </>
-            )}
-          </button>
-        )
-      })}
-    </div>
-  )
 
   const browser = (
     <div data-testid="new-session-browser" className="flex h-full min-h-0 flex-col overflow-hidden rounded-[10px] border border-line2 bg-surface">
@@ -599,8 +512,6 @@ export function NewSessionDialog({
         {showFolder && (
           <>
             {hostPicker}
-            <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
-            {recentList}
             {browsing ? (
               <div className="flex h-[300px] shrink-0 flex-col">{browser}</div>
             ) : (
@@ -640,12 +551,6 @@ export function NewSessionDialog({
         </IconButton>
       </div>
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>
-        {showFolder && (
-          <div className="flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line2 px-3 py-4">
-            <span className="px-2 pb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
-            {recentList}
-          </div>
-        )}
         <div className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-4">
           {kindPicker}
           {projectPicker}

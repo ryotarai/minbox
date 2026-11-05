@@ -122,7 +122,7 @@ function Desktop() {
   // A narrow window gives way in this order: the shell pane narrows and goes, the threads list
   // narrows then folds into its rail, the thread pane narrows. The terminal keeps MIN_CENTER.
   // A column keeps the width it was dragged to as long as it fits, so a drag moves the edge 1:1.
-  const MIN_CENTER = 360
+  const MIN_CENTER = MIN_W.terminal
   const showShell = !!session && session.kind !== 'shell' && session.status !== 'ended' && layout.shellPane
   let shellW = showShell ? layout.shellW : 0
   let listW = layout.sidebarW
@@ -136,37 +136,56 @@ function Desktop() {
   // (down to 280), so the terminal keeps about the width it had before projects.
   {
     let rest = projW
-    const fromThread = Math.min(rest, Math.max(0, threadW - 440))
-    threadW -= fromThread
-    rest -= fromThread
-    listW -= Math.min(rest, Math.max(0, listW - 280))
+    const paidThread = Math.min(rest, Math.max(0, threadW - 440))
+    threadW -= paidThread
+    rest -= paidThread
+    const paidList = Math.min(rest, Math.max(0, listW - 280))
+    listW -= paidList
   }
   const over = () => projW + (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
   const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
-  if (shellW && over() > 0) shellW = shrink(shellW, 280)
-  if (!rail && over() > 0) listW = shrink(listW, 240)
+  if (shellW && over() > 0) shellW = shrink(shellW, MIN_W.shell)
+  if (!rail && over() > 0) listW = shrink(listW, MIN_W.list)
   if (over() > 0) threadW = shrink(threadW, 380)
   if (shellW && over() > 0) shellW = 0
   if (!rail && over() > 0) rail = true
-  if (over() > 0) threadW = shrink(threadW, 320)
+  if (over() > 0) threadW = shrink(threadW, MIN_W.thread)
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
   const cur = useRef({ listW, threadW, shellW })
   cur.current = { listW, threadW, shellW }
-  const dragList = (dx: number) => {
-    cur.current.listW = clamp(cur.current.listW + dx / zoom, 240, 560)
-    setLayout({ sidebarW: cur.current.listW })
+  // A pane has only a minimum. It can grow until every other visible pane is at its own minimum.
+  const room = (self: 'list' | 'thread' | 'shell') => {
+    const others =
+      projW + (rail ? 60 : self === 'list' ? 0 : MIN_W.list) + (self === 'thread' ? 0 : MIN_W.thread) +
+      (showShell && self !== 'shell' ? MIN_W.shell + 9 : 0) + MIN_W.terminal + 18
+    return Math.max(MIN_W[self], width - others)
   }
+  // Grow or shrink one pane by dx. A pane that grows squeezes the others (thread, then list, then
+  // shell) down to their minimums to keep the terminal at its own; their stored widths follow.
+  const drag = (self: 'list' | 'thread' | 'shell', dx: number) => {
+    const c = cur.current
+    const key = { list: 'listW', thread: 'threadW', shell: 'shellW' } as const
+    c[key[self]] = clamp(c[key[self]] + dx / zoom, MIN_W[self], room(self))
+    let over = projW + (rail ? 60 : c.listW) + c.threadW + (showShell ? c.shellW + 9 : 0) + MIN_W.terminal + 18 - width
+    for (const k of ['thread', 'list', 'shell'] as const) {
+      if (k === self || over <= 0 || (k === 'list' && rail) || (k === 'shell' && !showShell)) continue
+      const cut = Math.min(over, c[key[k]] - MIN_W[k])
+      if (cut > 0) {
+        c[key[k]] -= cut
+        over -= cut
+      }
+    }
+    // Stored widths include what the project column takes from the thread and list at render.
+    const thread = c.threadW > 440 ? c.threadW + projW : c.threadW
+    const list = c.listW > 280 ? c.listW + (projW - (c.threadW > 440 ? projW : 0)) : c.listW
+    setLayout({ sidebarW: list, threadW: thread, ...(showShell ? { shellW: c.shellW } : {}) })
+  }
+  const dragList = (dx: number) => drag('list', dx)
   // dx is positive when the edge moves right and widens the column on its left.
-  const dragThread = (dx: number) => {
-    cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 320, 900)
-    setLayout({ threadW: cur.current.threadW })
-  }
-  const dragShell = (dx: number) => {
-    cur.current.shellW = clamp(cur.current.shellW + dx / zoom, 280, 900)
-    setLayout({ shellW: cur.current.shellW })
-  }
+  const dragThread = (dx: number) => drag('thread', dx)
+  const dragShell = (dx: number) => drag('shell', dx)
   // Ctrl+` shows and hides the shell pane; it works inside the terminals too, so it is caught
   // before they see it.
   const canShell = !!session && session.kind !== 'shell'
@@ -225,6 +244,9 @@ function useWindowWidth(): number {
   }, [])
   return w
 }
+
+/** Each pane's minimum width (CSS px); there are no maximums. The project column is fixed (56 or 176). */
+export const MIN_W = { list: 240, thread: 320, terminal: 360, shell: 280 }
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))
