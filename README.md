@@ -119,7 +119,9 @@ inbox.
 [incoming webhook](https://api.slack.com/messaging/webhooks)), with the full message text, whether or not a
 browser is open. You can limit it to messages that need your answer, send only the title, and set your
 Tailscale URL there so each notification has an "Open thread" link. The webhook URL stays on the server and is
-never shown again in full. See `docs/api-contract.md` ("Notifications") for the format and retry rules.
+never shown again in full. A destination can also be a **Slack app** (bot token + channel): all notifications
+of one thread are grouped as replies in one Slack thread, and "Send test" checks the token and shows the
+workspace and bot name. See `docs/api-contract.md` ("Notifications") for the format and retry rules.
 
 ## Other devices and machines
 

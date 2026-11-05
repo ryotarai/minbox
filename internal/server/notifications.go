@@ -153,6 +153,10 @@ func (s *Server) patchNotification(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 400, err.Error())
 			return
 		}
+		// A new channel or token starts new Slack threads.
+		if cfg["channel"] != d.Config["channel"] || cfg["bot_token"] != d.Config["bot_token"] {
+			_ = s.store.DeleteSlackThreads(r.Context(), d.ID)
+		}
 		d.Config = cfg
 	}
 	if err := s.store.UpdateDestination(r.Context(), d); err != nil {
@@ -189,9 +193,14 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 	if pub = strings.TrimSpace(pub); pub != "" {
 		n.Link = pub
 	}
-	if err := s.notifier.Test(r.Context(), d, n); err != nil {
+	info, err := s.notifier.TestInfo(r.Context(), d, n)
+	if err != nil {
 		writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	res := map[string]any{"ok": true}
+	if info != "" {
+		res["message"] = info
+	}
+	writeJSON(w, 200, res)
 }

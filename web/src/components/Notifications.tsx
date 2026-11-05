@@ -14,6 +14,13 @@ function ago(iso?: string | null): string {
   return min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} d ago`
 }
 
+// What a destination points at: its masked secret (webhook URL, token), plus the channel when it has one.
+function target(d: NotifyDestination): string {
+  const secret = String(d.config.webhook_url ?? d.config.bot_token ?? '')
+  const channel = String(d.config.channel ?? '')
+  return channel ? `${channel} · ${secret}` : secret
+}
+
 const inputCls = 'h-10 rounded-lg border border-linestrong bg-sunken px-3 text-[14px] text-fg outline-none focus:border-accent'
 
 export function NotificationsSection() {
@@ -37,7 +44,7 @@ export function NotificationsSection() {
     setResults((r) => ({ ...r, [d.id]: 'sending' }))
     api
       .testNotification(d.id)
-      .then((res) => setResults((r) => ({ ...r, [d.id]: { ok: res.ok, text: res.ok ? 'Test sent' : res.error || 'Failed' } })))
+      .then((res) => setResults((r) => ({ ...r, [d.id]: { ok: res.ok, text: res.ok ? (res.message ? `Test sent. ${res.message}` : 'Test sent') : res.error || 'Failed' } })))
       .catch((e) => setResults((r) => ({ ...r, [d.id]: { ok: false, text: String(e?.message ?? e) } })))
       .finally(load)
   }
@@ -56,7 +63,7 @@ export function NotificationsSection() {
         {!data && <span className="px-4 py-5 text-[13px] text-subtle">Loading…</span>}
         {data && data.destinations.length === 0 && (
           <span data-testid="notif-empty" className="px-4 py-5 text-[13px] text-subtle">
-            No destinations yet. Add a Slack incoming webhook to get started.
+            No destinations yet. Add a Slack incoming webhook or a Slack app to get started.
           </span>
         )}
         {data?.destinations.map((d) => {
@@ -78,7 +85,7 @@ export function NotificationsSection() {
                   <span className="rounded border border-linestrong px-1.5 text-[11px] leading-[17px] text-muted">{typeLabel}</span>
                 </span>
                 <span className="mono truncate text-[12px] text-muted" data-testid="notif-target">
-                  {String(d.config.webhook_url ?? '')}
+                  {target(d)}
                 </span>
                 <span data-testid="notif-status" data-state={failed ? 'failed' : d.last_ok_at ? 'ok' : 'never'} className={cx('text-[12px]', failed ? 'text-danger' : 'text-subtle')}>
                   {failed ? `Failed ${ago(d.last_error_at)}: ${d.last_error}` : d.last_ok_at ? `Last sent ${ago(d.last_ok_at)}` : 'Nothing sent yet'}
@@ -236,6 +243,13 @@ function DestinationForm({ types, edit, onClose, onSaved }: { types: NotifyType[
           ))}
         </select>
       </label>
+      {type.help && (
+        <div data-testid="notif-help" className="flex flex-col gap-1 rounded-lg border border-line bg-sunken px-3 py-2.5 text-[12.5px] leading-[1.55] text-muted">
+          {type.help.split('\n').map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </div>
+      )}
       <label className="flex flex-col gap-1.5 text-[13px] text-muted">
         Name
         <input data-testid="notif-form-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={type.label} className={inputCls} />

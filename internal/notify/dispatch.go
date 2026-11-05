@@ -78,20 +78,43 @@ func (d *Dispatcher) Dispatch(n Notification) {
 
 // Test sends once, without retries, and returns the failure (a destination can be disabled).
 func (d *Dispatcher) Test(ctx context.Context, dest *store.Destination, n Notification) error {
-	n.Test = true
-	err := d.send(ctx, dest, n)
-	d.record(dest, err)
+	_, err := d.TestInfo(ctx, dest, n)
 	return err
 }
 
-func (d *Dispatcher) send(ctx context.Context, dest *store.Destination, n Notification) error {
+// TestInfo is Test that also returns what the notifier says about the connection it verified
+// ("" for types that do not verify).
+func (d *Dispatcher) TestInfo(ctx context.Context, dest *store.Destination, n Notification) (string, error) {
+	n.Test = true
+	nt, err := d.build(dest)
+	var info string
+	if err == nil {
+		if tt, ok := nt.(Tester); ok {
+			info, err = tt.Test(ctx, n)
+		} else {
+			err = nt.Send(ctx, n)
+		}
+	}
+	d.record(dest, err)
+	return info, err
+}
+
+func (d *Dispatcher) build(dest *store.Destination) (Notifier, error) {
 	t, ok := Lookup(dest.Type)
 	if !ok {
-		return &SendError{Msg: "unknown destination type " + dest.Type}
+		return nil, &SendError{Msg: "unknown destination type " + dest.Type}
 	}
-	nt, err := t.Notifier(dest.Config, d.Client)
+	nt, err := t.Notifier(dest.Config, d.Client, Env{Store: d.Store, DestID: dest.ID})
 	if err != nil {
-		return &SendError{Msg: err.Error()}
+		return nil, &SendError{Msg: err.Error()}
+	}
+	return nt, nil
+}
+
+func (d *Dispatcher) send(ctx context.Context, dest *store.Destination, n Notification) error {
+	nt, err := d.build(dest)
+	if err != nil {
+		return err
 	}
 	return nt.Send(ctx, n)
 }

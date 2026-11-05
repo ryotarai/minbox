@@ -2,6 +2,7 @@ import { test as base, expect, type Page } from '@playwright/test'
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
+import { createServer as createHttpServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,9 +27,51 @@ async function freePort(): Promise<number> {
   })
 }
 
+/**
+ * A fake Slack Web API on 127.0.0.1 (no real Slack is ever contacted). Every Minbox gets one and
+ * is told about it with MINBOX_SLACK_API_BASE (honoured by the server only for http loopback URLs).
+ */
+export class FakeSlackApi {
+  calls: { method: string; auth: string; json: any }[] = []
+  /** Slack error code to answer chat.postMessage / auth.test with ('' = succeed). */
+  postError = ''
+  authError = ''
+  private seq = 0
+  private srv: Server | null = null
+  url = ''
+
+  async start() {
+    this.srv = createHttpServer((req, res) => {
+      let b = ''
+      req.on('data', (d) => (b += d))
+      req.on('end', () => {
+        const method = (req.url ?? '').replace(/^\//, '')
+        this.calls.push({ method, auth: String(req.headers.authorization ?? ''), json: JSON.parse(b || '{}') })
+        res.setHeader('content-type', 'application/json')
+        const err = method === 'auth.test' ? this.authError : this.postError
+        if (err) res.end(JSON.stringify({ ok: false, error: err }))
+        else if (method === 'auth.test') res.end(JSON.stringify({ ok: true, team: 'Acme', user: 'minbot' }))
+        else res.end(JSON.stringify({ ok: true, channel: 'C0123ABCD', ts: `1700000000.${String(++this.seq).padStart(6, '0')}` }))
+      })
+    })
+    await new Promise<void>((r) => this.srv!.listen(0, '127.0.0.1', r))
+    this.url = `http://127.0.0.1:${(this.srv.address() as AddressInfo).port}`
+  }
+
+  /** chat.postMessage calls. */
+  get posts() {
+    return this.calls.filter((c) => c.method === 'chat.postMessage')
+  }
+
+  close() {
+    return new Promise<void>((r) => (this.srv ? this.srv.close(() => r()) : r()))
+  }
+}
+
 /** A minbox server with its own data directory, run with the fake claude. */
 export class Minbox {
   proc: ChildProcess | null = null
+  slackApi = new FakeSlackApi()
   log = ''
   constructor(
     public dataDir: string,
@@ -40,8 +83,10 @@ export class Minbox {
   }
 
   async start() {
+    if (!this.slackApi.url) await this.slackApi.start()
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', `python3 ${FAKE}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, MINBOX_SLACK_API_BASE: this.slackApi.url },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
@@ -85,6 +130,7 @@ export class Minbox {
 
   async cleanup() {
     await this.stop()
+    await this.slackApi.close()
     this.killHost()
     // Fake claude processes left behind by a killed host.
     try {

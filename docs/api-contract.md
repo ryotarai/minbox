@@ -647,7 +647,7 @@ Migration (idempotent, only rows with a NULL status): a thread with an open ques
 Changes are published like other thread changes (`thread`, `threads`, `sessions` SSE events). The threads pane groups by status in the order `need_action`, `working`, `finished`.
 
 
-## Notifications (Slack incoming webhook first)
+## Notifications (Slack incoming webhook, Slack app)
 
 Every message the AGENT stores in a thread (`POST /api/agent/messages`, new thread or not) is sent to the enabled
 notification destinations. The person's own replies and system changes are never sent. Code: `internal/notify`
@@ -677,6 +677,36 @@ at from outside, e.g. the Tailscale URL.
 `{webhook_url (secret, required, http(s)), include_body (default true: the full message; false: title only), events}` with
 `events` = `all` (every agent message, default) or `action` (only messages with open questions, i.e. `:::question` blocks).
 Another type declares its own fields; `events` is read for every type.
+
+### Slack app config (`slack_app`)
+
+`{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD or name like #alerts, no spaces), include_body
+(default true), thread_replies (default true), events}`. The type also publishes `help` (setup steps, one per line: create the
+app at api.slack.com/apps, Bot Token Scopes `chat:write` and optionally `chat:write.public`, install, copy the Bot User OAuth
+Token, `/invite @app` to the channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
+with `Authorization: Bearer <token>` and JSON `{channel, text, blocks, unfurl_links:false, unfurl_media:false[, thread_ts,
+reply_broadcast:false]}`; `blocks` are those of the webhook type. `<base>` is `https://slack.com/api`; the env
+`MINBOX_SLACK_API_BASE` overrides it for tests only (an `http://` URL on a loopback host; anything else is ignored so the token
+cannot be redirected).
+
+**Grouping.** Table `notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, PRIMARY
+KEY(destination_id, minbox_thread_id))`. The first notification of a minbox thread is posted at the top level; the `ts` and the
+channel ID Slack returns are stored; later ones are posted with `thread_ts=<ts>` in that channel ID. `thread_not_found` /
+`message_not_found` (parent deleted in Slack): the message is posted as a new parent and the stored `ts` replaced. With
+`thread_replies` off everything is top-level. Sends of one (destination, minbox thread) are serialized, so two simultaneous
+notifications never both become parents. Rows go when the destination or the minbox thread is deleted, and when a PATCH changes
+the channel or token.
+
+**Errors** (Slack answers 200 `{ok:false, error}`): shown in `last_error` as actionable text, e.g. `not_in_channel` -> "The bot is
+not in that channel: invite it with /invite @<app name>…", `invalid_auth`/`token_revoked` -> "The token is invalid…",
+`missing_scope` -> "The app lacks the chat:write scope…", `channel_not_found`, `is_archived`, `account_inactive`, `msg_too_long`
+(unknown codes: `Slack error: <code>`). Retried (as in Delivery): network errors, HTTP 5xx, HTTP 429 (with `Retry-After`) and the
+codes `ratelimited`, `internal_error`, `service_unavailable`, `fatal_error`, `request_timeout`; all other codes are final.
+
+**Test** (`POST .../test`): `auth.test` first (a bad token fails here), then the sample is posted at the top level (never stored
+as a thread parent); the answer is `{ok: true, message: "Connected to <team> as <bot>"}`.
+
+The token is shown masked as `xoxb-…` + last 4 characters, never in full, never logged, and never in an error text.
 
 ### Secrecy
 
