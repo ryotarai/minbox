@@ -196,7 +196,9 @@ func buildSuggestPrompt(th *store.Thread) string {
 		"Write in the language the PERSON used above (if they wrote nothing, the agent's language). " +
 		"Each under 200 characters, in the person's voice, no explanations or labels. " +
 		"If the agent asked a question with options, propose the sensible answers. " +
-		"If the agent reports completion, propose short follow-ups (thanks, a next step, ask for detail).\n")
+		"If the agent reports completion, propose short follow-ups that move the work forward (a concrete next step, a request for detail or a check). " +
+		"Never propose thanks, praise, greetings, acknowledgements or other replies that add no instruction or information (no 'thank you', 'great', 'OK', 'got it'); " +
+		"if nothing useful can be proposed, return fewer suggestions.\n")
 	return b.String()
 }
 
