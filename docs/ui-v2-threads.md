@@ -141,3 +141,16 @@ the selected session) since the list is global.
 | Phone session list as home | Phone thread list as home; session list is a sheet |
 | Wide (>=1680) four-pane mode | Always three panes; wide just widens them |
 | Thread header back button `< session-name` | Kept; it clears the selected thread (empty state) |
+
+## As built (differences and rough edges)
+
+- Column widths reuse the layout keys `sidebarW` (threads list) and `threadW` (thread pane); the terminal is the
+  flexible column. At 1500 px the terminal is about 650 px wide (it was about 680 px with the old two-column
+  inbox); with the shell pane open the list and thread pane narrow first.
+- The session filter and the composer target are separate: picking a session in the filter also selects it, which
+  moves the target (target follows the selected session until the person picks another one in the selector).
+- `+ New session...` from the composer offers Claude Code sessions only (a message must go to Claude).
+- Snoozed and archived threads sit behind the `Snoozed / Archived n` fold in every grouping.
+- Session `Rename / Stop / Resume / Archive / Delete` live in the terminal header menu (and the phone session sheet);
+  an archived session is no longer listed anywhere (resume it from its header while it is still selected).
+- Screenshots: `docs/img/v2/` (made by `web/e2e/screenshot-v2.spec.ts`, `SCREENSHOTS=1 SCREENSHOT_DIR=...`).

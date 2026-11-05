@@ -85,7 +85,7 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
   const [mkdir, setMkdir] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(!isPhone)
   const [claudeCmd, setClaudeCmd] = useState('claude')
-  const [kind, setKindState] = useState<SessionKind>(() => (localStorage.getItem('minbox:last-kind') === 'shell' ? 'shell' : 'claude'))
+  const [kind, setKindState] = useState<SessionKind>(() => (!onCreated && localStorage.getItem('minbox:last-kind') === 'shell' ? 'shell' : 'claude'))
   const setKind = (k: SessionKind) => {
     setKindState(k)
     localStorage.setItem('minbox:last-kind', k)
@@ -405,7 +405,8 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
       </div>
     )
 
-  const kindPicker = (
+  // Started from the composer, the session must be Claude Code: a message goes to it.
+  const kindPicker = onCreated ? null : (
     <div className="flex flex-col gap-1.5">
       <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>Run</span>
       <div role="radiogroup" aria-label="Run" data-testid="new-session-kind" className="inline-flex gap-0.5 self-start rounded-[9px] border border-line2 bg-sunken p-[3px]">
