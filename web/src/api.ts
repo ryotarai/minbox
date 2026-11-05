@@ -338,6 +338,17 @@ async function signInAgain(): Promise<boolean> {
   return reauth
 }
 
+/**
+ * Before a stream (SSE, terminal socket) reconnects: a cheap guarded request, so a cookie the server
+ * forgot (it restarted) goes through the 401 -> sign in again path. A failed EventSource or WebSocket
+ * handshake does not expose its status, so the stream alone would retry unauthenticated forever.
+ * Never rejects and never waits longer than a few seconds.
+ */
+export async function ensureSession(): Promise<void> {
+  const probe = call('GET', '/api/settings').catch(() => undefined)
+  await Promise.race([probe, new Promise((r) => setTimeout(r, 6000))])
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const send = () =>
     fetch(path, {
@@ -494,8 +505,24 @@ export function subscribe(
   let lostAt: Date | null = null
   let retry: ReturnType<typeof setTimeout> | null = null
   let lastSeen = Date.now()
-  const connect = () => {
+  let gen = 0
+  let probing = false
+  const connect = (probe = false) => {
     retry = null
+    const g = ++gen
+    if (!probe) {
+      probing = false
+      open()
+      return
+    }
+    probing = true
+    void ensureSession().then(() => {
+      if (closed || g !== gen) return
+      probing = false
+      open()
+    })
+  }
+  const open = () => {
     es = new EventSource('/api/events')
     lastSeen = Date.now()
     es.onopen = () => {
@@ -519,14 +546,14 @@ export function subscribe(
       attempts++
       lostAt ??= new Date()
       onState({ connected: false, attempts, since: lostAt })
-      retry = setTimeout(connect, Math.min(1000 * attempts, 5000))
+      retry = setTimeout(() => connect(true), Math.min(1000 * attempts, 5000))
     }
   }
   connect()
   const reconnectNow = () => {
     if (retry) clearTimeout(retry)
     es?.close()
-    connect()
+    connect(true)
   }
   ;(window as unknown as { __minboxReconnect?: () => void }).__minboxReconnect = reconnectNow
   // A connection can die without an error (a sleeping tablet, a dropped Wi-Fi): the server sends a
@@ -534,14 +561,14 @@ export function subscribe(
   const STALE_MS = 50_000
   const CONNECT_MS = 10_000
   const check = () => {
-    if (closed || retry) return // already waiting to retry
+    if (closed || retry || probing) return // already waiting to retry
     // One that never opened (CONNECTING, no error) is replaced after CONNECT_MS, not STALE_MS.
     const hung = es?.readyState === EventSource.CONNECTING && Date.now() - lastSeen > CONNECT_MS
     if (!es || es.readyState === EventSource.CLOSED || hung || Date.now() - lastSeen > STALE_MS) reconnectNow()
   }
   const watch = setInterval(check, 10_000)
   const onWake = () => {
-    if (closed) return
+    if (closed || probing) return
     if (retry) reconnectNow()
     else if (document.visibilityState !== 'hidden' && (es?.readyState !== EventSource.OPEN || Date.now() - lastSeen > 25_000)) reconnectNow()
   }
