@@ -15,6 +15,9 @@ resources under a project. The project is the top-level scope of the UI, left of
 | Archive | Only when no session is live (not ended, not archived). Archiving also archives the project's ended sessions (same timestamp); unarchiving restores exactly those. Unarchiving or restarting a session, or creating a session in it, unarchives its project. |
 | Delete | Only a project with no sessions at all (409 otherwise: archive instead). A delete never loses a session, thread or draft. |
 | Order | Pinned first, then most recent activity (latest session/thread update). `PATCH {pinned:true}` pins. No manual drag. |
+| Main session | Each project has at most one **main session**: `projects.main_session_id` (nullable; it must be a Claude Code session of the project, never a shell). A new thread goes to it by default. Session JSON has `is_main`, project JSON `main_session_id`. |
+| Becoming main | The first Claude Code session created in a project (UI, plugin/CLI by `(host, dir)`, `POST /api/sessions`) becomes main when the project has none. Later ones are extra; `POST /api/sessions {main:true}`, `PATCH /api/projects/{id} {main_session_id}`, the picker's `Set as main`, the session `...` menu and the palette action promote one. The `+ New session…` dialog has a `Make main session` checkbox when the project already has a main one. |
+| Main lifecycle | Stopping/ending keeps it main (the composer says `Session ended: Claude gets this after Resume`, as for any ended session). Archiving or deleting the main session is 409 while the project has another live Claude Code session, unless the request promotes one (`?promote=<session id>` on `POST /api/sessions/{id}/archive` and `DELETE /api/sessions/{id}`). If it is the last one the project is left without main; the next Claude session started there becomes main. The UI offers `Set as main` first and shows the 409 text otherwise. |
 | Selected project | A browser preference (`minbox:v2-filter.project`), next to the existing session filter. `''` = All projects. Selecting a thread or session of another project (palette, link) switches the project to it. |
 
 ## Desktop wireframe (1500 px)
@@ -50,6 +53,8 @@ Selecting a project scopes the threads list, the session filter, the composer ta
 chips to it. In `All projects` every row shows a project chip (`api`) before the session chip.
 
 ## Composer target
+
+With a project selected the target defaults to the project's **main session** (marked `main` in the list; other rows have `Set as main` on hover). In All projects it is the open session's, as before. A session picked by hand holds while the open session does not change.
 
 ```
  to: * deploy-api  v              <- scoped to the selected project
@@ -106,8 +111,11 @@ created more sessions) changes nothing for already assigned sessions.
    `No project` (dir `''`).
 4. Name = last path component of dir (`/` for the root). A name already used (case-insensitive) becomes
    `name (host name)` for a remote host, and `name 2`, `name 3`... if still taken.
-5. A project whose sessions are all archived is archived (`archived_at` = latest session archive time).
-6. `created_at` = oldest session of the group. Threads, messages, attachments, drafts (browser local)
+5. Each project without a valid main session gets one: its most recently active Claude Code session, a live one
+   before an ended one before an archived one; none when it only has shell sessions. (This runs on every start, so a
+   main session deleted by the old build is replaced.)
+6. A project whose sessions are all archived is archived (`archived_at` = latest session archive time).
+7. `created_at` = oldest session of the group. Threads, messages, attachments, drafts (browser local)
    are untouched: they hang off sessions.
 
 Ended and shell sessions are grouped like any other. Sessions on a host that was deleted keep their
@@ -124,4 +132,16 @@ visible to the previous build, and project names changed in this build are not u
 
 ## As built
 
-See the section at the end of this file once the work is done.
+- Files: `internal/store/projects.go` (table, migration, rules), `internal/server/projects.go` (endpoints),
+  web `ProjectRail.tsx`, `PhoneProjects.tsx`, `lib/projects.ts`; `NewSession.tsx` also makes and edits projects.
+- The project column costs width: it is 176 px (names) at >= 1400 px and 56 px (tiles) below, or as toggled. The thread
+  pane (down to 440 px) and then the threads list (down to 280 px) pay for it, so the terminal keeps about the width it had.
+- `+ New session...` always offers a project chooser; its last entry, `A folder without a project yet...`, is the old
+  folder browser (the project is then made from the folder). With no project at all the dialog opens in that mode.
+- A project's status dot is its main session's (amber while a thread waits). Aggregate badges: amber = waiting threads, grey = unread.
+- Archived projects fold at the bottom of the rail (`Archived n`, `Restore`); there is no manual drag order, only `Pin to top`.
+- Not done: promoting a successor from the archive/delete UI (the API takes `?promote=`; the UI shows the 409 text and
+  offers `Set as main`), drag-to-reorder, a host badge screenshot (needs a paired remote host).
+- Screenshots: `docs/img/v2/p-*.png` (made by `web/e2e/screenshot-projects.spec.ts`, `SCREENSHOTS=1 SCREENSHOT_DIR=../docs/img/v2`).
+- This branch was built on `main` plus the v2 threads-first branch (`worktree-agent-a474c92bff92ec878`), because `v2-pre1`
+  was identical to `main` and had no threads-first UI.

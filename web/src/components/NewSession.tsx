@@ -93,6 +93,8 @@ export function NewSessionDialog({
   })
   const proj = mode === 'session' ? projects?.find((p) => p.id === pickedProject) : undefined
   const [projAnchor, setProjAnchor] = useState<HTMLElement | null>(null)
+  // A project's first Claude Code session is its main one; later ones are extra unless asked.
+  const [makeMain, setMakeMain] = useState(false)
   const [hostId, setHostId] = useState(() => (editing ? editing.host_id : localStorage.getItem('minbox:last-host') ?? ''))
   const [hostAnchor, setHostAnchor] = useState<HTMLElement | null>(null)
   // The last host if it is still there and online, else this machine.
@@ -188,7 +190,7 @@ export function NewSessionDialog({
         onClose()
         return
       }
-      const s = proj ? await api.createSessionIn(proj.id, name.trim(), kind) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
+      const s = proj ? await api.createSessionIn(proj.id, name.trim(), kind, makeMain) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
       if (!proj) rememberCwd(cwd.trim(), hostId)
       reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
@@ -573,6 +575,12 @@ export function NewSessionDialog({
             A folder without a project yet…
           </MenuItem>
         </Popover>
+        {proj && kind === 'claude' && proj.main_session_id && (
+          <label className="flex items-center gap-2 text-[12.5px] text-muted">
+            <input type="checkbox" data-testid="new-session-make-main" checked={makeMain} onChange={(e) => setMakeMain(e.target.checked)} />
+            Make main session (new threads go to it)
+          </label>
+        )}
         {proj && (
           <span data-testid="new-session-project-info" className="text-[12px] text-subtle">
             Starts in {proj.host_name ?? proj.host_id} · <span className="mono">{proj.dir || '~'}</span>

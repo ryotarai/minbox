@@ -139,7 +139,7 @@ export function RenameProject({ project, onClose }: { project: Project; onClose:
 
 /** The far-left column: All projects, then the projects. 176 px with names, 56 px as tiles. */
 export function ProjectRail({ narrow }: { narrow: boolean }) {
-  const { projects, setOverlay, layout, setLayout } = useApp()
+  const { projects, setOverlay, setLayout } = useApp()
   const { id: selected } = useSelectedProject()
   const stats = useProjectStats()
   const [menu, setMenu] = useState<{ project: Project; anchor: HTMLElement } | null>(null)
@@ -234,7 +234,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                   aria-label={`Project menu: ${p.name}`}
                   data-testid="project-menu"
                   onClick={(e) => setMenu({ project: p, anchor: e.currentTarget.parentElement as HTMLElement })}
-                  className="absolute right-0.5 top-0.5 hidden h-6 w-6 items-center justify-center rounded-md border-0 bg-sel text-muted hover:text-fg focus:flex group-hover:flex"
+                  className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-md border-0 bg-sel text-muted opacity-0 hover:text-fg focus:opacity-100 group-hover:opacity-100"
                 >
                   <IconMore size={14} />
                 </button>
@@ -261,7 +261,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
           aria-label={tiles ? 'Show project names' : 'Narrow the project column'}
           title={tiles ? 'Show project names' : 'Narrow the project column'}
           data-testid="project-rail-toggle"
-          onClick={() => setLayout({ projectsRail: !layout.projectsRail })}
+          onClick={() => setLayout({ projectsRail: !tiles })}
         >
           <IconChevronRight size={14} className={cx(!tiles && 'rotate-180')} />
         </IconButton>

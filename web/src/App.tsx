@@ -52,7 +52,9 @@ function Root() {
       return
     }
     const live = sessions.filter((s) => !s.archived_at && (!projectId || s.project_id === projectId))
-    const first = groupSessions(live)[0]?.rows[0] ?? (projectId ? undefined : sessions[0])
+    // Opening a project shows its main session's terminal.
+    const main = projectId ? live.find((s) => s.is_main) : undefined
+    const first = main ?? groupSessions(live)[0]?.rows[0] ?? (projectId ? undefined : sessions[0])
     if (!first && !route.s) return
     navigate({ s: first?.id ?? null, t: null, f: null })
   }, [sessions, route.s, isPhone, navigate, projectId])

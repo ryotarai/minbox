@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ATTENTION, type Project, type Session } from '../api'
+import type { Project, Session } from '../api'
 import { useApp } from './app'
 import { homeRelative } from './format'
 import { setThreadFilter, useThreadFilter } from './threadFilter'
@@ -36,9 +36,14 @@ export function statOf(sessions: Session[]): ProjectStat {
   return { waiting, unread, live: running.length, working, state }
 }
 
-/** Stats per project id (and '' = all projects), from the sessions list. */
+/** The project's main session (when it is still listed). */
+export function mainSessionOf(project: Project | null | undefined, sessions: Session[] | null): Session | undefined {
+  return project?.main_session_id ? sessions?.find((s) => s.id === project.main_session_id) : undefined
+}
+
+/** Stats per project id (and '' = all projects), from the sessions list. The dot is the main session's. */
 export function useProjectStats(): Map<string, ProjectStat> {
-  const { sessions } = useApp()
+  const { sessions, projects } = useApp()
   return useMemo(() => {
     const by = new Map<string, Session[]>()
     for (const s of sessions ?? []) {
@@ -46,10 +51,15 @@ export function useProjectStats(): Map<string, ProjectStat> {
       by.set(k, [...(by.get(k) ?? []), s])
     }
     const out = new Map<string, ProjectStat>()
-    for (const [k, v] of by) out.set(k, statOf(v))
+    for (const [k, v] of by) {
+      const st = statOf(v)
+      const main = mainSessionOf(projects?.find((p) => p.id === k), sessions)
+      if (main && st.state !== 'waiting') st.state = main.status === 'working' ? 'working' : main.status === 'ended' ? 'ended' : 'idle'
+      out.set(k, st)
+    }
     out.set('', statOf(sessions ?? []))
     return out
-  }, [sessions])
+  }, [sessions, projects])
 }
 
 /** The selected project: '' = All projects (also when the remembered one is gone). */
@@ -76,4 +86,3 @@ export function useScopedSessions(): Session[] {
   return useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && (!id || s.project_id === id)), [sessions, id])
 }
 
-export { ATTENTION }
