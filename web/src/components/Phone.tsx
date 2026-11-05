@@ -198,7 +198,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
 }
 
 /** The companion shell, full screen in front of everything. It is mounted only while shown: the shell itself lives on. */
-function PhoneShell({ session, typing, onClose }: { session: Session; typing: boolean; onClose: () => void }) {
+export function PhoneShell({ session, typing, onClose }: { session: Session; typing: boolean; onClose: () => void }) {
   const { toast } = useApp()
   const term = useRef<TerminalHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)

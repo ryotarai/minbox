@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconMore, IconTerminal } from './icons'
+import { IconBack, IconMore, IconTerminal } from './icons'
 import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
 import { Button, HostTag, IconButton, StatusPill, cx } from './ui'
 import { SessionMenu, waitsOnPerson } from './Sidebar'
 
 /** The center column: the session's terminal with its header and the ended bar. */
-export function TerminalPane({ session }: { session: Session | null }) {
+export function TerminalPane({ session, onThreads }: { session: Session | null; onThreads?: () => void }) {
   const { layout, setLayout, toast, error, reloadSessions } = useApp()
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -39,7 +39,19 @@ export function TerminalPane({ session }: { session: Session | null }) {
   const ended = session.status === 'ended'
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="flex h-14 shrink-0 items-center gap-3 pl-5 pr-3">
+      <div className={cx('flex h-14 shrink-0 items-center gap-3 pr-3', onThreads ? 'pl-2' : 'pl-5')}>
+        {onThreads && (
+          <button
+            type="button"
+            data-testid="tablet-threads"
+            title="Back to the thread list"
+            onClick={onThreads}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-md border-0 bg-transparent pl-1 pr-2 text-[13px] text-fg2 hover:bg-raised"
+          >
+            <IconBack size={14} className="text-subtle" />
+            Threads
+          </button>
+        )}
         {renaming !== null ? (
           <input
             autoFocus
@@ -67,7 +79,7 @@ export function TerminalPane({ session }: { session: Session | null }) {
             {session.name}
           </span>
         )}
-        {session.title && (
+        {session.title && !onThreads && (
           <span className="min-w-0 truncate text-[13.5px] text-fg2" data-testid="terminal-session-title" title={session.title}>
             {session.title}
           </span>
