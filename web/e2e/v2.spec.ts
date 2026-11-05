@@ -111,6 +111,8 @@ test('action items: Done and Can\'t do it reach Claude under Actions', async ({ 
 })
 
 test('an attached file opens beside the thread; a comment on it goes with the reply', async ({ page, minbox }) => {
+  // The list no longer folds away for a file: the viewer keeps its annotation panel only with room.
+  await page.setViewportSize({ width: 2200, height: 1000 })
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'files')
   await expectTerminal(page, 'ready>')
@@ -119,7 +121,7 @@ test('an attached file opens beside the thread; a comment on it goes with the re
   await page.getByTestId('attachment-card').click()
   const viewer = page.getByTestId('attachment-viewer')
   await expect(viewer).toContainText('Archive plan')
-  await expect(page.getByTestId('session-rail')).toBeVisible()
+  await expect(page.getByTestId('session-rail')).toHaveCount(0)
 
   // Select (the default): selecting words offers a Comment button, nothing more;
   // a click on a paragraph does nothing.
@@ -303,7 +305,7 @@ test('phone: the thread list is home; a thread flips to its session\'s terminal;
   await expect(page.getByTestId('phone-home')).toBeVisible()
 })
 
-test('pin, snooze, forward to another session, list options, rail, and the settings pages', async ({ page, minbox }) => {
+test('pin, snooze, forward to another session, list options, and the settings pages', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'alpha')
   await expectTerminal(page, 'ready>')
@@ -342,13 +344,6 @@ test('pin, snooze, forward to another session, list options, rail, and the setti
   await page.getByRole('menuitemcheckbox', { name: 'Compact rows' }).click()
   await expect(page.getByRole('menuitemcheckbox', { name: 'Compact rows' })).toHaveAttribute('aria-checked', 'true')
   await page.keyboard.press('Escape')
-
-  // ⌘B folds the list into the rail.
-  await page.getByTestId('threads-pane').click({ position: { x: 5, y: 5 } })
-  await page.keyboard.press('Meta+b')
-  await expect(page.getByTestId('session-rail')).toBeVisible()
-  await expect(page.getByTestId('rail-session')).toHaveCount(2)
-  await page.keyboard.press('Meta+b')
 
   // Settings: prompts are saved on the server; About and Storage answer.
   await fromMenu(page, 'open-settings')
@@ -802,7 +797,7 @@ test('selecting text in a thread offers Reply, which quotes it into the reply bo
 })
 
 test.describe('touch device (coarse pointer, wide layout)', () => {
-  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } })
+  test.use({ hasTouch: true, viewport: { width: 1200, height: 800 } })
 
   test('the Reply bubble sits below the selection, clear of the OS toolbar', async ({ page, minbox }) => {
     await page.goto(minbox.url)

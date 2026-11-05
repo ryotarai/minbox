@@ -249,7 +249,7 @@ test('desktop with a mouse: no on-screen terminal keys', async ({ page, minbox }
 })
 
 test.describe('tablet / unfolded foldable (touch, wide screen)', () => {
-  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } })
+  test.use({ hasTouch: true, viewport: { width: 1200, height: 800 } })
 
   test('the wide layout shows the terminal keys and they reach the shell', async ({ page, minbox }) => {
     await page.goto(minbox.url)
