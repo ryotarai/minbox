@@ -226,8 +226,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.f === undefined) next.f = null
       const h = routeHash(next)
       const push = opts?.push ?? isPhone
-      if (push) history.pushState(null, '', h)
-      else history.replaceState(null, '', h)
+      // An attachment viewer opened by a push is marked, so closing it can go back instead of stacking entries.
+      if (push) history.pushState(next.f && !routeRef.current.f ? { viewer: true } : null, '', h)
+      else history.replaceState(next.f ? history.state : null, '', h)
       routeRef.current = next
       setRoute(next)
     },
