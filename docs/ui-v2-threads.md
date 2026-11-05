@@ -108,7 +108,7 @@ and the composer use the desktop styling). The project column is always the 56 p
   draggable, in-window only); the list is hidden, so switching thread means going back to the list.
   The terminal is mounted only while shown, so the size lease (only displayed terminals send sizes) still holds.
 - Enter: the **Terminal** button in the thread header (also in the empty right pane when a session is selected but no
-  thread), the palette's *Go to terminal*, or a new session / shell session opened from the palette. Browser back
+  thread), the palette's *Go to terminal*, or a new session opened from the palette. Browser back
   returns to the list view (entering pushes a history entry). Leave: the **Threads** button in the terminal header or
   the thread header's back button (`< alpha`); both only drop `tab=terminal`, the thread stays selected.
   Three-column widths always show the terminal, so `tab=terminal` is cleared there.

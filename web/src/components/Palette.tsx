@@ -121,7 +121,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const actions = useMemo<Item[]>(() => {
     const list: Item[] = []
     const act = (id: string, title: string, run: () => void, o: Partial<Item> = {}) => list.push({ kind: 'action', id, title, run, ...o })
-    act('new-session', 'New session', () => setOverlay({ kind: 'new-session' }), { keywords: 'create start claude shell terminal' })
+    act('new-session', 'New session', () => setOverlay({ kind: 'new-session' }), { keywords: 'create start claude' })
     if (isClaude) {
       act(
         'new-message',

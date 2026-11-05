@@ -42,7 +42,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Name   string `json:"name"`
 		Cwd    string `json:"cwd"`
 		HostID string `json:"host_id"`
-		Kind   string `json:"kind"` // "claude" (default) or "shell"
+		Kind   string `json:"kind"` // "claude" (default); "shell" is rejected
 		// ProjectID: start in this project (its host; its folder unless cwd is given). Without it
 		// the project is the one for (host_id, cwd), created on first use.
 		ProjectID string `json:"project_id"`

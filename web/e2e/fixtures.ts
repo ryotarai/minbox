@@ -1,5 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test'
-import { spawn, execSync, type ChildProcess } from 'node:child_process'
+import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
@@ -212,20 +212,53 @@ export async function chooseFolder(page: Page) {
 }
 
 /** Creates a session in the given directory through the UI. */
-export async function createSession(page: Page, cwd: string, name: string, kind: 'claude' | 'shell' = 'claude') {
+export async function createSession(page: Page, cwd: string, name: string) {
   // With no sessions the dialog opens by itself, maybe right after we look:
   // press New only while the dialog is not there, briefly each time.
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
   for (let i = 0; i < 30 && !(await form.isVisible()); i++) {
     await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
   }
-  await page.getByTestId(`new-session-kind-${kind}`).click()
   await chooseFolder(page)
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
   await page.getByTestId('new-session-start').click()
   await expect(page.getByTestId('terminal-session-name').or(page.getByTestId('phone'))).toBeVisible()
   await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
+}
+
+/**
+ * Shell sessions can no longer be created (the UI and the API both refuse). This stands in for one
+ * that an older build left in the database: the row is written while the server is stopped, the
+ * server picks it up (and files it under a project) when it starts, and it is restarted into a
+ * running login shell. Leaves `page` on that session's terminal (desktop layout).
+ */
+export async function createShellSession(page: Page, minbox: Minbox, name: string) {
+  const id = 'ses_' + name.replace(/[^a-z0-9]/gi, '') + Math.random().toString(36).slice(2, 8)
+  await minbox.stop()
+  const py = `
+import sqlite3, sys, time
+c = sqlite3.connect(sys.argv[1])
+now = int(time.time() * 1000)
+vals = {'id': sys.argv[2], 'name': sys.argv[3], 'cwd': sys.argv[4], 'status': 'ended', 'kind': 'shell', 'host_id': 'local',
+        'token': 'tok_' + sys.argv[2], 'created_at': now, 'updated_at': now, 'exit_code': 0}
+row = c.execute("SELECT id FROM projects WHERE dir = ? AND host_id = 'local'", (sys.argv[4],)).fetchone()
+if row: vals['project_id'] = row[0]  # else the server files it under a new project when it starts
+cols = []
+for _, n, t, notnull, dflt, _pk in c.execute('PRAGMA table_info(sessions)').fetchall():
+    if n in vals: cols.append(n)
+    elif notnull and dflt is None: vals[n] = 0 if 'INT' in t.upper() else ''; cols.append(n)
+c.execute('INSERT INTO sessions (%s) VALUES (%s)' % (','.join(cols), ','.join('?' * len(cols))), [vals[n] for n in cols])
+c.commit()
+`
+  execFileSync('python3', ['-I', '-c', py, join(minbox.dataDir, 'minbox.db'), id, name, minbox.dataDir])
+  await minbox.start()
+  const r = await fetch(`${minbox.url}/api/sessions/${id}/restart`, { method: 'POST' })
+  if (!r.ok) throw new Error('restart of the seeded shell session failed: ' + (await r.text()))
+  await page.goto('about:blank') // a fresh load: the open app would keep its own route
+  await page.goto(`${minbox.url}/#s=${id}&tab=terminal`)
+  await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
+  return id
 }
 
 /** Desktop: selects a session (the threads list shows only its threads, the terminal follows). */
