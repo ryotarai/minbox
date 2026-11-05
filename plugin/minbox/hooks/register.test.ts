@@ -110,23 +110,35 @@ test('send_message posts the message and says the reply comes by itself', async 
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
-  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: ':::question\nA or B?\n- [ ] A\n- [ ] B\n:::', thread_title: 'Plan' })
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: ':::question\nA or B?\n- [ ] A\n- [ ] B\n:::', thread_title: 'Plan' })
   expect(res.result).toContain('Started thread thr_1')
   expect(res.result).toContain('Do not wait or poll')
   const post = server.calls.find((c) => c.path === '/api/agent/messages')
   expect(post?.body.thread_title).toBe('Plan')
 })
 
-test('send_message forwards status, and omits it when not given', async ($, on) => {
+test('send_message is refused without a valid status', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi' } as any)
+  const bad: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'done' } as any)
+  expect(JSON.stringify(res)).toContain('status is required')
+  expect(JSON.stringify(bad)).toContain('status is required')
+  expect(server.calls.filter((c) => c.path === '/api/agent/messages')).toHaveLength(0)
+})
+
+test('send_message forwards status', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'done', status: 'finished' } as any)
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'more' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'need_action', body: 'more' } as any)
   const posts = server.calls.filter((c) => c.path === '/api/agent/messages')
   expect(posts[0]?.body.status).toBe('finished')
-  expect(posts[1]?.body.status).toBeUndefined()
+  expect(posts[1]?.body.status).toBe('need_action')
 })
 
 test('send_message still forwards the old subject parameter as thread_title', async ($, on) => {
@@ -134,7 +146,7 @@ test('send_message still forwards the old subject parameter as thread_title', as
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', subject: 'Old' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: 'hi', subject: 'Old' } as any)
   expect(server.calls.find((c) => c.path === '/api/agent/messages')?.body.thread_title).toBe('Old')
 })
 
@@ -195,7 +207,7 @@ test('send_message passes attachments and a review; card creates a card', async 
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'see', attachments: ['plan.md'], review: { title: 'R', sections: [{ title: 'a', files: ['a.go'] }] }, name: 'tag' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: 'see', attachments: ['plan.md'], review: { title: 'R', sections: [{ title: 'a', files: ['a.go'] }] }, name: 'tag' } as any)
   const post = server.calls.find((c) => c.path === '/api/agent/messages')
   expect(post?.body.attachments).toEqual(['plan.md'])
   expect(post?.body.review.title).toBe('R')
@@ -316,7 +328,7 @@ test('a turn that asks the person in the chat only is followed by one reminder t
 
   const turn = async (answer: string, send = false) => {
     await $.turn.start({ turnId: 't', prompt: 'p' } as any)
-    if (send) await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'Which one?', subject: 'Pick' } as any)
+    if (send) await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: 'Which one?', subject: 'Pick' } as any)
     await $.turn.complete({ turnId: 't', answer, reason: 'answer', isAborted: false, durationMs: 1 } as any)
     await clock.advance(5000)
   }
@@ -397,7 +409,7 @@ test('a turn that answered an inbox message with send_message is not reminded', 
   await clock.advance(5000)
   expect(server.submitted.length).toBe(1)
   await $.turn.start({ turnId: 't1', prompt: 'p' } as any)
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'Done', thread_id: 'thr_1' } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: 'Done', thread_id: 'thr_1' } as any)
   await $.turn.complete({ turnId: 't1', answer: 'Done.', reason: 'answer', isAborted: false, durationMs: 1 } as any)
   await clock.advance(5000)
   expect(server.submitted.length).toBe(1)
