@@ -35,7 +35,7 @@ const (
 
 const suggestSystemPrompt = "You draft replies. Output only JSON matching the schema."
 
-const suggestSchema = `{"type":"object","properties":{"suggestions":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"string","maxLength":200}}},"required":["suggestions"],"additionalProperties":false}`
+const suggestSchema = `{"type":"object","properties":{"suggestions":{"type":"array","minItems":0,"maxItems":3,"items":{"type":"string","maxLength":200}}},"required":["suggestions"],"additionalProperties":false}`
 
 // SuggestResult is the endpoint's answer.
 type SuggestResult struct {
