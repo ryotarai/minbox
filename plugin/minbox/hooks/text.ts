@@ -160,6 +160,15 @@ export function asksPerson(answer: string): boolean {
   return /(どうしますか|いかがですか|よろしいですか|しますか|ますか。|ご確認|確認してください|教えてください|選んでください|決めてください|お知らせください|お願いします|指示をください|ご判断|\bshould I\b|\bwould you like\b|\bdo you want\b|\blet me know\b|\bplease (?:confirm|review|check|choose|decide|run|approve|test|try)\b|\bwhich (?:one|option|approach)\b|\byour call\b)/i.test(lastLines)
 }
 
+/** A plugin turn: the turn answered an inbox message but never replied in its thread. */
+export function replyNudgeText(sendTool: string, threadIds: string[]): string {
+  const ids = threadIds.map((id) => `thread_id ${id}`).join(' / ')
+  return [
+    `minbox: the last turn handled a message from the person's inbox (${ids}), but nothing was sent back in that thread, and they cannot see the terminal.`,
+    `Reply now with ${sendTool} and the thread_id above: the answer, or a short summary of what you did. Do not repeat the long text here; after sending, end your turn.`,
+  ].join(' ')
+}
+
 /** A plugin turn: the last reply asked the person in the chat, not in the inbox. */
 export function nudgeText(sendTool: string): string {
   return [
@@ -316,7 +325,7 @@ export function wakeText(pending: Pending[], sendTool: string, readTool: string)
     const lines = [
       `minbox inbox: ${oneLine(p.subject) || 'a reply'} (thread_id: ${p.thread_id})`,
       p.new_thread ? NEW_THREAD_LINE : REPLY_LINE,
-      `When they need to hear back, answer in the same thread: ${sendTool} with thread_id ${p.thread_id}.`,
+      `IMPORTANT: answer this message in the inbox, in this thread: call ${sendTool} with thread_id ${p.thread_id}, even for a short answer. Text you only write in the terminal is not shown to the person.`,
       '',
       p.body.trim(),
       '',
@@ -395,6 +404,7 @@ export function reminderText(sendTool: string, extra?: string | null, tools: { t
     `minbox inbox is on for this session: the person follows this session through it and may not be watching the terminal.`,
     `Whenever you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at, send it with ${sendTool} (each decision as a :::question block) — every time, not only for big things — and keep going; their reply comes back here by itself.`,
     'A decision in the inbox stays there: never also ask it in the chat with a blocking question tool (AskUserQuestion or similar).',
+    `Messages that arrive as "minbox inbox: … (thread_id: …)" come from the inbox: always answer them with ${sendTool} and that thread_id, never only in the terminal.`,
   ]
   // Also in the system prompt (prompt.compose, and minbox's --append-system-prompt);
   // repeated here for environments that skip both.

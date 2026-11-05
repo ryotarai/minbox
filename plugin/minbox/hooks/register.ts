@@ -40,6 +40,7 @@ import {
   asksPerson,
   inboxSection,
   nudgeText,
+  replyNudgeText,
   reminderText,
   sentText,
   serverUrlOf,
@@ -99,6 +100,12 @@ let sentThisTurn = false
 let nudgeNext = false
 /** The running turn is that reminder (its own end never reminds again). */
 let nudging = false
+/** Threads whose messages were just delivered; they belong to the turn that starts next. */
+let deliveredThreads: string[] = []
+/** Threads the running turn is answering. */
+let turnThreads: string[] = []
+/** The next reminder is about these threads (a turn answered them without send_message). */
+let replyNudgeThreads: string[] = []
 
 function randomId(): string {
   const b = new Uint8Array(8)
@@ -200,8 +207,10 @@ async function tick($: any): Promise<void> {
   if (nudgeNext && !busy && idleTicks >= IDLE_TICKS) {
     nudgeNext = false
     nudging = true
+    const threads = replyNudgeThreads
+    replyNudgeThreads = []
     try {
-      await $.prompt.submit({ text: nudgeText(sendToolName) })
+      await $.prompt.submit({ text: threads.length > 0 ? replyNudgeText(sendToolName, threads) : nudgeText(sendToolName) })
     } catch {
       nudging = false
     }
@@ -242,6 +251,7 @@ async function tick($: any): Promise<void> {
     }
     try {
       await $.prompt.submit({ text: wakeText(claimed, sendToolName, readToolName) })
+      deliveredThreads = [...new Set(claimed.map((p) => p.thread_id))]
     } catch (err) {
       for (const p of claimed) await api($, 'POST', pendingPath(p.id, 'release'))
       $.ui.toast(`minbox: a reply could not be delivered (${String(err)}); it stays in the inbox.`)
@@ -288,6 +298,8 @@ export const register: Register = (on) => {
       busyTicks = 0
       idleTicks = 0
       sentThisTurn = false
+      turnThreads = deliveredThreads
+      deliveredThreads = []
       status($, 'working')
     }
     return next(e)
@@ -300,7 +312,11 @@ export const register: Register = (on) => {
       idleTicks = 0
       // Asked the person in the chat but not in the inbox: remind Claude once.
       const answered = e.reason === 'answer' && !e.isAborted
-      nudgeNext = answered && !nudging && !sentThisTurn && asksPerson(e.answer ?? '')
+      // A turn that handled an inbox message but sent nothing back: remind Claude once to reply there.
+      const missingReply = answered && !nudging && !sentThisTurn && turnThreads.length > 0
+      replyNudgeThreads = missingReply ? turnThreads : []
+      nudgeNext = missingReply || (answered && !nudging && !sentThisTurn && asksPerson(e.answer ?? ''))
+      turnThreads = []
       nudging = false
       status($, 'idle')
     }

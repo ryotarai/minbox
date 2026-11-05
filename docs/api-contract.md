@@ -229,6 +229,11 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
   `minbox inbox: <subject> (thread_id: <id>)`, a line saying reply or new thread, the answer-in-thread
   hint, the body, and a last line `(Thread <id>. Earlier messages in this thread: call <read_thread tool> with this thread_id.)`.
   The same for replies, answers to questions, quick-compose threads, queued and urgent messages.
+  The answer-in-thread hint is worded as IMPORTANT (reply with the send tool and that thread id, even for a
+  short answer; terminal text is not shown). The system prompt (`AgentSystemPrompt`) and the first-prompt
+  reminder say the same. If a turn started by a delivered message ends (reason `answer`) without a
+  `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
+  own turn never reminds again.
 - `hello` answers `prompt_extra` (settings); the mod appends it to the first-prompt reminder.
 - New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
   403 `the Board is off in minbox settings` unless settings.board.
