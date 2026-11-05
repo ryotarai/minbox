@@ -71,6 +71,11 @@ func main() {
 		err = fmt.Errorf("unknown command %q\n%s", cmd, usage)
 	}
 	if err != nil {
+		var ee *exitError
+		if errors.As(err, &ee) {
+			fmt.Fprintln(os.Stderr, ee.msg)
+			os.Exit(ee.code)
+		}
 		log.Fatal(err)
 	}
 }
@@ -82,6 +87,9 @@ const usage = `usage:
   minbox stop [--data-dir <dir>]            stop the server; sessions keep running in the terminal host
   minbox restart [flags]                    stop it and start it again, with the flags of the last
                                             minbox start unless others are given
+  minbox restart --host [--yes|-y] [flags]  also stop the local terminal host (every session's claude ends;
+                                            the new server starts a fresh host and resumes them); asks
+                                            first, unless --yes (refuses with exit 2 when stdin is no terminal)
   minbox status [--data-dir <dir>]          whether the server runs (exit 3 if not), its URL and log
   minbox start --listen 0.0.0.0:4848        serve other machines too; their browsers must be paired
                                             (minbox pair accept <code>)

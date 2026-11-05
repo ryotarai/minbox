@@ -42,6 +42,8 @@ inbox.
 ```sh
 ./bin/minbox status        # running? its URL and log (exit code 3 when stopped)
 ./bin/minbox restart       # stop, then start with the flags of the last `minbox start`
+./bin/minbox restart --host   # also restart the local terminal host: asks first (--yes/-y skips it);
+                              # sessions' claude stops and resumes (running turns are interrupted)
 ./bin/minbox stop          # stop the server; sessions keep running in the terminal host
 ./bin/minbox start --foreground   # stay in the foreground, logs on stderr
 ```
