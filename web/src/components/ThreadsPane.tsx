@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ATTENTION, SECTION_LABEL, api, type Section, type Session, type Thread } from '../api'
+import { ATTENTION, SECTION_LABEL, api, type Project, type Section, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
+import { useSelectedProject } from '../lib/projects'
 import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
 import { useHotkeys } from '../lib/hotkeys'
 import { setComposeTarget, setThreadFilter, useComposeTargetPick, useThreadFilter, type ThreadFilter } from '../lib/threadFilter'
@@ -15,6 +16,7 @@ import { NotificationAsk, Logo, groupSessions, waitsOnPerson } from './Sidebar'
 import { ThreadRow, sortThreads, useAllThreads } from './ThreadList'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, StatusDot, cx, statusOf } from './ui'
 import { PhoneSessionSheet } from './PhoneSessions'
+import { PhoneProjectButton } from './PhoneProjects'
 
 /** Threads that sit outside the main list: snoozed and archived ones fold away. */
 const folded = (t: Thread) => t.section === 'archived' || t.section === 'snoozed'
@@ -24,8 +26,9 @@ export function useVisibleThreads(): { all: Thread[] | null; groups: { key: stri
   const all = useAllThreads()
   const { sessions } = useApp()
   const filter = useThreadFilter()
+  const { id: projectId } = useSelectedProject()
   return useMemo(() => {
-    const scoped = (all ?? []).filter((t) => !filter.session || t.session_id === filter.session)
+    const scoped = (all ?? []).filter((t) => (!projectId || t.project_id === projectId) && (!filter.session || t.session_id === filter.session))
     const live = scoped.filter((t) => !folded(t))
     const counts = { all: live.length, waiting: live.filter((t) => ATTENTION.includes(t.section)).length, unread: live.filter((t) => t.unread > 0).length }
     const shown = live.filter((t) => (filter.show === 'waiting' ? ATTENTION.includes(t.section) : filter.show === 'unread' ? t.unread > 0 : true))
@@ -47,7 +50,7 @@ export function useVisibleThreads(): { all: Thread[] | null; groups: { key: stri
       groups = shown.length ? [{ key: 'flat', label: '', items: [...shown].sort(byActivity) }] : []
     }
     return { all, groups, fold: scoped.filter(folded).sort(byActivity), counts, filter }
-  }, [all, sessions, filter])
+  }, [all, sessions, filter, projectId])
 }
 
 /** The pane: top bar, filters, every thread of every session, and the composer. */
@@ -61,6 +64,10 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
   const [foldOpen, setFoldOpen] = useState(false)
   const [sheet, setSheet] = useState(false)
   const sessionOf = (id: string) => sessions?.find((s) => s.id === id)
+  const { projects } = useApp()
+  const { id: projectId } = useSelectedProject()
+  // In All projects every row names its project; inside one it would only repeat.
+  const projectOf = (t: Thread) => (projectId ? undefined : projects?.find((p) => p.id === t.project_id))
 
   const open = (t: Thread) => navigate({ s: t.session_id, t: t.id, f: null, view: 'main', tab: 'inbox' })
   const openSession = (s: Session) => navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
@@ -111,8 +118,8 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
           <div className="flex flex-col items-center gap-2.5 px-4 py-10 text-center" data-testid="list-empty">
             <IconInbox size={32} className="text-faint" strokeWidth={1.2} />
             <span className="text-[14px] font-semibold">{filter.show === 'waiting' ? 'Nothing is waiting on you.' : filter.show === 'unread' ? 'Nothing unread.' : 'No threads here yet.'}</span>
-            {(filter.show !== 'all' || filter.session) && (
-              <Button size="sm" onClick={() => setThreadFilter({ show: 'all', session: '' })}>
+            {(filter.show !== 'all' || filter.session || projectId) && (
+              <Button size="sm" onClick={() => setThreadFilter({ show: 'all', session: '', project: '' })}>
                 Show all threads
               </Button>
             )}
@@ -140,6 +147,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                     t={t}
                     phone={phone}
                     session={sessionOf(t.session_id)}
+                    project={projectOf(t)}
                     onOpenSession={() => {
                       const s = sessionOf(t.session_id)
                       if (s) openSession(s)
@@ -164,7 +172,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                 </button>
                 {foldOpen &&
                   v.fold.map((t) => (
-                    <ThreadRow key={t.id} t={t} phone={phone} session={sessionOf(t.session_id)} focused={route.t === t.id} onOpen={() => open(t)} />
+                    <ThreadRow key={t.id} t={t} phone={phone} session={sessionOf(t.session_id)} project={projectOf(t)} focused={route.t === t.id} onOpen={() => open(t)} />
                   ))}
               </>
             )}
@@ -182,6 +190,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
 
 function TopBar({ phone }: { phone?: boolean }) {
   const { setLayout, setOverlay } = useApp()
+  const { id: projectId } = useSelectedProject()
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const size = phone ? 44 : 34
   return (
@@ -193,16 +202,23 @@ function TopBar({ phone }: { phone?: boolean }) {
           <Logo />
         </button>
       )}
-      <h1 className="ml-1.5 flex-1 text-[15px] font-[650]">{phone ? <span className="sr-only">minbox</span> : 'Threads'}</h1>
+      {phone ? (
+        <>
+          <h1 className="sr-only">minbox</h1>
+          <PhoneProjectButton />
+        </>
+      ) : (
+        <h1 className="ml-1.5 flex-1 text-[15px] font-[650]">Threads</h1>
+      )}
       <IconButton size={size} aria-label="Search (⌘K)" title="Search (⌘K)" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
         <IconSearch size={phone ? 20 : 16} />
       </IconButton>
       {phone ? (
-        <IconButton size={size} aria-label="New session" data-testid="new-session" onClick={() => setOverlay({ kind: 'new-session' })}>
+        <IconButton size={size} aria-label="New session" data-testid="new-session" onClick={() => setOverlay({ kind: 'new-session', projectId })}>
           <IconPlus size={20} />
         </IconButton>
       ) : (
-        <Button size="sm" data-testid="new-session" className="h-8 bg-raised" onClick={() => setOverlay({ kind: 'new-session' })}>
+        <Button size="sm" data-testid="new-session" className="h-8 bg-raised" onClick={() => setOverlay({ kind: 'new-session', projectId })}>
           <IconPlus size={13} />
           New
         </Button>
@@ -350,13 +366,26 @@ function FilterRow({ v, phone, onSheet }: { v: ReturnType<typeof useVisibleThrea
 
 /** A searchable list of sessions with status dots; `filter` adds "All sessions", otherwise "+ New session…". */
 export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: boolean; activeId: string; onPick: (s: Session | null) => void; onNew?: () => void }) {
-  const { sessions } = useApp()
+  const { sessions, projects, reloadProjects, reloadSessions, toast, error } = useApp()
+  const { id: projectId } = useSelectedProject()
   const [q, setQ] = useState('')
   const list = useMemo(() => {
-    const rows = groupSessions((sessions ?? []).filter((s) => !s.archived_at && (filter || s.kind !== 'shell'))).flatMap((g) => g.rows)
+    const rows = groupSessions((sessions ?? []).filter((s) => !s.archived_at && (!projectId || s.project_id === projectId) && (filter || s.kind !== 'shell'))).flatMap((g) => g.rows)
     const w = q.trim().toLowerCase()
     return w ? rows.filter((s) => `${s.name} ${s.title ?? ''} ${s.cwd}`.toLowerCase().includes(w)) : rows
-  }, [sessions, q, filter])
+  }, [sessions, q, filter, projectId])
+  // In All projects the sessions sit under their project's name.
+  const groups = useMemo(() => {
+    if (projectId) return [{ project: undefined as Project | undefined, rows: list }]
+    const out: { project: Project | undefined; rows: Session[] }[] = []
+    for (const p of projects ?? []) {
+      const rows = list.filter((s) => s.project_id === p.id)
+      if (rows.length) out.push({ project: p, rows })
+    }
+    const rest = list.filter((s) => !projects?.some((p) => p.id === s.project_id))
+    if (rest.length) out.push({ project: undefined, rows: rest })
+    return out
+  }, [list, projects, projectId])
   return (
     <div data-testid="session-picker">
       <input
@@ -377,21 +406,36 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
             All sessions
           </MenuItem>
         )}
-        {list.map((s) => {
+        {groups.map((g, gi) => (
+          <div key={g.project?.id ?? `none${gi}`}>
+            {g.project && (
+              <div data-testid="session-picker-group" className="px-2.5 pb-0.5 pt-2 text-[10.5px] font-bold uppercase tracking-[0.06em] text-subtle">
+                {g.project.name}
+              </div>
+            )}
+            {g.rows.map((s) => {
           const waits = waitsOnPerson(s)
           return (
+            <div key={s.id} className="group flex items-center gap-0.5">
             <button
-              key={s.id}
               type="button"
               role="menuitem"
               data-testid="session-option"
               data-session-id={s.id}
+              data-main={s.is_main || undefined}
               onClick={() => onPick(s)}
-              className={cx('flex min-h-9 w-full items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', s.id === activeId ? 'bg-sel' : 'bg-transparent')}
+              className={cx('flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', s.id === activeId ? 'bg-sel' : 'bg-transparent')}
             >
               <StatusDot s={s} waits={waits} size={7} ring={false} />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-[13px] text-fg">{s.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13px] text-fg">{s.name}</span>
+                  {s.is_main && (
+                    <span data-testid="session-main-badge" className="shrink-0 rounded-[5px] border border-linestrong px-1 text-[10px] font-semibold uppercase leading-[15px] tracking-[0.04em] text-muted">
+                      main
+                    </span>
+                  )}
+                </span>
                 <span className={cx('truncate text-[11.5px]', statusOf(s, waits).text)}>
                   {statusOf(s, waits).label}
                   {s.title ? ` · ${s.title}` : ''}
@@ -404,8 +448,27 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
                 <span className="rounded-full bg-chip px-1.5 text-[11px] font-bold text-fg2">{s.unread}</span>
               ) : null}
             </button>
+            {!filter && !s.is_main && s.project_id && (
+              <button
+                type="button"
+                data-testid="session-set-main"
+                title="Make this the project's main session"
+                onClick={() =>
+                  api
+                    .setMainSession(s.project_id!, s.id)
+                    .then(() => (reloadProjects(), reloadSessions(), toast(`${s.name} is now the main session`)))
+                    .catch(error)
+                }
+                className="hidden h-7 shrink-0 rounded-md border-0 bg-transparent px-1.5 text-[11px] text-muted hover:bg-sel hover:text-fg focus:block group-hover:block"
+              >
+                Set as main
+              </button>
+            )}
+            </div>
           )
         })}
+          </div>
+        ))}
         {list.length === 0 && <div className="px-2.5 py-2 text-[12.5px] text-subtle">No session matches.</div>}
       </div>
       {onNew && (
@@ -439,15 +502,21 @@ function EmptyThreads() {
 export function useComposeTarget(): Session | null {
   const { sessions, route } = useApp()
   const pick = useComposeTargetPick()
+  const { id: projectId, project } = useSelectedProject()
   return useMemo(() => {
-    const ok = (s?: Session | null) => (s && s.kind !== 'shell' && !s.archived_at ? s : null)
+    const ok = (s?: Session | null) => (s && s.kind !== 'shell' && !s.archived_at && (!projectId || s.project_id === projectId) ? s : null)
     const byId = (id: string | null) => ok(sessions?.find((s) => s.id === id))
     if (pick.at === route.s) {
       const p = byId(pick.id)
       if (p) return p
     }
+    // Inside a project a new thread goes to its main session; in All projects, to the open session.
+    if (project) {
+      const main = byId(project.main_session_id)
+      if (main) return main
+    }
     return byId(route.s) ?? byId(pick.id) ?? groupSessions((sessions ?? []).filter((s) => ok(s))).flatMap((g) => g.rows)[0] ?? null
-  }, [sessions, route.s, pick])
+  }, [sessions, route.s, pick, projectId, project])
 }
 
 /** Quick-compose text per session, kept while the box is unmounted. */
@@ -455,6 +524,7 @@ const quickDrafts = new Map<string, string>()
 
 function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; full: boolean; onToggleFull: () => void; onSent: (t: Thread) => void }) {
   const { error, route, navigate } = useApp()
+  const { id: projectId } = useSelectedProject()
   const target = useComposeTarget()
   const key = target?.id ?? ''
   const [body, setBodyState] = useState(() => quickDrafts.get(key) ?? '')
@@ -538,6 +608,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
       </Popover>
       {creating && (
         <NewSessionDialog
+          projectId={projectId || target?.project_id}
           onClose={() => setCreating(false)}
           onCreated={(s) => {
             setComposeTarget(s.id, s.id)

@@ -104,6 +104,8 @@ type Session struct {
 	Kind            string     `json:"kind"`                // KindClaude or KindShell
 	Title           string     `json:"title"`               // what Claude says the session is doing (set_session_title)
 	HostName        string     `json:"host_name,omitempty"` // filled by the server
+	ProjectID       string     `json:"project_id"`
+	IsMain          bool       `json:"is_main"` // the project's main session
 	// Derived.
 	Unread        int        `json:"unread"`
 	OpenQuestions int        `json:"open_questions"`
@@ -137,6 +139,8 @@ type Thread struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 	Messages     []Message  `json:"messages,omitempty"`
 	Name         string     `json:"name"`
+	ProjectID    string     `json:"project_id"`
+	ProjectName  string     `json:"project_name"`
 	ArchivedAt   *time.Time `json:"archived_at"`
 	PinnedAt     *time.Time `json:"pinned_at"`
 	SnoozedUntil *time.Time `json:"snoozed_until"`
@@ -319,6 +323,15 @@ CREATE TABLE IF NOT EXISTS hosts (
   builtin INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  dir TEXT NOT NULL,
+  host_id TEXT NOT NULL DEFAULT 'local',
+  created_at INTEGER NOT NULL,
+  archived_at INTEGER,
+  pinned_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -331,6 +344,8 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "host_id", "TEXT NOT NULL DEFAULT 'local'"},
 	{"sessions", "kind", "TEXT NOT NULL DEFAULT 'claude'"},
 	{"sessions", "title", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "project_id", "TEXT"},
+	{"projects", "main_session_id", "TEXT"},
 	{"threads", "name", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "archived_at", "INTEGER"},
 	{"threads", "pinned_at", "INTEGER"},
@@ -381,6 +396,9 @@ func migrate(db *sql.DB) error {
 				return err
 			}
 		}
+	}
+	if err := migrateProjects(context.Background(), db); err != nil {
+		return fmt.Errorf("projects: %w", err)
 	}
 	// Hosts added with a shared token (before pairing) must be paired again.
 	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
@@ -450,31 +468,70 @@ func (s *Store) CreateSessionOn(ctx context.Context, hostID, name, cwd, claudeSe
 }
 
 // CreateSessionKind records a new session of a kind (KindClaude or KindShell) on a host.
+// Its project is the one for (host, cwd), created on first use.
 func (s *Store) CreateSessionKind(ctx context.Context, hostID, kind, name, cwd, claudeSessionID string) (*Session, error) {
 	if hostID == "" {
 		hostID = LocalHostID
 	}
+	p, _, err := s.EnsureProject(ctx, hostID, cwd)
+	if err != nil {
+		return nil, err
+	}
+	return s.CreateSessionIn(ctx, p.ID, kind, name, cwd, claudeSessionID)
+}
+
+// CreateSessionIn records a new session in a project (on the project's host). cwd is where it
+// runs: the project's dir, or a folder of the person's choosing.
+func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd, claudeSessionID string) (*Session, error) {
 	if kind == "" {
 		kind = KindClaude
 	}
+	p, err := s.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if cwd == "" {
+		cwd = p.Dir
+	}
+	hostID := p.HostID
 	now := s.now()
 	sess := &Session{ID: NewID("ses"), Name: name, Cwd: cwd, Status: StatusStarting, ClaudeSessionID: claudeSessionID,
-		Token: NewID("tok") + NewID(""), CreatedAt: now, UpdatedAt: now, HostID: hostID, Kind: kind}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(id,name,cwd,status,claude_session_id,token,created_at,updated_at,host_id,kind) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		sess.ID, sess.Name, sess.Cwd, sess.Status, sess.ClaudeSessionID, sess.Token, ms(now), ms(now), hostID, kind)
+		Token: NewID("tok") + NewID(""), CreatedAt: now, UpdatedAt: now, HostID: hostID, Kind: kind, ProjectID: p.ID}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,name,cwd,status,claude_session_id,token,created_at,updated_at,host_id,kind,project_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		sess.ID, sess.Name, sess.Cwd, sess.Status, sess.ClaudeSessionID, sess.Token, ms(now), ms(now), hostID, kind, p.ID); err != nil {
+		return nil, err
+	}
+	// A session in an archived project brings it back.
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET archived_at=NULL WHERE id=?`, p.ID); err != nil {
+		return nil, err
+	}
+	// The first Claude Code session of a project is its main one.
+	if kind == KindClaude {
+		if _, err := tx.ExecContext(ctx, `UPDATE projects SET main_session_id=? WHERE id=? AND (main_session_id IS NULL OR main_session_id='' OR main_session_id NOT IN (SELECT id FROM sessions))`, sess.ID, p.ID); err != nil {
+			return nil, err
+		}
+		var main string
+		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(main_session_id,'') FROM projects WHERE id=?`, p.ID).Scan(&main)
+		sess.IsMain = main == sess.ID
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id)`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -601,7 +658,10 @@ func (s *Store) SetSessionTitle(ctx context.Context, id, title string) error {
 
 // RestartSession marks an ended session as starting again (and unarchives it).
 func (s *Store) RestartSession(ctx context.Context, id string) error {
-	return s.exec(ctx, `UPDATE sessions SET status=?, exit_code=NULL, archived_at=NULL, updated_at=? WHERE id=?`, StatusStarting, ms(s.now()), id)
+	if err := s.exec(ctx, `UPDATE sessions SET status=?, exit_code=NULL, archived_at=NULL, updated_at=? WHERE id=?`, StatusStarting, ms(s.now()), id); err != nil {
+		return err
+	}
+	return s.unarchiveProjectOf(ctx, id)
 }
 
 // SetSessionArchived archives or unarchives a session.
@@ -610,7 +670,13 @@ func (s *Store) SetSessionArchived(ctx context.Context, id string, archived bool
 	if archived {
 		v = ms(s.now())
 	}
-	return s.exec(ctx, `UPDATE sessions SET archived_at=? WHERE id=?`, v, id)
+	if err := s.exec(ctx, `UPDATE sessions SET archived_at=? WHERE id=?`, v, id); err != nil {
+		return err
+	}
+	if !archived {
+		return s.unarchiveProjectOf(ctx, id)
+	}
+	return nil
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
@@ -745,8 +811,8 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 
 func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]Thread, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.session_id, t.subject, t.created_at, t.updated_at, s.status,
-	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at
-	  FROM threads t JOIN sessions s ON s.id=t.session_id WHERE `+where+` ORDER BY t.updated_at DESC`, args...)
+	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at, COALESCE(s.project_id,''), COALESCE(p.name,'')
+	  FROM threads t JOIN sessions s ON s.id=t.session_id LEFT JOIN projects p ON p.id=s.project_id WHERE `+where+` ORDER BY t.updated_at DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -757,7 +823,7 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 		var created, updated int64
 		var st string
 		var archived, pinned, snoozed, marked sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked); err != nil {
+		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked, &t.ProjectID, &t.ProjectName); err != nil {
 			rows.Close()
 			return nil, err
 		}

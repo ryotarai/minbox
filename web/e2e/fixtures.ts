@@ -142,6 +142,12 @@ export async function createSession(page: Page, cwd: string, name: string, kind:
     await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
   }
   await page.getByTestId(`new-session-kind-${kind}`).click()
+  // With projects the dialog starts in one of them: this helper wants a folder.
+  const project = page.getByTestId('new-session-project')
+  if (await project.isVisible()) {
+    await project.click()
+    await page.getByTestId('new-session-project-folder').click()
+  }
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
   await page.getByTestId('new-session-start').click()
@@ -166,3 +172,23 @@ export async function phoneSelectSession(page: Page, name: string, open: 'filter
 
 /** Desktop: the session header's status text. */
 export const sessionStatus = (page: Page) => page.getByTestId('session-status')
+
+/** Desktop: selects a project in the far-left column ('' or 'All projects' = every project). */
+export async function selectProject(page: Page, name: string) {
+  if (name === '' || name === 'All projects') {
+    await page.getByTestId('project-all').click()
+    await expect(page.getByTestId('project-all')).toHaveAttribute('aria-pressed', 'true')
+    return
+  }
+  const item = page.getByTestId('project-item').filter({ has: page.getByTestId('project-name').getByText(name, { exact: true }) })
+  await item.getByTestId('project-select').click()
+  await expect(item).toHaveAttribute('data-selected', 'true')
+}
+
+/** Phone: opens the project sheet from the home header and picks a project ('' = All projects). */
+export async function phoneSelectProject(page: Page, name: string) {
+  await page.getByTestId('project-switch').click()
+  if (name === '' || name === 'All projects') await page.getByTestId('project-all').click()
+  else await page.getByTestId('project-item').filter({ hasText: name }).getByTestId('project-select').click()
+  await expect(page.getByTestId('project-sheet')).toBeHidden()
+}

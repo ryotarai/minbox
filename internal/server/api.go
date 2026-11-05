@@ -42,14 +42,27 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Cwd    string `json:"cwd"`
 		HostID string `json:"host_id"`
 		Kind   string `json:"kind"` // "claude" (default) or "shell"
+		// ProjectID: start in this project (its host; its folder unless cwd is given). Without it
+		// the project is the one for (host_id, cwd), created on first use.
+		ProjectID string `json:"project_id"`
+		// Main: make it the project's main session (the first Claude Code session of a project is main anyway).
+		Main bool `json:"main"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	sess, err := s.sessions.CreateKind(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID))
+	sess, err := s.sessions.CreateKind(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID), strings.TrimSpace(req.ProjectID))
 	if err != nil {
 		httpError(w, 400, err.Error())
 		return
+	}
+	if req.Main && sess.Kind == store.KindClaude && !sess.IsMain {
+		if _, err := s.store.UpdateProject(r.Context(), sess.ProjectID, store.ProjectPatch{MainSession: &sess.ID}); err != nil {
+			storeError(w, err)
+			return
+		}
+		sess.IsMain = true
+		s.hub.publish(Event{Type: "sessions"})
 	}
 	sess.HostName = s.hostNames(r.Context())[sess.HostID]
 	writeJSON(w, 201, sess)
@@ -76,7 +89,7 @@ func (s *Server) updateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
-	if err := s.sessions.Delete(r.Context(), r.PathValue("id")); err != nil {
+	if err := s.sessions.Delete(r.Context(), r.PathValue("id"), r.URL.Query().Get("promote")); err != nil {
 		storeError(w, err)
 		return
 	}
