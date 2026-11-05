@@ -104,18 +104,34 @@ func (m *sessionManager) remote(hostID string) bool {
 
 // Create records a new session and starts Claude Code in it.
 func (m *sessionManager) Create(ctx context.Context, name, cwd, hostID string) (*store.Session, error) {
-	return m.CreateKind(ctx, store.KindClaude, name, cwd, hostID)
+	return m.CreateKind(ctx, store.KindClaude, name, cwd, hostID, "")
 }
 
 // CreateKind records a new session of a kind: Claude Code (store.KindClaude)
-// or the host's own login shell (store.KindShell), and starts it.
-func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID string) (*store.Session, error) {
+// or the host's own login shell (store.KindShell), and starts it. With a projectID the session
+// belongs to that project: its host, and its folder unless cwd names another one. Without, the
+// project is the one for (host, folder), created on first use.
+func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID, projectID string) (*store.Session, error) {
 	switch kind {
 	case "":
 		kind = store.KindClaude
 	case store.KindClaude, store.KindShell:
 	default:
 		return nil, fmt.Errorf("unknown kind: %s (claude or shell)", kind)
+	}
+	var project *store.Project
+	if projectID != "" {
+		p, err := m.store.GetProject(ctx, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("no such project: %s", projectID)
+		}
+		if hostID != "" && hostID != p.HostID {
+			return nil, fmt.Errorf("host_id %s is not the project's host (%s)", hostID, p.HostID)
+		}
+		project, hostID = p, p.HostID
+		if cwd == "" {
+			cwd = p.Dir
+		}
 	}
 	if hostID == "" {
 		hostID = store.LocalHostID
@@ -138,16 +154,23 @@ func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID
 	if kind == store.KindShell {
 		claudeID = ""
 	}
-	sess, err := m.store.CreateSessionKind(ctx, hostID, kind, name, cwd, claudeID)
+	var sess *store.Session
+	if project != nil {
+		sess, err = m.store.CreateSessionIn(ctx, project.ID, kind, name, cwd, claudeID)
+	} else {
+		sess, err = m.store.CreateSessionKind(ctx, hostID, kind, name, cwd, claudeID)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if err := m.spawn(ctx, sess, false); err != nil {
 		_ = m.store.SetSessionEnded(ctx, sess.ID, -1)
 		m.hub.publish(Event{Type: "sessions"})
+		m.hub.publish(Event{Type: "projects"})
 		return nil, err
 	}
 	m.hub.publish(Event{Type: "sessions"})
+	m.hub.publish(Event{Type: "projects"})
 	return m.store.GetSession(ctx, sess.ID)
 }
 
