@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, selectSession, test, typeInTerminal } from './fixtures'
 
 // Not a check: writes screenshots of the main states for a look (SCREENSHOTS=1).
 test('screenshots', async ({ page, minbox }) => {
@@ -74,6 +74,7 @@ test('screenshots', async ({ page, minbox }) => {
   await shot('10-shortcuts')
   await page.keyboard.press('Escape')
 
+  await page.getByTestId('list-options').click()
   await page.getByTestId('open-settings').click()
   await shot('11-settings')
   await page.getByTestId('settings-nav-capabilities').click()
@@ -82,15 +83,17 @@ test('screenshots', async ({ page, minbox }) => {
   await page.getByTestId('settings-back').click()
   await page.getByTestId('terminal').click()
   await typeInTerminal(page, 'card token bucket')
+  await page.getByTestId('list-options').click()
   await page.getByTestId('open-board').click()
   await shot('12-board')
   await page.keyboard.press('Escape')
+  await page.getByTestId('list-options').click()
   await page.getByTestId('open-decide').click()
   await page.waitForTimeout(800)
   await shot('13-decide')
   await page.keyboard.press('Escape')
 
-  await page.getByTestId('session-row').filter({ hasText: 'minbox-ui' }).click()
+  await selectSession(page, 'minbox-ui')
   await page.getByTestId('terminal').click()
   await typeInTerminal(page, 'kinds')
   await expectTerminal(page, /sent kinds/)
@@ -107,14 +110,15 @@ test('screenshots', async ({ page, minbox }) => {
   await shot('16-rich-body')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
+  await shot('20-phone-home')
+  await page.getByTestId('session-filter').click()
   await shot('20-phone-sessions')
+  await page.getByTestId('sheet-close').click()
   await page.getByTestId('new-session').click()
   await shot('20-phone-new-session')
   await page.getByRole('button', { name: 'Cancel' }).click()
-  await page.getByTestId('session-row').filter({ hasText: 'minbox-ui' }).click()
-  await shot('21-phone-inbox')
   await page.getByTestId('thread-row').filter({ hasText: 'Archive rules' }).click()
   await shot('22-phone-thread')
-  await page.getByTestId('mobile-tab-terminal').click()
+  await page.getByTestId('phone-session-chip').click()
   await shot('23-phone-terminal')
 })

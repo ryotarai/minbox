@@ -59,7 +59,7 @@ test.describe('real Claude Code', () => {
     await page.getByTestId('new-session-start').click()
 
     // The session connects (the mod's hello) once Claude Code is up.
-    const row = page.getByTestId('session-row').filter({ hasText: 'real' })
+    const row = page.getByTestId('session-status')
     // First time in a folder, Claude Code asks whether to trust it: the person answers in the terminal.
     await waitTerminal(page, /trust this folder|❯|>/, 60_000)
     if (/trust this folder/.test(await terminalText(page))) {
@@ -108,7 +108,7 @@ test.describe('real Claude Code', () => {
     await startServer()
 
     await page.goto(url)
-    const row = page.getByTestId('session-row').filter({ hasText: 'real' })
+    const row = page.getByTestId('session-status')
     await expect(row).toContainText(/Waiting for you|Working/, { timeout: 60_000 })
     // `claude --resume <id>` brings the earlier conversation back.
     await waitTerminal(page, /Color test/, 60_000)

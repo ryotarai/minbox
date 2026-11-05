@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { createSession, expect, expectTerminal, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
 test('a session runs Claude Code in a terminal next to its inbox', async ({ page, minbox }) => {
   await page.goto(minbox.url)
@@ -7,8 +7,8 @@ test('a session runs Claude Code in a terminal next to its inbox', async ({ page
 
   // The fake claude prints its arguments: a new conversation with our mod.
   await expectTerminal(page, /fake-claude new session=[0-9a-f-]{36}/)
-  await expect(page.getByTestId('session-row').filter({ hasText: 'demo' })).toContainText('Waiting for you')
-  await expect(page.getByTestId('inbox-pane')).toContainText('No messages yet')
+  await expect(sessionStatus(page)).toContainText('Waiting for you')
+  await expect(page.getByTestId('threads-pane')).toContainText('No threads yet')
 
   // Typing goes to the PTY.
   await typeInTerminal(page, 'hello there')
@@ -27,8 +27,8 @@ test('a question from Claude is answered in the inbox and delivered back', async
   const row = page.getByTestId('thread-row').filter({ hasText: 'Pick a database' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('?2')
-  await expect(page.getByTestId('inbox-pane')).toContainText('Waiting on you')
-  await expect(page.getByTestId('badge-questions')).toHaveText('?2')
+  await expect(page.getByTestId('filter-waiting-count')).toHaveText('1')
+  await expect(row.getByTestId('thread-questions')).toHaveText('?2')
   await expect(page).toHaveTitle(/\(1\) minbox/)
 
   await row.click()
@@ -65,7 +65,7 @@ test('the person can start a thread; it reaches Claude', async ({ page, minbox }
   await page.getByTestId('quick-body').fill('Please also update the README')
   await page.getByTestId('quick-send').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Please also update the README')
-  await expectTerminal(page, '<<< inbox [Please also update the README] Please also update the README')
+  await expectTerminal(page, '<<< inbox [Please also update the README]')
   await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
 
   // Claude answers in the same thread: it shows up as new.
@@ -100,15 +100,13 @@ test('stopping ends a session; Resume starts it again', async ({ page, minbox })
   await createSession(page, minbox.dataDir, 'stopper')
   await expectTerminal(page, 'ready>')
 
-  const row = page.getByTestId('session-row').filter({ hasText: 'stopper' })
-  await row.hover()
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-stop').click()
-  await expect(row).toContainText('Ended')
+  await expect(sessionStatus(page)).toContainText('Ended')
   await expect(page.getByTestId('resume')).toBeVisible()
 
   await page.getByTestId('resume').click()
-  await expect(row).toContainText('Waiting for you')
+  await expect(sessionStatus(page)).toContainText('Waiting for you')
   await expectTerminal(page, /fake-claude (new|resume) session=/)
 })
 
@@ -117,7 +115,7 @@ test('Claude exiting by itself closes the session', async ({ page, minbox }) => 
   await createSession(page, minbox.dataDir, 'quitter')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  await expect(page.getByTestId('session-row').filter({ hasText: 'quitter' })).toContainText('Ended')
+  await expect(sessionStatus(page)).toContainText('Ended')
 })
 
 test('restarting the server keeps sessions running in the terminal host', async ({ page, minbox }) => {
@@ -130,8 +128,7 @@ test('restarting the server keeps sessions running in the terminal host', async 
   await minbox.start()
   await page.reload()
 
-  const row = page.getByTestId('session-row').filter({ hasText: 'survivor' })
-  await expect(row).not.toContainText('Ended')
+  await expect(sessionStatus(page)).not.toContainText('Ended')
   // The same process: its scrollback is replayed, and it still answers.
   await expectTerminal(page, 'echo: before restart')
   await typeInTerminal(page, 'after restart')
@@ -146,7 +143,7 @@ test('after an OS restart, open sessions resume by themselves; closed ones do no
   await createSession(page, minbox.dataDir, 'closed-one')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  await expect(page.getByTestId('session-row').filter({ hasText: 'closed-one' })).toContainText('Ended')
+  await expect(sessionStatus(page)).toContainText('Ended')
 
   // An OS restart: the server and the terminal host (with every PTY) are gone.
   await minbox.stop()
@@ -154,11 +151,11 @@ test('after an OS restart, open sessions resume by themselves; closed ones do no
   await minbox.start()
   await page.reload()
 
-  const open = page.getByTestId('session-row').filter({ hasText: 'open-one' })
-  await expect(open).not.toContainText('Ended')
-  await open.click()
+  await selectSession(page, 'open-one')
+  await expect(sessionStatus(page)).not.toContainText('Ended')
   await expectTerminal(page, /fake-claude (new|resume) session=/)
-  await expect(page.getByTestId('session-row').filter({ hasText: 'closed-one' })).toContainText('Ended')
+  await selectSession(page, 'closed-one')
+  await expect(sessionStatus(page)).toContainText('Ended')
 })
 
 test('a reply written while the session is stopped is delivered after Resume', async ({ page, minbox }) => {
@@ -169,11 +166,9 @@ test('a reply written while the session is stopped is delivered after Resume', a
   const row = page.getByTestId('thread-row').filter({ hasText: 'Note' })
   await expect(row).toBeVisible()
 
-  const srow = page.getByTestId('session-row').filter({ hasText: 'later' })
-  await srow.hover()
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-stop').click()
-  await expect(srow).toContainText('Ended')
+  await expect(sessionStatus(page)).toContainText('Ended')
 
   await row.click()
   await page.getByTestId('reply-box').fill('Great, now write tests')

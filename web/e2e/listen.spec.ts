@@ -47,7 +47,7 @@ test('serve --listen: a browser on another address pairs over http, accepted on 
 
     // The remote browser signs the challenge with its fallback key and gets in.
     await expect(remote.getByTestId('pair-screen')).toBeHidden({ timeout: 15_000 })
-    await expect(remote.getByTestId('session-list')).toBeVisible()
+    await expect(remote.getByTestId('threads-pane')).toBeVisible()
     await other.close()
   } finally {
     proc?.kill('SIGTERM')

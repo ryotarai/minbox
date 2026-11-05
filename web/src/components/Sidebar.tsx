@@ -1,26 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
-import { ATTENTION, SECTION_LABEL, SECTION_ORDER, api, type Section, type Session } from '../api'
+import { useState } from 'react'
+import { ATTENTION, SECTION_ORDER, api, type Section, type Session } from '../api'
 import { attentionOf, useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
-import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
-import { homeRelative, hm, initials, plural, shortTime } from '../lib/format'
-import { useHotkeys } from '../lib/hotkeys'
-import {
-  IconBoard,
-  IconBolt,
-  IconChevronRight,
-  IconClaude,
-  IconInbox,
-  IconMore,
-  IconMoreV,
-  IconPlus,
-  IconSearch,
-  IconSettings,
-  IconArchive,
-} from './icons'
-import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, StatusDot, cx, statusOf } from './ui'
-import { ConnectionBanner } from './Banners'
-import { PairRequestBanner } from './Devices'
+import { initials } from '../lib/format'
+import { IconInbox, IconPlus, IconSearch, IconSettings } from './icons'
+import { Button, IconButton, MenuItem, MenuSep, Popover, StatusDot, cx, statusOf } from './ui'
 
 export function sectionOf(s: Session): Section {
   if (s.archived_at) return 'archived'
@@ -29,29 +13,6 @@ export function sectionOf(s: Session): Section {
 
 export function waitsOnPerson(s: Session): boolean {
   return ATTENTION.includes(sectionOf(s)) || attentionOf(s) > 0
-}
-
-const COLLAPSED_DEFAULT: Section[] = ['archived', 'snoozed']
-
-function useCollapsed(): [Set<Section>, (s: Section) => void] {
-  const [set, setSet] = useState<Set<Section>>(() => {
-    try {
-      const v = localStorage.getItem('minbox:collapsed')
-      if (v) return new Set(JSON.parse(v) as Section[])
-    } catch {
-      /* ignore */
-    }
-    return new Set(COLLAPSED_DEFAULT)
-  })
-  const toggle = (s: Section) =>
-    setSet((prev) => {
-      const next = new Set(prev)
-      if (next.has(s)) next.delete(s)
-      else next.add(s)
-      localStorage.setItem('minbox:collapsed', JSON.stringify([...next]))
-      return next
-    })
-  return [set, toggle]
 }
 
 export function groupSessions(sessions: Session[]): { section: Section; rows: Session[] }[] {
@@ -65,112 +26,7 @@ export function groupSessions(sessions: Session[]): { section: Section; rows: Se
   return SECTION_ORDER.filter((sec) => by.has(sec)).map((sec) => ({ section: sec, rows: by.get(sec)!.sort((a, b) => time(b) - time(a)) }))
 }
 
-export function Sidebar({ forceRail }: { forceRail?: boolean }) {
-  const { sessions, layout, setLayout, setOverlay, navigate, route } = useApp()
-  const [collapsed, toggleCollapsed] = useCollapsed()
-  const [optsAnchor, setOptsAnchor] = useState<HTMLElement | null>(null)
-  const groups = useMemo(() => groupSessions(sessions ?? []), [sessions])
-
-  useHotkeys({
-    'mod+b': () => setLayout({ rail: !layout.rail }),
-  })
-
-  if (layout.rail || forceRail)
-    return (
-      <Rail
-        onNew={() => setOverlay({ kind: 'new-session' })}
-      />
-    )
-
-  return (
-    <nav data-testid="session-list" aria-label="Sessions" className="flex h-full min-w-0 flex-col bg-surface">
-      <div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-2.5">
-        <Logo />
-        <h1 className="sr-only">minbox</h1>
-        <span className="flex-1" />
-        <IconButton size={34} aria-label="Quick actions (⌘K)" title="Quick actions (⌘K)" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
-          <IconSearch />
-        </IconButton>
-        <IconButton size={34} aria-label="List options" data-testid="list-options" onClick={(e) => setOptsAnchor(e.currentTarget)}>
-          <IconMoreV />
-        </IconButton>
-        <Button size="sm" data-testid="new-session" className="h-8 bg-raised" onClick={() => setOverlay({ kind: 'new-session' })}>
-          <IconPlus size={13} />
-          New
-        </Button>
-      </div>
-      <ListOptions anchor={optsAnchor} onClose={() => setOptsAnchor(null)} />
-      <ConnectionBanner />
-      <NotificationAsk />
-      <PairRequestBanner />
-      {sessions?.length === 0 && (
-        <div className="mx-2 flex flex-col gap-2 rounded-lg px-2 py-6 text-center text-[13px] text-muted">
-          No sessions yet.
-          <Button variant="primary" onClick={() => setOverlay({ kind: 'new-session' })}>
-            New session
-          </Button>
-        </div>
-      )}
-
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-        <AllInboxLink />
-        {sessions === null && <SkeletonRows />}
-        {groups.map((g) => (
-          <div key={g.section} className="flex flex-col gap-0.5" data-section={g.section}>
-            <button
-              type="button"
-              onClick={() => toggleCollapsed(g.section)}
-              data-testid={g.section === 'archived' ? 'archived-section' : `section-${g.section}`}
-              aria-expanded={!collapsed.has(g.section)}
-              className="mt-2 flex h-[34px] shrink-0 items-center gap-2 rounded-md border-0 bg-raised px-3 text-left"
-            >
-              <span className={cx('text-[13px] font-[650]', ['quiet', 'archived', 'snoozed'].includes(g.section) ? 'text-fg2' : 'text-fg')}>
-                {SECTION_LABEL[g.section]}
-              </span>
-              <span className="text-[12.5px] text-subtle">{g.rows.length}</span>
-              <span className="flex-1" />
-              {collapsed.has(g.section) && <IconChevronRight size={13} className="text-muted" />}
-            </button>
-            {g.rows
-              .filter((s) => !collapsed.has(g.section) || s.id === route.s)
-              .map((s) => <SessionRow key={s.id} s={s} selected={s.id === route.s} onSelect={() => navigate({ s: s.id, t: null, f: null, view: 'main' })} />)}
-          </div>
-        ))}
-      </div>
-
-      <Footer />
-    </nav>
-  )
-}
-
-/** The entry to the all-sessions inbox: the top row of the session list. */
-export function AllInboxLink({ phone }: { phone?: boolean }) {
-  const { sessions, route, navigate } = useApp()
-  const waiting = (sessions ?? []).filter((s) => !s.archived_at).reduce((n, s) => n + attentionOf(s), 0)
-  const on = route.view === 'inbox'
-  return (
-    <button
-      type="button"
-      data-testid="open-all-inbox"
-      onClick={() => navigate({ view: on ? 'main' : 'inbox' }, { push: phone })}
-      className={cx(
-        'flex shrink-0 items-center gap-2.5 rounded-lg border-0 text-left text-fg',
-        phone ? 'mx-3 mb-1 mt-1 min-h-12 px-3' : 'h-10 px-3',
-        on ? 'bg-sel' : 'bg-raised hover:bg-sel',
-      )}
-    >
-      <IconInbox size={16} className="text-muted" />
-      <span className="flex-1 text-[13.5px] font-[650]">All inbox</span>
-      {waiting > 0 && (
-        <span data-testid="all-inbox-waiting" className="rounded-[6px] bg-accent px-1.5 text-[11.5px] font-bold text-onaccent" title="Threads waiting on you">
-          {waiting}
-        </span>
-      )}
-    </button>
-  )
-}
-
-function Logo({ size = 22 }: { size?: number }) {
+export function Logo({ size = 22 }: { size?: number }) {
   return (
     <span aria-hidden="true" style={{ width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-[6px] bg-accent text-onaccent">
       <IconInbox size={Math.round(size * 0.64)} />
@@ -178,92 +34,7 @@ function Logo({ size = 22 }: { size?: number }) {
   )
 }
 
-function SkeletonRows() {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-3 px-3 py-4">
-      {['70%', '55%', '64%'].map((w, i) => (
-        <div key={i} className="mb-skeleton flex flex-col gap-1.5">
-          <div className="h-3 rounded bg-sel" style={{ width: w }} />
-          <div className="h-2.5 w-[85%] rounded bg-raised" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function Footer() {
-  const { settings, setOverlay, navigate, route } = useApp()
-  useDraftsVersion()
-  const drafts = replyDraftThreads().length + getComposeDrafts().length
-  return (
-    <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1.5">
-      <button
-        type="button"
-        data-testid="open-settings"
-        onClick={() => navigate({ view: route.view === 'settings' ? 'main' : 'settings' })}
-        className="flex h-9 flex-1 items-center gap-2 rounded-md border-0 bg-transparent px-2 text-left text-[13px] text-muted hover:text-fg"
-      >
-        <IconSettings size={15} />
-        Settings
-      </button>
-      {settings.board && (
-        <IconButton size={34} aria-label="Board" title="Board" data-testid="open-board" onClick={() => navigate({ view: route.view === 'board' ? 'main' : 'board' })}>
-          <IconBoard />
-        </IconButton>
-      )}
-      {settings.decision_mode && (
-        <IconButton size={34} aria-label="Decide" title="Decision mode" data-testid="open-decide" onClick={() => setOverlay({ kind: 'decide' })}>
-          <IconBolt />
-        </IconButton>
-      )}
-      <button
-        type="button"
-        data-testid="drafts"
-        onClick={() => setOverlay({ kind: 'drafts' })}
-        className="h-9 rounded-md border-0 bg-transparent px-2 text-[12px] text-subtle hover:text-fg"
-      >
-        Drafts {drafts}
-      </button>
-    </div>
-  )
-}
-
-function ListOptions({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
-  const { settings, saveSettings } = useApp()
-  const opts: [keyof typeof settings.list, string][] = [
-    ['highlight_subject', 'Highlight thread subject'],
-    ['compact', 'Compact rows'],
-    ['hide_icons', 'Hide session icons'],
-    ['small_names', 'Smaller thread names'],
-  ]
-  const toggle = (k: keyof typeof settings.list) => saveSettings({ list: { ...settings.list, [k]: !settings.list[k] } })
-  const Row = ({ k, label }: { k: keyof typeof settings.list; label: string }) => (
-    <button
-      type="button"
-      role="menuitemcheckbox"
-      aria-checked={settings.list[k]}
-      onClick={() => toggle(k)}
-      className="flex h-[34px] w-full items-center gap-2.5 rounded-[6px] border-0 bg-transparent px-2.5 text-left hover:bg-sel"
-    >
-      <span
-        aria-hidden="true"
-        className={cx('h-3.5 w-3.5 shrink-0 rounded-[4px] border-[1.5px] border-faint', settings.list[k] && 'border-muted bg-muted')}
-      />
-      {label}
-    </button>
-  )
-  return (
-    <Popover anchor={anchor} open={!!anchor} onClose={onClose} align="start" className="w-[280px]">
-      {opts.map(([k, label]) => (
-        <Row key={k} k={k} label={label} />
-      ))}
-      <MenuSep />
-      <Row k="keep_panel" label="Keep thread panel open" />
-    </Popover>
-  )
-}
-
-function NotificationAsk() {
+export function NotificationAsk() {
   const { settings } = useApp()
   const [dismissed, setDismissed] = useState(() => localStorage.getItem('minbox:notify-asked') === '1')
   const [perm, setPerm] = useState(notificationPermission())
@@ -295,152 +66,6 @@ function NotificationAsk() {
       </button>
     </div>
   )
-}
-
-/** The second line's text: the top thread's subject, or how a sent reply is doing. */
-export function rowSubject(s: Session): string {
-  const t = s.top_thread
-  if (!t) return s.status === 'ended' ? 'Session ended' : 'No messages yet'
-  if (t.section === 'sent' && t.last_author === 'user') {
-    if (t.last_delivery === 'delivered') return `Delivered to Claude Code, ${hm(t.updated_at)}`
-    if (t.last_delivery === 'undelivered') return 'Not delivered · session stopped'
-    if (t.last_delivery === 'sending') return 'Sending to Claude Code…'
-    return 'Queued · Claude Code gets it when its turn ends'
-  }
-  return t.subject
-}
-
-function SessionRow({ s, selected, onSelect }: { s: Session; selected: boolean; onSelect: () => void }) {
-  const { settings } = useApp()
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
-  const [renaming, setRenaming] = useState(false)
-  const rowRef = useRef<HTMLDivElement>(null)
-  const waits = waitsOnPerson(s)
-  const st = statusOf(s, waits)
-  const t = s.top_thread
-  const strong = (waits || s.unread > 0) && settings.list.highlight_subject
-  const count = s.open_questions > 0 ? plural(s.open_questions, 'question') : ''
-  const time = shortTime(t?.updated_at ?? s.last_activity ?? s.updated_at)
-
-  if (renaming) return <RenameRow s={s} onDone={() => setRenaming(false)} />
-
-  return (
-    <div className="group relative" ref={rowRef}>
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid="session-row"
-        data-session-id={s.id}
-        aria-current={selected ? 'true' : undefined}
-        onClick={onSelect}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onSelect()
-          if (e.key === 'F10' && e.shiftKey) {
-            e.preventDefault()
-            setMenuAnchor(rowRef.current)
-          }
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          setMenuAnchor(rowRef.current)
-        }}
-        className={cx(
-          'flex cursor-pointer flex-col rounded-[9px] border px-3 outline-offset-[-2px]',
-          settings.list.compact ? 'gap-0.5 py-1.5' : 'gap-[5px] py-[9px]',
-          selected ? 'border-linestrong bg-rowsel' : 'border-transparent hover:bg-raised/60',
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-2 text-[12.5px]">
-          <StatusDot s={s} waits={waits} size={7} ring={false} />
-          <span className="min-w-[3.5rem] max-w-[60%] shrink-0 truncate text-fg2" data-testid="session-name">
-            {s.name}
-          </span>
-          <HostTag name={s.host_name} />
-          <span className={cx('min-w-0 truncate whitespace-nowrap', st.text)} data-testid="session-status">
-            {st.label}
-          </span>
-          <span className="flex-1" />
-          {count && <span className="shrink-0 whitespace-nowrap text-subtle">{count}</span>}
-          <span className="shrink-0 whitespace-nowrap text-subtle group-hover:invisible">{time}</span>
-        </div>
-        {s.title && (
-          <div
-            data-testid="session-title"
-            title={s.title}
-            className={cx('min-w-0 truncate pl-[15px] font-semibold text-fg', settings.list.small_names ? 'text-[13px]' : 'text-[14px]', s.status === 'ended' && 'text-muted')}
-          >
-            {s.title}
-          </div>
-        )}
-        {!settings.list.compact && (
-          <div className="flex min-w-0 items-center gap-2">
-            <RowBadge s={s} />
-            {!settings.list.hide_icons && t && (
-              <span aria-hidden="true" className="shrink-0 text-wait">
-                <IconClaude size={12} />
-              </span>
-            )}
-            <span
-              className={cx(
-                'min-w-0 flex-1 truncate',
-                settings.list.small_names ? 'text-[13px]' : 'text-[14px]',
-                strong ? 'font-[650] text-fg' : 'font-medium text-muted',
-                !t && 'mono text-[12px] font-normal text-subtle',
-              )}
-            >
-              {t ? rowSubject(s) : homeRelative(s.cwd)}
-            </span>
-            {s.unread > 0 && (
-              <span
-                data-testid="badge-unread"
-                className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#3a3a42] px-[5px] text-[11px] font-bold text-white"
-              >
-                {s.unread}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      <span className="absolute right-1.5 top-1.5 hidden group-focus-within:block group-hover:block">
-        <IconButton
-          size={26}
-          aria-label="Session actions"
-          data-testid="session-menu"
-          onClick={(e) => {
-            e.stopPropagation()
-            setMenuAnchor(rowRef.current)
-          }}
-          className="bg-raised"
-        >
-          <IconMore />
-        </IconButton>
-      </span>
-      <SessionMenu s={s} anchor={menuAnchor} onClose={() => setMenuAnchor(null)} onRename={() => setRenaming(true)} />
-    </div>
-  )
-}
-
-function RowBadge({ s }: { s: Session }) {
-  const t = s.top_thread
-  if (t?.stopped || (s.stopped ?? 0) > 0)
-    return (
-      <span data-testid="badge-stopped" className="flex h-[22px] shrink-0 items-center rounded-[6px] border border-danger px-[7px] text-[12px] font-semibold text-danger">
-        Stopped
-      </span>
-    )
-  if ((t?.holds_up ?? 0) > 0)
-    return (
-      <span data-testid="badge-holds" className="flex h-[22px] shrink-0 items-center rounded-[6px] border border-wait px-[7px] text-[12px] font-semibold text-wait">
-        Holds up {t!.holds_up}
-      </span>
-    )
-  if (s.open_questions > 0)
-    return (
-      <span data-testid="badge-questions" className="flex h-[22px] shrink-0 items-center rounded-[6px] border border-wait px-[7px] text-[12px] font-semibold text-wait">
-        ?{s.open_questions}
-      </span>
-    )
-  return null
 }
 
 export function SessionMenu({
@@ -511,7 +136,7 @@ export function SessionMenu({
   )
 }
 
-function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
+export function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
   const { error, reloadSessions } = useApp()
   const [name, setName] = useState(s.name)
   const save = () => {
@@ -547,8 +172,9 @@ function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
 }
 
 /** The collapsed session rail (⌘B): initials, amber when a session waits on the person. */
-function Rail({ onNew }: { onNew: () => void }) {
+export function Rail() {
   const { sessions, route, navigate, setLayout, setOverlay } = useApp()
+  const onNew = () => setOverlay({ kind: 'new-session' })
   const live = groupSessions(sessions ?? []).filter((g) => g.section !== 'archived')
   return (
     <nav aria-label="Sessions" data-testid="session-rail" className="flex h-full w-[60px] flex-col items-center gap-1.5 bg-surface pt-2.5">
@@ -583,7 +209,7 @@ function Rail({ onNew }: { onNew: () => void }) {
                 title={`${s.name}${s.title ? ` — ${s.title}` : ''} · ${stopped ? 'Stopped' : statusOf(s, waits).label}`}
                 data-testid="rail-session"
                 data-status={stopped ? 'stopped' : s.status === 'idle' && waits ? 'waiting' : s.status}
-                onClick={() => navigate({ s: s.id, view: 'main' })}
+                onClick={() => navigate({ s: s.id, t: s.top_thread?.id ?? null, f: null, view: 'main' })}
                 className={cx(
                   'relative box-border flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[13px]',
                   border,
@@ -610,7 +236,7 @@ function Rail({ onNew }: { onNew: () => void }) {
           }),
         )}
       </div>
-      <IconButton size={40} aria-label="Quick actions" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
+      <IconButton size={40} aria-label="Search" onClick={() => setOverlay({ kind: 'palette' })}>
         <IconSearch />
       </IconButton>
       <IconButton size={40} aria-label="New session" onClick={onNew}>
@@ -623,4 +249,3 @@ function Rail({ onNew }: { onNew: () => void }) {
   )
 }
 
-export { Logo, IconArchive }
