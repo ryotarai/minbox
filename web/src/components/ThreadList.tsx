@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { SECTION_ORDER, api, type Delivery, type Project, type Section, type Session, type Thread } from '../api'
+import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
 import { IconPaperclip, IconPin } from './icons'
-import { StatusDot, ThreadStatusBadge, cx } from './ui'
-import { waitsOnPerson } from './Sidebar'
+import { ThreadStatusBadge, cx } from './ui'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
   queued: { icon: '◷', label: 'Queued', color: 'text-muted' },
@@ -55,7 +54,7 @@ export function useAllThreads(): Thread[] | null {
   return threads
 }
 
-export function ThreadRow({ t, focused, onOpen, phone, session, project, onOpenSession }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean; session?: Session; project?: Project; onOpenSession?: () => void }) {
+export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean }) {
   const { settings } = useApp()
   const attention = ['stopped', 'holding', 'waiting'].includes(t.section)
   const strong = (attention || t.unread > 0) && settings.list.highlight_subject
@@ -92,33 +91,6 @@ export function ThreadRow({ t, focused, onOpen, phone, session, project, onOpenS
         <span className="shrink-0 text-[12px] text-subtle">{shortTime(t.updated_at)}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
-        {project && (
-          <span
-            data-testid="thread-project"
-            data-project-id={project.id}
-            title={`Project ${project.name}`}
-            className="max-w-[30%] shrink-0 truncate rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-muted"
-          >
-            {project.name}
-          </span>
-        )}
-        {session && (
-          <span
-            role="button"
-            tabIndex={-1}
-            data-testid="thread-session"
-            data-session-id={session.id}
-            title={`Open ${session.name}'s terminal`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenSession?.()
-            }}
-            className="flex max-w-[45%] shrink-0 items-center gap-1.5 rounded-[5px] bg-chip px-1.5 text-[11px] leading-[18px] text-fg2 hover:bg-sel"
-          >
-            <StatusDot s={session} waits={waitsOnPerson(session)} size={6} ring={false} />
-            <span className="truncate">{session.name}</span>
-          </span>
-        )}
         {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}
         {t.last_author === 'user' && <span className="shrink-0 text-subtle">You:</span>}
         <span className="min-w-0 flex-1 truncate">{oneLine(proseOf(t.last_body)) || '—'}</span>

@@ -55,7 +55,7 @@ export function useVisibleThreads(): { all: Thread[] | null; groups: { key: stri
 
 /** The pane: top bar, filters, every thread of every session, and the composer. */
 export function ThreadsPane({ phone }: { phone?: boolean }) {
-  const { route, sessions, navigate, settings } = useApp()
+  const { route, navigate, settings } = useApp()
   const v = useVisibleThreads()
   const { filter } = v
   const flat = useMemo(() => v.groups.flatMap((g) => g.items), [v.groups])
@@ -63,14 +63,9 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
   const [full, setFull] = useState(false)
   const [foldOpen, setFoldOpen] = useState(false)
   const [sheet, setSheet] = useState(false)
-  const sessionOf = (id: string) => sessions?.find((s) => s.id === id)
-  const { projects } = useApp()
   const { id: projectId } = useSelectedProject()
-  // In All projects every row names its project; inside one it would only repeat.
-  const projectOf = (t: Thread) => (projectId ? undefined : projects?.find((p) => p.id === t.project_id))
 
   const open = (t: Thread) => navigate({ s: t.session_id, t: t.id, f: null, view: 'main', tab: 'inbox' })
-  const openSession = (s: Session) => navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
 
   // The list's own keys work while no thread is open; an open thread takes J/K for itself.
   useHotkeys(
@@ -146,12 +141,6 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                     key={t.id}
                     t={t}
                     phone={phone}
-                    session={sessionOf(t.session_id)}
-                    project={projectOf(t)}
-                    onOpenSession={() => {
-                      const s = sessionOf(t.session_id)
-                      if (s) openSession(s)
-                    }}
                     focused={route.t ? route.t === t.id : flat[cursor]?.id === t.id}
                     onOpen={() => open(t)}
                   />
@@ -172,7 +161,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                 </button>
                 {foldOpen &&
                   v.fold.map((t) => (
-                    <ThreadRow key={t.id} t={t} phone={phone} session={sessionOf(t.session_id)} project={projectOf(t)} focused={route.t === t.id} onOpen={() => open(t)} />
+                    <ThreadRow key={t.id} t={t} phone={phone} focused={route.t === t.id} onOpen={() => open(t)} />
                   ))}
               </>
             )}
