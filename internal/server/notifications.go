@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/ryotarai/minbox/internal/question"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,7 +37,7 @@ func threadLinkURL(publicURL, sessionID, threadID string) string {
 func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, threadID, messageID, subject, body string, needsAction bool) {
 	n := notify.Notification{
 		Session: sess.Name, Title: subject, ThreadID: threadID, MessageID: messageID,
-		From: "Claude", Body: body, NeedsAction: needsAction,
+		From: "Claude", Body: question.Readable(body), NeedsAction: needsAction,
 	}
 	if sess.ProjectID != "" {
 		if p, err := s.store.GetProject(ctx, sess.ProjectID); err == nil {
