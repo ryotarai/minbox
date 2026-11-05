@@ -559,3 +559,10 @@ cancels it.
 - With `base`, the diff starts at `git merge-base <base> HEAD`, so the branch's committed changes
   show as well as uncommitted ones. A base with no common commit: 400 `review file …: base …`.
 - The stored review JSON carries `base` when given. Host `/fs/gitdiff` takes `base`.
+
+## Thread title from the agent (`thread_title`)
+
+- `POST /api/agent/messages` takes `thread_title?` (the `send_message` tool's `thread_title`). Given and non-empty, it sets the thread's title (the stored `subject`): the initial title of a new thread, and the new title of an existing one when the call carries `thread_id`. Omitted or empty: nothing changes (a new thread still derives its title from the first line of `body`, 60 characters).
+- The title is one line (whitespace runs collapse to a space) and at most 120 characters (longer is cut, ending in `…`).
+- `subject` is kept as an alias of `thread_title` (when both are sent, `thread_title` wins); the tool documents only `thread_title`. Before, `subject` was ignored with `thread_id`; it now applies there too.
+- A changed title is published like any thread change: `thread` and `threads` SSE events. `name` (the tag the person edits in the UI) is a separate field and is never touched; the UI has no manual rename of the title.

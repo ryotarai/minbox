@@ -168,6 +168,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     elif line.startswith("card "):
         r = api("POST", "/api/agent/cards", {"title": line[5:], "column": "building", "note": "working on it"})
         out(f"card {r.get('id', r)}")
+    elif line.startswith("retitle "):
+        r = api("POST", "/api/agent/messages", {"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
+        out(f"retitled {r['thread_id']}")
     elif line.startswith("say "):
         body = {"body": line[4:]}
         if last_thread:

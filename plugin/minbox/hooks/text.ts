@@ -10,7 +10,8 @@ export const SEND_DESCRIPTION = [
   'They may not be watching the terminal: something asked only in the chat goes unseen.',
   'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
   'Their reply arrives later as a new message in this conversation; meanwhile keep working on what does not depend on it, or end your turn.',
-  'Leave `thread_id` out to start a new thread (give a short `subject`); pass the thread_id of a reply to answer in its thread.',
+  'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
+  'Pass `thread_title` (short, under 60 characters) when you start a thread and whenever the thread\'s topic has changed, so the title in the inbox list shows what it is about now; leave it out to keep the title as it is.',
   'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
 ].join(' ')
 
@@ -47,9 +48,14 @@ export const SEND_SCHEMA = {
   type: 'object',
   properties: {
     body: { type: 'string', description: QUESTION_GUIDE },
+    thread_title: {
+      type: 'string',
+      description:
+        "The thread's title in the inbox list (short, under 60 characters). Pass it when you start a thread and whenever its topic has changed; it replaces the current title, also on a reply with thread_id. Omit to leave the title as it is (a new thread then takes the first line of body).",
+    },
     subject: {
       type: 'string',
-      description: 'A short title for a new thread (under 60 characters). Ignored with thread_id.',
+      description: 'Deprecated alias of thread_title; use thread_title.',
     },
     thread_id: {
       type: 'string',

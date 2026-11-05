@@ -92,11 +92,20 @@ test('send_message posts the message and says the reply comes by itself', async 
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
-  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: ':::question\nA or B?\n- [ ] A\n- [ ] B\n:::', subject: 'Plan' })
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: ':::question\nA or B?\n- [ ] A\n- [ ] B\n:::', thread_title: 'Plan' })
   expect(res.result).toContain('Started thread thr_1')
   expect(res.result).toContain('Do not wait or poll')
   const post = server.calls.find((c) => c.path === '/api/agent/messages')
-  expect(post?.body.subject).toBe('Plan')
+  expect(post?.body.thread_title).toBe('Plan')
+})
+
+test('send_message still forwards the old subject parameter as thread_title', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', subject: 'Old' } as any)
+  expect(server.calls.find((c) => c.path === '/api/agent/messages')?.body.thread_title).toBe('Old')
 })
 
 test('the first prompt carries the inbox reminder', async ($, on) => {
