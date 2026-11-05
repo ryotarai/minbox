@@ -92,6 +92,43 @@ test('the PTY takes the smallest open screen, and grows back when it closes', as
   await expect(size).toHaveText(`${dc}×${dr}`)
 })
 
+test('a phone limits the PTY only while its terminal is shown', async ({ page, browser, minbox }) => {
+  test.setTimeout(120_000)
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'shared', 'shell')
+  const size = page.getByTestId('pty-size')
+  await expect(size).toHaveText(/\d+×\d+/)
+  const desktop = (await size.textContent())!
+  const [dc] = desktop.split('×').map(Number)
+
+  const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const phone = await phoneCtx.newPage()
+  await phone.goto(minbox.url)
+  await phone.getByTestId('session-row').filter({ hasText: 'shared' }).click()
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+
+  // Back to the inbox on the phone: the desktop's size returns.
+  await phone.getByTestId('mobile-back').click()
+  await expect(size).toHaveText(desktop)
+
+  // Open it again, then hide the page (phone locked): it stops repeating its size (a lease the
+  // host lets lapse after 15 s, the socket staying open), so the size returns.
+  await phone.getByTestId('session-row').filter({ hasText: 'shared' }).click()
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  const setVisibility = (state: 'hidden' | 'visible') =>
+    phone.evaluate((state) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, state)
+  await setVisibility('hidden')
+  await expect(size).toHaveText(desktop, { timeout: 30_000 })
+  // Shown again: it tells its size at once and limits the PTY once more.
+  await setVisibility('visible')
+  await expect.poll(async () => Number((await size.textContent())!.split('×')[0])).toBeLessThan(dc! / 2)
+  await phoneCtx.close()
+  await expect(size).toHaveText(desktop)
+})
+
 /** A one-finger swipe over the terminal, as touch events. */
 async function swipe(page: import('@playwright/test').Page, dy: number) {
   await page.evaluate((dy) => {

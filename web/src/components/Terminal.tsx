@@ -151,7 +151,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
     ime.setAttribute('aria-hidden', 'true')
 
     const sendWant = () => {
-      if (ws?.readyState === WebSocket.OPEN && wantCols > 0) ws.send(JSON.stringify({ type: 'resize', cols: wantCols, rows: wantRows }))
+      if (ws?.readyState === WebSocket.OPEN && wantCols > 0) ws.send(JSON.stringify({ type: 'resize', cols: wantCols, rows: wantRows, lease: true }))
     }
     const measure = () => {
       let d: { cols: number; rows: number } | undefined
@@ -236,6 +236,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         connectMs: 8000,
         silentMs: 40_000,
         wakeSilentMs: 20_000,
+        leaseMs: 5000, // the host drops a size that is not sent again within its TTL
         ...(window as unknown as { __minboxTimings?: object }).__minboxTimings,
       }
       let lastFrame = Date.now()
@@ -336,8 +337,14 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         if (disposed || retry || !ws || ws.readyState !== WebSocket.OPEN) return
         if (Date.now() - lastFrame > T.silentMs) abandon(ws)
       }, Math.max(250, Math.min(5000, T.silentMs / 4)))
+      // The size is a lease the host lets lapse: it is repeated only while the page is shown,
+      // so a hidden page (phone locked) or a dead connection stops limiting the PTY.
+      const lease = setInterval(() => {
+        if (document.visibilityState === 'visible') sendWant()
+      }, T.leaseMs)
       const onVisible = () => {
         if (document.visibilityState !== 'visible') return
+        sendWant()
         redraw(term)
         wake()
       }
@@ -347,6 +354,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         if (retry) clearTimeout(retry)
         if (connectTimer) clearTimeout(connectTimer)
         clearInterval(silence)
+        clearInterval(lease)
         window.removeEventListener('online', wake)
         document.removeEventListener('visibilitychange', onVisible)
       }
