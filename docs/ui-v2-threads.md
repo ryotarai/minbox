@@ -46,9 +46,9 @@ with CSS `order`, so toggling it does not remount the terminal.) Every column ed
 touch) as before; the terminal is the flexible column.
 
 Narrow windows give way in this order: shell pane (to 280, then hidden), threads list (to 240), thread pane (to 380), terminal minimum 360.
-When even that does not fit (viewport below `SINGLE_COLUMN_BELOW` = 1100 px, `lib/app.tsx`; the narrowest the three
-columns plus the 56 px project tiles get is 1054 px) the desktop layout is not used at all: see *Single-column
-navigation* below. There is no collapsed rail any more.
+When even that does not fit (viewport below `THREE_COLUMN_FROM` = 1100 px, `lib/app.tsx`; the narrowest the three
+columns plus the 56 px project tiles get is 1054 px) the three-column layout is not used: see *Tablet: two panes*
+and *Single-column navigation* below. There is no collapsed rail any more.
 
 ## 1. Threads pane (far left)
 
@@ -71,12 +71,57 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
 Stopped / Holds-up badges, time. Waiting rows keep the amber tint. Rows carry no session or project chip
 (the session lives in the thread header and the terminal; group-by-session keeps its group headers).
 
-**Single-column navigation** (viewport below 1100 px, on any device: narrow desktop windows, touch tablets,
-foldables): the phone layout (`Phone.tsx`). Home = the threads pane full width; picking a thread opens the
-thread full width with a back button (badge = other threads with news); the terminal is behind the session chip
-in the thread header and a Thread | Terminal tab; the project switcher is the header sheet. There is no
-two-column middle mode. The switch follows the viewport live: the route (`s`, `t`) and drafts live outside the
-layout, so resizing keeps the selected thread/session/draft. The old 60 px tile rail (Cmd+B, `layout.rail`) is
+**Width bands** (`lib/app.tsx`; purely width-based, so touch tablets, foldables and small desktop windows alike;
+`isPhone` / `isTablet` come from media queries and switch live):
+
+| width | layout |
+|---|---|
+| `< SINGLE_COLUMN_BELOW` = 700 | phone: single column (below) |
+| 700 .. 1099 | tablet: two panes (below) |
+| `>= THREE_COLUMN_FROM` = 1100 | three columns (above) |
+
+The route (`s`, `t`, `tab`) and drafts live outside the layout, so resizing across a band keeps the selected
+thread, session and draft (scroll position inside a thread is not kept across a layout switch).
+
+**Tablet: two panes** (`Tablet` in `App.tsx`, composing `ThreadsPane`, `ThreadPane`, `TerminalPane`; dialogs, settings
+and the composer use the desktop styling). The project column is always the 56 px tiles.
+
+```
+ list view (default)                          terminal view (route tab=terminal)
++----+-----------------+------------------+  +----+------------------+------------------+
+|    | Threads  + New  | < alpha [Terminal]|  |    | < alpha          | < Threads  alpha |
+| P  | [All][Waiting]  |   Mark read  ...  |  | P  |   Mark read  ... |  local  Waiting  |
+| r  |-----------------+------------------+  | r  |------------------+  [>_]  [...]     |
+| o  | Note            | Pick a database   |  | o  | Pick a database  |                  |
+| j  | Pick a database | ? Which database  |  | j  | ? Which database |  terminal        |
+| e  |                 |   ( ) SQLite      |  | e  |   ( ) SQLite     |                  |
+| c  |                 |   ( ) Postgres    |  | c  |   ( ) Postgres   |                  |
+| t  |-----------------+------------------+  | t  |------------------+                  |
+| s  | new thread...   | Reply...  [Send]  |  | s  | Reply...  [Send] |                  |
++----+-----------------+------------------+  +----+------------------+------------------+
+      list 240+, drag   thread flexible, 320+      thread (drag), 320+   terminal, 300+
+```
+
+- List view: the list (width draggable with the touch-capable Resizer, min 240, stored as `sidebarW`) and the thread
+  (flexible, min 320). Picking a thread shows it on the right. No third column, no terminal.
+- Terminal view: the thread moves to the left pane and the terminal takes the right one (even split to start,
+  draggable, in-window only); the list is hidden, so switching thread means going back to the list.
+  The terminal is mounted only while shown, so the size lease (only displayed terminals send sizes) still holds.
+- Enter: the **Terminal** button in the thread header (also in the empty right pane when a session is selected but no
+  thread), the palette's *Go to terminal*, or a new session / shell session opened from the palette. Browser back
+  returns to the list view (entering pushes a history entry). Leave: the **Threads** button in the terminal header or
+  the thread header's back button (`< alpha`); both only drop `tab=terminal`, the thread stays selected.
+  Three-column widths always show the terminal, so `tab=terminal` is cleared there.
+- Shell: the shell toggle (terminal header) or Ctrl+` opens the phone's full-screen overlay (`PhoneShell`) over both
+  panes; it is mounted only while shown.
+Screenshots: `img/v2/tb-01-list-thread.png` (834 px), `tb-02-thread-terminal.png`, `tb-1000-01-list-thread.png`, `tb-1000-02-thread-terminal.png` (1000 px).
+
+- An open attachment (`f`) takes the right pane (over the thread in list view, over the terminal in terminal view).
+
+**Single-column navigation** (viewport below 700 px): the phone layout (`Phone.tsx`). Home = the threads pane full
+width; picking a thread opens the thread full width with a back button (badge = other threads with news); the
+terminal is behind the session chip in the thread header and a Thread | Terminal tab; the project switcher is the
+header sheet. There is no two-column middle mode on a phone. The old 60 px tile rail (Cmd+B, `layout.rail`) is
 removed; an old `rail` value in `minbox:layout` is ignored.
 
 ## 2. Terminal pane (right) and session header
