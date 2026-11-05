@@ -5,6 +5,7 @@ Reads the prompt on stdin and prints a claude-like result envelope. The suggesti
 first carries the number of PERSON messages in the prompt, so tests can tell what it held.
 """
 import json
+import os
 import sys
 
 prompt = sys.stdin.read()
@@ -16,4 +17,8 @@ out = {
     "result": "{}",
     "structured_output": {"suggestions": ["Sounds good, go ahead (%d)" % n, "Thanks, looks good", "Can you give more detail?"]},
 }
+# Screenshots (SCREENSHOTS=1) may fix the suggestions with a JSON list in a file.
+f = os.environ.get("FAKE_SUGGEST_FILE")
+if f and os.path.exists(f):
+    out["structured_output"]["suggestions"] = json.load(open(f))
 print(json.dumps(out))
