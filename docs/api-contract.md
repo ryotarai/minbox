@@ -193,6 +193,13 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
 
 After the replay, and after every resize, the host sends every attached client a
 text frame `{"type":"size","cols":N,"rows":M}`. Clients still send `resize` frames.
+The PTY takes the smallest of the attached clients' sizes (the `resize` frames) and
+returns to its start size when no client is left that sent one.
+A `resize` with `"lease":true` is a lease: the host counts it for 15 s and drops it
+unless the client sends it again (the web view repeats it every 5 s while the page is
+visible and sends it at once when shown again). A `resize` without `lease` never expires
+(older clients). A closing connection drops its size at once. When no size is left the
+PTY returns to the size it was started with.
 A phone view does not send `resize` unless the person asks ("Fit to this screen").
 
 ## Attachments v2 (match Plannotator Inbox)

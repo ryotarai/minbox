@@ -29,7 +29,10 @@ import (
 // ProtocolVersion is the terminal host's protocol version.
 // 3: remote hosts check signed requests (pairing) instead of a token.
 // 4: a "resize" from a client is the size it wants; the PTY takes the smallest
-// of the attached clients' and grows back when the smallest one leaves.
+// of the attached clients' and grows back when the smallest one leaves, and
+// returns to its start size when no client is left that tells its size.
+// A "resize" with lease:true is a lease: it counts for leaseTTL and the client
+// repeats it while its view is shown; one without lease never expires.
 const ProtocolVersion = 4
 
 // RemoteProtocol is the lowest host protocol a server pairs with over the network.
@@ -94,11 +97,15 @@ type Event struct {
 }
 
 // ResizeMessage is a text frame on the attach WebSocket: the size the client
-// would fit. The PTY takes the smallest cols and rows of the attached clients.
+// would fit. The PTY takes the smallest cols and rows of the attached clients and
+// returns to its start size when none is left. A Lease want expires after
+// leaseTTL unless the client sends it again (a hidden page stops; so does a
+// dead connection nobody noticed).
 type ResizeMessage struct {
-	Type string `json:"type"` // "resize"
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Type  string `json:"type"` // "resize"
+	Cols  uint16 `json:"cols"`
+	Rows  uint16 `json:"rows"`
+	Lease bool   `json:"lease,omitempty"`
 }
 
 // SizeMessage is a text frame the host sends attached clients: the PTY size,
@@ -125,11 +132,14 @@ type terminal struct {
 	mu         sync.Mutex
 	scrollback []byte
 	subs       map[chan frame]struct{}
-	wants      map[chan frame][2]uint16 // the size each attached client fits
+	wants      map[chan frame]want // the size each attached client fits
+	leaseTimer *time.Timer
 	running    bool
 	exitCode   int
 	done       chan struct{}
 	cols, rows uint16
+	baseCols   uint16 // the size the PTY started with: it returns to it when no client wants a size
+	baseRows   uint16
 }
 
 func (t *terminal) sizeFrame() frame {
@@ -137,30 +147,76 @@ func (t *terminal) sizeFrame() frame {
 	return frame{text: true, data: b}
 }
 
+// want is the size a client fits; a lease want is dropped when not sent again.
+type want struct {
+	cols, rows uint16
+	lease      bool
+	at         time.Time
+}
+
+// leaseTTL is how long a lease want counts without being sent again; leaseCheck is
+// how often the host looks. Tests shorten them.
+var (
+	leaseTTL   = 15 * time.Second
+	leaseCheck = time.Second
+)
+
 // want records the size a client fits and sizes the PTY to the smallest.
-func (t *terminal) want(ch chan frame, cols, rows uint16) {
+func (t *terminal) want(ch chan frame, cols, rows uint16, lease bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if _, ok := t.subs[ch]; !ok {
 		return
 	}
-	t.wants[ch] = [2]uint16{cols, rows}
+	t.wants[ch] = want{cols: cols, rows: rows, lease: lease, at: time.Now()}
 	t.fitLocked()
+	if lease && t.leaseTimer == nil {
+		t.leaseTimer = time.AfterFunc(leaseCheck, t.expireLeases)
+	}
+}
+
+// expireLeases drops the lease wants not sent again within leaseTTL and refits;
+// it runs only while a lease want exists.
+func (t *terminal) expireLeases() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.leaseTimer = nil
+	left, dropped := false, false
+	for ch, w := range t.wants {
+		if !w.lease {
+			continue
+		}
+		if time.Since(w.at) > leaseTTL {
+			delete(t.wants, ch)
+			dropped = true
+		} else {
+			left = true
+		}
+	}
+	if dropped {
+		t.fitLocked()
+	}
+	if left {
+		t.leaseTimer = time.AfterFunc(leaseCheck, t.expireLeases)
+	}
 }
 
 // fitLocked sizes the PTY to the smallest wanted cols and rows; with no client
-// telling its size, the PTY keeps the size it has.
+// telling its size, the PTY returns to the size it started with.
 func (t *terminal) fitLocked() {
 	if len(t.wants) == 0 {
+		if t.cols != t.baseCols || t.rows != t.baseRows {
+			t.resizeLocked(t.baseCols, t.baseRows)
+		}
 		return
 	}
 	var cols, rows uint16
 	for _, w := range t.wants {
-		if cols == 0 || w[0] < cols {
-			cols = w[0]
+		if cols == 0 || w.cols < cols {
+			cols = w.cols
 		}
-		if rows == 0 || w[1] < rows {
-			rows = w[1]
+		if rows == 0 || w.rows < rows {
+			rows = w.rows
 		}
 	}
 	if cols != t.cols || rows != t.rows {
@@ -335,7 +391,7 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame][2]uint16{}, running: true, done: make(chan struct{}), cols: cols, rows: rows}
+	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame]want{}, running: true, done: make(chan struct{}), cols: cols, rows: rows, baseCols: cols, baseRows: rows}
 	h.mu.Lock()
 	h.terminals[req.ID] = t
 	h.mu.Unlock()
@@ -675,7 +731,7 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 			}
 			var msg ResizeMessage
 			if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" && msg.Cols > 0 && msg.Rows > 0 {
-				t.want(ch, msg.Cols, msg.Rows)
+				t.want(ch, msg.Cols, msg.Rows, msg.Lease)
 			}
 		}
 	}()
