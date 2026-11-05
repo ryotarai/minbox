@@ -3,14 +3,16 @@ import { ATTENTION, api, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative, isMac, shortTime } from '../lib/format'
 import { fuzzyFields } from '../lib/fuzzy'
+import { selectProject, shortDir, useProjectStats } from '../lib/projects'
+import { ProjectDot } from './ProjectRail'
 import { IconSearch } from './icons'
 import { Kbd, Modal, StatusDot, cx } from './ui'
 import { sectionOf, waitsOnPerson } from './Sidebar'
 
 // ⌘K: one list of actions, sessions and threads, narrowed as you type. ">" shows only actions,
-// "@" only sessions, "#" only threads. Enter runs the highlighted row.
+// "@" only sessions, "#" only threads, "!" only projects. Enter runs the highlighted row.
 
-type Kind = 'action' | 'session' | 'thread'
+type Kind = 'action' | 'session' | 'thread' | 'project'
 type Item = {
   kind: Kind
   /** Unique within its kind. */
@@ -22,6 +24,8 @@ type Item = {
   keywords?: string
   /** The session a thread belongs to, searched too. */
   sessionName?: string
+  /** The project of a session or thread, searched too. */
+  projectName?: string
   shortcut?: string
   leading?: ReactNode
   /** A thread waiting on the person / an unread thread. */
@@ -31,10 +35,10 @@ type Item = {
   run: () => void
 }
 
-const KIND_LABEL: Record<Kind, string> = { action: 'Action', session: 'Session', thread: 'Thread' }
-const SECTION_LABEL: Record<Kind, string> = { action: 'Actions', session: 'Sessions', thread: 'Threads' }
-const KIND_BIAS: Record<Kind, number> = { action: 3, session: 2, thread: 0 }
-const PREFIX: Record<string, Kind> = { '>': 'action', '@': 'session', '#': 'thread' }
+const KIND_LABEL: Record<Kind, string> = { action: 'Action', session: 'Session', thread: 'Thread', project: 'Project' }
+const SECTION_LABEL: Record<Kind, string> = { action: 'Actions', session: 'Sessions', thread: 'Threads', project: 'Projects' }
+const KIND_BIAS: Record<Kind, number> = { action: 3, project: 2.5, session: 2, thread: 0 }
+const PREFIX: Record<string, Kind> = { '>': 'action', '@': 'session', '#': 'thread', '!': 'project' }
 
 // ---- recently opened ----
 
@@ -91,10 +95,11 @@ function Highlight({ text, idx }: { text: string; idx: number[] }) {
 
 /** ⌘K / "/": jump to a session or thread, or run an action. */
 export function Palette({ onClose }: { onClose: () => void }) {
-  const { route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, threadsVersion, error, toast } = useApp()
+  const { projects, route, sessions, navigate, setOverlay, layout, setLayout, settings, saveSettings, isPhone, threadsVersion, error, toast } = useApp()
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [threads, setThreads] = useState<Thread[]>([])
+  const stats = useProjectStats()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const mod = isMac() ? '⌘' : 'Ctrl+'
@@ -129,6 +134,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
         { keywords: `compose write reply send ${current!.name}`, shortcut: 'R' },
       )
     }
+    act('all-projects', 'All projects', () => selectProject(''), { keywords: 'project scope everything show' })
     act('inbox', 'Open All inbox', () => navigate({ view: 'inbox' }), { keywords: 'threads messages everything' })
     if (settings.board) act('board', 'Open Board', () => navigate({ view: 'board' }), { keywords: 'cards kanban' })
     act('settings', 'Open Settings', () => navigate({ view: 'settings', ss: 'general' }), { keywords: 'preferences options' })
@@ -176,6 +182,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
   }, [current, isClaude, isPhone, layout.shellPane, layout.rail, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
+  const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
+
   const sessionItems = useMemo<Item[]>(
     () =>
       (sessions ?? []).map((s: Session) => {
@@ -184,7 +192,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
           kind: 'session' as const,
           id: s.id,
           title: s.name,
-          detail: homeRelative(s.cwd) + (s.host_name ? ` · ${s.host_name}` : ''),
+          detail: (projectName(s.project_id) ? `${projectName(s.project_id)} · ` : '') + homeRelative(s.cwd) + (s.host_name ? ` · ${s.host_name}` : ''),
+          projectName: projectName(s.project_id),
           keywords: [s.title, s.kind === 'shell' ? 'shell' : 'claude', s.archived_at ? 'archived' : ''].filter(Boolean).join(' '),
           leading: <StatusDot s={s} waits={waits} size={8} ring={false} />,
           unread: s.unread > 0,
@@ -196,7 +205,22 @@ export function Palette({ onClose }: { onClose: () => void }) {
           },
         }
       }),
-    [sessions, navigate, isPhone],
+    [sessions, projects, navigate, isPhone],
+  )
+
+  const projectItems = useMemo<Item[]>(
+    () =>
+      (projects ?? []).map((p) => ({
+        kind: 'project' as const,
+        id: p.id,
+        title: p.name,
+        detail: shortDir(p.dir, 40) + (p.host_id !== 'local' ? ` · ${p.host_name ?? p.host_id}` : ''),
+        keywords: `project ${p.dir} ${p.host_name ?? ''}`,
+        leading: <ProjectDot stat={stats.get(p.id)} size={8} />,
+        waiting: (stats.get(p.id)?.waiting ?? 0) > 0,
+        run: () => selectProject(p.id),
+      })),
+    [projects, stats],
   )
 
   const threadItems = useMemo<Item[]>(() => {
@@ -207,8 +231,9 @@ export function Palette({ onClose }: { onClose: () => void }) {
         kind: 'thread' as const,
         id: t.id,
         title: t.subject || '(no subject)',
-        detail: name(t.session_id),
+        detail: (t.project_name ? `${t.project_name} · ` : '') + name(t.session_id),
         sessionName: name(t.session_id),
+        projectName: t.project_name,
         keywords: t.archived_at ? 'archived' : '',
         waiting: ATTENTION.includes(t.section) || !!t.stopped,
         unread: t.unread > 0,
@@ -226,7 +251,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const searching = text.trim() !== ''
 
   const rows = useMemo<{ item: Item; idx: number[]; head?: string }[]>(() => {
-    const pool: Item[] = [...actions, ...sessionItems, ...threadItems].filter((i) => !only || i.kind === only)
+    const pool: Item[] = [...actions, ...projectItems, ...sessionItems, ...threadItems].filter((i) => !only || i.kind === only)
     if (searching) {
       return pool
         .map((item, order) => {
@@ -234,6 +259,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
             { text: item.title, weight: 1 },
             { text: item.keywords ?? '', weight: 0.7 },
             { text: item.sessionName ?? '', weight: 0.6 },
+            { text: item.projectName ?? '', weight: 0.5 },
             ...(item.kind === 'session' ? [{ text: item.detail ?? '', weight: 0.4 }] : []),
           ])
           return m ? { item, idx: m.idx, score: m.score + KIND_BIAS[item.kind], order } : null
@@ -256,12 +282,13 @@ export function Palette({ onClose }: { onClose: () => void }) {
       }
       heads.forEach((item, i) => out.push({ item, idx: [], head: i === 0 ? 'Recent' : undefined }))
       actions.forEach((item, i) => out.push({ item, idx: [], head: i === 0 ? 'Actions' : undefined }))
+      projectItems.forEach((item, i) => out.push({ item, idx: [], head: i === 0 ? 'Projects' : undefined }))
       sessionItems.filter((i) => !used.has(i)).forEach((item, i) => out.push({ item, idx: [], head: i === 0 ? 'Sessions' : undefined }))
       return out
     }
     pool.slice(0, 200).forEach((item, i) => out.push({ item, idx: [], head: i === 0 ? SECTION_LABEL[item.kind] : undefined }))
     return out
-  }, [actions, sessionItems, threadItems, only, text, searching])
+  }, [actions, projectItems, sessionItems, threadItems, only, text, searching])
 
   useEffect(() => setSel(0), [q])
   useEffect(() => setSel((s) => Math.min(s, Math.max(rows.length - 1, 0))), [rows.length])
@@ -312,7 +339,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const placeholder = only ? { action: 'Run an action', session: 'Go to a session', thread: 'Open a thread' }[only] : 'Go to a session or thread, or run an action'
+  const placeholder = only ? { action: 'Run an action', session: 'Go to a session', thread: 'Open a thread', project: 'Switch project' }[only] : 'Go to a session or thread, or run an action'
   return (
     <Modal label="Quick actions" onClose={onClose} className="flex max-h-[min(70vh,640px)] w-[min(640px,100%)] flex-col overflow-hidden" top>
       <div data-testid="palette" className="flex min-h-0 flex-1 flex-col">
@@ -390,7 +417,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
           </span>
           <span className="flex-1" />
           <span data-testid="palette-hint">
-            <kbd className="text-fg2">&gt;</kbd> actions · <kbd className="text-fg2">@</kbd> sessions · <kbd className="text-fg2">#</kbd> threads
+            <kbd className="text-fg2">&gt;</kbd> actions · <kbd className="text-fg2">@</kbd> sessions · <kbd className="text-fg2">#</kbd> threads · <kbd className="text-fg2">!</kbd> projects
           </span>
         </div>
       </div>

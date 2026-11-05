@@ -290,7 +290,7 @@ func storeError(w http.ResponseWriter, err error) {
 		httpError(w, 404, "not found")
 		return
 	}
-	if errors.Is(err, store.ErrProjectBusy) || errors.Is(err, store.ErrProjectExists) {
+	if errors.Is(err, store.ErrProjectBusy) || errors.Is(err, store.ErrProjectExists) || errors.Is(err, store.ErrSessionIsMain) {
 		httpError(w, 409, err.Error())
 		return
 	}

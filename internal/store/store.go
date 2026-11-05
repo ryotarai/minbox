@@ -105,6 +105,7 @@ type Session struct {
 	Title           string     `json:"title"`               // what Claude says the session is doing (set_session_title)
 	HostName        string     `json:"host_name,omitempty"` // filled by the server
 	ProjectID       string     `json:"project_id"`
+	IsMain          bool       `json:"is_main"` // the project's main session
 	// Derived.
 	Unread        int        `json:"unread"`
 	OpenQuestions int        `json:"open_questions"`
@@ -344,6 +345,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "kind", "TEXT NOT NULL DEFAULT 'claude'"},
 	{"sessions", "title", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "project_id", "TEXT"},
+	{"projects", "main_session_id", "TEXT"},
 	{"threads", "name", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "archived_at", "INTEGER"},
 	{"threads", "pinned_at", "INTEGER"},
@@ -508,19 +510,28 @@ func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd,
 	if _, err := tx.ExecContext(ctx, `UPDATE projects SET archived_at=NULL WHERE id=?`, p.ID); err != nil {
 		return nil, err
 	}
+	// The first Claude Code session of a project is its main one.
+	if kind == KindClaude {
+		if _, err := tx.ExecContext(ctx, `UPDATE projects SET main_session_id=? WHERE id=? AND (main_session_id IS NULL OR main_session_id='' OR main_session_id NOT IN (SELECT id FROM sessions))`, sess.ID, p.ID); err != nil {
+			return nil, err
+		}
+		var main string
+		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(main_session_id,'') FROM projects WHERE id=?`, p.ID).Scan(&main)
+		sess.IsMain = main == sess.ID
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,'')`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id)`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

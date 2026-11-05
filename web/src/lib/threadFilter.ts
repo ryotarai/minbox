@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react'
 
 /** How the threads pane filters and groups the all-sessions list. Kept in this browser. */
 export type ThreadFilter = {
+  /** Only this project's threads and sessions; '' = All projects. */
+  project: string
   show: 'all' | 'waiting' | 'unread'
   /** Only this session's threads; '' = every session. */
   session: string
@@ -9,7 +11,7 @@ export type ThreadFilter = {
 }
 
 const KEY = 'minbox:v2-filter'
-const DEFAULT: ThreadFilter = { show: 'all', session: '', group: 'activity' }
+const DEFAULT: ThreadFilter = { project: '', show: 'all', session: '', group: 'activity' }
 
 function read(): ThreadFilter {
   try {

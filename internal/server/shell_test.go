@@ -78,7 +78,7 @@ func TestCompanionShellDeleteAndKinds(t *testing.T) {
 	if err := e.srv.sessions.ensureShell(ctx, sess); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.srv.sessions.Delete(ctx, sess.ID); err != nil {
+	if err := e.srv.sessions.Delete(ctx, sess.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := e.host.terms[sess.ID+":shell"]; ok {

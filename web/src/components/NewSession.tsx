@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, type Host, type Session, type SessionKind } from '../api'
+import { api, type Host, type Project, type Session, type SessionKind } from '../api'
 import { useApp } from '../lib/app'
+import { selectProject, shortDir } from '../lib/projects'
 import { homeRelative, isMac } from '../lib/format'
 import { Button, HostTag, IconButton, MenuItem, Modal, Popover, cx } from './ui'
 
@@ -63,21 +64,47 @@ function when(ms: number): string {
 
 const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 
-/** New session: pick a folder (recent ones, or browse) and start Claude Code in it. */
-export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; onCreated?: (s: Session) => void }) {
-  const { sessions, setSessions, navigate, error, isPhone, hosts } = useApp()
-  const [hostId, setHostId] = useState(() => localStorage.getItem('minbox:last-host') ?? '')
+/**
+ * New session: choose a project (its host and folder are fixed), or a folder that has no project
+ * yet (recent ones, or browse; the project is made from it). The same dialog makes a project
+ * (mode "project": host, folder, name) and moves an empty one (mode "project-edit").
+ */
+export function NewSessionDialog({
+  onClose,
+  onCreated,
+  mode = 'session',
+  projectId,
+  project: editing,
+}: {
+  onClose: () => void
+  onCreated?: (s: Session) => void
+  mode?: 'session' | 'project' | 'project-edit'
+  /** The project to start in (the selected one). */
+  projectId?: string
+  /** The project being edited (mode "project-edit"). */
+  project?: Project
+}) {
+  const { sessions, setSessions, navigate, error, isPhone, hosts, projects, reloadProjects, reloadSessions } = useApp()
+  // The project to start in: the one asked for, else the most recent; none (a folder) when there are none.
+  const [pickedProject, setPickedProject] = useState<string>(() => {
+    if (mode !== 'session') return ''
+    if (projectId && projects?.some((p) => p.id === projectId)) return projectId
+    return projects?.[0]?.id ?? ''
+  })
+  const proj = mode === 'session' ? projects?.find((p) => p.id === pickedProject) : undefined
+  const [projAnchor, setProjAnchor] = useState<HTMLElement | null>(null)
+  const [hostId, setHostId] = useState(() => (editing ? editing.host_id : localStorage.getItem('minbox:last-host') ?? ''))
   const [hostAnchor, setHostAnchor] = useState<HTMLElement | null>(null)
   // The last host if it is still there and online, else this machine.
   useEffect(() => {
-    if (hosts.length === 0) return
+    if (hosts.length === 0 || editing) return
     const h = hosts.find((x) => x.id === hostId)
     if (!h || h.status !== 'online') setHostId(hosts.find((x) => x.builtin)?.id ?? hosts[0]!.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hosts.length])
   const host = hosts.find((h) => h.id === hostId)
-  const [cwd, setCwd] = useState(() => localStorage.getItem('minbox:last-cwd') ?? '~')
-  const [name, setName] = useState('')
+  const [cwd, setCwd] = useState(() => (editing ? homeRelative(editing.dir) : localStorage.getItem('minbox:last-cwd') ?? '~'))
+  const [name, setName] = useState(() => editing?.name ?? '')
   const [listing, setListing] = useState<Listing | null>(null)
   const [missing, setMissing] = useState(false)
   const [filter, setFilter] = useState('')
@@ -90,7 +117,10 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
     setKindState(k)
     localStorage.setItem('minbox:last-kind', k)
   }
-  const startLabel = kind === 'shell' ? 'Start shell' : 'Start Claude Code'
+  const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : kind === 'shell' ? 'Start shell' : 'Start Claude Code'
+  // A project fixes host and folder: the browser is only for a new folder or a project.
+  const showFolder = !proj
+  const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New session'
   const cwdRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -117,6 +147,7 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
 
   // The browser follows what is typed, once it names a folder.
   useEffect(() => {
+    if (!showFolder) return
     const t = setTimeout(() => {
       listDirs(cwd, hostId)
         .then((l) => {
@@ -126,7 +157,7 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
         .catch(() => setMissing(cwd.trim() !== ''))
     }, 150)
     return () => clearTimeout(t)
-  }, [cwd, hostId])
+  }, [cwd, hostId, showFolder])
 
   // Moving through the browser lists the folder at once (typing waits a beat).
   const browse = (path: string) => {
@@ -142,12 +173,24 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
 
   const starting = useRef(false)
   const start = async () => {
-    if (starting.current || missing || !cwd.trim()) return
+    if (starting.current || (showFolder && (missing || !cwd.trim()))) return
     starting.current = true
     setBusy(true)
     try {
-      const s = await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
-      rememberCwd(cwd.trim(), hostId)
+      if (mode !== 'session') {
+        const p = editing
+          ? await api.patchProject(editing.id, { name: name.trim() || undefined, dir: cwd.trim(), host_id: hostId || undefined })
+          : await api.createProject({ dir: cwd.trim(), host_id: hostId || undefined, name: name.trim() || undefined })
+        rememberCwd(cwd.trim(), hostId)
+        reloadProjects()
+        reloadSessions()
+        selectProject(p.id)
+        onClose()
+        return
+      }
+      const s = proj ? await api.createSessionIn(proj.id, name.trim(), kind) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, kind)
+      if (!proj) rememberCwd(cwd.trim(), hostId)
+      reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
       if (onCreated) onCreated(s)
       else navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
@@ -406,7 +449,7 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
     )
 
   // Started from the composer, the session must be Claude Code: a message goes to it.
-  const kindPicker = onCreated ? null : (
+  const kindPicker = onCreated || mode !== 'session' ? null : (
     <div className="flex flex-col gap-1.5">
       <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>Run</span>
       <div role="radiogroup" aria-label="Run" data-testid="new-session-kind" className="inline-flex gap-0.5 self-start rounded-[9px] border border-line2 bg-sunken p-[3px]">
@@ -466,12 +509,12 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
   const nameInput = (
     <label className={cx('flex flex-col gap-1.5 text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>
       <span>
-        Session name <span className="text-subtle">(optional)</span>
+        {mode === 'session' ? 'Session name' : 'Project name'} <span className="text-subtle">(optional)</span>
       </span>
       <input
         data-testid="new-session-name"
         value={name}
-        placeholder={listing ? base(listing.display) : base(cwd)}
+        placeholder={mode === 'session' && proj ? base(proj.dir) : listing ? base(listing.display) : base(cwd)}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
           if (isPhone) onKey(e)
@@ -482,33 +525,96 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
     </label>
   )
 
+  // Which project the session starts in; a project fixes its host and folder.
+  const projectPicker =
+    mode !== 'session' || !projects || projects.length === 0 ? null : (
+      <div className="flex flex-col gap-1.5">
+        <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>Project</span>
+        <button
+          type="button"
+          data-testid="new-session-project"
+          aria-haspopup="menu"
+          data-project-id={proj?.id ?? ''}
+          onClick={(e) => setProjAnchor(e.currentTarget)}
+          className={cx('flex items-center gap-2.5 rounded-[10px] border border-linestrong bg-sunken px-3 text-left text-fg', isPhone ? 'h-12 text-[16px]' : 'h-[38px] text-[13.5px]')}
+        >
+          {proj ? (
+            <>
+              <span data-testid="new-session-project-name" className="font-semibold">{proj.name}</span>
+              <span className="mono min-w-0 flex-1 truncate text-[12px] text-muted">{shortDir(proj.dir, 40)}</span>
+              {proj.host_id !== 'local' && <HostTag name={proj.host_name ?? proj.host_id} />}
+            </>
+          ) : (
+            <span className="flex-1 text-muted">A folder without a project yet…</span>
+          )}
+          <span aria-hidden="true" className="text-subtle">▾</span>
+        </button>
+        <Popover anchor={projAnchor} open={!!projAnchor} onClose={() => setProjAnchor(null)} align="start" className="w-[340px]">
+          <div className="max-h-[320px] overflow-y-auto">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                data-testid="new-session-project-option"
+                data-project-id={p.id}
+                onClick={() => (setPickedProject(p.id), setProjAnchor(null))}
+                className={cx('flex min-h-9 w-full items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', p.id === pickedProject ? 'bg-sel' : 'bg-transparent')}
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[13px] text-fg">{p.name}</span>
+                  <span className="mono truncate text-[11.5px] text-muted">{shortDir(p.dir, 36)}</span>
+                </span>
+                {p.host_id !== 'local' && <HostTag name={p.host_name ?? p.host_id} />}
+              </button>
+            ))}
+          </div>
+          <MenuItem testid="new-session-project-folder" active={!pickedProject} onClick={() => (setPickedProject(''), setProjAnchor(null))}>
+            A folder without a project yet…
+          </MenuItem>
+        </Popover>
+        {proj && (
+          <span data-testid="new-session-project-info" className="text-[12px] text-subtle">
+            Starts in {proj.host_name ?? proj.host_id} · <span className="mono">{proj.dir || '~'}</span>
+          </span>
+        )}
+      </div>
+    )
+
+  const canStart = !busy && (!showFolder || (!missing && !!cwd.trim()))
+
   if (isPhone) {
-    return <PhoneSheet onClose={onClose} title="New session" body={
+    return <PhoneSheet onClose={onClose} title={title} body={
       <>
         {kindPicker}
-        {hostPicker}
-        <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
-        {recentList}
-        {browsing ? (
-          <div className="flex h-[300px] shrink-0 flex-col">{browser}</div>
-        ) : (
-          <button
-            type="button"
-            data-testid="new-session-browse"
-            onClick={() => setBrowsing(true)}
-            className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-xl border border-dashed border-[#52525b] bg-transparent text-[15px]"
-          >
-            Browse folders…
-          </button>
+        {projectPicker}
+        {showFolder && (
+          <>
+            {hostPicker}
+            <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
+            {recentList}
+            {browsing ? (
+              <div className="flex h-[300px] shrink-0 flex-col">{browser}</div>
+            ) : (
+              <button
+                type="button"
+                data-testid="new-session-browse"
+                onClick={() => setBrowsing(true)}
+                className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-xl border border-dashed border-[#52525b] bg-transparent text-[15px]"
+              >
+                Browse folders…
+              </button>
+            )}
+            {cwdInput}
+          </>
         )}
-        {cwdInput}
         {nameInput}
       </>
     } footer={
       <button
         type="button"
         data-testid="new-session-start"
-        disabled={busy || missing || !cwd.trim()}
+        disabled={!canStart}
         onClick={() => void start()}
         className="h-[52px] w-full rounded-xl border-0 bg-accent text-[16px] font-bold text-onaccent disabled:opacity-45"
       >
@@ -518,34 +624,43 @@ export function NewSessionDialog({ onClose, onCreated }: { onClose: () => void; 
   }
 
   return (
-    <Modal label="New session" onClose={onClose} className="flex max-h-[calc(100vh-80px)] w-[min(800px,100%)] flex-col overflow-hidden rounded-2xl bg-raised" top>
+    <Modal label={title} onClose={onClose} className="flex max-h-[calc(100vh-80px)] w-[min(800px,100%)] flex-col overflow-hidden rounded-2xl bg-raised" top>
       <div className="flex h-14 shrink-0 items-center border-b border-line2 pl-[22px] pr-3">
-        <h2 className="m-0 flex-1 text-[16px] font-[650]">New session</h2>
+        <h2 className="m-0 flex-1 text-[16px] font-[650]">{title}</h2>
         <IconButton size={36} aria-label="Close (Esc)" onClick={onClose} className="text-[18px]">
           ×
         </IconButton>
       </div>
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>
-        <div className="flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line2 px-3 py-4">
-          <span className="px-2 pb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
-          {recentList}
-        </div>
+        {showFolder && (
+          <div className="flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line2 px-3 py-4">
+            <span className="px-2 pb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-subtle">Recent</span>
+            {recentList}
+          </div>
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-4">
           {kindPicker}
-          {hostPicker}
-          {cwdInput}
-          <div className="flex h-[300px] min-h-0 flex-col">{browser}</div>
+          {projectPicker}
+          {showFolder && (
+            <>
+              {hostPicker}
+              {cwdInput}
+              <div className="flex h-[300px] min-h-0 flex-col">{browser}</div>
+            </>
+          )}
           {nameInput}
         </div>
       </div>
       <div className="flex h-16 shrink-0 items-center gap-2.5 border-t border-line2 px-5">
         <span className="mono min-w-0 flex-1 truncate text-[12px] text-subtle">
-          {host ? `${host.name} · ` : ''}{kind === 'shell' ? '$SHELL' : claudeCmd} · {listing ? listing.display : cwd}
+          {proj
+            ? `${proj.host_name ?? proj.host_id} · ${kind === 'shell' ? '$SHELL' : claudeCmd} · ${proj.dir || '~'}`
+            : `${host ? `${host.name} · ` : ''}${mode !== 'session' ? '' : kind === 'shell' ? '$SHELL · ' : `${claudeCmd} · `}${listing ? listing.display : cwd}`}
         </span>
         <Button variant="quiet" className="h-[38px] text-[13.5px]" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="primary" className="h-[38px] px-4 text-[13.5px]" data-testid="new-session-start" disabled={busy || missing || !cwd.trim()} onClick={() => void start()}>
+        <Button variant="primary" className="h-[38px] px-4 text-[13.5px]" data-testid="new-session-start" disabled={!canStart} onClick={() => void start()}>
           {busy ? 'Starting…' : startLabel} <span className="mono text-[11.5px] opacity-70">{mod}↵</span>
         </Button>
       </div>

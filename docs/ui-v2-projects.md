@@ -20,19 +20,23 @@ resources under a project. The project is the top-level scope of the UI, left of
 ## Desktop wireframe (1500 px)
 
 ```
-+----------+--------------------+--------------------------+----------------------------+
-| [All]    | Threads        [+ New]| Thread subject        |  deploy-api  Idle  [shell] |
-|  all  7  | [All 7][Waiting 2]    | Claude Code in api    |                            |
-| -------- | Session: All  v  Group| ...messages...        |   $ claude                 |
-| * api    |----------------------|                        |   (terminal)               |
-|   ~/work/api    [2]  | * Which DB?  [api]  |                          |                            |
-| o docs   | o Release notes [docs]|                         |                            |
-|   ~/docs        [1]  |                      |                          |                            |
-|   web    |----------------------|                        |                            |
-|   ~/web  @gpu1       | to: * deploy-api  v  | Reply...               |                            |
-| [+]      | [ Start a thread...  ]|                         |                            |
-+----------+----------+----------------------+--------------------------+----------------------------+
-  Projects (176)   Threads (340)      Thread (520)               Terminal (flex)
++------------+----------------------+--------------------------+-------------------------+
+| (=) All 7  | Threads       [+ New]| < Thread subject         | deploy-api   Idle [sh]  |
+|------------| [All 7][Waiting 2]   | Claude Code in deploy-api|                         |
+| * api  [2] | [Unread 3]           |                          |   $ claude              |
+|   ~/work/api| Session: All v Group |   ...messages...         |   (terminal)            |
+| o docs  [1]|----------------------|   ...question card...    |                         |
+|   ~/docs   | * Which DB?   2m ?1  |                          |                         |
+| o gpu-job  | [api] [deploy-api]   |                          |                         |
+|   ~/job gpu1| o Release notes  1h  |                          |                         |
+|            | [docs] [release]     |                          |                         |
+|            |----------------------| Reply to Claude Code...  |                         |
+|            | to: * deploy-api  v  |                          |                         |
+| [+ New     | [ Start a thread...] |                          |                         |
+|  project][<]| clip   Send          |                          |                         |
++------------+----------------------+--------------------------+-------------------------+
+  Projects      Threads (340)          Thread (520)               Terminal (flex) [+ Shell]
+  (176 / 56)
 ```
 
 Rail entry = status dot of its busiest session, **name**, dir shortened to `~/...` (second line, mono),

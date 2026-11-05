@@ -45,6 +45,8 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		// ProjectID: start in this project (its host; its folder unless cwd is given). Without it
 		// the project is the one for (host_id, cwd), created on first use.
 		ProjectID string `json:"project_id"`
+		// Main: make it the project's main session (the first Claude Code session of a project is main anyway).
+		Main bool `json:"main"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -53,6 +55,14 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, 400, err.Error())
 		return
+	}
+	if req.Main && sess.Kind == store.KindClaude && !sess.IsMain {
+		if _, err := s.store.UpdateProject(r.Context(), sess.ProjectID, store.ProjectPatch{MainSession: &sess.ID}); err != nil {
+			storeError(w, err)
+			return
+		}
+		sess.IsMain = true
+		s.hub.publish(Event{Type: "sessions"})
 	}
 	sess.HostName = s.hostNames(r.Context())[sess.HostID]
 	writeJSON(w, 201, sess)
@@ -79,7 +89,7 @@ func (s *Server) updateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
-	if err := s.sessions.Delete(r.Context(), r.PathValue("id")); err != nil {
+	if err := s.sessions.Delete(r.Context(), r.PathValue("id"), r.URL.Query().Get("promote")); err != nil {
 		storeError(w, err)
 		return
 	}
