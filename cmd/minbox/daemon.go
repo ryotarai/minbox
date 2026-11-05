@@ -105,64 +105,6 @@ func startCmd(args []string) error {
 	}
 }
 
-// restartCmd stops the server and starts it again: with the flags given, or
-// else with those of the last `minbox start` (never opening the browser).
-func restartCmd(args []string) error {
-	// Parse with the start flags themselves, so --data-dir is read wherever it
-	// stands among them (and an unknown flag stops here, before anything stops).
-	f := newServeFlags("restart")
-	_ = f.fs.Parse(args)
-	dataDir, err := filepath.Abs(*f.dataDir)
-	if err != nil {
-		return err
-	}
-	onlyDataDir := f.fs.NArg() == 0
-	f.fs.Visit(func(fl *flag.Flag) {
-		if fl.Name != "data-dir" {
-			onlyDataDir = false
-		}
-	})
-	start := args
-	if onlyDataDir {
-		if b, err := os.ReadFile(startArgsFile(dataDir)); err == nil {
-			var saved []string
-			if json.Unmarshal(b, &saved) == nil {
-				start = saved
-			}
-		}
-	}
-	start = append(withoutFlag(start, "no-open"), "--no-open", "--data-dir", dataDir)
-	if err := stopCmd([]string{"--data-dir", dataDir}); err != nil {
-		return err
-	}
-	return startCmd(start)
-}
-
-func stopCmd(args []string) error {
-	fs := flag.NewFlagSet("stop", flag.ExitOnError)
-	dataDir := fs.String("data-dir", defaultDataDir(), "data directory")
-	_ = fs.Parse(args)
-	pid, _, ok := runningServer(*dataDir)
-	if !ok {
-		fmt.Println("minbox is not running")
-		return nil
-	}
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("stop pid %d: %w", pid, err)
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for alive(pid) {
-		if time.Now().After(deadline) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-			fmt.Printf("minbox (pid %d) did not stop in 10s; killed it\n", pid)
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	fmt.Printf("stopped minbox (pid %d); sessions keep running in the terminal host (minbox host stop ends them)\n", pid)
-	return nil
-}
-
 // statusCmd prints the server's state; its exit code is 3 when it is not
 // running (as init scripts' status).
 func statusCmd(args []string, out io.Writer) (int, error) {
