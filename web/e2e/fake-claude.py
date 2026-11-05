@@ -20,6 +20,7 @@ session_id = args[args.index("--session-id") + 1] if "--session-id" in args else
 mode = "resume" if "--resume" in args else "new"
 last_thread = None
 busy = False  # "work": a turn is running; only urgent messages are taken
+deaf = False  # "deaf": the mod stopped answering (no polling) until "listen"
 
 
 def base():
@@ -47,9 +48,12 @@ def poll():
     global last_thread
     while True:
         try:
+            if deaf:
+                time.sleep(0.3)
+                continue
             pending = api("GET", f"/api/agent/pending?owner={owner}&wait=20")
             for p in pending:
-                if busy and not p.get("urgent"):
+                if deaf or (busy and not p.get("urgent")):
                     continue
                 if api("POST", f"/api/agent/pending/{p['id']}/claim?owner={owner}")["claimed"]:
                     last_thread = p["thread_id"]
@@ -70,6 +74,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     if line == "exit":
         out("bye")
         sys.exit(0)
+    elif line in ("deaf", "listen"):
+        deaf = line == "deaf"
+        out(f"status {line}")
     elif line in ("work", "idle"):
         busy = line == "work"
         api("POST", "/api/agent/status", {"status": "working" if busy else "idle"})

@@ -6,7 +6,7 @@ const SERVER_FILE = '/data/server.json'
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: any[], opts: { extra?: string } = {}) {
+function fakeServer(on: any, pending: any[], opts: { extra?: string; hangPolls?: number } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
@@ -24,6 +24,10 @@ function fakeServer(on: any, pending: any[], opts: { extra?: string } = {}) {
     calls.push({ method, path: url.pathname, body })
     const ok = (json: unknown) => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify(json) } })
     if (url.pathname === '/api/agent/pending') {
+      if (opts.hangPolls && opts.hangPolls > 0) {
+        opts.hangPolls--
+        return new Promise(() => {}) // a connection that never answers
+      }
       return ok(pending.filter((p) => !claimed.has(p.id)))
     }
     const m = url.pathname.match(/^\/api\/agent\/pending\/([^/]+)\/(claim|release|delivered)$/)
@@ -336,4 +340,28 @@ test('asksPerson reads the end of the answer', () => {
     expect([a, asksPerson(a)]).toEqual([a, true])
   for (const a of ['Fixed the bug; tests pass.', 'Uses `x ? y : z` now.', 'Opened https://x.dev/?q=1', '```\nconst a = b ? c : d\n```\nDone.'])
     expect([a, asksPerson(a)]).toEqual([a, false])
+})
+
+test('a poll that never answers is abandoned, and the next one delivers', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY], { hangPolls: 1 })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(0)
+  await clock.advance(40000) // past the call timeout
+  expect(server.submitted.length).toBe(1)
+  expect([...server.delivered]).toEqual(['msg_r1'])
+})
+
+test('a turn whose end was missed does not hold messages for ever', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ turnId: 't1' } as any)
+  await clock.advance(30000)
+  expect(server.submitted.length).toBe(0) // working: the message waits
+  await clock.advance(120000)
+  expect(server.submitted.length).toBe(1)
 })

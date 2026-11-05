@@ -964,12 +964,26 @@ function summarize(a: Answer): string {
 }
 
 const AUTO_SEND_MIN = 5
+/** A queued message waiting this long (idle session, or a silent mod) shows a warning and Send now. */
+const QUEUED_WARN_MS = 20_000
+
+function queuedWarnMs(): number {
+  return (window as unknown as { __minboxTimings?: { queuedWarnMs?: number } }).__minboxTimings?.queuedWarnMs ?? QUEUED_WARN_MS
+}
 
 export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   const { error } = useApp()
   const d = m.delivery ?? 'queued'
   const v = DELIVERY[d]
+  // Re-render while queued, so the waiting text and the warning appear on time.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (d !== 'queued') return
+    const t = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [d])
   let text: string
+  let restart = false
   let now = false
   let resume = false
   let cancel = false
@@ -980,7 +994,16 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
     resume = true
   } else {
     const waited = minutesSince(m.created_at)
-    if (session.status === 'working' && m.urgent) text = 'Send now pressed · goes into the running turn.'
+    const waitedMs = Date.now() - new Date(m.created_at).getTime()
+    const stuck = waitedMs >= queuedWarnMs() && (session.status !== 'working' || !!session.mod_silent)
+    if (stuck && session.mod_silent) {
+      text = m.urgent ? 'Send now pressed · Claude Code is not answering; it goes in when it does.' : 'Claude Code is not picking this up. Its connection to minbox is silent.'
+      now = !m.urgent
+      restart = true
+    } else if (stuck && session.status !== 'working') {
+      text = m.urgent ? 'Send now pressed · goes in on the next check.' : 'Claude Code is not picking this up yet.'
+      now = !m.urgent
+    } else if (session.status === 'working' && m.urgent) text = 'Send now pressed · goes into the running turn.'
     else if (session.status === 'working' && waited >= 2) {
       text = `Undelivered ${waited} min · goes in by itself in ${Math.max(1, AUTO_SEND_MIN - waited)} min`
       now = true
@@ -988,7 +1011,7 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
       text = 'Queued · Claude Code is working; it gets this when its turn ends.'
       now = true
     }
-    else text = 'Queued · goes in when Claude Code is idle.'
+    else text = waitedMs >= 5000 ? 'Waiting for Claude Code…' : 'Queued · goes in when Claude Code is idle.'
     cancel = true
   }
   // Cancelling deletes the message; its words go back into the reply draft so nothing typed is lost.
@@ -1007,6 +1030,18 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
       {now && (
         <button type="button" data-testid="send-now" onClick={() => api.sendNow(m.id).catch(error)} className="h-7 rounded-[6px] border border-danger bg-transparent px-2.5 text-[12px] text-danger">
           Send now
+        </button>
+      )}
+      {restart && (
+        <button
+          type="button"
+          data-testid="restart-session"
+          onClick={() => {
+            if (window.confirm(`Restart ${session.name}? A running turn is interrupted; the conversation is resumed.`)) api.restartSession(session.id).catch(error)
+          }}
+          className="h-7 rounded-[6px] border border-line bg-transparent px-2.5 text-[12px] text-fg2"
+        >
+          Restart session
         </button>
       )}
       {cancel && (
