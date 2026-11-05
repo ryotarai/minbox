@@ -263,11 +263,17 @@ test('⌘K: a Projects group switches the project; rows name their project', asy
   // Opening a thread of another project takes the project along.
   await page.keyboard.press('Escape')
   await selectProject(page, 'api')
+  // Switching project moves to the project's session and focuses its terminal: let that settle
+  // before opening the palette, or the terminal takes the focus (and the Enter) from it.
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
+  await expect(page.getByTestId('terminal')).toBeFocused()
   await page.keyboard.press('Meta+k')
   await page.getByTestId('palette-input').fill('#Beta')
   await expect(page.getByTestId('palette-item').first()).toHaveAttribute('data-kind', 'thread')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('thread-subject')).toContainText('Beta note')
+  // The thread's subject is "Note" (the fake Claude's title); its body is "Beta note".
+  await expect(page.getByTestId('thread-subject')).toHaveText('Note')
+  await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   await expect(item(page, 'docs')).toHaveAttribute('data-selected', 'true')
 })
 

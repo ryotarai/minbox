@@ -91,6 +91,12 @@ export function NewSessionDialog({
     if (projectId && projects?.some((p) => p.id === projectId)) return projectId
     return projects?.[0]?.id ?? ''
   })
+  // Projects may load after the dialog opens: until the person chooses, follow the default.
+  const [projTouched, setProjTouched] = useState(false)
+  useEffect(() => {
+    if (mode !== 'session' || projTouched || !projects) return
+    setPickedProject(projectId && projects.some((p) => p.id === projectId) ? projectId : projects[0]?.id ?? '')
+  }, [mode, projTouched, projects, projectId])
   const proj = mode === 'session' ? projects?.find((p) => p.id === pickedProject) : undefined
   const [projAnchor, setProjAnchor] = useState<HTMLElement | null>(null)
   // A project's first Claude Code session is its main one; later ones are extra unless asked.
@@ -560,7 +566,7 @@ export function NewSessionDialog({
                 role="menuitem"
                 data-testid="new-session-project-option"
                 data-project-id={p.id}
-                onClick={() => (setPickedProject(p.id), setProjAnchor(null))}
+                onClick={() => (setProjTouched(true), setPickedProject(p.id), setProjAnchor(null))}
                 className={cx('flex min-h-9 w-full items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', p.id === pickedProject ? 'bg-sel' : 'bg-transparent')}
               >
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -571,7 +577,7 @@ export function NewSessionDialog({
               </button>
             ))}
           </div>
-          <MenuItem testid="new-session-project-folder" active={!pickedProject} onClick={() => (setPickedProject(''), setProjAnchor(null))}>
+          <MenuItem testid="new-session-project-folder" active={!pickedProject} onClick={() => (setProjTouched(true), setPickedProject(''), setProjAnchor(null))}>
             A folder without a project yet…
           </MenuItem>
         </Popover>

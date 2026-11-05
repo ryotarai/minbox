@@ -72,7 +72,9 @@ test('> shows only actions; New session opens the dialog; # and @ filter threads
   await page.getByTestId('palette-input').fill('>new sess')
   await expect(items(page).first()).toHaveAttribute('data-id', 'new-session')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('new-session-cwd')).toBeVisible()
+  // In a project when there are projects (the folder field exists only in folder mode).
+  await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible()
+  await expect(page.getByTestId('new-session-start')).toBeVisible()
   await page.keyboard.press('Escape')
 
   await openPalette(page)
@@ -179,7 +181,9 @@ test('⌘K works from inside the focused terminal and a text box; actions act', 
   await page.getByTestId('palette-input').fill('>open all inbox')
   await expect(items(page).first()).toHaveAttribute('data-id', 'inbox')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('all-inbox')).toBeVisible()
+  // The old All inbox page is the main screen's list now.
+  await expect(page.getByTestId('threads-pane')).toBeVisible()
+  await expect(page).not.toHaveURL(/v=inbox/)
 })
 
 test('a click on a row runs it', async ({ page, minbox }) => {
