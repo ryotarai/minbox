@@ -70,7 +70,7 @@ function PhoneSessions() {
         <Logo size={24} />
         <h1 className="sr-only">minbox</h1>
         <span className="flex-1" />
-        <button type="button" aria-label="Search" onClick={() => setOverlay({ kind: 'search' })} className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
+        <button type="button" aria-label="Quick actions" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })} className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
           <IconSearch size={20} />
         </button>
         <button

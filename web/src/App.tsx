@@ -11,7 +11,7 @@ import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './co
 import { PhoneApp } from './components/Phone'
 import { NewSessionDialog } from './components/NewSession'
 import { DeviceGate } from './components/Devices'
-import { SearchPalette } from './components/SearchPalette'
+import { Palette } from './components/Palette'
 import { SettingsPage } from './components/Settings'
 import { ShellPane } from './components/ShellPane'
 import { Sidebar } from './components/Sidebar'
@@ -51,8 +51,8 @@ function Root() {
   }, [sessions, route.view, setOverlay])
 
   useHotkeys({
-    'mod+k': () => setOverlay({ kind: 'search' }),
-    '/': () => setOverlay({ kind: 'search' }),
+    'mod+k': () => setOverlay(overlay?.kind === 'palette' ? null : { kind: 'palette' }),
+    '/': () => setOverlay({ kind: 'palette' }),
     '?': () => setOverlay({ kind: 'shortcuts' }),
     z: () => undoLast(),
     'shift+d': () => {
@@ -76,7 +76,7 @@ function Root() {
         <Desktop />
       )}
       {route.view === 'review' && route.r && <GuidedReview attachmentId={route.r} />}
-      {overlay?.kind === 'search' && <SearchPalette onClose={close} />}
+      {overlay?.kind === 'palette' && <Palette onClose={close} />}
       {overlay?.kind === 'shortcuts' && <Shortcuts onClose={close} />}
       {overlay?.kind === 'decide' && <DecisionMode onClose={close} />}
       {overlay?.kind === 'compose' && <Compose sessionId={overlay.sessionId} draftId={overlay.draftId} onClose={close} />}

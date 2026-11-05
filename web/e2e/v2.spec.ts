@@ -162,7 +162,7 @@ test('a guided review shows the diff and takes comments on lines', async ({ page
   await expect(page.getByTestId('annotations-chip')).toContainText('1 annotation')
 })
 
-test('search finds Japanese words, in this session or all of them', async ({ page, minbox }) => {
+test('quick actions find a Japanese thread subject in another session', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'jp')
   await expectTerminal(page, 'ready>')
@@ -175,10 +175,9 @@ test('search finds Japanese words, in this session or all of them', async ({ pag
   await typeInTerminal(page, 'say unrelated')
 
   await page.keyboard.press('Meta+k')
-  await page.getByTestId('search-input').fill('アーカイブ 扱い')
-  await expect(page.getByTestId('search-empty')).toBeVisible()
-  await page.getByRole('button', { name: 'Search all sessions' }).click()
-  const hit = page.getByTestId('search-result').first()
+  await page.getByTestId('palette-input').fill('アーカイブ 扱い')
+  const hit = page.getByTestId('palette-item').first()
+  await expect(hit).toHaveAttribute('data-kind', 'thread')
   await expect(hit).toContainText('jp')
   await hit.click()
   await expect(page.getByTestId('thread-subject')).toHaveText('アーカイブ済みのスレッドの扱いについて')

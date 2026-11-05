@@ -113,7 +113,7 @@ export type Toast = {
 // ---- overlays ----
 
 export type Overlay =
-  | { kind: 'search'; scope?: string }
+  | { kind: 'palette' }
   | { kind: 'shortcuts' }
   | { kind: 'decide' }
   | { kind: 'compose'; sessionId?: string; draftId?: string }

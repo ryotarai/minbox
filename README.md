@@ -150,7 +150,7 @@ Press `?` for the full list. ⌘ is Ctrl on Linux and Windows.
 
 | Keys | |
 | --- | --- |
-| `⌘K` / `/` | Search threads, messages and files |
+| `⌘K` / `/` | Quick actions: type to find a session, thread or action, `↵` runs it (`>` actions, `@` sessions, `#` threads) |
 | `⌘B` | Fold the session list |
 | `↑` `↓` / `J` `K`, `↵` | Move, open |
 | `N` / `Q` | First unread / the open question |
