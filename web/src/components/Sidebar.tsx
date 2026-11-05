@@ -115,9 +115,22 @@ export function SessionMenu({
           Resume
         </MenuItem>
       ) : (
-        <MenuItem testid="menu-stop" onClick={act(() => api.stopSession(s.id))}>
-          Stop
-        </MenuItem>
+        <>
+          {s.kind !== 'shell' && (
+            <MenuItem
+              testid="menu-restart"
+              onClick={() => {
+                if (!window.confirm(`Restart ${s.name}? A running turn is interrupted; the conversation is resumed.`)) return
+                act(() => api.restartSession(s.id))()
+              }}
+            >
+              Restart
+            </MenuItem>
+          )}
+          <MenuItem testid="menu-stop" onClick={act(() => api.stopSession(s.id))}>
+            Stop
+          </MenuItem>
+        </>
       )}
       {s.archived_at ? (
         <MenuItem testid="menu-unarchive" onClick={act(() => api.unarchiveSession(s.id))}>
