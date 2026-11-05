@@ -111,19 +111,20 @@ function Desktop() {
   // An open file takes the center: the threads list folds into its rail.
   let rail = layout.rail || !!route.f
   const over = () => (rail ? 60 : listW) + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
-  if (shellW && over() > 0) shellW = Math.max(280, shellW - over())
-  if (!rail && over() > 0) listW = Math.max(280, listW - over())
-  if (over() > 0) threadW = Math.max(380, threadW - over())
+  const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
+  if (shellW && over() > 0) shellW = shrink(shellW, 280)
+  if (!rail && over() > 0) listW = shrink(listW, 240)
+  if (over() > 0) threadW = shrink(threadW, 380)
   if (shellW && over() > 0) shellW = 0
   if (!rail && over() > 0) rail = true
-  if (over() > 0) threadW = Math.max(320, threadW - over())
+  if (over() > 0) threadW = shrink(threadW, 320)
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
   const cur = useRef({ listW, threadW, shellW })
   cur.current = { listW, threadW, shellW }
   const dragList = (dx: number) => {
-    cur.current.listW = clamp(cur.current.listW + dx / zoom, 280, 560)
+    cur.current.listW = clamp(cur.current.listW + dx / zoom, 240, 560)
     setLayout({ sidebarW: cur.current.listW })
   }
   // dx is positive when the edge moves right and widens the column on its left.
@@ -154,7 +155,7 @@ function Desktop() {
   }, [])
   useHotkeys({ 'mod+b': () => setLayout({ rail: !layout.rail }) })
   // CSS order, not element order: swapping the panes does not remount the terminal.
-  const swap = settings.swap_panes
+  const swap = !settings.swap_panes
   const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">

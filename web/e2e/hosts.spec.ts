@@ -49,8 +49,8 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await page.getByTestId('new-session-cwd').fill(dir)
     await page.getByTestId('new-session-name').fill('remote')
     await page.getByTestId('new-session-start').click()
-    const srow = page.getByTestId('session-row').filter({ hasText: 'remote' })
-    await expect(srow.getByTestId('host-tag')).toHaveText('devbox')
+    await expect(page.getByTestId('terminal-session-name')).toHaveText('remote')
+    await expect(page.getByTestId('host-tag').first()).toHaveText('devbox')
     await expectTerminal(page, 'ready>')
 
     // The mod's calls go through the host's relay.
@@ -68,7 +68,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await page.getByTestId('host-remove-confirm').click()
     await expect(page.getByTestId('host-row')).toHaveCount(1)
     await page.getByTestId('settings-back').click()
-    await expect(page.getByTestId('session-row').filter({ hasText: 'remote' })).toContainText('Ended')
+    await expect(page.getByTestId('session-status')).toContainText('Ended')
   } finally {
     host?.kill('SIGTERM')
     host = null

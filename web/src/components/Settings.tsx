@@ -129,8 +129,8 @@ function General() {
             ))}
           </div>
         </Row>
-        <Row label="Swap terminal and inbox" desc="On: the inbox is left of the terminal and the terminal is on the right (the default). Off: the other way round.">
-          <Switch label="Swap terminal and inbox" on={settings.swap_panes} onChange={(v) => saveSettings({ swap_panes: v })} />
+        <Row label="Swap terminal and thread" desc="On: the thread is left of the terminal (the default). Off: the terminal is next to the threads list and the thread is on the far right.">
+          <Switch label="Swap terminal and thread" on={settings.swap_panes} onChange={(v) => saveSettings({ swap_panes: v })} />
         </Row>
       </Group>
       <Group title="When Claude asks you">

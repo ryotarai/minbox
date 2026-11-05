@@ -84,7 +84,7 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; rail: 
 function defaultLayout(): Layout {
   const w = window.innerWidth
   if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, rail: false, inboxCollapsed: false, shellW: 560, shellPane: false }
-  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 560, rail: false, inboxCollapsed: false, shellW: 520, shellPane: false }
+  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, rail: false, inboxCollapsed: false, shellW: 520, shellPane: false }
   if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, rail: false, inboxCollapsed: false, shellW: 460, shellPane: false }
   return { sidebarW: 250, inboxW: 380, threadW: 480, rail: false, inboxCollapsed: false, shellW: 400, shellPane: false }
 }

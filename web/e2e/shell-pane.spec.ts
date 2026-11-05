@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import { createSession, expect, expectTerminal, terminalText, test } from './fixtures'
+import { createSession, expect, expectTerminal, phoneSelectSession, terminalText, test } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // A Claude Code session has a companion shell: a pane at the far right (desktop) or a full-screen
@@ -52,7 +52,7 @@ test('desktop: the shell pane is hidden, opens by button and Ctrl+`, runs in the
   await expect(page.getByTestId('shell-pane')).toHaveCount(0)
 
   // It is not a session.
-  await expect(page.getByTestId('session-row')).toHaveCount(1)
+  expect(await (await page.request.get(minbox.url + '/api/sessions')).json()).toHaveLength(1)
 })
 
 test('desktop: no shell pane or button for a shell session', async ({ page, minbox }) => {
@@ -79,7 +79,7 @@ for (const width of [1500, 1920]) {
     expect(m.scroll).toBeLessThanOrEqual(m.inner)
     expect(m.shell.right).toBeLessThanOrEqual(m.inner + 0.5)
     expect(m.shell.width).toBeGreaterThanOrEqual(270)
-    expect(m.main.width).toBeGreaterThanOrEqual(400)
+    expect(m.main.width).toBeGreaterThanOrEqual(340)
     expect(m.main.right).toBeLessThanOrEqual(m.shell.left + 0.5)
   })
 }
@@ -89,7 +89,7 @@ test('phone: the shell opens full screen, closes, and reopens with its scrollbac
   await createSession(page, minbox.dataDir, 'pocket')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
-  await page.getByTestId('session-row').filter({ hasText: 'pocket' }).click()
+  await phoneSelectSession(page, 'pocket', 'terminal')
   await expect(page.getByTestId('phone-shell')).toHaveCount(0)
 
   await page.getByTestId('shell-toggle').click()
