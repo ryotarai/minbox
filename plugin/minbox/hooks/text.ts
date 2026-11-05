@@ -9,7 +9,7 @@ export const SEND_DESCRIPTION = [
   'Use it EVERY time you need their opinion, a decision, an approval or an action from them (run something, check something, review, choose what is next), and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).',
   'They may not be watching the terminal: something asked only in the chat goes unseen.',
   'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
-  'Their reply arrives later as a new message in this conversation; meanwhile keep working on what does not depend on it, or end your turn.',
+  'Their reply arrives later as a new message in this conversation, headed with its thread id (usable with `read_thread` for the earlier messages); meanwhile keep working on what does not depend on it, or end your turn.',
   'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
   'Pass `thread_title` (short, under 60 characters) when you start a thread and whenever the thread\'s topic has changed, so the title in the inbox list shows what it is about now; leave it out to keep the title as it is.',
   'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
@@ -100,7 +100,7 @@ export const SEND_SCHEMA = {
 } as const
 
 export const READ_DESCRIPTION =
-  "Read the person's minbox inbox for this session: with `thread_id`, that thread's messages and the answers given; without, the list of this session's threads."
+  "Read the person's minbox inbox for this session: with `thread_id` (the id every reply from the person carries), that thread's messages and the answers given; without, the list of this session's threads."
 
 export const READ_SCHEMA = {
   type: 'object',
@@ -298,6 +298,11 @@ function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
+/** The last line of every delivered message: the thread's id and where the earlier messages are. */
+export function readHint(threadId: string, readTool: string): string {
+  return `(Thread ${threadId}. Earlier messages in this thread: call ${readTool} with this thread_id.)`
+}
+
 /** The turn text for the person's messages from the inbox (one or more). */
 export function wakeText(pending: Pending[], sendTool: string, readTool: string): string {
   const parts = pending.map((p) => {
@@ -307,10 +312,11 @@ export function wakeText(pending: Pending[], sendTool: string, readTool: string)
       `When they need to hear back, answer in the same thread: ${sendTool} with thread_id ${p.thread_id}.`,
       '',
       p.body.trim(),
+      '',
+      readHint(p.thread_id, readTool),
     ]
     return lines.join('\n')
   })
-  parts.push(`[more: ${readTool} · the person reads replies in the minbox inbox]`)
   return parts.join('\n\n---\n\n')
 }
 

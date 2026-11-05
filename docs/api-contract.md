@@ -189,6 +189,10 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
   and `name` (thread name for a new thread). The server snapshots files and diffs at send time.
 - Pending items add `urgent: bool` (Send now, or queued longer than 5 minutes). The mod
   delivers an urgent item even while Claude is busy.
+- Delivery format (the mod's turn text, `wakeText`): per delivered message a header
+  `minbox inbox: <subject> (thread_id: <id>)`, a line saying reply or new thread, the answer-in-thread
+  hint, the body, and a last line `(Thread <id>. Earlier messages in this thread: call <read_thread tool> with this thread_id.)`.
+  The same for replies, answers to questions, quick-compose threads, queued and urgent messages.
 - `hello` answers `prompt_extra` (settings); the mod appends it to the first-prompt reminder.
 - New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
   403 `the Board is off in minbox settings` unless settings.board.
