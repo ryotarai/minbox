@@ -674,7 +674,7 @@ Set by:
 
 1. The person's message (reply, answers, new thread, forwarded reply) -> `working`. A note (`kind: note`: re-ask, thumbs up) does not count.
 2. The agent's `POST /api/agent/messages` with `status` (the `send_message` tool's `status`) -> that value. Unknown values: 400. Aliases are accepted silently: `in_progress`/`in-progress` -> working, `done`/`complete`/`completed`/`finished` -> finished, `needs_action`/`need-action`/`waiting` -> need_action. The tool schema documents only the three canonical values.
-3. An agent message without `status`: unchanged, except that a message with questions (`:::question` blocks) sets `need_action`. A new agent thread with neither starts `finished`.
+3. An agent message without `status` (a mod from before the status was required): `finished`, except that a message with questions (`:::question` blocks) sets `need_action`.
 4. By hand: `POST /api/threads/{id}/status {status}` (aliases accepted; 400 on unknown). The thread view's More menu has "Mark as ...".
 
 Migration (idempotent, only rows with a NULL status): a thread with an open question or action -> `need_action`, otherwise `finished`. Archived/snoozed state is independent.

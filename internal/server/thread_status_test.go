@@ -24,9 +24,9 @@ func TestThreadStatusAPI(t *testing.T) {
 	if code, _ := send(map[string]any{"body": "x", "thread_id": id, "status": "bogus"}); code != 400 {
 		t.Fatalf("bogus status: %d", code)
 	}
-	send(map[string]any{"body": "x", "thread_id": id}) // unchanged
-	if status(id) != "working" {
-		t.Fatalf("unchanged = %s", status(id))
+	send(map[string]any{"body": "x", "thread_id": id}) // no status: finished
+	if status(id) != "finished" {
+		t.Fatalf("no status = %s", status(id))
 	}
 	send(map[string]any{"body": "x", "thread_id": id, "status": "done"}) // alias
 	if status(id) != "finished" {

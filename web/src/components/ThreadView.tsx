@@ -78,7 +78,7 @@ function openKeys(m: Message): Set<string> {
 }
 
 export function ThreadView({ session, threadId, siblings, onBack, onTerminal, phone }: Props) {
-  const { navigate, route, toast, error, setOverlay, sessions } = useApp()
+  const { navigate, route, toast, error, setOverlay, sessions, setLayout } = useApp()
   const [thread] = useThread(threadId)
   const draft = useReplyDraft(threadId)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -356,7 +356,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, ph
           </IconButton>
         </ThreadHeaderBar>
       )}
-      <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} />
+      <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} onShell={session.kind !== 'shell' && session.status !== 'ended' ? () => setLayout({ shellPane: true }) : undefined} />
 
       <div className={cx('relative flex min-h-0 flex-1 flex-col', fullReply && 'hidden')}>
       {unseen > 0 && (
@@ -580,6 +580,7 @@ export function ThreadMoreMenu({
   onArchive,
   onBack,
   openQuestions,
+  onShell,
 }: {
   thread: Thread
   anchor: HTMLElement | null
@@ -587,6 +588,8 @@ export function ThreadMoreMenu({
   onArchive: () => void
   onBack: () => void
   openQuestions: number
+  /** Open the session's companion shell (omitted when the session has none). */
+  onShell?: () => void
 }) {
   const { toast, error } = useApp()
   const [snooze, setSnooze] = useState<HTMLElement | null>(null)
@@ -638,6 +641,11 @@ export function ThreadMoreMenu({
             Snooze ›
           </MenuItem>
         )}
+        {onShell && (
+          <MenuItem testid="thread-open-shell" onClick={() => (close(), onShell())}>
+            Open shell
+          </MenuItem>
+        )}
         <MenuItem
           testid="thread-pin"
           onClick={() => {
@@ -649,7 +657,7 @@ export function ThreadMoreMenu({
         </MenuItem>
         {THREAD_STATUS_ORDER.filter((st) => st !== thread.status).map((st) => (
           <MenuItem key={st} testid={`thread-mark-${st}`} onClick={() => (close(), api.setThreadStatus(thread.id, st).catch(error))}>
-            {st === 'finished' ? 'Mark as finished' : st === 'working' ? 'Mark as working' : 'Mark as needs action'}
+            {st === 'finished' ? 'Mark as finished' : st === 'working' ? 'Mark as working' : st === 'blocked' ? 'Mark as blocked' : 'Mark as needs action'}
           </MenuItem>
         ))}
         <MenuItem

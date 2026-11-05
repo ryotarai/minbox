@@ -25,10 +25,10 @@ func TestThreadStatusRules(t *testing.T) {
 	if status(th.ID) != ThreadWorking {
 		t.Fatalf("user thread = %s", status(th.ID))
 	}
-	// Agent message without status: unchanged.
+	// Agent message without status (a mod from before status was required): finished.
 	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorAgent, Body: "on it"})
-	if status(th.ID) != ThreadWorking {
-		t.Fatalf("unchanged = %s", status(th.ID))
+	if status(th.ID) != ThreadFinished {
+		t.Fatalf("no status = %s", status(th.ID))
 	}
 	// With status.
 	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorAgent, Body: "done", Status: ThreadFinished})

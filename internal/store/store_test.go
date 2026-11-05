@@ -155,7 +155,7 @@ func TestNewerAgentMessageClosesOldQuestions(t *testing.T) {
 	s := newStore(t)
 	sess, _ := s.CreateSession(ctx, "a", "/a", "u")
 	th, _, _ := s.CreateThread(ctx, sess.ID, "q", NewMessage{Author: AuthorAgent, Body: ask, Questions: question.Parse(ask)})
-	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorAgent, Body: "never mind, I decided"})
+	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorAgent, Body: "never mind, I decided", Status: ThreadNeedAction})
 	got, _ := s.GetThread(ctx, th.ID)
 	if got.OpenQuestions != 0 || got.Section != SectionWaiting || got.Status != ThreadNeedAction || got.Unread != 2 {
 		t.Fatalf("thread = %+v", got)
