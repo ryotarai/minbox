@@ -50,7 +50,7 @@ export function Toasts() {
 const KEYS: [string, string, boolean?][] = [
   ['Everywhere', '', true],
   ['', '', true],
-  ['Search', '⌘K  /'],
+  ['Quick actions', '⌘K  /'],
   ['Shortcuts', '?'],
   ['Sidebar', '⌘B'],
   ['Shell pane', 'Ctrl+`'],

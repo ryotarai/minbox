@@ -193,22 +193,22 @@ test('phone: a swipe scrolls a shell through its scrollback', async ({ page: des
   await ctx.close()
 })
 
-test('on a Mac only ⌘K opens search; Ctrl+K stays the terminal’s', async ({ page, minbox }) => {
+test('on a Mac only ⌘K opens quick actions; Ctrl+K stays the terminal’s', async ({ page, minbox }) => {
   test.skip(process.platform !== 'darwin', 'the Mac binding')
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'keys', 'shell')
   await typeInTerminal(page, 'echo first')
   await expectTerminal(page, /^first$/m)
-  // Ctrl+K in the shell kills the rest of the line, and no search opens.
+  // Ctrl+K in the shell kills the rest of the line, and no palette opens.
   await page.keyboard.type('echo kept; echo gone')
   for (let i = 0; i < 'echo gone'.length; i++) await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('Control+k')
   await page.keyboard.press('Enter')
   await expectTerminal(page, /^kept$/m)
-  await expect(page.getByTestId('search-input')).toHaveCount(0)
+  await expect(page.getByTestId('palette-input')).toHaveCount(0)
   expect(await terminalText(page)).not.toMatch(/^gone$/m)
   await page.keyboard.press('Meta+k')
-  await expect(page.getByTestId('search-input')).toBeVisible()
+  await expect(page.getByTestId('palette-input')).toBeVisible()
 })
 
 test("Claude's open_url opens the page in the person's browser, or offers it when blocked", async ({ page, browser, minbox }) => {

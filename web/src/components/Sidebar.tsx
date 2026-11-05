@@ -88,7 +88,7 @@ export function Sidebar({ forceRail }: { forceRail?: boolean }) {
         <Logo />
         <h1 className="sr-only">minbox</h1>
         <span className="flex-1" />
-        <IconButton size={34} aria-label="Search (⌘K)" title="Search (⌘K)" onClick={() => setOverlay({ kind: 'search' })}>
+        <IconButton size={34} aria-label="Quick actions (⌘K)" title="Quick actions (⌘K)" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
           <IconSearch />
         </IconButton>
         <IconButton size={34} aria-label="List options" data-testid="list-options" onClick={(e) => setOptsAnchor(e.currentTarget)}>
@@ -610,7 +610,7 @@ function Rail({ onNew }: { onNew: () => void }) {
           }),
         )}
       </div>
-      <IconButton size={40} aria-label="Search" onClick={() => setOverlay({ kind: 'search' })}>
+      <IconButton size={40} aria-label="Quick actions" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
         <IconSearch />
       </IconButton>
       <IconButton size={40} aria-label="New session" onClick={onNew}>

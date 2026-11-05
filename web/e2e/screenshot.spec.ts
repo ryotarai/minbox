@@ -60,7 +60,7 @@ test('screenshots', async ({ page, minbox }) => {
   await shot('07-actions')
 
   await page.keyboard.press('Meta+k')
-  await page.getByTestId('search-input').fill('archive')
+  await page.getByTestId('palette-input').fill('archive')
   await page.waitForTimeout(500)
   await shot('08-search')
   await page.keyboard.press('Escape')
