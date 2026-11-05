@@ -132,12 +132,13 @@ function Desktop() {
   const projW = projNarrow ? 56 : 176
   // The project column is paid for by the thread pane first (down to 440), then the threads list
   // (down to 280), so the terminal keeps about the width it had before projects.
+  // restForList is what the list pays after the thread pane has paid.
+  let restForList = projW
   {
-    let rest = projW
-    const fromThread = Math.min(rest, Math.max(0, threadW - 440))
+    const fromThread = Math.min(projW, Math.max(0, threadW - 440))
     threadW -= fromThread
-    rest -= fromThread
-    listW -= Math.min(rest, Math.max(0, listW - 280))
+    restForList -= fromThread
+    listW -= Math.min(restForList, Math.max(0, listW - 280))
   }
   const over = () => projW + listW + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
   const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
@@ -151,14 +152,17 @@ function Desktop() {
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
   const cur = useRef({ listW, threadW, shellW })
   cur.current = { listW, threadW, shellW }
+  // The stored widths are what the columns would be without the project column; the screen shows
+  // them less its share. A drag works on the shown width, so store it with the share added back
+  // (or the share would be taken twice, and a drag would not move the edge 1:1).
   const dragList = (dx: number) => {
     cur.current.listW = clamp(cur.current.listW + dx / zoom, 240, 560)
-    setLayout({ sidebarW: cur.current.listW })
+    setLayout({ sidebarW: cur.current.listW >= 280 ? cur.current.listW + restForList : cur.current.listW })
   }
   // dx is positive when the edge moves right and widens the column on its left.
   const dragThread = (dx: number) => {
     cur.current.threadW = clamp(cur.current.threadW + dx / zoom, 320, 900)
-    setLayout({ threadW: cur.current.threadW })
+    setLayout({ threadW: cur.current.threadW >= 440 ? cur.current.threadW + projW : cur.current.threadW })
   }
   const dragShell = (dx: number) => {
     cur.current.shellW = clamp(cur.current.shellW + dx / zoom, 280, 900)

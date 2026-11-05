@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { createSession, expect, expectTerminal, phoneSelectSession, selectSession, test, typeInTerminal } from './fixtures'
+import { chooseFolder, createSession, expect, expectTerminal, phoneSelectSession, selectSession, test, typeInTerminal } from './fixtures'
 
 // UI v2: the thread is the first-class object. One list of every session's threads on the left, the
 // open thread beside it, and the thread's session (terminal) on the right.
@@ -38,7 +38,7 @@ for (const width of [1500, 1920]) {
     expect(m.list.right).toBeLessThanOrEqual(m.thread.left + 1)
     expect(m.thread.right).toBeLessThanOrEqual(m.main.left + 1)
     expect(m.main.right).toBeLessThanOrEqual(m.inner + 0.5)
-    expect(m.list.width).toBeGreaterThanOrEqual(280)
+    expect(m.list.width).toBeGreaterThanOrEqual(279) // the 280 px column less its 1 px right border
     expect(m.thread.width).toBeGreaterThanOrEqual(380)
     expect(m.main.width).toBeGreaterThanOrEqual(width >= 1680 ? 600 : 400)
     // With the shell pane open nothing overflows either.
@@ -134,6 +134,7 @@ test('composer: + New session… creates a session and sends the typed message i
   await page.getByTestId('composer-target').click()
   await page.getByTestId('composer-new-session').click()
   await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible()
+  await chooseFolder(page)
   await page.getByTestId('new-session-cwd').fill(minbox.dataDir)
   await page.getByTestId('new-session-name').fill('fresh')
   await page.getByTestId('new-session-start').click()
@@ -188,7 +189,8 @@ test('⌘K still finds threads first, and sessions too', async ({ page, minbox }
   await page.keyboard.press('Meta+k')
   await page.getByTestId('palette-input').fill('gamma')
   const results = page.getByTestId('palette-item')
-  await expect(results.filter({ hasText: 'Gamma note' }).first()).toBeVisible()
+  // The thread's subject is "Note" (the fake Claude's title); the row says which session it is in.
+  await expect(results.and(page.locator('[data-kind="thread"]')).filter({ hasText: 'Note' }).filter({ hasText: 'gamma' }).first()).toBeVisible()
   // The session itself is a hit too: it opens its terminal.
   await page.getByTestId('palette-input').fill('@beta')
   await expect(results.first()).toBeVisible()

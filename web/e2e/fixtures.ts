@@ -1,6 +1,7 @@
 import { test as base, expect, type Page } from '@playwright/test'
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +11,20 @@ const ROOT = resolve(__dirname, '../..')
 const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 
-let nextPort = 4870
+// Concurrent suites (other worktrees, other runs) must not share a server: ask the OS for a free
+// port per instance. MINBOX_E2E_PORT, if set, is the first port to use (then counts up).
+let overridePort = process.env.MINBOX_E2E_PORT ? Number(process.env.MINBOX_E2E_PORT) : 0
+async function freePort(): Promise<number> {
+  if (overridePort) return overridePort++
+  return new Promise((res, rej) => {
+    const srv = createServer()
+    srv.once('error', rej)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as AddressInfo
+      srv.close(() => res(port))
+    })
+  })
+}
 
 /** A minbox server with its own data directory, run with the fake claude. */
 export class Minbox {
@@ -89,7 +103,7 @@ export const test = base.extend<{ minbox: Minbox }>({
   minbox: async ({}, use, testInfo) => {
     // A short path: the host's Unix socket lives in the data directory.
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
-    const m = new Minbox(dir, nextPort++)
+    const m = new Minbox(dir, await freePort())
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
@@ -135,21 +149,31 @@ export async function typeInTerminal(page: Page, text: string) {
   await page.keyboard.press('Enter')
 }
 
-/** Creates a session in the given directory through the UI. */
-export async function createSession(page: Page, cwd: string, name: string, kind: 'claude' | 'shell' = 'claude') {
-  // With no sessions the dialog opens by itself, maybe right after we look:
-  // press New only while the dialog is not there, briefly each time.
-  const form = page.getByTestId('new-session-cwd')
-  for (let i = 0; i < 30 && !(await form.isVisible()); i++) {
-    await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
-  }
-  await page.getByTestId(`new-session-kind-${kind}`).click()
-  // With projects the dialog starts in one of them: this helper wants a folder.
+/**
+ * The New session dialog starts in a project when there are projects (its folder field appears
+ * only in folder mode). Waits until the dialog has settled, then switches to a folder if needed.
+ */
+export async function chooseFolder(page: Page) {
+  const cwd = page.getByTestId('new-session-cwd')
   const project = page.getByTestId('new-session-project')
+  await expect(cwd.or(project)).toBeVisible()
   if (await project.isVisible()) {
     await project.click()
     await page.getByTestId('new-session-project-folder').click()
   }
+  await expect(cwd).toBeVisible()
+}
+
+/** Creates a session in the given directory through the UI. */
+export async function createSession(page: Page, cwd: string, name: string, kind: 'claude' | 'shell' = 'claude') {
+  // With no sessions the dialog opens by itself, maybe right after we look:
+  // press New only while the dialog is not there, briefly each time.
+  const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
+  for (let i = 0; i < 30 && !(await form.isVisible()); i++) {
+    await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
+  }
+  await page.getByTestId(`new-session-kind-${kind}`).click()
+  await chooseFolder(page)
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
   await page.getByTestId('new-session-start').click()

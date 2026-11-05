@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { createSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { chooseFolder, createSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
 // attachments and reviews, search, settings, Board, Decision mode, phone.
@@ -410,6 +410,7 @@ test('New session: browse folders, make one, catch a missing one, and pick a rec
 
   // Again: the folder is under Recent.
   await page.getByTestId('new-session').click()
+  await chooseFolder(page)
   await page.getByTestId('new-session-recent').filter({ hasText: 'beta' }).click()
   await expect(page.getByTestId('new-session-cwd')).toHaveValue(/projects\/beta$/)
   await page.keyboard.press('Escape')
@@ -687,7 +688,7 @@ test('settings: the thread is left of the terminal by default; swapping puts it 
   expect((await thread.boundingBox())!.x).toBeGreaterThan((await main.boundingBox())!.x)
   // The terminal stays between the list and the thread; dragging the edge left widens the thread.
   const before = (await thread.boundingBox())!.width
-  const edge = (await page.getByTestId('resizer').last().boundingBox())!
+  const edge = (await page.getByTestId('resizer').nth(1).boundingBox())!
   const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
   await page.mouse.move(x, y)
   await page.mouse.down()
@@ -757,7 +758,7 @@ test.describe('wide screen', () => {
     await expectTerminal(page, 'ready>')
     const threadPane = page.getByTestId('thread-pane')
     const before = (await threadPane.boundingBox())!.width
-    const edge = (await page.getByTestId('resizer').last().boundingBox())!
+    const edge = (await page.getByTestId('resizer').nth(1).boundingBox())!
     const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2
     await page.mouse.move(x, y)
     await page.mouse.down()
