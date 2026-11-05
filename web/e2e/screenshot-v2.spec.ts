@@ -92,6 +92,6 @@ test('screenshots: threads-first UI', async ({ page, minbox }) => {
   await page.getByTestId('sheet-close').click()
   await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
   await shot('13-phone-thread')
-  await page.getByTestId('phone-session-chip').click()
+  await page.getByTestId('thread-open-terminal').click()
   await shot('14-phone-terminal')
 })

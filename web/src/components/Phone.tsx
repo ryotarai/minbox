@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconArchive, IconBack, IconClose, IconTerminal, IconImage, IconMail } from './icons'
+import { IconBack, IconClose, IconTerminal, IconImage, IconMore } from './icons'
 import { waitsOnPerson } from './Sidebar'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
 import { Segmented, StatusDot, cx, statusOf } from './ui'
 import { api } from '../api'
-import { ThreadView, unreadElsewhere, useThread } from './ThreadView'
+import { ThreadMoreMenu, ThreadView, unreadElsewhere, useThread } from './ThreadView'
 import { useAllThreads } from './ThreadList'
 import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
 import { TerminalKeys } from './TerminalKeys'
@@ -87,6 +87,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
   // terminal takes the rest (the header and tabs come back with the keyboard down).
   const typing = keyboard && (terminal || session.kind === 'shell')
   const [shellOpen, setShellOpen] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   return (
     <>
       {shellOpen && session.kind !== 'shell' && session.status !== 'ended' && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
@@ -111,45 +112,48 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
               <span data-testid="phone-thread-subject" className="max-w-full truncate text-[15.5px] font-[650]">
                 {thread?.subject ?? '…'}
               </span>
-              <button
-                type="button"
-                data-testid="phone-session-chip"
-                aria-label={`Open ${session.name}'s terminal`}
-                onClick={() => navigate({ tab: 'terminal' }, { push: false })}
-                className="mono flex max-w-full items-center gap-1.5 rounded-[5px] border-0 bg-chip px-1.5 text-[11.5px] leading-[18px] text-fg2"
-              >
+              <span data-testid="phone-session-name" className="mono flex max-w-full items-center gap-1.5 text-[11.5px] leading-[18px] text-fg2">
                 <StatusDot s={session} waits={waitsOnPerson(session)} size={6} ring={false} />
                 <span className="truncate">{session.name}</span>
-                <IconTerminal size={11} />
-              </button>
+              </span>
             </div>
             <button
               type="button"
-              aria-label="Mark unread"
-              onClick={() => route.t && api.markUnread(route.t).then(home).catch(error)}
+              aria-label="Open terminal"
+              data-testid="thread-open-terminal"
+              onClick={() => navigate({ tab: 'terminal' }, { push: false })}
               className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
             >
-              <IconMail size={19} />
+              <IconTerminal size={21} />
             </button>
             <button
               type="button"
-              aria-label="Archive"
-              data-testid="thread-archive"
-              onClick={() => {
-                const id = route.t
-                if (!id) return
-                api
-                  .archiveThread(id)
-                  .then(() => {
-                    toast(`Archived · "${thread?.subject ?? ''}"`, { action: 'Undo', undo: true, onAction: () => api.unarchiveThread(id).catch(error) })
-                    home()
-                  })
-                  .catch(error)
-              }}
+              aria-label="More"
+              data-testid="thread-more"
+              onClick={(e) => setMoreAnchor(e.currentTarget)}
               className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
             >
-              <IconArchive size={19} />
+              <IconMore size={19} />
             </button>
+            {thread && (
+              <ThreadMoreMenu
+                thread={thread}
+                anchor={moreAnchor}
+                onClose={() => setMoreAnchor(null)}
+                onBack={home}
+                openQuestions={0}
+                onArchive={() => {
+                  const id = thread.id
+                  api
+                    .archiveThread(id)
+                    .then(() => {
+                      toast(`Archived · "${thread.subject}"`, { action: 'Undo', undo: true, onAction: () => api.unarchiveThread(id).catch(error) })
+                      home()
+                    })
+                    .catch(error)
+                }}
+              />
+            )}
           </>
         ) : (
           <>
