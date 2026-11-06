@@ -11,7 +11,7 @@ export const SEND_DESCRIPTION = [
   'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
   'Their reply arrives later as a new message in this conversation, headed with its thread id (usable with `read_thread` for the earlier messages); meanwhile keep working on what does not depend on it, or end your turn.',
   'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
-  'Pass `thread_title` (short, under 60 characters) when you start a thread and whenever the thread\'s topic has changed, so the title in the inbox list shows what it is about now; leave it out to keep the title as it is.',
+  '`thread_title` is required on every message (at most 30 characters): name what the thread is about now, and update it when the topic drifts, so the title in the inbox list is always current. Write it in the person\'s language.',
   'Pass `status` (working | need_action | finished) to set the thread\'s status: `working` when you start working on it, `need_action` when you need the person to decide or do something, `finished` when its task is done; it is required on every message.',
   'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
 ].join(' ')
@@ -51,8 +51,9 @@ export const SEND_SCHEMA = {
     body: { type: 'string', description: QUESTION_GUIDE },
     thread_title: {
       type: 'string',
+      maxLength: 30,
       description:
-        "The thread's title in the inbox list (short, under 60 characters). Pass it when you start a thread and whenever its topic has changed; it replaces the current title, also on a reply with thread_id. Omit to leave the title as it is (a new thread then takes the first line of body).",
+        "The thread's title in the inbox list. Required on every message, at most 30 characters. Name what the thread is about NOW: it replaces the current title, so update it when the topic drifts. Write it in the same language as the person.",
     },
     status: {
       type: 'string',
@@ -102,7 +103,7 @@ export const SEND_SCHEMA = {
       required: ['title', 'sections'],
     },
   },
-  required: ['body', 'status'],
+  required: ['body', 'status', 'thread_title'],
   additionalProperties: false,
 } as const
 
