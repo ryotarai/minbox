@@ -41,6 +41,16 @@ for (const width of [1500, 1920]) {
     expect(m.list.width).toBeGreaterThanOrEqual(279) // the 280 px column less its 1 px right border
     expect(m.thread.width).toBeGreaterThanOrEqual(380)
     expect(m.main.width).toBeGreaterThanOrEqual(width >= 1680 ? 600 : 400)
+    // The reply box and the quick compose space their textarea and footer row the same (a thread
+    // with no open questions, so no counter row sits between the two).
+    await row(page, 'Gamma note').click()
+    await expect(page.getByTestId('reply-box')).toBeVisible()
+    await expect(page.getByTestId('answer-summary')).toHaveCount(0)
+    const gaps = await page.evaluate(() => {
+      const gap = (ta: string, send: string) => document.querySelector(send)!.getBoundingClientRect().top - document.querySelector(ta)!.getBoundingClientRect().bottom
+      return { quick: gap('[data-testid="quick-body"]', '[data-testid="quick-send"]'), reply: gap('[data-testid="reply-box"]', '[data-testid="reply-send"]') }
+    })
+    expect(Math.abs(gaps.reply - gaps.quick)).toBeLessThanOrEqual(1)
     // With the shell pane open nothing overflows either.
     await page.getByTestId('shell-toggle').click()
     await expect(page.getByTestId('shell-pane')).toBeVisible()
