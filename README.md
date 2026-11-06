@@ -119,10 +119,10 @@ up the list and shows the question.
   | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |
   | `card` | Create and update cards on the Board (when it is on) |
 
-  minbox's instructions reach Claude three ways, because some environments skip one of them:
+  minbox's instructions are one text, owned by the server. They reach Claude two ways:
   - `--append-system-prompt`;
-  - the mod's `prompt.compose` hook;
-  - a reminder on the first prompt.
+  - the mod re-injects the same text (the `instructions` of the hello) on the first prompt, after
+    a compaction and every 20th prompt, because models forget the first instruction.
 
   They ask Claude to send every question, decision or request for action to the inbox. If a
   turn still ends with a question asked only in the chat, the mod reminds Claude once. By default

@@ -230,11 +230,10 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
   hint, the body, and a last line `(Thread <id>. Earlier messages in this thread: call <read_thread tool> with this thread_id.)`.
   The same for replies, answers to questions, quick-compose threads, queued and urgent messages.
   The answer-in-thread hint is worded as IMPORTANT (reply with the send tool and that thread id, even for a
-  short answer; terminal text is not shown). The system prompt (`AgentSystemPrompt`) and the first-prompt
-  reminder say the same. If a turn started by a delivered message ends (reason `answer`) without a
+  short answer; terminal text is not shown). The system prompt (`AgentSystemPrompt`) says the same. If a turn started by a delivered message ends (reason `answer`) without a
   `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
   own turn never reminds again.
-- `hello` answers `prompt_extra` (settings); the mod appends it to the first-prompt reminder. It also answers `orchestrator`: the orchestration prompt text while `orchestrator_prompt` is on, else ""; the mod injects it into the first prompt after each hello, then every 20th prompt.
+- `hello` answers `instructions`: the one instructions text, built by the same server function as `--append-system-prompt` (`AgentSystemPrompt`, plus the orchestration prompt while `orchestrator_prompt` is on, plus `The person adds: <prompt_extra>` when set). The mod injects it (wrapped as "minbox: standing instructions (still in force)") on the first prompt after each hello, on the first prompt after a compaction (with the open-threads list) and on every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` overrides), never twice in one prompt; without instructions it falls back to a short reminder. `prompt_extra` and `orchestrator` are still answered, for older mods only; the current mod ignores them.
 - New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
   403 `the Board is off in minbox settings` unless settings.board.
 
@@ -585,13 +584,17 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 ## minbox's system prompt
 
 The inbox (`send_message` every time the person's opinion, decision, approval or action is
-needed, and a summary when work is done), session title and `open_url` guidance reaches Claude
-three ways, as some environments skip
-the mod's `prompt.compose` hook:
-- the server starts Claude with `--append-system-prompt` (`server.AgentSystemPrompt`, headings
-  `# minbox: inbox`, `# minbox: session title` and `# minbox: opening pages`);
-- the mod's `prompt.compose` adds the same sections unless those headings are there already;
-- the mod's first-prompt (and after-compaction) reminder repeats them in a sentence each.
+needed, and a summary when work is done), session title and `open_url` guidance is one text,
+`server.AgentSystemPrompt` (headings `# minbox: inbox`, `# minbox: replying to inbox messages`,
+`# minbox: session title` and `# minbox: opening pages`), extended by `buildInstructions` with the
+orchestration prompt (setting `orchestrator_prompt`) and `prompt_extra`. It reaches Claude two ways:
+- the server starts Claude with `--append-system-prompt` set to it;
+- `hello` returns it as `instructions`, and the mod injects it into prompts (first, after a
+  compaction, every 20th). The mod has no `prompt.compose` hook and no copy of the text.
+
+The text names the tools `mcp__minbox__send_message`, `mcp__minbox__set_session_title` and
+`mcp__minbox__open_url`, which is what the mod's tools are called when registered through
+`$.tool.register` (the mod's wake and nudge texts use the registered name, which could differ).
 
 A main-loop turn that ends asking the person something (a question mark, or phrases such as
 "Should I", "Let me know", "どうしますか", "確認してください" in its last lines, code and URLs
