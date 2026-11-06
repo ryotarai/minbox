@@ -214,6 +214,19 @@ test('the orchestration prompt rides every Nth prompt, and only when set', async
   expect([await has(), await has(), await has(), await has(), await has(), await has()]).toEqual([false, false, true, false, false, true])
 })
 
+test('the orchestration prompt defaults to every 20th prompt', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const seen: number[] = []
+  for (let i = 1; i <= 20; i++) {
+    const res: any = await $.prompt.submit({ text: 'p' })
+    if ((res.context?.join('\n') ?? '').includes('ORCH-TEXT')) seen.push(i)
+  }
+  expect(seen).toEqual([20])
+})
+
 test('no orchestration prompt when the hello has none', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '1' })
