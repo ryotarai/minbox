@@ -496,6 +496,14 @@ func (m *sessionManager) Delete(ctx context.Context, id, promote string) error {
 	if err := m.store.ReleaseMain(ctx, id, promote); err != nil {
 		return err
 	}
+	m.terminate(ctx, id)
+	err := m.store.DeleteSession(ctx, id)
+	m.hub.publish(Event{Type: "sessions"})
+	return err
+}
+
+// terminate kills the session's Claude Code terminal and companion shell and removes their panes.
+func (m *sessionManager) terminate(ctx context.Context, id string) {
 	var host HostConn
 	if sess, err := m.store.GetSession(ctx, id); err == nil {
 		host, _ = m.hostOf(sess)
@@ -509,7 +517,24 @@ func (m *sessionManager) Delete(ctx context.Context, id, promote string) error {
 		_ = host.Kill(ctx, shellTermID(id))
 		_ = host.Remove(ctx, shellTermID(id))
 	}
-	err := m.store.DeleteSession(ctx, id)
+}
+
+// DeleteProject stops every session of the project, then deletes the project with all of them
+// in one store transaction. The main-session rule does not apply: all of them go.
+func (m *sessionManager) DeleteProject(ctx context.Context, projectID string) error {
+	if _, err := m.store.GetProject(ctx, projectID); err != nil {
+		return err
+	}
+	all, err := m.store.ListSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, sess := range all {
+		if sess.ProjectID == projectID {
+			m.terminate(ctx, sess.ID)
+		}
+	}
+	err = m.store.DeleteProject(ctx, projectID)
 	m.hub.publish(Event{Type: "sessions"})
 	return err
 }

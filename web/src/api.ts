@@ -470,6 +470,7 @@ export const api = {
   projects: (archived = false) => call<Project[]>('GET', `/api/projects${archived ? '?archived=1' : ''}`),
   createProject: (p: { dir: string; host_id?: string; name?: string }) => call<Project>('POST', '/api/projects', p),
   patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string }) => call<Project>('PATCH', `/api/projects/${id}`, p),
+  projectDeletePreview: (id: string) => call<{ sessions: number; running_sessions: number; threads: number; messages: number }>('GET', `/api/projects/${id}/delete-preview`),
   deleteProject: (id: string) => call<Ok>('DELETE', `/api/projects/${id}`),
   archiveProject: (id: string, archive = true) => call<Ok>('POST', `/api/projects/${id}/${archive ? 'archive' : 'unarchive'}`),
   hosts: () => call<Host[]>('GET', '/api/hosts'),
