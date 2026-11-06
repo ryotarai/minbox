@@ -29,7 +29,7 @@ import { cx } from './ui'
 
 const FONT = 'system-ui, -apple-system, Segoe UI, sans-serif'
 const TOOLS: { tool: Tool; label: string; glyph: string }[] = [
-  { tool: 'select', label: 'Select and move', glyph: '↖' },
+  { tool: 'select', label: 'Select / move (Option-drag to duplicate)', glyph: '↖' },
   { tool: 'rect', label: 'Rectangle', glyph: '▭' },
   { tool: 'ellipse', label: 'Ellipse', glyph: '◯' },
   { tool: 'line', label: 'Line', glyph: '╱' },
@@ -67,20 +67,25 @@ function Geom({ s, paint, hit }: { s: Shape; paint: Paint; hit?: boolean }) {
     }
     case 'pen':
       return <path d={pathOf(s.pts ?? [])} {...noFill} />
-    case 'text':
+    case 'text': {
+      const tb = shapeBounds(s)
       return (
-        <text x={s.x1} y={s.y1} fontSize={textSize(s)} fontFamily={FONT} fill={hit ? 'transparent' : s.stroke} stroke="none" pointerEvents={hit ? 'all' : undefined}>
+        <>
+          {hit && <rect x={tb.x} y={tb.y} width={tb.w} height={tb.h} fill="transparent" stroke="none" pointerEvents="all" />}
+          <text x={s.x1} y={s.y1} fontSize={textSize(s)} fontFamily={FONT} fill={hit ? 'transparent' : s.stroke} stroke="none" pointerEvents={hit ? 'all' : undefined}>
           {s.text}
-        </text>
+          </text>
+        </>
       )
+    }
   }
 }
 
-function ShapeEl({ s }: { s: Shape }) {
+function ShapeEl({ s, sel }: { s: Shape; sel: boolean }) {
   const b = shapeBounds(s)
   const filled = s.fill && (s.kind === 'rect' || s.kind === 'ellipse')
   return (
-    <g data-testid="sketch-shape" data-kind={s.kind} data-shape-id={s.id} data-x={Math.round(b.x)} data-y={Math.round(b.y)} data-w={Math.round(b.w)} data-h={Math.round(b.h)}>
+    <g data-testid="sketch-shape" data-kind={s.kind} data-shape-id={s.id} data-selected={sel ? 'true' : 'false'} data-x={Math.round(b.x)} data-y={Math.round(b.y)} data-w={Math.round(b.w)} data-h={Math.round(b.h)}>
       <Geom s={s} paint={{ stroke: s.stroke, strokeWidth: s.width, fill: filled ? s.stroke : 'none', fillOpacity: filled ? 0.25 : undefined }} />
     </g>
   )
@@ -98,7 +103,8 @@ function HitEl({ s }: { s: Shape }) {
 type Hist = { shapes: Shape[]; past: Shape[][]; future: Shape[][] }
 type Gesture =
   | { type: 'draw'; id: string; before: Shape[]; shift?: boolean }
-  | { type: 'move'; id: string; start: [number, number]; orig: Shape; before: Shape[] }
+  | { type: 'move'; ids: string[]; start: [number, number]; origs: Shape[]; before: Shape[]; dup?: boolean }
+  | { type: 'marquee'; start: [number, number]; add: boolean; before: Shape[] }
   | { type: 'handle'; id: string; handle: string; before: Shape[] }
   | { type: 'erase'; before: Shape[] }
 type Editing = { id: string; x: number; y: number; text: string; isNew: boolean; stroke: string; width: number }
@@ -126,7 +132,10 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   const [stroke, setStroke] = useState(PALETTE[0])
   const [width, setWidth] = useState(WIDTHS[1])
   const [fill, setFill] = useState(false)
-  const [selId, setSelId] = useState<string | null>(null)
+  const [selIds, setSelIds] = useState<string[]>([])
+  const [marquee, setMarquee] = useState<[number, number, number, number] | null>(null)
+  const setSelId = (id: string | null) => setSelIds(id ? [id] : [])
+  const selId = selIds.length === 1 ? selIds[0] : null
   const [editing, setEditingState] = useState<Editing | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -135,6 +144,9 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   const svgRef = useRef<SVGSVGElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const gest = useRef<Gesture | null>(null)
+  const lastDown = useRef<{ id: string; t: number; x: number; y: number } | null>(null)
+  const marqueeRef = useRef<[number, number, number, number] | null>(null)
+  const [copying, setCopying] = useState(false)
   const editRef = useRef<Editing | null>(null)
   const hRef = useRef(h)
   hRef.current = h
@@ -183,15 +195,34 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
     } else commit(cur.map((s) => (s.id === ed.id ? { ...s, text: t } : s)))
   }
 
-  const remove = (id: string) => {
-    commit(hRef.current.shapes.filter((s) => s.id !== id))
-    setSelId((v) => (v === id ? null : v))
+  const removeMany = (ids: string[]) => {
+    commit(hRef.current.shapes.filter((s) => !ids.includes(s.id)))
+    setSelIds((v) => v.filter((x) => !ids.includes(x)))
+  }
+  const nudge = (dx: number, dy: number) => {
+    if (selIds.length) commit(hRef.current.shapes.map((s) => (selIds.includes(s.id) ? moveShape(s, dx, dy) : s)))
   }
 
   const endGesture = () => {
     const g = gest.current
     gest.current = null
+    setCopying(false)
+    setMarquee(null)
     if (!g) return
+    if (g.type === 'marquee') {
+      const m = marqueeRef.current
+      marqueeRef.current = null
+      if (!m) return
+      const [x1, y1, x2, y2] = [Math.min(m[0], m[2]), Math.min(m[1], m[3]), Math.max(m[0], m[2]), Math.max(m[1], m[3])]
+      const hit = g.before
+        .filter((s) => {
+          const b = shapeBounds(s)
+          return b.x <= x2 && b.x + b.w >= x1 && b.y <= y2 && b.y + b.h >= y1
+        })
+        .map((s) => s.id)
+      setSelIds((v) => (g.add ? [...v, ...hit.filter((id) => !v.includes(id))] : hit))
+      return
+    }
     if (g.type === 'draw') {
       const s = hRef.current.shapes.find((x) => x.id === g.id)
       const tiny = s && s.kind !== 'pen' && s.kind !== 'text' && Math.hypot(s.x2 - s.x1, s.y2 - s.y1) < 3
@@ -217,15 +248,43 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
       gest.current = { type: 'handle', id: selId, handle, before }
       return
     }
+    // Double-click on a text (from any tool): detected here, not via the dblclick event.
+    const hitShape = before.find((s) => s.id === hitId)
+    if (hitShape?.kind === 'text' && tool !== 'eraser') {
+      const last = lastDown.current
+      lastDown.current = { id: hitShape.id, t: e.timeStamp, x: e.clientX, y: e.clientY }
+      if (last && last.id === hitShape.id && e.timeStamp - last.t < 350 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 6) {
+        lastDown.current = null
+        gest.current = null
+        setCopying(false)
+        setTool('select')
+        setSelId(hitShape.id)
+        setEditing({ id: hitShape.id, x: hitShape.x1, y: hitShape.y1, text: hitShape.text ?? '', isNew: false, stroke: hitShape.stroke, width: hitShape.width })
+        e.preventDefault()
+        return
+      }
+    } else lastDown.current = null
     if (tool === 'eraser') {
       gest.current = { type: 'erase', before }
       if (hitId) live((ss) => ss.filter((s) => s.id !== hitId))
       return
     }
     if (tool === 'select') {
-      setSelId(hitId)
-      const orig = before.find((s) => s.id === hitId)
-      if (orig) gest.current = { type: 'move', id: orig.id, start: p, orig, before }
+      if (!hitId) {
+        // Empty canvas: a marquee (Shift adds to the selection).
+        if (!e.shiftKey) setSelIds([])
+        marqueeRef.current = null
+        gest.current = { type: 'marquee', start: p, add: e.shiftKey, before }
+        return
+      }
+      if (e.shiftKey) {
+        setSelIds((v) => (v.includes(hitId) ? v.filter((x) => x !== hitId) : [...v, hitId]))
+        return
+      }
+      const ids = selIds.includes(hitId) ? selIds : [hitId]
+      if (ids !== selIds) setSelIds(ids)
+      const origs = before.filter((s) => ids.includes(s.id))
+      gest.current = { type: 'move', ids: origs.map((s) => s.id), start: p, origs, before, dup: e.altKey }
       return
     }
     if (tool === 'text') {
@@ -248,7 +307,27 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
       const id = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-hit]')?.getAttribute('data-hit')
       if (id) live((ss) => ss.filter((s) => s.id !== id))
     } else if (g.type === 'move') {
-      live((ss) => ss.map((s) => (s.id === g.id ? moveShape(g.orig, p[0] - g.start[0], p[1] - g.start[1]) : s)))
+      if (g.dup) {
+        // Option/Alt-drag: the first real move inserts a copy on top and drags that instead.
+        if (Math.hypot(p[0] - g.start[0], p[1] - g.start[1]) < 3) return
+        const copies: Shape[] = g.origs.map((o) => ({ ...o, id: newId(), pts: o.pts?.map(([x, y]) => [x, y] as [number, number]) }))
+        g.dup = false
+        g.ids = copies.map((c) => c.id)
+        g.origs = copies
+        live((ss) => [...ss, ...copies])
+        setSelIds(g.ids)
+        setCopying(true)
+      }
+      const [dx, dy] = [p[0] - g.start[0], p[1] - g.start[1]]
+      live((ss) => ss.map((s) => {
+        const i = g.ids.indexOf(s.id)
+        return i < 0 ? s : moveShape(g.origs[i], dx, dy)
+      }))
+    } else if (g.type === 'marquee') {
+      const m: [number, number, number, number] = [g.start[0], g.start[1], p[0], p[1]]
+      if (!marqueeRef.current && Math.hypot(m[2] - m[0], m[3] - m[1]) < 3) return
+      marqueeRef.current = m
+      setMarquee(m)
     } else if (g.type === 'draw') {
       live((ss) =>
         ss.map((s) => {
@@ -274,20 +353,11 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
     }
   }
 
-  const onDouble = (e: React.MouseEvent) => {
-    const id = (e.target as Element).closest('[data-hit]')?.getAttribute('data-hit')
-    const s = shapes.find((x) => x.id === id)
-    if (s?.kind === 'text') {
-      setTool('select')
-      setEditing({ id: s.id, x: s.x1, y: s.y1, text: s.text ?? '', isNew: false, stroke: s.stroke, width: s.width })
-    }
-  }
-
   const style = (patch: Partial<Pick<Shape, 'stroke' | 'width' | 'fill'>>) => {
     if (patch.stroke) setStroke(patch.stroke)
     if (patch.width) setWidth(patch.width)
     if (patch.fill !== undefined) setFill(patch.fill)
-    if (selId && tool === 'select') commit(hRef.current.shapes.map((s) => (s.id === selId ? { ...s, ...patch } : s)))
+    if (selIds.length && tool === 'select') commit(hRef.current.shapes.map((s) => (selIds.includes(s.id) ? { ...s, ...patch } : s)))
   }
 
   const done = async () => {
@@ -340,6 +410,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
       e.preventDefault()
       e.stopPropagation()
       if (editRef.current) finishEdit(false)
+      else if (selIds.length > 1) setSelIds([])
       else if (confirming) setConfirming(false)
       else close()
       return
@@ -356,9 +427,17 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
     } else if (mod && e.key.toLowerCase() === 'y') {
       e.preventDefault()
       redo()
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
+    } else if (mod && e.key.toLowerCase() === 'a') {
       e.preventDefault()
-      remove(selId)
+      setTool('select')
+      setSelIds(hRef.current.shapes.map((s) => s.id))
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selIds.length) {
+      e.preventDefault()
+      removeMany(selIds)
+    } else if (e.key.startsWith('Arrow') && selIds.length && tool === 'select') {
+      e.preventDefault()
+      const n = e.shiftKey ? 10 : 1
+      nudge(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0)
     }
   }
   useEffect(() => {
@@ -371,6 +450,14 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   const scale = ctm?.a ?? 1
   const hb = selected ? shapeBounds(selected) : null
   const pad = 6 / scale
+  const gbs = selIds.length > 1 ? shapes.filter((s) => selIds.includes(s.id)).map(shapeBounds) : []
+  const gb = gbs.length
+    ? (() => {
+        const x = Math.min(...gbs.map((b) => b.x))
+        const y = Math.min(...gbs.map((b) => b.y))
+        return { x, y, w: Math.max(...gbs.map((b) => b.x + b.w)) - x, h: Math.max(...gbs.map((b) => b.y + b.h)) - y }
+      })()
+    : null
   const handles: [string, number, number][] = !selected
     ? []
     : selected.kind === 'rect' || selected.kind === 'ellipse'
@@ -387,7 +474,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
           ]
         : []
 
-  const cursor = tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair'
+  const cursor = copying ? 'copy' : tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair'
   const sep = <span aria-hidden="true" className="mx-1 h-5 w-px bg-line2" />
 
   return createPortal(
@@ -406,7 +493,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
               key={t.tool}
               aria-label={t.label}
               aria-pressed={tool === t.tool}
-              title={t.label}
+              title={t.tool === 'select' ? t.label + '; drag empty canvas to select several, Shift-click to add' : t.label}
               data-testid={`sketch-tool-${t.tool}`}
               className={cx(tool === t.tool && 'border-accent bg-sel')}
               onClick={() => {
@@ -446,7 +533,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
           <Btn aria-label="Redo" title="Redo" data-testid="sketch-redo" disabled={h.future.length === 0} onClick={redo}>
             ↷
           </Btn>
-          <Btn aria-label="Delete selected" title="Delete selected" data-testid="sketch-delete" disabled={!selId} onClick={() => selId && remove(selId)}>
+          <Btn aria-label="Delete selected" title="Delete selected" data-testid="sketch-delete" disabled={selIds.length === 0} onClick={() => removeMany(selIds)}>
             Delete
           </Btn>
           <Btn aria-label="Clear" title="Clear all" data-testid="sketch-clear" disabled={shapes.length === 0} onClick={() => (commit([]), setSelId(null))}>
@@ -487,15 +574,22 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
             onPointerMove={onMove}
             onPointerUp={endGesture}
             onPointerCancel={endGesture}
-            onDoubleClick={onDouble}
           >
             {bg && <image href={bg.href} x={0} y={0} width={bg.w} height={bg.h} data-testid="sketch-bg" />}
             <g data-shapes>
-              {shapes.map((s) => (editing && editing.id === s.id ? null : <ShapeEl key={s.id} s={s} />))}
+              {shapes.map((s) => (editing && editing.id === s.id ? null : <ShapeEl key={s.id} s={s} sel={selIds.includes(s.id)} />))}
             </g>
-            <g data-ui style={{ pointerEvents: tool === 'select' || tool === 'eraser' ? 'auto' : 'none' }}>
+            <g data-ui style={{ pointerEvents: 'auto' }}>
               {shapes.map((s) => (editing && editing.id === s.id ? null : <HitEl key={s.id} s={s} />))}
             </g>
+            {marquee && (
+              <rect data-ui data-testid="sketch-marquee" x={Math.min(marquee[0], marquee[2])} y={Math.min(marquee[1], marquee[3])} width={Math.abs(marquee[2] - marquee[0])} height={Math.abs(marquee[3] - marquee[1])} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1 / scale} strokeDasharray={`${4 / scale} ${3 / scale}`} pointerEvents="none" />
+            )}
+            {selIds.length > 1 && gb && tool === 'select' && !editing && (
+              <g data-ui>
+                <rect data-testid="sketch-group-box" data-count={selIds.length} x={gb.x - pad} y={gb.y - pad} width={gb.w + pad * 2} height={gb.h + pad * 2} fill="none" stroke="#2563eb" strokeWidth={1 / scale} strokeDasharray={`${4 / scale} ${3 / scale}`} pointerEvents="none" />
+              </g>
+            )}
             {selected && hb && tool === 'select' && !editing && (
               <g data-ui>
                 <rect x={hb.x - pad} y={hb.y - pad} width={hb.w + pad * 2} height={hb.h + pad * 2} fill="none" stroke="#2563eb" strokeWidth={1 / scale} strokeDasharray={`${4 / scale} ${3 / scale}`} pointerEvents="none" />
@@ -508,7 +602,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
           {editing && ctm && <TextInput ed={editing} ctm={ctm} onChange={(text) => setEditing({ ...editing, text })} onCommit={() => finishEdit(true)} onCancel={() => finishEdit(false)} host={svgRef.current!.parentElement!} />}
         </div>
         <div className="text-[12px] text-subtle">
-          {bg ? 'Drawing on an image. ' : ''}Shift constrains lines to 45° and shapes to squares. Double-click text to edit. Delete removes the selection. {isPhone ? '' : '⌘/Ctrl+Enter is Done, Esc cancels.'}
+          {bg ? 'Drawing on an image. ' : ''}Shift constrains lines to 45° and shapes to squares. Double-click text to edit. Drag empty canvas to select several (Shift-click adds, ⌘/Ctrl+A selects all); Option/Alt-drag duplicates; arrows nudge; Delete removes the selection. {isPhone ? '' : '⌘/Ctrl+Enter is Done, Esc cancels.'}
         </div>
       </div>
     </div>,
@@ -523,7 +617,10 @@ function TextInput({ ed, ctm, host, onChange, onCommit, onCancel }: { ed: Editin
   const ref = useRef<HTMLInputElement>(null)
   // Focus after the pointer's own focus change, which would blur it at once.
   useEffect(() => {
-    const t = setTimeout(() => ref.current?.focus(), 0)
+    const t = setTimeout(() => {
+      ref.current?.focus()
+      ref.current?.select()
+    }, 0)
     return () => clearTimeout(t)
   }, [])
   return (
