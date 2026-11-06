@@ -49,6 +49,11 @@ Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), P
 Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, count badge only, no status dot,
 name and status in the tooltip).
 
+Icon: the project menu's `Set icon…` opens a dialog with an emoji field, a grid of about 60 common emoji, `Upload image…`
+(PNG/JPEG/GIF, cropped square by the server, previewed in the dialog), `Remove icon`, Save and Cancel. A tile shows the emoji
+(large) or the image (rounded, object-cover, thin border) instead of the two letters; projects without an icon keep the letters.
+The wide rail row and the phone project list and header show a 20-24 px icon before the name.
+
 Selecting a project scopes the threads list, the session filter, the composer targets and the session
 chips to it. List rows carry no project or session chip, also in `All projects`.
 

@@ -143,6 +143,7 @@ export type Overlay =
   | { kind: 'new-project' }
   | { kind: 'edit-project'; project: Project }
   | { kind: 'delete-project'; project: Project }
+  | { kind: 'project-icon'; project: Project }
   | null
 
 type AppState = {
