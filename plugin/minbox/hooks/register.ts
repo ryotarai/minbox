@@ -57,8 +57,8 @@ import {
 } from './text'
 
 const TICK_MS = 1000
-/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction). MINBOX_ORCHESTRATOR_EVERY overrides it. */
-const ORCHESTRATOR_EVERY = 5
+/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction); the default N is 20. MINBOX_ORCHESTRATOR_EVERY overrides it. */
+const ORCHESTRATOR_EVERY = 20
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
 /** Every call gives up after this (the long poll waits POLL_WAIT_S on the server, plus a margin). */

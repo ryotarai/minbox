@@ -234,7 +234,7 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
   reminder say the same. If a turn started by a delivered message ends (reason `answer`) without a
   `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
   own turn never reminds again.
-- `hello` answers `prompt_extra` (settings); the mod appends it to the first-prompt reminder. It also answers `orchestrator`: the orchestration prompt text while `orchestrator_prompt` is on, else ""; the mod re-injects it into every 5th prompt.
+- `hello` answers `prompt_extra` (settings); the mod appends it to the first-prompt reminder. It also answers `orchestrator`: the orchestration prompt text while `orchestrator_prompt` is on, else ""; the mod re-injects it into every 20th prompt.
 - New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
   403 `the Board is off in minbox settings` unless settings.board.
 
