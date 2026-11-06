@@ -280,6 +280,18 @@ for (const width of [1500, 1920, 2560]) {
       })
     // Resizer centers, left to right: list|thread, thread|terminal, terminal|shell.
     const edges = () => page.getByTestId('resizer').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().x + e.getBoundingClientRect().width / 2).sort((a, b) => a - b))
+    // Waits until the pane widths stop changing (two identical reads in a row), so asserts never see a mid-drag layout.
+    const settled = async () => {
+      for (const id of ['threads-pane', 'thread-pane', 'shell-pane']) await expect(page.getByTestId(id)).toBeVisible()
+      let prev = ''
+      await expect.poll(async () => {
+        const cur = JSON.stringify(await state())
+        const same = cur === prev
+        prev = cur
+        return same
+      }).toBe(true)
+      return state()
+    }
     const dragBy = async (x: number, dx: number) => {
       await page.mouse.move(x, 450)
       await page.mouse.down()
@@ -288,7 +300,7 @@ for (const width of [1500, 1920, 2560]) {
     }
     // The thread pane grows past the old 900 cap and stops where the terminal is at its minimum.
     await dragBy((await edges())[1]!, width)
-    let s = await state()
+    let s = await settled()
     expect(s.scroll).toBeLessThanOrEqual(width)
     // Everything else at its minimum (project column 176, resizers 27): the thread takes the rest.
     expect(s.thread).toBeGreaterThan(width - 176 - MIN.list - MIN.shell - MIN.terminal - 27 - 40)
@@ -299,13 +311,14 @@ for (const width of [1500, 1920, 2560]) {
     expect(s.shell).toBeGreaterThanOrEqual(MIN.shell - 1)
     // The shell pane grows too (its edge moves left).
     await dragBy((await edges())[2]!, -width)
-    s = await state()
+    s = await settled()
     expect(s.scroll).toBeLessThanOrEqual(width)
     expect(s.shell).toBeGreaterThanOrEqual(width >= 1920 ? 600 : 280)
     expect(s.main).toBeGreaterThanOrEqual(MIN.terminal - 1)
     expect(s.thread).toBeGreaterThanOrEqual(MIN.thread - 1)
     // Shrinking the window never overflows, whatever was stored.
     await page.setViewportSize({ width: 1100, height: 900 })
-    await expect.poll(async () => (await state()).scroll).toBeLessThanOrEqual(1100)
+    // The layout switches bands here and the pane elements briefly vanish: read only scrollWidth.
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1100)
   })
 }
