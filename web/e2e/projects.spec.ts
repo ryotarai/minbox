@@ -359,7 +359,7 @@ test("the composer defaults to the project's main session; another session can b
   await page.keyboard.press('Escape')
 })
 
-test('a project without sessions: Send is enabled and starts the New session dialog, then sends', async ({ page, minbox }) => {
+test('a project without sessions: Send starts the main session without a dialog and sends', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, folder(minbox, 'api'), 'alpha')
   const billing = folder(minbox, 'billing')
@@ -373,7 +373,13 @@ test('a project without sessions: Send is enabled and starts the New session dia
   await page.getByTestId('quick-body').fill('First thread')
   await expect(page.getByTestId('quick-send')).toBeEnabled()
   await page.getByTestId('quick-send').click()
-  await expect(page.getByTestId('new-session-project-info')).toContainText(billing)
-  await page.getByTestId('new-session-start').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('First thread')
+  await expect(page.getByTestId('new-session-start')).toHaveCount(0)
+  const sessions = await (await fetch(minbox.url + '/api/sessions')).json()
+  const projects = await (await fetch(minbox.url + '/api/projects')).json()
+  const b = projects.find((p: { name: string }) => p.name === 'Billing')
+  const s = sessions.find((x: { project_id: string }) => x.project_id === b.id)
+  expect(s.cwd).toBe(billing)
+  expect(s.is_main).toBe(true)
+  expect(b.main_session_id).toBe(s.id)
 })
