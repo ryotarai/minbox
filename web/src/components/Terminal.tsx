@@ -122,7 +122,6 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
   const hostRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'connecting' | 'open' | 'closed'>('connecting')
-  const [focused, setFocused] = useState(false)
   const api = useRef<TerminalHandle>({ send: () => {}, focus: () => {} })
   useImperativeHandle(ref, () => ({
     send: (d) => api.current.send(d),
@@ -673,31 +672,9 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
     }
   }, [sessionId, shell, autoFocus, fontSize])
 
-  // Focus ring: the terminal's keyboard focus lives in xterm's hidden textarea, so watch focus events bubbling to the box.
-  useEffect(() => {
-    const el = boxRef.current
-    if (!el) return
-    const on = () => setFocused(true)
-    const off = () => setFocused(false)
-    el.addEventListener('focusin', on)
-    el.addEventListener('focusout', off)
-    return () => {
-      el.removeEventListener('focusin', on)
-      el.removeEventListener('focusout', off)
-    }
-  }, [])
-
   return (
     <div ref={boxRef} className={cx('relative h-full w-full overflow-hidden', className)}>
-      <div ref={hostRef} data-testid="terminal" className="mb-term absolute inset-[6px]" />
-      <div
-        data-testid="terminal-focus-ring"
-        data-focused={focused ? 'true' : 'false'}
-        className={cx(
-          'pointer-events-none absolute inset-0 z-10 rounded-[8px] border transition-colors',
-          focused ? 'border-accent' : 'border-transparent',
-        )}
-      />
+      <div ref={hostRef} data-testid="terminal" className="mb-term absolute inset-0" />
       {state !== 'open' && (
         <div className="pointer-events-none absolute right-3 top-2 text-[12px] text-subtle">{state === 'connecting' ? 'connecting…' : 'disconnected'}</div>
       )}
