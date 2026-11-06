@@ -332,11 +332,11 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, th)
 }
 
-// cleanTitle makes a thread title: one line, whitespace collapsed, 120 characters at most.
+// cleanTitle makes a thread title: one line, whitespace collapsed, 30 characters at most (agent-set titles; the mod already refuses longer).
 func cleanTitle(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 120 {
-		return string(r[:119]) + "…"
+	if r := []rune(s); len(r) > 30 {
+		return string(r[:29]) + "…"
 	}
 	return s
 }

@@ -46,7 +46,7 @@ func TestAgentThreadTitle(t *testing.T) {
 	}
 	long := send(map[string]any{"body": "x", "thread_title": "line one\n\nline   two " + strings.Repeat("あ", 200)})
 	got := subject(long)
-	if strings.ContainsAny(got, "\n\t") || strings.Contains(got, "  ") || len([]rune(got)) != 120 || !strings.HasSuffix(got, "…") {
+	if strings.ContainsAny(got, "\n\t") || strings.Contains(got, "  ") || len([]rune(got)) != 30 || !strings.HasSuffix(got, "…") {
 		t.Fatalf("not trimmed: %q (%d)", got, len([]rune(got)))
 	}
 }

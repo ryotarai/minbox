@@ -373,9 +373,16 @@ export const register: Register = (on) => {
     if (e.status !== 'working' && e.status !== 'need_action' && e.status !== 'blocked' && e.status !== 'finished') {
       return { deny: 'status is required: working (you carry on), need_action (you need the person), blocked (you wait on something outside them) or finished (the task is done). Send the message again with it.' }
     }
+    const title = typeof e.thread_title === 'string' && e.thread_title.trim() ? e.thread_title : typeof e.subject === 'string' ? e.subject : ''
+    if (!title.trim()) {
+      return { deny: 'thread_title is required: name what the thread is about now, in at most 30 characters. Send the message again with it.' }
+    }
+    if ([...title.trim()].length > 30) {
+      return { deny: `thread_title is too long (${[...title.trim()].length} characters): use at most 30 characters. Send the message again with a shorter title.` }
+    }
     const res = await api($, 'POST', '/api/agent/messages', {
       body,
-      thread_title: typeof e.thread_title === 'string' && e.thread_title ? e.thread_title : typeof e.subject === 'string' ? e.subject : undefined,
+      thread_title: title,
       thread_id: typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : undefined,
       name: typeof e.name === 'string' && e.name ? e.name : undefined,
       status: typeof e.status === 'string' && e.status ? e.status : undefined,
