@@ -1306,7 +1306,7 @@ function ReplyBox({
     <textarea
       ref={replyRef}
       data-testid="reply-box"
-      aria-label="Reply"
+      aria-label="Reply to the thread"
       value={words}
       onChange={(e) => updateReplyDraft(thread.id, (d) => ({ ...d, words: e.target.value }))}
       onPaste={io.onPaste}
@@ -1409,7 +1409,6 @@ function ReplyBox({
   return (
     <div className={cx('flex flex-col gap-1.5 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {chips}
-      <span className="text-[12px] text-muted">Reply to the thread</span>
       {fileTiles}
       {textarea}
       {(picksCount > 0 || annos.length > 0 || counter) && (

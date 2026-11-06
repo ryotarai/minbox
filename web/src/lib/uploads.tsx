@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { api, uploadToInbox, type AttachmentType, type Upload } from '../api'
 import { formatBytes } from './attachments'
+import { IconPencil } from '../components/icons'
 import { cx } from '../components/ui'
 import { isRasterName, requestSketch, type Scene } from './sketch'
 
@@ -182,7 +183,7 @@ export function ComposeFileTiles({ files, onRemove, onPutBack }: { files: Compos
             key={f.key}
             data-testid="compose-file"
             data-state={f.state}
-            className={cx('group relative flex max-w-[260px] items-center gap-2 rounded-lg border bg-raised py-1.5 pl-1.5 pr-7', f.state === 'error' ? 'border-danger/60' : 'border-line2')}
+            className={cx('group flex max-w-[min(100%,260px)] items-center gap-2 rounded-lg border bg-raised py-1.5 pl-1.5 pr-1', f.state === 'error' ? 'border-danger/60' : 'border-line2')}
           >
             {f.preview ? (
               <img alt="" src={f.preview} className="h-8 w-8 shrink-0 rounded object-cover" />
@@ -191,7 +192,7 @@ export function ComposeFileTiles({ files, onRemove, onPutBack }: { files: Compos
                 {f.pasted ? 'TXT' : (/\.([^.]+)$/.exec(f.name)?.[1] ?? '').toUpperCase().slice(0, 4) || 'FILE'}
               </span>
             )}
-            <span className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-[12.5px] font-semibold">{f.pasted ? f.pasted.preview : f.name}</span>
               {f.state === 'uploading' ? (
                 <span className="text-[11px] text-subtle">
@@ -214,32 +215,31 @@ export function ComposeFileTiles({ files, onRemove, onPutBack }: { files: Compos
               ) : (
                 <span className="text-[11px] text-subtle">
                   {formatBytes(f.size)}
-                  {f.sketch ? (
-                    <>
-                      {' · '}
-                      <button type="button" onClick={() => requestSketch({ key: f.key, mode: 'edit' })} className="border-0 bg-transparent p-0 text-wait underline" data-testid="file-edit">
-                        Edit
-                      </button>
-                    </>
-                  ) : f.preview && f.state === 'done' && isRasterName(f.name) ? (
-                    <>
-                      {' · '}
-                      <button type="button" onClick={() => requestSketch({ key: f.key, mode: 'annotate' })} className="border-0 bg-transparent p-0 text-wait underline" data-testid="file-annotate">
-                        Annotate
-                      </button>
-                    </>
-                  ) : null}
                 </span>
               )}
             </span>
-            <button
-              type="button"
-              aria-label={f.state === 'uploading' ? `Stop uploading ${f.name}` : `Remove ${f.name}`}
-              onClick={() => onRemove(f.key)}
-              className="absolute right-1 top-1 border-0 bg-transparent px-1 text-subtle hover:text-fg"
-            >
-              ×
-            </button>
+            <span className="flex shrink-0 items-center self-start" data-testid="compose-file-actions">
+              {f.state === 'done' && (f.sketch || (f.preview && isRasterName(f.name))) && (
+                <button
+                  type="button"
+                  aria-label={f.sketch ? 'Edit drawing' : 'Annotate'}
+                  title={f.sketch ? 'Edit drawing' : 'Annotate image'}
+                  onClick={() => requestSketch({ key: f.key, mode: f.sketch ? 'edit' : 'annotate' })}
+                  className="flex items-center border-0 bg-transparent px-1 text-subtle hover:text-fg"
+                  data-testid={f.sketch ? 'file-edit' : 'file-annotate'}
+                >
+                  <IconPencil size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label={f.state === 'uploading' ? `Stop uploading ${f.name}` : `Remove ${f.name}`}
+                onClick={() => onRemove(f.key)}
+                className="border-0 bg-transparent px-1 text-subtle hover:text-fg"
+              >
+                ×
+              </button>
+            </span>
           </div>
         )
       })}

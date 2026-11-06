@@ -249,7 +249,23 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       })
       fit = new FitAddon()
       term.loadAddon(fit)
+      // ghostty-web has no option to turn its overlay scrollbar off. It would be painted over
+      // the right edge of the text, so its draw is a no-op (scrolling is unaffected, and the
+      // layout reserves no gutter for it), and a press on its (invisible) track is swallowed
+      // before ghostty sees it, so it cannot jump the scrollback.
+      el.addEventListener(
+        'mousedown',
+        (ev) => {
+          const c = el.querySelector('canvas')
+          if (!c) return
+          const r = c.getBoundingClientRect()
+          if (ev.clientX >= r.right - 12 - 4 && ev.clientX <= r.right) ev.stopPropagation()
+        },
+        { capture: true },
+      )
       term.open(el)
+      const rend = (term as unknown as { renderer?: { renderScrollbar: () => void } }).renderer
+      if (rend) rend.renderScrollbar = () => {}
       zoomAware(term)
       // Metrics are measured once: measure again, and repaint, when the font is there.
       document.fonts?.ready.then(() => !disposed && redraw(term))

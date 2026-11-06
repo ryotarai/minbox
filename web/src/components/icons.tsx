@@ -151,6 +151,12 @@ export const IconSketch = (p: P) => (
     <path d="M10 10.5 13.5 7l1.5 1.5-3.5 3.5-2 .5z" />
   </Svg>
 )
+export const IconPencil = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="M10.5 3 13 5.5 5.5 13 2.5 13.5 3 10.5z" />
+    <path d="m9 4.5 2.5 2.5" />
+  </Svg>
+)
 export const IconBoard = (p: P) => (
   <Svg strokeWidth={1.5} {...p}>
     <rect x="1.5" y="2.5" width="3.5" height="11" rx="1" />
