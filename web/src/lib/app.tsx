@@ -150,12 +150,12 @@ type AppState = {
   back: () => void
   sessions: Session[] | null
   setSessions: React.Dispatch<React.SetStateAction<Session[] | null>>
-  reloadSessions: () => void
+  reloadSessions: () => Promise<void>
   hosts: Host[]
   reloadHosts: () => void
   /** Live projects (pinned first, then recent activity); null while loading. */
   projects: Project[] | null
-  reloadProjects: () => void
+  reloadProjects: () => Promise<void>
   settings: Settings
   saveSettings: (patch: Partial<Settings>) => void
   conn: ConnectionState
@@ -260,7 +260,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Sessions and server events.
   const reloadSessions = useCallback(() => {
-    api.sessions().then(setSessions).catch(error)
+    return api.sessions().then(setSessions).catch(error)
   }, [error])
   const reloadHosts = useCallback(() => {
     api
@@ -271,7 +271,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
   }, [])
   const reloadProjects = useCallback(() => {
-    api
+    return api
       .projects()
       .then(setProjects)
       .catch(() => {
