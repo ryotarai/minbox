@@ -169,6 +169,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("PATCH /api/projects/{id}", s.patchProject)
 	mux.HandleFunc("DELETE /api/projects/{id}", s.deleteProject)
+	mux.HandleFunc("GET /api/projects/{id}/delete-preview", s.projectDeletePreview)
 	mux.HandleFunc("POST /api/projects/{id}/archive", s.archiveProject(true))
 	mux.HandleFunc("POST /api/projects/{id}/unarchive", s.archiveProject(false))
 	mux.HandleFunc("GET /api/threads", s.listAllThreads)

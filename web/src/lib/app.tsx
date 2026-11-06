@@ -142,6 +142,7 @@ export type Overlay =
   | { kind: 'new-session'; projectId?: string }
   | { kind: 'new-project' }
   | { kind: 'edit-project'; project: Project }
+  | { kind: 'delete-project'; project: Project }
   | null
 
 type AppState = {
