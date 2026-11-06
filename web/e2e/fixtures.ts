@@ -91,14 +91,14 @@ export class Minbox {
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 500; i++) {
       try {
         const r = await fetch(this.url + '/api/sessions')
         if (r.ok) return
       } catch {
         /* not up yet */
       }
-      await new Promise((r) => setTimeout(r, 100))
+      await new Promise((r) => setTimeout(r, 20))
     }
     throw new Error('minbox did not start:\n' + this.log)
   }

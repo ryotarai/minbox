@@ -6,6 +6,18 @@ import type { Page } from '@playwright/test'
 // overlay (phone), in the session's folder. Hiding it leaves the shell running.
 
 async function typeInShell(page: Page, text: string) {
+  // A login shell drops what is typed before its line editor starts (slow on a busy machine): wait
+  // for its prompt, and for the screen to stop changing.
+  await expect.poll(() => terminalText(page, 'shell'), { timeout: 15_000 }).toMatch(/\S/)
+  let last = ''
+  await expect
+    .poll(async () => {
+      const now = await terminalText(page, 'shell')
+      const same = now === last
+      last = now
+      return same
+    }, { intervals: [300] })
+    .toBe(true)
   await page.getByTestId('shell-pane').getByTestId('terminal').click()
   await page.keyboard.type(text)
   await page.keyboard.press('Enter')
