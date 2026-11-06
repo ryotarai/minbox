@@ -38,10 +38,19 @@ type Project struct {
 	PinnedAt   *time.Time `json:"pinned_at"`
 	// MainSessionID: the session a new thread goes to by default; '' until the project has a Claude Code session.
 	MainSessionID string `json:"main_session_id"`
+	// Icon: an emoji or an uploaded image; nil when the project has none.
+	Icon *ProjectIcon `json:"icon"`
 	// Derived.
 	SessionCount int       `json:"session_count"` // every session, archived and ended too
 	LiveSessions int       `json:"live_sessions"` // not ended, not archived
 	LastActivity time.Time `json:"last_activity"` // newest session or thread update
+}
+
+// ProjectIcon is a project's icon. An image is served at URL (the PNG bytes are not in the list).
+type ProjectIcon struct {
+	Kind  string `json:"kind"` // "emoji" | "image"
+	Emoji string `json:"emoji,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 // querier is what *sql.DB and *sql.Tx share.
@@ -250,7 +259,7 @@ func (s *Store) ListProjects(ctx context.Context, includeArchived bool) ([]Proje
 }
 
 func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, COALESCE(p.main_session_id,''),
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, COALESCE(p.main_session_id,''), p.icon_kind, p.icon_emoji, p.icon_updated_at,
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id),
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id AND s.archived_at IS NULL AND s.status!=?),
 	  (SELECT COALESCE(MAX(s.updated_at),0) FROM sessions s WHERE s.project_id=p.id),
@@ -263,13 +272,20 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 	out := []Project{}
 	for rows.Next() {
 		var p Project
-		var created, sUp, tUp int64
+		var created, sUp, tUp, iconAt int64
 		var archived, pinned sql.NullInt64
-		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
+		var iconKind, iconEmoji string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = fromMs(created)
 		p.ArchivedAt, p.PinnedAt = fromNullMs(archived), fromNullMs(pinned)
+		switch iconKind {
+		case "emoji":
+			p.Icon = &ProjectIcon{Kind: "emoji", Emoji: iconEmoji}
+		case "image":
+			p.Icon = &ProjectIcon{Kind: "image", URL: fmt.Sprintf("/api/projects/%s/icon?v=%d", p.ID, iconAt/1000)}
+		}
 		last := created
 		if sUp > last {
 			last = sUp
