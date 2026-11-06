@@ -46,8 +46,8 @@ Rail entry = status dot of its busiest session, **name**, dir shortened to `~/..
 host badge for a remote host, and an aggregate badge: amber number = threads waiting on the person, grey
 number = unread. `All projects` is the first entry (sum of both). Below the list: `+` (new project).
 Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), Pin, Archive, Delete.
-Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, badge on the tile,
-name in the tooltip).
+Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, count badge only, no status dot,
+name and status in the tooltip).
 
 Selecting a project scopes the threads list, the session filter, the composer targets and the session
 chips to it. List rows carry no project or session chip, also in `All projects`.
