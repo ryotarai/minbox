@@ -137,6 +137,37 @@ button {
 button:disabled {
   cursor: default;
 }
+/* Clickable things get the pointer on themselves and on every text span inside
+   (children inherit cursor, but Chrome shows the I-beam over any text whose
+   own cursor resolves to 'auto'). */
+[role='button'],
+[role='menuitem'],
+[role='option'],
+[role='tab'],
+[role='link'],
+a[href],
+summary,
+label[for],
+[role='button'] *,
+[role='menuitem'] *,
+[role='option'] *,
+[role='tab'] *,
+button *,
+a[href] * {
+  cursor: pointer;
+}
+button:disabled,
+button:disabled *,
+[aria-disabled='true'],
+[aria-disabled='true'] * {
+  cursor: default;
+}
+/* Row-like controls are UI chrome, not prose. */
+[data-testid='thread-row'],
+[role='menuitem'],
+[role='option'] {
+  user-select: none;
+}
 input,
 textarea,
 select {
