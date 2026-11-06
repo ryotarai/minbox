@@ -64,7 +64,7 @@ export function Diagram({
       ) : (
         <div
           ref={ref}
-          className={cx('flex justify-center overflow-x-auto', onPart && '[&_.node]:cursor-pointer [&_.edgePath]:cursor-pointer [&_.cluster]:cursor-pointer [&_g.node]:cursor-pointer [&_g.edge]:cursor-pointer')}
+          className={cx('flex justify-center overflow-x-auto', onPart && '[&_.node]:cursor-default [&_.edgePath]:cursor-default [&_.cluster]:cursor-default [&_g.node]:cursor-default [&_g.edge]:cursor-default')}
           onClick={(e) => {
             if (!onPart) return
             const part = (e.target as Element).closest('g.node, g.edge, g.cluster, .node, .edgeLabel, .cluster')

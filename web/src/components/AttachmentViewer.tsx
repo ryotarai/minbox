@@ -407,7 +407,7 @@ function DocView({
           'md max-w-[640px] text-[14.5px] leading-[1.7] [&_h1]:text-[24px]',
           tool === 'comment' &&
             !linked &&
-            'cursor-pointer [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:rounded-[4px] [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:bg-wait/10 [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline-1 [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline-wait/40',
+            'cursor-default [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:rounded-[4px] [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:bg-wait/10 [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline-1 [&_:is(p,li,h1,h2,h3,h4,h5,h6,pre,tr,blockquote):hover]:outline-wait/40',
         )}
         data-testid="doc"
       />
@@ -545,7 +545,7 @@ function CodeView({
                   commentOn(drag.a, n, (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect())
                   setDrag(null)
                 }}
-                className="w-12 shrink-0 cursor-pointer select-none pr-3.5 text-right text-faint hover:text-wait"
+                className="w-12 shrink-0 cursor-default select-none pr-3.5 text-right text-faint hover:text-wait"
               >
                 {n}
               </span>

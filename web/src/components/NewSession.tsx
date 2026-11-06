@@ -245,7 +245,7 @@ export function NewSessionDialog({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !sel) browse(d.path)
               }}
-              className={cx('flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-[13px]', sel ? 'bg-sel' : 'hover:bg-raised')}
+              className={cx('flex h-9 shrink-0 cursor-default items-center gap-2.5 rounded-[7px] px-2.5 text-[13px]', sel ? 'bg-sel' : 'hover:bg-raised')}
             >
               <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke={sel ? 'var(--mb-wait)' : 'var(--mb-subtle)'} strokeWidth="1.4" strokeLinejoin="round">
                 <path d="M1.5 4.5a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />

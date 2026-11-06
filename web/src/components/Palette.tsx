@@ -384,7 +384,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
                 onMouseMove={() => i !== sel && setSel(i)}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => run(item)}
-                className={cx('flex min-h-10 cursor-pointer items-center gap-2.5 px-4 py-1.5 text-left', i === sel ? 'bg-sel' : 'bg-transparent')}
+                className={cx('flex min-h-10 cursor-default items-center gap-2.5 px-4 py-1.5 text-left', i === sel ? 'bg-sel' : 'bg-transparent')}
               >
                 <span className="flex w-4 shrink-0 items-center justify-center">
                   {item.leading ?? <span aria-hidden="true" className="mono text-[12px] text-muted">{item.kind === 'action' ? '›' : '≡'}</span>}
