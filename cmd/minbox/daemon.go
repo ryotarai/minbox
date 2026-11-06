@@ -55,7 +55,7 @@ func startCmd(args []string) error {
 	// The same flags, in the foreground, never opening a browser itself (this
 	// process does, once the server answers), on the same data directory.
 	child := []string{"start", "--foreground"}
-	child = append(child, withoutFlag(args, "foreground")...)
+	child = append(child, withoutValueFlag(withoutFlag(args, "foreground"), "data-dir")...)
 	child = append(child, "--no-open", "--data-dir", dataDir)
 
 	lp := logPath(dataDir)
@@ -90,7 +90,7 @@ func startCmd(args []string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 		if p, url, err := readServerFile(dataDir); err == nil && p == pid && answers(url) {
-			if b, err := json.Marshal(withoutFlag(withoutFlag(args, "foreground"), "no-open")); err == nil {
+			if b, err := json.Marshal(savedStartArgs(args)); err == nil {
 				_ = os.WriteFile(startArgsFile(dataDir), b, 0o600)
 			}
 			fmt.Printf("minbox started (pid %d): %s\nlog: %s\n", pid, url, lp)
@@ -188,6 +188,36 @@ func answers(url string) bool {
 }
 
 // withoutFlag drops a boolean flag (-name, --name, --name=…) from args.
+// withoutValueFlag drops every occurrence of a flag that takes a value, in
+// both `--name value` and `--name=value` forms (value included).
+func withoutValueFlag(args []string, name string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		n := strings.TrimLeft(a, "-")
+		if strings.HasPrefix(a, "-") && strings.HasPrefix(n, name+"=") {
+			continue
+		}
+		if strings.HasPrefix(a, "-") && n == name {
+			i++ // its value
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// savedStartArgs is what start-args.json keeps: the user's flags without
+// those the launcher adds itself (--foreground, --no-open, --data-dir, which
+// restart re-adds). It also collapses a file bloated by earlier versions.
+func savedStartArgs(args []string) []string {
+	out := withoutValueFlag(withoutFlag(withoutFlag(args, "foreground"), "no-open"), "data-dir")
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
 func withoutFlag(args []string, name string) []string {
 	var out []string
 	for _, a := range args {
