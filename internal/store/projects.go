@@ -424,28 +424,59 @@ func (s *Store) SetProjectArchived(ctx context.Context, id string, archived bool
 	return tx.Commit()
 }
 
-// DeleteProject deletes a project that has no sessions at all; with any, archive it instead.
+// DeleteProject deletes a project with all its sessions, threads, messages, annotations and
+// attachments (the rows cascade; attachment content lives in the database) in one transaction.
+// Notification thread mappings of those threads go too; cards that pointed at them stay,
+// unlinked. Nothing on the host's disk is touched. The caller stops running sessions first.
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE project_id=?`, id).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return fmt.Errorf("%w: archive it instead", ErrProjectBusy)
-	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id=?`, id)
-	if err != nil {
-		return err
-	}
-	if c, _ := res.RowsAffected(); c == 0 {
+	var found string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE id=?`, id).Scan(&found); errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	const inProject = `(SELECT s.id FROM sessions s WHERE s.project_id=?)`
+	const threadsOf = `(SELECT t.id FROM threads t JOIN sessions s ON s.id=t.session_id WHERE s.project_id=?)`
+	for _, q := range []string{
+		`DELETE FROM notification_slack_threads WHERE minbox_thread_id IN ` + threadsOf,
+		`UPDATE cards SET thread_id=NULL WHERE thread_id IN ` + threadsOf,
+		`UPDATE cards SET session_id=NULL WHERE session_id IN ` + inProject,
+		`DELETE FROM sessions WHERE project_id=?`,
+		`DELETE FROM projects WHERE id=?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
+}
+
+// DeletePreview is what deleting a project takes with it.
+type DeletePreview struct {
+	Sessions        int `json:"sessions"`
+	RunningSessions int `json:"running_sessions"` // not ended: their processes are stopped first
+	Threads         int `json:"threads"`
+	Messages        int `json:"messages"`
+}
+
+// ProjectDeletePreview counts what DeleteProject would remove.
+func (s *Store) ProjectDeletePreview(ctx context.Context, id string) (*DeletePreview, error) {
+	if _, err := s.GetProject(ctx, id); err != nil {
+		return nil, err
+	}
+	var d DeletePreview
+	err := s.db.QueryRowContext(ctx, `SELECT
+	  (SELECT COUNT(*) FROM sessions WHERE project_id=?1),
+	  (SELECT COUNT(*) FROM sessions WHERE project_id=?1 AND status!=?2),
+	  (SELECT COUNT(*) FROM threads t JOIN sessions s ON s.id=t.session_id WHERE s.project_id=?1),
+	  (SELECT COUNT(*) FROM messages m JOIN threads t ON t.id=m.thread_id JOIN sessions s ON s.id=t.session_id WHERE s.project_id=?1)`,
+		id, StatusEnded).Scan(&d.Sessions, &d.RunningSessions, &d.Threads, &d.Messages)
+	return &d, err
 }
 
 // unarchiveProjectOf: a session came back, so its project is not archived any more.

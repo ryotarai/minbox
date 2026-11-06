@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, type Answer, type Message, type Question, type Session, type Thread } from '../api'
+import { api, type Answer, type Message, type Project, type Question, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { getComposeDrafts, getReplyDraft, deleteComposeDraft, replyDraftThreads, updateReplyDraft, useDraftsVersion } from '../lib/drafts'
+import { selectProject, useSelectedProject } from '../lib/projects'
 import { isMac, plural, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { answerIsEmpty, RecommendedTag } from './QuestionCard'
@@ -139,6 +140,55 @@ export function DeleteSession({ session, onClose }: { session: Session; onClose:
         </Button>
         <Button variant="danger" onClick={del} data-testid="delete-confirm" autoFocus>
           Delete
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+/** Confirm deleting a project together with all its sessions and threads. */
+export function DeleteProject({ project, onClose }: { project: Project; onClose: () => void }) {
+  const { error, reloadProjects, reloadSessions } = useApp()
+  const { id: selected } = useSelectedProject()
+  const [pre, setPre] = useState<{ sessions: number; running_sessions: number; threads: number; messages: number } | null>(null)
+  useEffect(() => {
+    api.projectDeletePreview(project.id).then(setPre).catch(error)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id])
+  const del = () => {
+    onClose()
+    api
+      .deleteProject(project.id)
+      .then(() => {
+        if (selected === project.id) selectProject('')
+        reloadProjects()
+        reloadSessions()
+      })
+      .catch(error)
+  }
+  const n = pre?.sessions ?? 0
+  return (
+    <Modal label={`Delete ${project.name}`} onClose={onClose} className="flex w-[min(460px,100%)] flex-col gap-3 bg-[#1c1c21] p-5 [[data-theme=light]_&]:bg-overlay">
+      <h3 className="m-0 text-[16px] font-[650]">Delete project {project.name}?</h3>
+      {pre === null ? (
+        <p className="m-0 text-[13.5px] leading-[1.6] text-muted">Checking what is in it…</p>
+      ) : n === 0 ? (
+        <p data-testid="project-delete-warning" className="m-0 text-[13.5px] leading-[1.6] text-muted">
+          The project has no sessions. The folder on disk is not touched.
+        </p>
+      ) : (
+        <p data-testid="project-delete-warning" className="m-0 text-[13.5px] leading-[1.6] text-danger">
+          This also deletes {plural(n, 'session')} and {plural(pre.threads, 'thread')} (all messages and attachments).{' '}
+          {pre.running_sessions > 0 ? `${pre.running_sessions} ${pre.running_sessions === 1 ? 'is' : 'are'} running and will be stopped. ` : ''}
+          The folder on disk is not touched. This cannot be undone.
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="quiet" onClick={onClose} data-testid="project-delete-cancel">
+          Cancel
+        </Button>
+        <Button variant="danger" onClick={del} disabled={pre === null} data-testid="project-delete-confirm" autoFocus>
+          {n > 0 ? `Delete project and ${plural(n, 'session')}` : 'Delete project'}
         </Button>
       </div>
     </Modal>

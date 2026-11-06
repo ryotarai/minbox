@@ -45,7 +45,7 @@ export function ProjectBadges({ stat }: { stat?: ProjectStat }) {
   )
 }
 
-/** Rename / edit folder / pin / archive / delete. The server refuses what would lose a session. */
+/** Rename / edit folder / pin / archive / delete (a confirm dialog that warns what goes with it). */
 export function ProjectMenu({ project, anchor, onClose, onRename }: { project: Project; anchor: HTMLElement | null; onClose: () => void; onRename: () => void }) {
   const { error, setOverlay, reloadProjects, reloadSessions, toast } = useApp()
   const { id: selected } = useSelectedProject()
@@ -89,10 +89,10 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
       <MenuItem
         testid="project-delete"
         danger
-        onClick={run(async () => {
-          await api.deleteProject(project.id)
-          if (selected === project.id) selectProject('')
-        })}
+        onClick={() => {
+          onClose()
+          setOverlay({ kind: 'delete-project', project })
+        }}
       >
         Delete
       </MenuItem>

@@ -7,7 +7,7 @@ import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
 import { ThreadPane } from './components/ThreadPane'
 import { ThreadsPane } from './components/ThreadsPane'
-import { DecisionMode, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
+import { DecisionMode, DeleteProject, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
 import { PhoneApp, PhoneShell } from './components/Phone'
 import { ProjectRail } from './components/ProjectRail'
 import { selectProject, useSelectedProject } from './lib/projects'
@@ -109,6 +109,7 @@ function Root() {
       {overlay?.kind === 'drafts' && <DraftsList onClose={close} />}
       {overlay?.kind === 'new-session' && <NewSessionDialog projectId={overlay.projectId} onClose={close} />}
       {overlay?.kind === 'new-project' && <NewSessionDialog mode="project" onClose={close} />}
+      {overlay?.kind === 'delete-project' && <DeleteProject project={overlay.project} onClose={close} />}
       {overlay?.kind === 'edit-project' && <NewSessionDialog mode="project-edit" project={overlay.project} onClose={close} />}
       <Toasts />
     </>
