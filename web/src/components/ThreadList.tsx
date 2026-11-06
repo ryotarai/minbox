@@ -3,7 +3,7 @@ import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '..
 import { useApp } from '../lib/app'
 import { oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
-import { IconPaperclip, IconPin } from './icons'
+import { IconPin } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
@@ -77,6 +77,11 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         {t.unread > 0 && <span aria-label="Unread" className="h-[7px] w-[7px] shrink-0 rounded-full bg-wait" />}
         {t.pinned_at && <IconPin size={12} className="shrink-0 text-muted" />}
         <span className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'text-fg2')}>{t.subject}</span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
+        {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}
+        {t.last_author === 'user' && <span className="shrink-0 text-subtle">You:</span>}
+        <span className="min-w-0 flex-1 truncate">{oneLine(proseOf(t.last_body)) || '—'}</span>
         {t.stopped ? (
           <span className="shrink-0 rounded-[6px] border border-danger px-1.5 text-[11px] font-semibold text-danger">Stopped</span>
         ) : (t.holds_up ?? 0) > 0 ? (
@@ -89,17 +94,6 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         )}
         {t.status && <ThreadStatusBadge status={t.status} />}
         <span className="shrink-0 text-[12px] text-subtle">{shortTime(t.updated_at)}</span>
-      </div>
-      <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
-        {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}
-        {t.last_author === 'user' && <span className="shrink-0 text-subtle">You:</span>}
-        <span className="min-w-0 flex-1 truncate">{oneLine(proseOf(t.last_body)) || '—'}</span>
-        {(t.attachment_count ?? 0) > 0 && (
-          <span className="flex shrink-0 items-center gap-0.5 text-subtle">
-            <IconPaperclip size={12} />
-            {t.attachment_count}
-          </span>
-        )}
         {t.last_author === 'user' && t.last_delivery && <DeliveryTick d={t.last_delivery} />}
       </div>
     </div>

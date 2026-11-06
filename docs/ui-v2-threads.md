@@ -67,8 +67,9 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
   Holding, Waiting, Sent, New, Quiet), `Session` (one header per session). Archived and snoozed threads are
   hidden from the flat list behind a `Snoozed / Archived n` fold at the bottom.
 
-**Row** = the existing `ThreadRow` plus: kept unread dot, `?n` question badge,
-Stopped / Holds-up badges, time. Waiting rows keep the amber tint. Rows carry no session or project chip
+**Row** (two lines): line 1 is the subject only (full width; an unread dot and a pin may precede it). Line 2 is the
+session name chip, `You:`, the preview (truncating, takes the remaining width), then on the right the Stopped /
+Holds-up / `?n` badges, the status badge and the time. No attachment count in the row. Waiting rows keep the amber tint. Rows carry no session or project chip
 (the session lives in the thread header and the terminal; group-by-session keeps its group headers).
 
 **Width bands** (`lib/app.tsx`; purely width-based, so touch tablets, foldables and small desktop windows alike;
