@@ -6,7 +6,7 @@ const SERVER_FILE = '/data/server.json'
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: any[], opts: { extra?: string; hangPolls?: number } = {}) {
+function fakeServer(on: any, pending: any[], opts: { extra?: string; orchestrator?: string; hangPolls?: number } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
@@ -41,7 +41,7 @@ function fakeServer(on: any, pending: any[], opts: { extra?: string; hangPolls?:
       if (m[2] === 'delivered') delivered.add(m[1]!)
       return ok({ ok: true })
     }
-    if (url.pathname === '/api/agent/hello') return ok({ session_id: 's', name: 'n', prompt_extra: opts.extra ?? '' })
+    if (url.pathname === '/api/agent/hello') return ok({ session_id: 's', name: 'n', prompt_extra: opts.extra ?? '', orchestrator: opts.orchestrator ?? '' })
     if (url.pathname === '/api/agent/cards' && method === 'POST') {
       return { value: { status: 201, ok: true, headers: {}, text: JSON.stringify({ id: 'card_1', title: body.title, column: body.column ?? 'backlog', note: '' }) } }
     }
@@ -200,6 +200,27 @@ test('the reminder carries the extra instructions from settings', async ($, on) 
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const res: any = await $.prompt.submit({ text: 'hello' })
   expect(res.context?.join('\n') ?? '').toContain('The person adds: Reply in Japanese.')
+})
+
+test('the orchestration prompt rides every Nth prompt, and only when set', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '3' })
+  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const has = async () => {
+    const res: any = await $.prompt.submit({ text: 'p' })
+    return (res.context?.join('\n') ?? '').includes('ORCH-TEXT')
+  }
+  expect([await has(), await has(), await has(), await has(), await has(), await has()]).toEqual([false, false, true, false, false, true])
+})
+
+test('no orchestration prompt when the hello has none', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '1' })
+  fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const res: any = await $.prompt.submit({ text: 'p' })
+  expect(res.context?.join('\n') ?? '').not.toContain('periodic reminder')
 })
 
 test('send_message passes attachments and a review; card creates a card', async ($, on) => {
