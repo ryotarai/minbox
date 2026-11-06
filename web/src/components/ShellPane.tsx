@@ -21,7 +21,7 @@ export function ShellPane({ session, onClose }: { session: Session; onClose: () 
           <IconClose />
         </IconButton>
       </div>
-      <div className="relative mb-3 mr-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[14px] py-3">
+      <div className="relative mb-3 mr-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line focus-within:border-accent bg-[var(--mb-term-bg)] px-[14px] py-3">
         <TerminalView key={session.id} sessionId={session.id} shell onNotice={onNotice} />
       </div>
     </div>

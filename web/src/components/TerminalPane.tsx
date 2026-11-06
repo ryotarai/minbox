@@ -112,7 +112,7 @@ export function TerminalPane({ session, onThreads }: { session: Session | null; 
         </IconButton>
         <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(session.name)} />
       </div>
-      <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line bg-[var(--mb-term-bg)] px-[18px] py-4">
+      <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line focus-within:border-accent bg-[var(--mb-term-bg)] px-[18px] py-4">
         {/* A resumed session is a new process: the key change reattaches. */}
         <TerminalView
           key={`${session.id}:${ended ? 'ended' : 'running'}`}

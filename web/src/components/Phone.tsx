@@ -222,7 +222,7 @@ export function PhoneShell({ session, typing, onClose }: { session: Session; typ
           <IconClose size={20} />
         </button>
       </header>
-      <div ref={wrap} className={cx('relative min-h-0 flex-1 overflow-hidden border-line bg-[var(--mb-term-bg)]', typing ? 'border-y pl-1.5 pt-1' : 'mx-3 rounded-[10px] border pl-3 pt-2.5')}>
+      <div ref={wrap} className={cx('relative min-h-0 flex-1 overflow-hidden border-line focus-within:border-accent bg-[var(--mb-term-bg)]', typing ? 'border-y pl-1.5 pt-1' : 'mx-3 rounded-[10px] border pl-3 pt-2.5')}>
         <TerminalView key={session.id} ref={term} sessionId={session.id} shell autoFocus={false} fontSize={11} onNotice={(t, e) => toast(t, { error: e })} />
       </div>
       <TerminalKeys term={term} wrap={wrap} className="mt-2 border-t border-line2 bg-[#1a1a1f] px-2 py-1.5 [[data-theme=light]_&]:bg-raised pb-[max(6px,env(safe-area-inset-bottom))]" />
@@ -239,7 +239,7 @@ function PhoneTerminal({ session, typing }: { session: Session; typing: boolean 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={wrap} className={cx('relative min-h-0 flex-1 overflow-hidden border-line bg-[var(--mb-term-bg)]', typing ? 'border-y pl-1.5 pt-1' : 'mx-3 rounded-[10px] border pl-3 pt-2.5')}>
+      <div ref={wrap} className={cx('relative min-h-0 flex-1 overflow-hidden border-line focus-within:border-accent bg-[var(--mb-term-bg)]', typing ? 'border-y pl-1.5 pt-1' : 'mx-3 rounded-[10px] border pl-3 pt-2.5')}>
         <TerminalView
           key={`${session.id}:${ended ? 'ended' : 'running'}`}
           ref={term}
