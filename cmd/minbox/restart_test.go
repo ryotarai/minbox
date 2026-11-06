@@ -8,6 +8,25 @@ import (
 	"testing"
 )
 
+func TestSavedStartArgsCollapsesAndIsStable(t *testing.T) {
+	want := []string{"--tailscale", "--tailscale-port", "8443"}
+	bloated := slices.Clone(want)
+	for i := 0; i < 20; i++ {
+		bloated = append(bloated, "--data-dir", "/d", "--data-dir=/d", "--no-open", "--foreground")
+	}
+	cur := savedStartArgs(bloated)
+	if !slices.Equal(cur, want) {
+		t.Fatalf("got %v, want %v", cur, want)
+	}
+	for i := 0; i < 5; i++ {
+		launch := append(withoutValueFlag(withoutFlag(cur, "no-open"), "data-dir"), "--no-open", "--data-dir", "/d")
+		cur = savedStartArgs(launch)
+		if !slices.Equal(cur, want) {
+			t.Fatalf("round %d: got %v", i, cur)
+		}
+	}
+}
+
 type fakeRestart struct {
 	calls      []string
 	tty        bool

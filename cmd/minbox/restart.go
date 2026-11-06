@@ -109,11 +109,11 @@ func restartRun(args []string, d restartDeps, in io.Reader, out io.Writer) error
 		if b, err := os.ReadFile(startArgsFile(dataDir)); err == nil {
 			var saved []string
 			if json.Unmarshal(b, &saved) == nil {
-				start = saved
+				start = savedStartArgs(saved)
 			}
 		}
 	}
-	start = append(withoutFlag(start, "no-open"), "--no-open", "--data-dir", dataDir)
+	start = append(withoutValueFlag(withoutFlag(start, "no-open"), "data-dir"), "--no-open", "--data-dir", dataDir)
 
 	if *withHost {
 		if n, running := d.hostSessions(dataDir); running && !*yes {
