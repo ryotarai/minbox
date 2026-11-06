@@ -398,6 +398,11 @@ function threadState(t: Thread): string {
   return 'you wrote last'
 }
 
+/** The orchestration prompt, repeated now and then: models forget the first instruction. */
+export function orchestratorReminderText(orchestrator: string): string {
+  return `minbox: periodic reminder of your standing instructions (still in force):\n\n${orchestrator}`
+}
+
 /** The reminder that rides the conversation's first prompt. */
 export function reminderText(sendTool: string, extra?: string | null, tools: { title?: string; open?: string } = {}): string {
   const lines = [
