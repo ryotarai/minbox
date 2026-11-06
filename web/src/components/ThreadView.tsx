@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { THREAD_STATUS_ORDER, api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
 import { ALL_THREADS, threadLink, useApp } from '../lib/app'
-import { clearReplyDraft, getReplyDraft, setReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
+import { clearReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { splitQuestions } from '../lib/markdown'
@@ -77,7 +77,7 @@ function openKeys(m: Message): Set<string> {
 }
 
 export function ThreadView({ session, threadId, siblings, onBack, onTerminal, phone }: Props) {
-  const { navigate, route, toast, error, setOverlay, sessions, setLayout } = useApp()
+  const { navigate, route, toast, error, sessions, setLayout } = useApp()
   const [thread] = useThread(threadId)
   const draft = useReplyDraft(threadId)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -490,7 +490,6 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, ph
         full={fullReply}
         onToggleFull={() => setFullReply((v) => !v)}
         sessions={sessions ?? []}
-        onCompose={() => setOverlay({ kind: 'compose', sessionId: session.id })}
       />
     </div>
   )
@@ -1156,7 +1155,6 @@ function ReplyBox({
   full,
   onToggleFull,
   sessions,
-  onCompose,
 }: {
   session: Session
   thread: Thread
@@ -1169,7 +1167,6 @@ function ReplyBox({
   full: boolean
   onToggleFull: () => void
   sessions: Session[]
-  onCompose: () => void
 }) {
   const { error, toast, settings } = useApp()
   const draft = useReplyDraft(thread.id)
@@ -1191,23 +1188,23 @@ function ReplyBox({
     removeFile(f.key)
   }
   const fullButton = (
-    <button
-      type="button"
+    <IconButton
+      size={28}
       aria-label={full ? 'Back to the thread' : 'Full height'}
       aria-pressed={full}
       title={full ? 'Back to the thread' : 'Full height'}
       data-testid="reply-full"
       onClick={onToggleFull}
-      className={cx('border-0 bg-transparent p-1 text-muted hover:text-fg', full && 'text-fg')}
+      className={cx(full && 'bg-sel text-fg')}
     >
-      <IconExpand size={16} />
-    </button>
+      <IconExpand size={15} />
+    </IconButton>
   )
   const fileTiles = <ComposeFileTiles files={files} onRemove={removeFile} onPutBack={putBack} />
   const clip = (
     <>
       <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileInput.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
-        <IconPaperclip size={16} />
+        <IconPaperclip />
       </button>
       <input
         ref={fileInput}
@@ -1269,12 +1266,6 @@ function ReplyBox({
     }
   }
 
-  const discard = () => {
-    const saved = getReplyDraft(thread.id)
-    clearReplyDraft(thread.id)
-    toast('Draft discarded', { action: 'Undo', undo: true, onAction: () => setReplyDraft(thread.id, saved) })
-  }
-
   const idleOthers = sessions.filter((s) => s.id !== session.id && s.status !== 'ended' && !s.archived_at)
   const placeholder = session.status === 'ended' ? 'Session ended — resume it to deliver your reply' : phone ? 'Reply to Claude…' : `Reply to Claude Code… (R)`
 
@@ -1302,9 +1293,10 @@ function ReplyBox({
       return
     }
     const max = phone ? 160 : 240
+    const border = phone ? 0 : 2 // the desktop box has its own border, like the quick compose
     el.style.height = 'auto'
-    el.style.height = `${Math.min(max, el.scrollHeight)}px`
-    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
+    el.style.height = `${Math.min(max, Math.max(phone ? 0 : 64, el.scrollHeight + border))}px`
+    el.style.overflowY = el.scrollHeight + border > max ? 'auto' : 'hidden'
   }, [words, full, phone, replyRef])
 
   const textarea = (
@@ -1327,8 +1319,9 @@ function ReplyBox({
       placeholder={placeholder}
       rows={phone ? 1 : 2}
       className={cx(
-        'w-full resize-none border-0 bg-transparent p-0 text-fg outline-none placeholder:text-faint',
-        phone ? 'min-h-[24px] text-[16px]' : 'min-h-10 text-[13.5px]',
+        'w-full resize-none text-fg outline-none placeholder:text-faint',
+        phone ? 'border-0 bg-transparent p-0' : 'rounded-md border border-linestrong bg-sunken p-2.5 focus:border-accent',
+        phone ? 'min-h-[24px] text-[16px]' : 'min-h-16 text-[13.5px]',
         full && 'min-h-0 flex-1',
       )}
     />
@@ -1411,49 +1404,38 @@ function ReplyBox({
   }
 
   return (
-    <div className={cx('flex flex-col gap-2 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
+    <div className={cx('flex flex-col gap-1.5 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {chips}
       <span className="text-[12px] text-muted">Reply to Claude Code in {session.name}</span>
-      <div className={cx('flex flex-col gap-2 rounded-[10px] border border-linestrong bg-sunken px-3 py-2.5 focus-within:border-accent', full && 'min-h-0 flex-1')}>
-        {textarea}
-        {fileTiles}
-        {(picksCount > 0 || annos.length > 0 || counter || true) && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {clip}
-            {fullButton}
-            {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center rounded-[6px] bg-chip px-2 text-[12px]">✓ {plural(picksCount, 'pick')}</span>}
-            {annos.length > 0 && (
-              <span data-testid="annotations-chip" className="flex h-6 items-center gap-1 rounded-[6px] bg-chip px-2 text-[12px]">
-                💬 {plural(annos.length, 'annotation')}
-                <button
-                  type="button"
-                  aria-label="Remove annotations"
-                  title="Remove annotations"
-                  onClick={() => updateReplyDraft(thread.id, (d) => ({ ...d, annotations: [] }))}
-                  className="border-0 bg-transparent px-0.5 text-subtle hover:text-fg"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-            <span className="flex-1" />
-            {counter}
-          </div>
-        )}
-      </div>
+      {fileTiles}
+      {textarea}
+      {(picksCount > 0 || annos.length > 0 || counter) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center rounded-[6px] bg-chip px-2 text-[12px]">✓ {plural(picksCount, 'pick')}</span>}
+          {annos.length > 0 && (
+            <span data-testid="annotations-chip" className="flex h-6 items-center gap-1 rounded-[6px] bg-chip px-2 text-[12px]">
+              💬 {plural(annos.length, 'annotation')}
+              <button
+                type="button"
+                aria-label="Remove annotations"
+                title="Remove annotations"
+                onClick={() => updateReplyDraft(thread.id, (d) => ({ ...d, annotations: [] }))}
+                className="border-0 bg-transparent px-0.5 text-subtle hover:text-fg"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          <span className="flex-1" />
+          {counter}
+        </div>
+      )}
       <div className="flex items-center gap-2">
-        <Button ref={sendRef} variant="primary" data-testid="reply-send" disabled={!canSend || sending} onClick={() => void send()}>
-          {sending ? 'Sending…' : 'Send'} <span className="mono text-[11.5px] opacity-70">⌘↵</span>
-        </Button>
-        {canSend && (
-          <Button variant="quiet" onClick={discard} data-testid="reply-cancel">
-            Cancel
-          </Button>
-        )}
-        <span className="flex-1" />
-        {canSend && <span className="truncate whitespace-nowrap text-[12px] text-subtle">Draft saved</span>}
-        <Button variant="outline" data-testid="compose" onClick={onCompose}>
-          ✎ New message
+        {clip}
+        {fullButton}
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{canSend ? 'Draft saved' : ''}</span>
+        <Button ref={sendRef} variant="primary" size="sm" data-testid="reply-send" disabled={!canSend || sending} onClick={() => void send()}>
+          {sending ? 'Sending…' : 'Send ⌘↵'}
         </Button>
       </div>
       {where}

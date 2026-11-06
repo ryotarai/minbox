@@ -560,12 +560,12 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
     }
   }
   const hint = !target
-    ? 'Sending starts the main session'
+    ? ''
     : target.status === 'ended'
       ? 'Session ended: Claude gets this after Resume'
       : target.status === 'working'
         ? 'Working: Claude gets this when its turn ends'
-        : 'Claude gets this as its next turn'
+        : ''
   return (
     <div className={cx('border-t border-line p-2.5', full ? 'flex min-h-0 flex-1 flex-col' : 'shrink-0')} data-testid="quick-compose" data-full={full} data-target={target?.id}>
       <button
@@ -630,7 +630,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
         onChange={setBody}
         onSubmit={() => void send()}
         {...io}
-        placeholder={target ? 'Start a new thread with Claude Code… (@ agents, / skills)' : 'Write here: sending starts a new session for Claude Code'}
+        placeholder={'Start a new thread with Claude Code… (@ agents, / skills)'}
       />
       <div className="mt-1.5 flex items-center gap-2">
         <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileRef.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
