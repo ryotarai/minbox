@@ -6,6 +6,7 @@ import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { splitQuestions } from '../lib/markdown'
 import { opensBeside, steppable, threadArtifacts } from '../lib/attachments'
+import { SketchButton } from './Sketch'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { AttachmentTiles, ArtifactsGrid } from './AttachmentTiles'
 import { MessageBody } from './MessageBody'
@@ -1176,7 +1177,8 @@ function ReplyBox({
   const words = draft.words
   const picksCount = answers.length
   const annos = draft.annotations
-  const { files, addFiles, addPastedText, remove: removeFile } = useComposeFiles(thread.id)
+  const compose = useComposeFiles(thread.id)
+  const { files, addFiles, addPastedText, remove: removeFile } = compose
   const fileInput = useRef<HTMLInputElement>(null)
   const uploading = files.some((f) => f.state === 'uploading')
   const canSend = (!!words.trim() || picksCount > 0 || annos.length > 0 || files.some((f) => f.state === 'done')) && !uploading
@@ -1206,6 +1208,7 @@ function ReplyBox({
       <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileInput.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
         <IconPaperclip />
       </button>
+      <SketchButton compose={compose} />
       <input
         ref={fileInput}
         type="file"
