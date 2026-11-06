@@ -1406,7 +1406,7 @@ function ReplyBox({
   return (
     <div className={cx('flex flex-col gap-1.5 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {chips}
-      <span className="text-[12px] text-muted">Reply to Claude Code in {session.name}</span>
+      <span className="text-[12px] text-muted">Reply to the thread</span>
       {fileTiles}
       {textarea}
       {(picksCount > 0 || annos.length > 0 || counter) && (
@@ -1430,7 +1430,8 @@ function ReplyBox({
           {counter}
         </div>
       )}
-      <div className="flex items-center gap-2">
+      {/* mt-1.5 on top of the column gap: the quick compose's textarea sits in a wrapper that leaves a 6px baseline gap, so its footer row is 12px below the textarea; this matches it. */}
+      <div className="mt-1.5 flex items-center gap-2">
         {clip}
         {fullButton}
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{canSend ? 'Draft saved' : ''}</span>
