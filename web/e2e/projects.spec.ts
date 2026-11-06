@@ -383,3 +383,22 @@ test('a project without sessions: Send starts the main session without a dialog 
   expect(s.is_main).toBe(true)
   expect(b.main_session_id).toBe(s.id)
 })
+
+test('a project without sessions with a slow session list: the new thread still opens', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, folder(minbox, 'api'), 'alpha')
+  const billing = folder(minbox, 'billing')
+  await page.getByTestId('project-new').click()
+  await page.getByTestId('new-session-cwd').fill(billing)
+  await page.getByTestId('new-session-name').fill('Billing')
+  await page.getByTestId('new-session-start').click()
+  await expect(item(page, 'Billing')).toHaveAttribute('data-selected', 'true')
+  // Delay every session list from here on: the thread must open once the list has the new session.
+  await page.route('**/api/sessions', async (route) => {
+    if (route.request().method() === 'GET') await new Promise((r) => setTimeout(r, 1500))
+    await route.continue()
+  })
+  await page.getByTestId('quick-body').fill('Slow thread')
+  await page.getByTestId('quick-send').click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Slow thread')
+})
