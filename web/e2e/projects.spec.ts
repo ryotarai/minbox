@@ -157,7 +157,7 @@ test('the composer targets follow the selected project; All projects groups them
   await expect(page.getByTestId('session-picker-group')).toHaveCount(0)
 })
 
-test('rename; folder and host change only while empty; delete and archive are refused while a session lives', async ({ page, minbox }) => {
+test('rename; folder and host change only while empty; archive is refused while a session lives', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox)
 
@@ -171,7 +171,11 @@ test('rename; folder and host change only while empty; delete and archive are re
   await item(page, 'manual').getByTestId('project-menu').click({ force: true })
   await expect(page.getByTestId('project-edit')).toBeDisabled()
   await page.getByTestId('project-delete').click()
-  await expect(page.getByText(/has sessions/).first()).toBeVisible()
+  await expect(page.getByTestId('project-delete-warning')).toHaveText(
+    'This also deletes 1 session and 1 thread (all messages and attachments). 1 is running and will be stopped. The folder on disk is not touched. This cannot be undone.',
+  )
+  await expect(page.getByTestId('project-delete-confirm')).toHaveText('Delete project and 1 session')
+  await page.getByTestId('project-delete-cancel').click()
   await expect(item(page, 'manual')).toBeVisible()
 
   await item(page, 'manual').getByTestId('project-menu').click({ force: true })
@@ -188,7 +192,46 @@ test('rename; folder and host change only while empty; delete and archive are re
   await item(page, 'empty').getByTestId('project-menu').click({ force: true })
   await expect(page.getByTestId('project-edit')).toBeEnabled()
   await page.getByTestId('project-delete').click()
+  await expect(page.getByTestId('project-delete-confirm')).toHaveText('Delete project')
+  await page.getByTestId('project-delete-confirm').click()
   await expect(item(page, 'empty')).toHaveCount(0)
+})
+
+test('deleting a project with sessions warns with counts, then removes the project, its sessions and threads', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const list = async (path: string) => (await (await fetch(minbox.url + path)).json()) as { id: string; name?: string; subject?: string }[]
+  expect((await list('/api/projects')).length).toBe(2)
+
+  await item(page, 'api').hover()
+  await item(page, 'api').getByTestId('project-menu').click()
+  await page.getByTestId('project-delete').click()
+  await expect(page.getByTestId('project-delete-warning')).toContainText('This also deletes 1 session and 1 thread')
+  await expect(page.getByTestId('project-delete-warning')).toContainText('1 is running and will be stopped.')
+  await expect(page.getByTestId('project-delete-warning')).toContainText('The folder on disk is not touched. This cannot be undone.')
+  await page.getByTestId('project-delete-confirm').click()
+
+  await expect(item(page, 'api')).toHaveCount(0)
+  await expect(item(page, 'docs')).toBeVisible()
+  expect((await list('/api/projects')).map((p) => p.name)).toEqual(['docs'])
+  expect((await list('/api/sessions')).map((x) => x.name)).toEqual(['beta'])
+  const threads = await list('/api/threads')
+  expect(threads.length).toBe(1)
+  expect((threads[0] as unknown as { session_id: string }).session_id).toBe((await list('/api/sessions'))[0].id)
+})
+
+test('phone: the delete dialog shows the counts too', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#')
+  await page.getByTestId('project-switch').click()
+  await page.getByTestId('project-sheet').getByTestId('project-menu').first().click()
+  await page.getByTestId('project-delete').click()
+  await expect(page.getByTestId('project-delete-warning')).toContainText('This also deletes 1 session and 1 thread')
+  await page.getByTestId('project-delete-confirm').click()
+  await expect(page.getByTestId('project-sheet').getByTestId('project-item')).toHaveCount(1)
+  expect((await (await fetch(minbox.url + '/api/projects')).json()).length).toBe(1)
 })
 
 test('archiving a project of ended sessions hides it; Restore brings it back', async ({ page, minbox }) => {

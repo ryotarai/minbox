@@ -307,19 +307,13 @@ func TestProjectRules(t *testing.T) {
 		t.Fatalf("move empty project: %+v %v", moved, err)
 	}
 
-	// Archive refuses with a live session; delete refuses with any session.
+	// Archive refuses with a live session.
 	if err := s.SetProjectArchived(ctx, pid, true); !errors.Is(err, ErrProjectBusy) {
 		t.Fatalf("archive with live session: %v", err)
-	}
-	if err := s.DeleteProject(ctx, pid); !errors.Is(err, ErrProjectBusy) {
-		t.Fatalf("delete with session: %v", err)
 	}
 	// Once the session ended, archive works and takes the session with it...
 	if err := s.SetSessionEnded(ctx, sess.ID, 0); err != nil {
 		t.Fatal(err)
-	}
-	if err := s.DeleteProject(ctx, pid); !errors.Is(err, ErrProjectBusy) {
-		t.Fatalf("delete with an ended session must still refuse: %v", err)
 	}
 	if err := s.SetProjectArchived(ctx, pid, true); err != nil {
 		t.Fatal(err)

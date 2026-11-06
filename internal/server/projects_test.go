@@ -187,10 +187,7 @@ func TestProjectsAPI(t *testing.T) {
 		t.Fatalf("patch missing: %d", code)
 	}
 
-	// Delete and archive are refused while sessions are live; delete stays refused afterwards.
-	if code, _, _ := e.do("DELETE", "/api/projects/"+id, nil, nil); code != 409 {
-		t.Fatalf("delete with sessions: %d", code)
-	}
+	// Archive is refused while sessions are live (delete is not: see TestDeleteProjectCascades).
 	if code, _, _ := e.do("POST", "/api/projects/"+id+"/archive", nil, nil); code != 409 {
 		t.Fatalf("archive with live sessions: %d", code)
 	}
@@ -198,9 +195,6 @@ func TestProjectsAPI(t *testing.T) {
 		if code, _, _ := e.do("POST", "/api/sessions/"+sid+"/stop", nil, nil); code != 200 {
 			t.Fatalf("stop: %d", code)
 		}
-	}
-	if code, _, _ := e.do("DELETE", "/api/projects/"+id, nil, nil); code != 409 {
-		t.Fatalf("delete with ended sessions: %d", code)
 	}
 	if code, _, _ := e.do("POST", "/api/projects/"+id+"/archive", nil, nil); code != 200 {
 		t.Fatalf("archive: %d", code)
@@ -225,5 +219,99 @@ func TestProjectsAPI(t *testing.T) {
 	moveTo := e.mkdir("moved")
 	if code, got, _ := e.do("PATCH", "/api/projects/"+r["id"].(string), map[string]any{"dir": moveTo}, nil); code != 200 || got["dir"] != moveTo {
 		t.Fatalf("move empty: %d %v", code, got)
+	}
+}
+
+func TestDeleteProjectCascades(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	doomed := e.mkdir("doomed")
+	keep := e.mkdir("keep")
+	if err := os.WriteFile(filepath.Join(doomed, "notes.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(cwd string) map[string]any {
+		code, obj, _ := e.do("POST", "/api/sessions", map[string]string{"cwd": cwd}, nil)
+		if code != 201 {
+			t.Fatalf("create: %d %v", code, obj)
+		}
+		return obj
+	}
+	a, b := mk(doomed), mk(doomed) // a is main; b is a second Claude Code session
+	k := mk(keep)
+	pid := a["project_id"].(string)
+	aid, bid, kid := a["id"].(string), b["id"].(string), k["id"].(string)
+	// b has ended; a and the other project's session keep running.
+	e.do("POST", "/api/sessions/"+bid+"/stop", nil, nil)
+
+	th, msg, err := e.st.CreateThread(ctx, aid, "doomed thread", store.NewMessage{Author: store.AuthorAgent, Body: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.AddAttachment(ctx, &store.Attachment{ThreadID: th.ID, MessageID: msg.ID, Kind: store.AttachmentFile, Name: "n.txt", Type: "text"}, []byte("x"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.PutSlackThread(ctx, "dest", th.ID, store.SlackThread{ChannelID: "C", TS: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	kth, _, err := e.st.CreateThread(ctx, kid, "kept thread", store.NewMessage{Author: store.AuthorAgent, Body: "yo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, pre, _ := e.do("GET", "/api/projects/"+pid+"/delete-preview", nil, nil)
+	if code != 200 || pre["sessions"] != float64(2) || pre["running_sessions"] != float64(1) || pre["threads"] != float64(1) || pre["messages"] != float64(1) {
+		t.Fatalf("preview: %d %v", code, pre)
+	}
+	if code, _, _ := e.do("GET", "/api/projects/nope/delete-preview", nil, nil); code != 404 {
+		t.Fatalf("preview unknown: %d", code)
+	}
+
+	// The main session cannot be deleted alone while another Claude Code session lives...
+	if code, _, _ := e.do("DELETE", "/api/sessions/"+aid, nil, nil); code != 409 {
+		t.Fatalf("delete main alone: %d", code)
+	}
+	// ...but a project delete takes everything, the running session included.
+	if code, obj, _ := e.do("DELETE", "/api/projects/"+pid, nil, nil); code != 200 {
+		t.Fatalf("delete project: %d %v", code, obj)
+	}
+	for _, id := range []string{aid, bid} {
+		if _, err := e.st.GetSession(ctx, id); err == nil {
+			t.Fatalf("session %s survived", id)
+		}
+	}
+	e.host.mu.Lock()
+	for id, tm := range e.host.terms {
+		if (id == aid || id == bid || id == shellTermID(aid) || id == shellTermID(bid)) && tm.Running {
+			t.Fatalf("terminal %s still running", id)
+		}
+	}
+	e.host.mu.Unlock()
+	if _, err := e.st.GetProject(ctx, pid); err == nil {
+		t.Fatal("project row survived")
+	}
+	if _, err := e.st.GetThread(ctx, th.ID); err == nil {
+		t.Fatal("thread survived")
+	}
+	if atts, _ := e.st.ListAttachments(ctx, th.ID); len(atts) != 0 {
+		t.Fatalf("attachments survived: %v", atts)
+	}
+	if _, ok, _ := e.st.GetSlackThread(ctx, "dest", th.ID); ok {
+		t.Fatal("slack thread mapping survived")
+	}
+	if got, err := os.ReadFile(filepath.Join(doomed, "notes.txt")); err != nil || string(got) != "mine" {
+		t.Fatalf("project folder touched: %q %v", got, err)
+	}
+	if ps := e.projects(""); len(ps) != 1 || ps[0]["dir"] != keep {
+		t.Fatalf("projects left: %v", ps)
+	}
+	if _, err := e.st.GetSession(ctx, kid); err != nil {
+		t.Fatalf("other session: %v", err)
+	}
+	if _, err := e.st.GetThread(ctx, kth.ID); err != nil {
+		t.Fatalf("other thread: %v", err)
+	}
+	if code, _, _ := e.do("DELETE", "/api/projects/"+pid, nil, nil); code != 404 {
+		t.Fatalf("delete twice: %d", code)
 	}
 }

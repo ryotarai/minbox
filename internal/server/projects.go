@@ -139,12 +139,21 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteProject(r.Context(), r.PathValue("id")); err != nil {
+	if err := s.sessions.DeleteProject(r.Context(), r.PathValue("id")); err != nil {
 		storeError(w, err)
 		return
 	}
-	s.publishProjects(false)
+	s.publishProjects(true)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) projectDeletePreview(w http.ResponseWriter, r *http.Request) {
+	d, err := s.store.ProjectDeletePreview(r.Context(), r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, 200, d)
 }
 
 func (s *Server) archiveProject(archive bool) http.HandlerFunc {

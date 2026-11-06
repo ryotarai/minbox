@@ -636,7 +636,12 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
 PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
                                         main_session_id must be a Claude Code session of the project (400)
                                         dir/host_id change only while the project has no sessions (else 409)
-DELETE /api/projects/{id}             only with no sessions at all; else 409 ("archive it instead")
+GET    /api/projects/{id}/delete-preview → {sessions, running_sessions, threads, messages}: what a delete takes with it (404 unknown)
+DELETE /api/projects/{id}             deletes the project with ALL its sessions (running ones are stopped first: claude process,
+                                      terminal pane, companion shell), threads, messages, annotations, attachments and notification
+                                      thread mappings in one store transaction; cards that pointed at them are unlinked, not deleted.
+                                      The main-session 409 does not apply. Nothing on the host disk (the folder) is touched.
+                                      SSE projects + sessions + threads.
 POST   /api/projects/{id}/archive     409 while it has a live session; archives its ended sessions with it
 POST   /api/projects/{id}/unarchive   restores the sessions that were archived with it
 ```
