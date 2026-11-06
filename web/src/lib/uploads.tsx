@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { api, uploadToInbox, type AttachmentType, type Upload } from '../api'
 import { formatBytes } from './attachments'
 import { cx } from '../components/ui'
+import { isRasterName, requestSketch, type Scene } from './sketch'
 
 // Files the person attaches to a reply or a new message: the paperclip, a
 // paste, or a drop (Plannotator spec §6). Uploaded at once, kept in the draft.
@@ -33,6 +34,8 @@ export type ComposeFile = {
   /** A local preview of an image. */
   preview?: string
   /** A long paste turned into a file: where it was and how it began. */
+  /** A drawing made in the sketcher (client only): kept so it can be edited before it is sent. */
+  sketch?: Scene
   pasted?: { at: number; lead: string; preview: string; text: string; time: number }
 }
 
@@ -41,7 +44,7 @@ function stamp(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-function unique(name: string, taken: Set<string>): string {
+export function unique(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name
   const m = /^(.*?)(\.[^.]*)?$/.exec(name)!
   for (let i = 2; ; i++) {
@@ -80,7 +83,7 @@ function load(id: string): ComposeFile[] {
 }
 function save(id: string, files: ComposeFile[]) {
   stores.set(id, files)
-  const keep = files.filter((f) => f.state === 'done').map(({ preview: _p, ...f }) => f)
+  const keep = files.filter((f) => f.state === 'done').map(({ preview: _p, sketch: _s, ...f }) => f)
   if (keep.length) localStorage.setItem(KEY + id, JSON.stringify(keep))
   else localStorage.removeItem(KEY + id)
   for (const l of listeners) l()
@@ -158,7 +161,7 @@ export function useComposeFiles(id: string) {
     [id],
   )
 
-  return { files, addFiles, addPastedText, remove }
+  return { files, add, addFiles, addPastedText, remove }
 }
 
 /** The file tiles under a reply box or a new message. */
@@ -209,7 +212,24 @@ export function ComposeFileTiles({ files, onRemove, onPutBack }: { files: Compos
                   </button>
                 </span>
               ) : (
-                <span className="text-[11px] text-subtle">{formatBytes(f.size)}</span>
+                <span className="text-[11px] text-subtle">
+                  {formatBytes(f.size)}
+                  {f.sketch ? (
+                    <>
+                      {' · '}
+                      <button type="button" onClick={() => requestSketch({ key: f.key, mode: 'edit' })} className="border-0 bg-transparent p-0 text-wait underline" data-testid="file-edit">
+                        Edit
+                      </button>
+                    </>
+                  ) : f.preview && f.state === 'done' && isRasterName(f.name) ? (
+                    <>
+                      {' · '}
+                      <button type="button" onClick={() => requestSketch({ key: f.key, mode: 'annotate' })} className="border-0 bg-transparent p-0 text-wait underline" data-testid="file-annotate">
+                        Annotate
+                      </button>
+                    </>
+                  ) : null}
+                </span>
               )}
             </span>
             <button
