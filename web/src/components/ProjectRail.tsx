@@ -26,6 +26,34 @@ export function ProjectDot({ stat, size = 8 }: { stat?: ProjectStat; size?: numb
   )
 }
 
+/** A project's icon: an emoji, or its image (square, rounded, object-cover). */
+export function ProjectIcon({ icon, size }: { icon: NonNullable<Project['icon']>; size: number }) {
+  if (icon.kind === 'image') {
+    return (
+      <img
+        src={icon.url}
+        alt=""
+        data-testid="project-icon"
+        data-kind="image"
+        draggable={false}
+        style={{ width: size, height: size }}
+        className="shrink-0 rounded-lg border border-line object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="project-icon"
+      data-kind="emoji"
+      style={{ width: size, height: size, fontSize: Math.round(size * (size > 24 ? 0.72 : 0.8)), lineHeight: 1 }}
+      className="flex shrink-0 items-center justify-center"
+    >
+      {icon.emoji}
+    </span>
+  )
+}
+
 /** Waiting (amber) and unread (grey) counts of a project. */
 export function ProjectBadges({ stat }: { stat?: ProjectStat }) {
   if (!stat) return null
@@ -72,6 +100,15 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
       >
         Change folder or host…
       </MenuItem>
+      <MenuItem
+        testid="project-icon-set"
+        onClick={() => {
+          onClose()
+          setOverlay({ kind: 'project-icon', project })
+        }}
+      >
+        Set icon…
+      </MenuItem>
       <MenuItem testid="project-pin" onClick={run(() => api.patchProject(project.id, { pinned: !project.pinned_at }))}>
         {project.pinned_at ? 'Unpin' : 'Pin to top'}
       </MenuItem>
@@ -97,6 +134,104 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
         Delete
       </MenuItem>
     </Popover>
+  )
+}
+
+const EMOJIS = (
+  '🚀 💡 🔥 ⭐ ✨ 🎯 🧪 🔧 🛠️ ⚙️ 📦 📱 💻 🖥️ 🌐 🔒 🔑 🧠 🤖 🧩 ' +
+  '📊 📈 📝 📚 🎨 🎮 🎵 📷 🎬 🛒 💳 💰 🏠 🏢 🏫 🏥 ✈️ 🚗 🌱 🌍 ' +
+  '☁️ ⚡ 🐛 🦊 🐙 🐳 🦀 🐍 🍎 🍕 ☕ 🎁 🔔 📮 🗂️ 🧹 🧭 🛰️ 🪐 ❤️'
+).split(' ')
+
+/** Set or remove a project's icon: an emoji (typed or picked) or an uploaded image (cropped square on the server). */
+export function ProjectIconDialog({ project, onClose }: { project: Project; onClose: () => void }) {
+  const { error, reloadProjects } = useApp()
+  const [emoji, setEmoji] = useState(project.icon?.kind === 'emoji' ? project.icon.emoji : '')
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState('')
+  const [busy, setBusy] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!file) return setPreview('')
+    const u = URL.createObjectURL(file)
+    setPreview(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  const shown = preview || (project.icon?.kind === 'image' && !emoji ? project.icon.url : '')
+  const done = () => (reloadProjects(), onClose())
+  const fail = (e: unknown) => (setBusy(false), error(e))
+  const save = () => {
+    const e = emoji.trim()
+    if (!file && !e) return onClose()
+    setBusy(true)
+    ;(file ? api.setProjectImage(project.id, file) : api.setProjectEmoji(project.id, e)).then(done).catch(fail)
+  }
+  const remove = () => {
+    setBusy(true)
+    api.clearProjectIcon(project.id).then(done).catch(fail)
+  }
+  return (
+    <Modal label="Project icon" onClose={onClose} className="w-[min(440px,100%)] p-5">
+      <h2 className="m-0 mb-3 text-[16px] font-[650]">Icon for {project.name}</h2>
+      <div className="flex items-center gap-3">
+        <div data-testid="project-icon-preview" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-chip text-[34px] leading-none">
+          {shown ? <img src={shown} alt="" className="h-full w-full object-cover" /> : emoji.trim() || <span className="text-[14px] font-bold text-fg2">{initials(project.name)}</span>}
+        </div>
+        <input
+          autoFocus
+          aria-label="Emoji"
+          data-testid="project-icon-emoji"
+          placeholder="Emoji"
+          maxLength={16}
+          value={emoji}
+          onChange={(e) => (setEmoji(e.target.value), setFile(null))}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+          className="h-[38px] w-24 rounded-lg border border-linestrong bg-sunken px-2.5 text-center text-[18px] text-fg outline-none focus:border-accent"
+        />
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/png,image/jpeg,image/gif"
+          data-testid="project-icon-file"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) (setFile(f), setEmoji(''))
+            e.target.value = ''
+          }}
+        />
+        <Button variant="quiet" data-testid="project-icon-upload" onClick={() => fileInput.current?.click()}>
+          Upload image…
+        </Button>
+      </div>
+      <div data-testid="project-icon-grid" className="mt-3 grid grid-cols-10 gap-0.5">
+        {EMOJIS.map((em) => (
+          <button
+            key={em}
+            type="button"
+            aria-label={em}
+            aria-pressed={!file && emoji.trim() === em}
+            onClick={() => (setEmoji(em), setFile(null))}
+            className={cx('flex h-8 items-center justify-center rounded-md border-0 text-[18px] leading-none hover:bg-raised', !file && emoji.trim() === em ? 'bg-sel' : 'bg-transparent')}
+          >
+            {em}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 flex items-center justify-end gap-2">
+        {project.icon && (
+          <Button variant="quiet" data-testid="project-icon-remove" disabled={busy} onClick={remove} className="mr-auto">
+            Remove icon
+          </Button>
+        )}
+        <Button variant="quiet" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" data-testid="project-icon-save" disabled={busy || (!file && !emoji.trim())} onClick={save}>
+          Save
+        </Button>
+      </div>
+    </Modal>
   )
 }
 
@@ -196,8 +331,8 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                 )}
               >
                 {tiles ? (
-                  <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-chip text-[12px] font-bold text-fg2">
-                    {initials(p.name)}
+                  <span className={cx('relative flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold text-fg2', p.icon?.kind === 'image' ? 'bg-transparent' : 'bg-chip')}>
+                    {p.icon ? <ProjectIcon icon={p.icon} size={32} /> : initials(p.name)}
                     {stat && (stat.waiting > 0 || stat.unread > 0) && (
                       <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">{stat.waiting || stat.unread}</span>
                     )}
@@ -210,6 +345,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                     <span className="flex min-w-0 flex-1 flex-col gap-px">
                       <span className="flex min-w-0 items-center gap-1.5">
                         {p.pinned_at && <IconPin size={11} className="shrink-0 text-muted" />}
+                        {p.icon && <ProjectIcon icon={p.icon} size={20} />}
                         <span data-testid="project-name" className={cx('min-w-0 flex-1 truncate text-[13px]', on || (stat && stat.waiting > 0) ? 'font-[650] text-fg' : 'font-medium text-fg2')}>
                           {p.name}
                         </span>

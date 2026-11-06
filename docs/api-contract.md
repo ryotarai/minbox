@@ -636,6 +636,16 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
 PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
                                         main_session_id must be a Claude Code session of the project (400)
                                         dir/host_id change only while the project has no sessions (else 409)
+PUT    /api/projects/{id}/icon        sets the icon → Project (SSE projects). Body: JSON {emoji} (1-3 grapheme-ish characters,
+                                        at most 16 bytes, no control chars, no letters/URLs; 400 otherwise), or an image: raw body
+                                        (Content-Type image/*) or multipart field `file`; PNG, JPEG or GIF, at most 2 MB. The server
+                                        center-crops to a square, scales to 128x128 and stores a PNG. Garbage/oversize → 400, unknown project 404.
+DELETE /api/projects/{id}/icon        clears the icon → Project
+GET    /api/projects/{id}/icon        the image icon as image/png, `Cache-Control: private, max-age=31536000, immutable`
+                                        (the URL carries ?v=); 404 when the icon is not an image
+                                        Project.icon: null | {kind:"emoji", emoji} | {kind:"image", url:"/api/projects/{id}/icon?v=<unix s>"}
+                                        (image bytes are never in the project list; stored in additive columns icon_kind,
+                                        icon_emoji, icon_png, icon_updated_at of `projects`, so a project delete removes them)
 GET    /api/projects/{id}/delete-preview → {sessions, running_sessions, threads, messages}: what a delete takes with it (404 unknown)
 DELETE /api/projects/{id}             deletes the project with ALL its sessions (running ones are stopped first: claude process,
                                       terminal pane, companion shell), threads, messages, annotations, attachments and notification

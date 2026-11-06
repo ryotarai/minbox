@@ -88,9 +88,11 @@ export type Project = {
   session_count: number
   live_sessions: number
   last_activity: string
+  /** An emoji, or an uploaded image served at url; null when none. */
+  icon?: { kind: 'emoji'; emoji: string } | { kind: 'image'; url: string } | null
 }
 
-export type Device = { id: string; name: string; fingerprint: string; created_at: string; last_seen: string | null; current: boolean }
+export type Device= { id: string; name: string; fingerprint: string; created_at: string; last_seen: string | null; current: boolean }
 export type PairRequest = { id: string; code: string; name: string; fingerprint: string; created_at: string; ip?: string; tailscale_login?: string }
 export type DeviceMe = { trusted: boolean; via: 'loopback' | 'device' | null; device?: Device }
 
@@ -467,6 +469,14 @@ export const api = {
   /** A session inside a project: its host and folder. */
   createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined }),
   setMainSession: (project_id: string, session_id: string) => call<Project>('PATCH', `/api/projects/${project_id}`, { main_session_id: session_id }),
+  setProjectEmoji: (id: string, emoji: string) => call<Project>('PUT', `/api/projects/${id}/icon`, { emoji }),
+  clearProjectIcon: (id: string) => call<Project>('DELETE', `/api/projects/${id}/icon`),
+  setProjectImage: async (id: string, file: Blob) => {
+    const res = await fetch(`/api/projects/${id}/icon`, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) throw new ApiError(json?.error ?? `upload failed (${res.status})`, res.status)
+    return json as Project
+  },
   projects: (archived = false) => call<Project[]>('GET', `/api/projects${archived ? '?archived=1' : ''}`),
   createProject: (p: { dir: string; host_id?: string; name?: string }) => call<Project>('POST', '/api/projects', p),
   patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string }) => call<Project>('PATCH', `/api/projects/${id}`, p),

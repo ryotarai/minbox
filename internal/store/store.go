@@ -396,6 +396,10 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "title", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "project_id", "TEXT"},
 	{"projects", "main_session_id", "TEXT"},
+	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"}, // '' | 'emoji' | 'image'
+	{"projects", "icon_emoji", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "icon_png", "BLOB"}, // 128x128 PNG; never selected by the project list
+	{"projects", "icon_updated_at", "INTEGER NOT NULL DEFAULT 0"},
 	{"threads", "name", "TEXT NOT NULL DEFAULT ''"},
 	{"threads", "archived_at", "INTEGER"},
 	{"threads", "pinned_at", "INTEGER"},
