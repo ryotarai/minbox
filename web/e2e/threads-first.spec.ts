@@ -205,6 +205,7 @@ test('⌘K still finds threads first, and sessions too', async ({ page, minbox }
   await results.first().click()
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   // A thread of another session opens that session too.
+  await expect(page.getByTestId('palette-input')).toHaveCount(0) // the first palette has closed
   await page.keyboard.press('Meta+k')
   await page.getByTestId('palette-input').fill('database')
   // The list still shows the '@beta' hit until the new query is applied: click only the new first hit.
