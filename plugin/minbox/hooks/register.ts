@@ -57,7 +57,7 @@ import {
 } from './text'
 
 const TICK_MS = 1000
-/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction); the default N is 20. MINBOX_ORCHESTRATOR_EVERY overrides it. */
+/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction); the default N is 20. The first prompt after each hello carries it too. MINBOX_ORCHESTRATOR_EVERY overrides it. */
 const ORCHESTRATOR_EVERY = 20
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
@@ -95,6 +95,8 @@ let promptExtra: string | null = null
 let orchestrator: string | null = null
 /** Prompts seen in this session. */
 let promptCount = 0
+/** The hello delivered the orchestration prompt and no prompt has carried it since: the next one does. */
+let orchestratorFresh = false
 let helloing: Promise<void> | null = null
 let timer: { cancel(): void } | null = null
 let busy = false
@@ -188,6 +190,7 @@ async function hello($: any): Promise<void> {
       lastClaudeSessionId = id
       promptExtra = typeof res.json?.prompt_extra === 'string' ? res.json.prompt_extra : null
       orchestrator = typeof res.json?.orchestrator === 'string' && res.json.orchestrator ? res.json.orchestrator : null
+      orchestratorFresh = orchestrator !== null
     }
   }
 }
@@ -352,7 +355,8 @@ export const register: Register = (on) => {
     promptCount++
     if (helloing) await helloing.catch(() => {}) // prompt_extra and orchestrator come with the hello
     const every = Number(await $.env.get('MINBOX_ORCHESTRATOR_EVERY')) || ORCHESTRATOR_EVERY
-    const periodic = orchestrator && promptCount % every === 0 ? orchestratorReminderText(orchestrator) : null
+    const periodic = orchestrator && (orchestratorFresh || promptCount % every === 0) ? orchestratorReminderText(orchestrator) : null
+    if (periodic) orchestratorFresh = false
     if (!remindNext && !threadsNext) return periodic ? next({ ...e, context: [...(e.context ?? []), periodic] }) : next(e)
     let extra: string | null = null
     if (threadsNext) {
