@@ -12,9 +12,9 @@ import { ConnectionBanner } from './Banners'
 import { PairRequestBanner } from './Devices'
 import { NewSessionDialog } from './NewSession'
 import { NextStep } from './NextStep'
-import { NotificationAsk, Logo, groupSessions, waitsOnPerson } from './Sidebar'
+import { NotificationAsk, Logo, groupSessions } from './Sidebar'
 import { ThreadRow, useAllThreads } from './ThreadList'
-import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, StatusDot, cx, statusOf } from './ui'
+import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, cx } from './ui'
 import { PhoneSessionSheet } from './PhoneSessions'
 import { PhoneProjectButton } from './PhoneProjects'
 
@@ -131,7 +131,6 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                       g.key === 'need_action' ? 'text-wait' : 'text-subtle',
                     )}
                   >
-                    {g.session && <StatusDot s={g.session} waits={waitsOnPerson(g.session)} size={6} ring={false} />}
                     <span className="truncate">{g.label}</span>
                     <span className="font-normal">{g.items.length}</span>
                   </div>
@@ -304,7 +303,6 @@ function FilterRow({ v, phone, onSheet }: { v: ReturnType<typeof useVisibleThrea
           onClick={(e) => (phone ? onSheet() : setSAnchor(e.currentTarget))}
           className={cx('flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-transparent px-2.5 text-left text-[12.5px]', phone ? 'h-9' : 'h-7', sel ? 'border-accent text-waitfg' : 'border-linestrong text-fg2')}
         >
-          {sel && <StatusDot s={sel} waits={waitsOnPerson(sel)} size={6} ring={false} />}
           <span className="truncate">Session: {sel ? sel.name : 'All'}</span>
           <span className="flex-1" />
           <span aria-hidden="true" className="text-subtle">▾</span>
@@ -397,7 +395,6 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
               </div>
             )}
             {g.rows.map((s) => {
-          const waits = waitsOnPerson(s)
           return (
             <div key={s.id} className="group flex items-center gap-0.5">
             <button
@@ -409,7 +406,6 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
               onClick={() => onPick(s)}
               className={cx('flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-[6px] border-0 px-2.5 py-1 text-left hover:bg-sel', s.id === activeId ? 'bg-sel' : 'bg-transparent')}
             >
-              <StatusDot s={s} waits={waits} size={7} ring={false} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-[13px] text-fg">{s.name}</span>
@@ -419,10 +415,11 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
                     </span>
                   )}
                 </span>
-                <span className={cx('truncate text-[11.5px]', statusOf(s, waits).text)}>
-                  {statusOf(s, waits).label}
-                  {s.title ? ` · ${s.title}` : ''}
-                </span>
+                {(s.status === 'ended' || s.title) && (
+                  <span className={cx('truncate text-[11.5px]', s.status === 'ended' ? 'text-subtle' : 'text-muted')}>
+                    {[s.status === 'ended' ? 'Ended' : '', s.title].filter(Boolean).join(' · ')}
+                  </span>
+                )}
               </span>
               <HostTag name={s.host_name} />
               {s.waiting > 0 ? (
@@ -568,7 +565,6 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
         <span className="text-subtle">to</span>
         {target ? (
           <>
-            <StatusDot s={target} waits={waitsOnPerson(target)} size={7} ring={false} />
             <span className="truncate font-semibold text-fg" data-testid="composer-target-name">{target.name}</span>
           </>
         ) : (

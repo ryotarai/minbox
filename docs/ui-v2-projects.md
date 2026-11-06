@@ -42,7 +42,7 @@ resources under a project. The project is the top-level scope of the UI, left of
   (176 / 56)
 ```
 
-Rail entry = status dot of its busiest session, **name**, dir shortened to `~/...` (second line, mono),
+Rail entry = **name**, dir shortened to `~/...` (second line, mono),
 host badge for a remote host, and an aggregate badge: amber number = threads waiting on the person, grey
 number = unread. `All projects` is the first entry (sum of both). Below the list: `+` (new project).
 Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), Pin, Archive, Delete.
@@ -139,7 +139,7 @@ visible to the previous build, and project names changed in this build are not u
   pane (down to 440 px) and then the threads list (down to 280 px) pay for it, so the terminal keeps about the width it had.
 - `+ New session...` always offers a project chooser; its last entry, `A folder without a project yet...`, is the old
   folder browser (the project is then made from the folder). With no project at all the dialog opens in that mode.
-- A project's status dot is its main session's (amber while a thread waits). Aggregate badges: amber = waiting threads, grey = unread.
+- Sessions show no status of their own (waiting/working lives on threads; only `Ended` is shown). Aggregate badges: amber = waiting threads, grey = unread.
 - Archived projects fold at the bottom of the rail (`Archived n`, `Restore`); there is no manual drag order, only `Pin to top`.
 - Not done: promoting a successor from the archive/delete UI (the API takes `?promote=`; the UI shows the 409 text and
   offers `Set as main`), drag-to-reorder, a host badge screenshot (needs a paired remote host).

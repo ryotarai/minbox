@@ -197,7 +197,7 @@ test('archiving a project of ended sessions hides it; Restore brings it back', a
   await selectProject(page, 'docs')
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-stop').click()
-  await expect(page.getByTestId('session-status')).toHaveText(/ended|closed/i)
+  await expect(page.getByTestId('session-ended')).toBeVisible()
   await item(page, 'docs').getByTestId('project-menu').click({ force: true })
   await page.getByTestId('project-archive').click()
   await expect(item(page, 'docs')).toHaveCount(0)
