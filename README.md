@@ -230,7 +230,7 @@ themselves after a network drop or a server restart, and the open thread reloads
 
 ## Settings
 
-Text size and theme (light, dark, match system), swapping the terminal and thread columns,
+Text size and theme (light, dark, match system; the terminal follows it live with a light palette), swapping the terminal and thread columns,
 browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
 suggestions), **Notifications**, **Hosts**, **Devices**, optional parts (Board, Decision mode),
 archived sessions and threads, storage and About.
