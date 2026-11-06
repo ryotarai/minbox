@@ -31,18 +31,16 @@ import {
   SEND_SCHEMA,
   SEND_TOOL,
   openDeny,
-  openSection,
   opensBrowser,
   OPEN_DESCRIPTION,
   OPEN_SCHEMA,
   OPEN_TOOL,
+  fallbackReminderText,
+  instructionsText,
   openThreadsText,
   asksPerson,
-  inboxSection,
   nudgeText,
-  orchestratorReminderText,
   replyNudgeText,
-  reminderText,
   sentText,
   serverUrlOf,
   threadListText,
@@ -50,14 +48,13 @@ import {
   TITLE_DESCRIPTION,
   TITLE_SCHEMA,
   TITLE_TOOL,
-  titleSection,
   wakeText,
   type Pending,
   type Thread,
 } from './text'
 
 const TICK_MS = 1000
-/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction); the default N is 20. The first prompt after each hello carries it too. MINBOX_ORCHESTRATOR_EVERY overrides it. */
+/** The server's instructions are repeated on every Nth prompt (models forget the first instruction); the default N is 20. The first prompt after each hello and the first after a compaction carry them too. MINBOX_ORCHESTRATOR_EVERY overrides N. */
 const ORCHESTRATOR_EVERY = 20
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
@@ -88,14 +85,11 @@ let sendToolName = `mcp__minbox__${SEND_TOOL}`
 let readToolName = `mcp__minbox__${READ_TOOL}`
 let titleToolName = `mcp__minbox__${TITLE_TOOL}`
 let openToolName = `mcp__minbox__${OPEN_TOOL}`
-/** The tools whose use the reminder repeats from the system prompt. */
-const guided = () => ({ title: titleToolName, open: openToolName })
-let promptExtra: string | null = null
-/** The orchestration prompt from the hello (null: off). */
-let orchestrator: string | null = null
+/** The server's instructions from the hello (null: none, e.g. the hello failed or the server is old). */
+let instructions: string | null = null
 /** Prompts seen in this session. */
 let promptCount = 0
-/** The hello delivered the orchestration prompt and no prompt has carried it since: the next one does. */
+/** The hello delivered the instructions and no prompt has carried them since: the next one does. */
 let orchestratorFresh = false
 let helloing: Promise<void> | null = null
 let timer: { cancel(): void } | null = null
@@ -188,9 +182,8 @@ async function hello($: any): Promise<void> {
     const res = await api($, 'POST', '/api/agent/hello', { claude_session_id: id })
     if (res.ok) {
       lastClaudeSessionId = id
-      promptExtra = typeof res.json?.prompt_extra === 'string' ? res.json.prompt_extra : null
-      orchestrator = typeof res.json?.orchestrator === 'string' && res.json.orchestrator ? res.json.orchestrator : null
-      orchestratorFresh = orchestrator !== null
+      instructions = typeof res.json?.instructions === 'string' && res.json.instructions.trim() ? res.json.instructions : null
+      orchestratorFresh = true
     }
   }
 }
@@ -353,21 +346,21 @@ export const register: Register = (on) => {
       nudgeNext = false // and they answered in the chat
     }
     promptCount++
-    if (helloing) await helloing.catch(() => {}) // prompt_extra and orchestrator come with the hello
+    if (helloing) await helloing.catch(() => {}) // the instructions come with the hello
     const every = Number(await $.env.get('MINBOX_ORCHESTRATOR_EVERY')) || ORCHESTRATOR_EVERY
-    const periodic = orchestrator && (orchestratorFresh || promptCount % every === 0) ? orchestratorReminderText(orchestrator) : null
-    if (periodic) orchestratorFresh = false
-    if (!remindNext && !threadsNext) return periodic ? next({ ...e, context: [...(e.context ?? []), periodic] }) : next(e)
-    let extra: string | null = null
+    // One injection per prompt: first after a hello, after a compaction, or every Nth prompt.
+    const remind = remindNext || threadsNext || orchestratorFresh || promptCount % every === 0
+    if (!remind) return next(e)
+    const added: string[] = [instructions ? instructionsText(instructions) : fallbackReminderText(sendToolName)]
     if (threadsNext) {
       const res = await api($, 'GET', '/api/agent/threads')
-      extra = res.ok && Array.isArray(res.json) ? openThreadsText(res.json as Thread[], sendToolName, promptExtra, guided()) : null
+      const list = res.ok && Array.isArray(res.json) ? openThreadsText(res.json as Thread[]) : null
+      if (list) added.push(list)
     }
-    extra ??= remindNext || threadsNext ? reminderText(sendToolName, promptExtra, guided()) : null
     remindNext = false
     threadsNext = false
-    const added = [extra, periodic].filter((t): t is string => !!t)
-    return added.length ? next({ ...e, context: [...(e.context ?? []), ...added] }) : next(e)
+    orchestratorFresh = false
+    return next({ ...e, context: [...(e.context ?? []), ...added] })
   })
 
   on('tool.call', { tool: `mcp__minbox__${SEND_TOOL}` }, async ($, e: any) => {
@@ -396,20 +389,6 @@ export const register: Register = (on) => {
     if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
     sentThisTurn = true
     return { result: sentText(res.json) }
-  })
-
-  // The system prompt asks Claude to keep the session's title current.
-  on('prompt.compose', async ($, e, next) => {
-    const res = await next(e)
-    if (!conn) return res
-    // minbox's --append-system-prompt may carry the same already.
-    const has = (heading: string) => res.sections.some((s) => s.text.includes(heading))
-    const add = [
-      has('# minbox: inbox') ? null : { id: 'minbox:inbox', text: inboxSection(sendToolName), scope: 'session' as const },
-      has('# minbox: session title') ? null : { id: 'minbox:session-title', text: titleSection(titleToolName), scope: 'session' as const },
-      has('# minbox: opening pages') ? null : { id: 'minbox:open-url', text: openSection(openToolName), scope: 'session' as const },
-    ].filter((s) => s !== null)
-    return add.length ? { ...res, sections: [...res.sections, ...add] } : res
   })
 
   on('tool.call', { tool: `mcp__minbox__${OPEN_TOOL}` }, async ($, e: any) => {

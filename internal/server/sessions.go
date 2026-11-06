@@ -256,14 +256,49 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	} else if sess.ClaudeSessionID != "" {
 		argv = append(argv, "--session-id", sess.ClaudeSessionID)
 	}
-	// The mod adds these to the system prompt too (prompt.compose), but some
-	// environments skip that hook: the command line carries them as well.
-	prompt := AgentSystemPrompt
-	if m.orchestratorPrompt(ctx) {
-		prompt += "\n\n" + OrchestratorPrompt
-	}
-	argv = append(argv, "--append-system-prompt", prompt)
+	argv = append(argv, "--append-system-prompt", m.instructions(ctx))
 	return argv
+}
+
+// instructions is the one text that tells the agent how to work with minbox:
+// AgentSystemPrompt, the orchestration prompt while the orchestrator_prompt
+// setting is on, and the person's prompt_extra setting. The command line
+// (--append-system-prompt) and the hello endpoint (which the mod re-injects
+// into prompts) both use it, so there is a single source.
+func (m *sessionManager) instructions(ctx context.Context) string {
+	stored, err := m.store.Settings(ctx)
+	if err != nil {
+		stored = nil
+	}
+	return buildInstructions(settingOn(stored, "orchestrator_prompt", true), settingString(stored, "prompt_extra"))
+}
+
+// buildInstructions assembles the instructions text from its parts.
+func buildInstructions(orchestrator bool, extra string) string {
+	text := AgentSystemPrompt
+	if orchestrator {
+		text += "\n\n" + OrchestratorPrompt
+	}
+	if extra = strings.TrimSpace(extra); extra != "" {
+		text += "\n\nThe person adds: " + extra
+	}
+	return text
+}
+
+func settingOn(stored map[string]json.RawMessage, key string, def bool) bool {
+	var on bool
+	if raw, ok := stored[key]; ok && json.Unmarshal(raw, &on) == nil {
+		return on
+	}
+	return def
+}
+
+func settingString(stored map[string]json.RawMessage, key string) string {
+	var v string
+	if raw, ok := stored[key]; ok && json.Unmarshal(raw, &v) == nil {
+		return v
+	}
+	return ""
 }
 
 // orchestratorPrompt reports the orchestrator_prompt setting (on unless set to
@@ -273,17 +308,12 @@ func (m *sessionManager) orchestratorPrompt(ctx context.Context) bool {
 	if err != nil {
 		return true
 	}
-	var on bool
-	if raw, ok := stored["orchestrator_prompt"]; ok && json.Unmarshal(raw, &on) == nil {
-		return on
-	}
-	return true
+	return settingOn(stored, "orchestrator_prompt", true)
 }
 
 // OrchestratorPrompt is appended to AgentSystemPrompt while the
 // orchestrator_prompt setting is on: the main agent only orchestrates, one
-// subagent per thread. The hello endpoint returns it too, and the mod repeats
-// it every few prompts.
+// subagent per thread. It is part of the instructions text (see instructions).
 const OrchestratorPrompt = `# minbox: orchestration
 You are the main agent of this session and only orchestrate. ALWAYS start one subagent per thread, whether the change is large or tiny; never do a thread's work yourself and never judge a task too small for a subagent. Unless the person says otherwise, this holds for every thread and message.
 Your job: split the work, brief each subagent fully (goal, files, constraints, how to verify), track progress, review and verify what comes back, merge it, and report in the thread (send_message).
@@ -292,8 +322,8 @@ A subagent that changes anything other than reading (edit files, build, commit) 
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
 // person through the inbox, keep the session's title current, and open pages
-// in the person's browser (the host may be another machine). The mod's
-// inboxSection, titleSection and openSection say the same.
+// in the person's browser (the host may be another machine). The tool names are
+// the mcp__minbox__* names the mod registers.
 const AgentSystemPrompt = `# minbox: inbox
 The person follows this session through the minbox inbox and may not be watching the terminal. mcp__minbox__send_message is how you reach them:
 - Every time you need their opinion, a decision, an approval or an action from them (run or check something, review, choose what comes next), send it with the tool, each decision as a :::question block. Do this every time, also for small questions; a question asked only in your chat reply goes unseen.

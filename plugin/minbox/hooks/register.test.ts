@@ -6,7 +6,7 @@ const SERVER_FILE = '/data/server.json'
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: any[], opts: { extra?: string; orchestrator?: string; hangPolls?: number } = {}) {
+function fakeServer(on: any, pending: any[], opts: { instructions?: string; failHello?: boolean; hangPolls?: number } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
@@ -41,7 +41,10 @@ function fakeServer(on: any, pending: any[], opts: { extra?: string; orchestrato
       if (m[2] === 'delivered') delivered.add(m[1]!)
       return ok({ ok: true })
     }
-    if (url.pathname === '/api/agent/hello') return ok({ session_id: 's', name: 'n', prompt_extra: opts.extra ?? '', orchestrator: opts.orchestrator ?? '' })
+    if (url.pathname === '/api/agent/hello') {
+      if (opts.failHello) return { value: { status: 500, ok: false, headers: {}, text: '{"error":"x"}' } }
+      return ok({ session_id: 's', name: 'n', instructions: opts.instructions ?? '' })
+    }
     if (url.pathname === '/api/agent/cards' && method === 'POST') {
       return { value: { status: 201, ok: true, headers: {}, text: JSON.stringify({ id: 'card_1', title: body.title, column: body.column ?? 'backlog', note: '' }) } }
     }
@@ -175,13 +178,44 @@ test('send_message still forwards the old subject parameter as thread_title', as
   expect(server.calls.find((c) => c.path === '/api/agent/messages')?.body.thread_title).toBe('Old')
 })
 
-test('the first prompt carries the inbox reminder', async ($, on) => {
+test('the first prompt carries the server instructions', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  fakeServer(on, [])
+  fakeServer(on, [], { instructions: 'SERVER-TEXT' })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const res: any = await $.prompt.submit({ text: 'hello' })
-  expect(res.context?.join('\n') ?? '').toContain('minbox inbox is on')
+  expect(res.context).toHaveLength(1)
+  expect(res.context[0]).toContain('minbox: standing instructions (still in force)')
+  expect(res.context[0]).toContain('SERVER-TEXT')
+})
+
+test('without instructions from the hello the first prompt carries a short fallback', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  fakeServer(on, [], { failHello: true })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const res: any = await $.prompt.submit({ text: 'hello' })
+  expect(res.context).toHaveLength(1)
+  expect(res.context[0]).toContain('mcp__minbox__send_message')
+  expect(res.context[0]).not.toContain('standing instructions')
+})
+
+test('after a compaction the instructions come back with the open threads, once', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '100' })
+  fakeServer(on, [], { instructions: 'SERVER-TEXT' })
+  on('session.compact', (_: any, e: any) => ({ messages: e.messages ?? [] }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'one' })
+  const quiet: any = await $.prompt.submit({ text: 'two' })
+  expect(quiet.context ?? []).toHaveLength(0)
+  await ($ as any).session.compact({ messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
+  const res: any = await $.prompt.submit({ text: 'three' })
+  expect(res.context).toHaveLength(2)
+  expect(res.context[0]).toContain('SERVER-TEXT')
+  expect(res.context[1]).toContain('thr_1')
+  const after: any = await $.prompt.submit({ text: 'four' })
+  expect(after.context ?? []).toHaveLength(0)
 })
 
 test('outside minbox nothing is registered', async ($, on) => {
@@ -218,19 +252,10 @@ test('an urgent reply goes in even while Claude works', async ($, on) => {
   expect([...server.delivered]).toEqual(['msg_r1'])
 })
 
-test('the reminder carries the extra instructions from settings', async ($, on) => {
-  mock.clock(on)
-  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  fakeServer(on, [], { extra: 'Reply in Japanese.' })
-  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  const res: any = await $.prompt.submit({ text: 'hello' })
-  expect(res.context?.join('\n') ?? '').toContain('The person adds: Reply in Japanese.')
-})
-
 test('the orchestration prompt rides every Nth prompt, and only when set', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '3' })
-  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  fakeServer(on, [], { instructions: 'ORCH-TEXT' })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const has = async () => {
     const res: any = await $.prompt.submit({ text: 'p' })
@@ -242,7 +267,7 @@ test('the orchestration prompt rides every Nth prompt, and only when set', async
 test('the orchestration prompt defaults to every 20th prompt', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  fakeServer(on, [], { instructions: 'ORCH-TEXT' })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const seen: number[] = []
   for (let i = 1; i <= 20; i++) {
@@ -255,7 +280,7 @@ test('the orchestration prompt defaults to every 20th prompt', async ($, on) => 
 test('the orchestration prompt rides the first prompt after the hello, once', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '100' })
-  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  fakeServer(on, [], { instructions: 'ORCH-TEXT' })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const has = async () => {
     const res: any = await $.prompt.submit({ text: 'p' })
@@ -264,13 +289,22 @@ test('the orchestration prompt rides the first prompt after the hello, once', as
   expect([await has(), await has(), await has()]).toEqual([true, false, false])
 })
 
-test('no orchestration prompt when the hello has none', async ($, on) => {
+test('a prompt never carries the instructions twice', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '1' })
+  fakeServer(on, [], { instructions: 'ORCH-TEXT' })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const res: any = await $.prompt.submit({ text: 'p' })
+  expect(res.context).toHaveLength(1)
+})
+
+test('empty instructions from the hello fall back to the short reminder', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '1' })
   fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const res: any = await $.prompt.submit({ text: 'p' })
-  expect(res.context?.join('\n') ?? '').not.toContain('periodic reminder')
+  expect((res.context?.join('\n') ?? '')).not.toContain('standing instructions')
 })
 
 test('send_message passes attachments and a review; card creates a card', async ($, on) => {
@@ -314,17 +348,11 @@ test('send_message tells Claude what it attached and which images will not show'
   expect(read).toContain('Attached: n.png (/d/uploads/a/n.png) [image]')
 })
 
-test('set_session_title sets the title, and the system prompt asks for it', async ($, on) => {
+test('set_session_title sets the title', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
-  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' }] }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-
-  const composed: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as any)
-  const section = composed.sections.find((s: any) => s.id === 'minbox:session-title')
-  expect(section?.scope).toBe('session')
-  expect(section?.text).toContain('mcp__minbox__set_session_title')
 
   const res: any = await $.tool.call({ tool: 'mcp__minbox__set_session_title', title: '  Fix login redirect  ' } as any)
   const call = server.calls.find((c) => c.path === '/api/agent/title')
@@ -336,16 +364,12 @@ test('open_url opens the page in the browser; Bash opening it on the host is ref
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
-  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' }] }))
   let ran = ''
   on('tool.call', { tool: 'Bash' }, (_: any, e: any) => {
     ran = e.command
     return { result: 'ok' }
   })
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-
-  const composed: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as any)
-  expect(composed.sections.find((s: any) => s.id === 'minbox:open-url')?.text).toContain('mcp__minbox__open_url')
 
   const res: any = await $.tool.call({ tool: 'mcp__minbox__open_url', url: 'https://github.com/o/r/pull/12' } as any)
   expect(server.calls.find((c) => c.path === '/api/agent/open')?.body).toEqual({ url: 'https://github.com/o/r/pull/12' })
@@ -374,21 +398,14 @@ test('opensBrowser: commands that open a page on the host', () => {
   }
 })
 
-test('without prompt.compose the first prompt still carries the title and open_url guidance; compose does not repeat the command line', async ($, on) => {
+test('the mod no longer composes the system prompt: the server owns the text', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   fakeServer(on, [])
-  // The system prompt already holds minbox's --append-system-prompt.
-  on('prompt.compose', () => ({ sections: [{ id: 'append', text: '# minbox: inbox\n…\n\n# minbox: session title\n…\n\n# minbox: opening pages\n…', scope: 'session' }] }))
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' }] }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-
-  const first: any = await $.prompt.submit({ text: 'open the PR', origin: { kind: 'composer' } } as any)
-  const extra = (first.context ?? []).join('\n')
-  expect(extra).toContain('mcp__minbox__open_url')
-  expect(extra).toContain('mcp__minbox__set_session_title')
-
   const composed: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as any)
-  expect(composed.sections.map((s: any) => s.id)).toEqual(['append'])
+  expect(composed.sections.map((s: any) => s.id)).toEqual(['intro'])
 })
 
 test('a turn that asks the person in the chat only is followed by one reminder to use the inbox', async ($, on) => {

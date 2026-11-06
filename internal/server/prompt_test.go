@@ -62,6 +62,45 @@ func TestHelloReturnsOrchestrator(t *testing.T) {
 	}
 }
 
+func TestBuildInstructions(t *testing.T) {
+	if got := buildInstructions(false, ""); got != AgentSystemPrompt {
+		t.Fatalf("off: %q", got)
+	}
+	if got := buildInstructions(true, "  "); got != AgentSystemPrompt+"\n\n"+OrchestratorPrompt {
+		t.Fatalf("on: %q", got)
+	}
+	got := buildInstructions(true, " be brief ")
+	if !strings.HasSuffix(got, "\n\nThe person adds: be brief") || !strings.Contains(got, OrchestratorPrompt) {
+		t.Fatalf("extra: %q", got)
+	}
+	if got := buildInstructions(false, "x"); got != AgentSystemPrompt+"\n\nThe person adds: x" {
+		t.Fatalf("off+extra: %q", got)
+	}
+}
+
+func TestHelloInstructionsMatchArgv(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess := e.createSession()
+	hello := func() map[string]any {
+		_, h, _ := e.do("POST", "/api/agent/hello", map[string]any{}, bearer(sess))
+		return h
+	}
+	h := hello()
+	if h["instructions"] != buildInstructions(true, "") || h["instructions"] != lastPrompt(e.srv.sessions.argv(ctx, sess, true)) {
+		t.Fatalf("hello = %v", h)
+	}
+	_ = e.st.PutSettings(ctx, map[string]json.RawMessage{"orchestrator_prompt": json.RawMessage("false"), "prompt_extra": json.RawMessage(`"be brief"`)})
+	h = hello()
+	want := AgentSystemPrompt + "\n\nThe person adds: be brief"
+	if h["instructions"] != want || lastPrompt(e.srv.sessions.argv(ctx, sess, true)) != want {
+		t.Fatalf("off+extra: hello = %v", h)
+	}
+	if h["prompt_extra"] != "be brief" || h["orchestrator"] != "" {
+		t.Fatalf("compat fields: %v", h)
+	}
+}
+
 func TestArgvResumeVsSessionID(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
