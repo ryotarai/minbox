@@ -236,7 +236,7 @@ test('the orchestration prompt rides every Nth prompt, and only when set', async
     const res: any = await $.prompt.submit({ text: 'p' })
     return (res.context?.join('\n') ?? '').includes('ORCH-TEXT')
   }
-  expect([await has(), await has(), await has(), await has(), await has(), await has()]).toEqual([false, false, true, false, false, true])
+  expect([await has(), await has(), await has(), await has(), await has(), await has()]).toEqual([true, false, true, false, false, true])
 })
 
 test('the orchestration prompt defaults to every 20th prompt', async ($, on) => {
@@ -249,7 +249,19 @@ test('the orchestration prompt defaults to every 20th prompt', async ($, on) => 
     const res: any = await $.prompt.submit({ text: 'p' })
     if ((res.context?.join('\n') ?? '').includes('ORCH-TEXT')) seen.push(i)
   }
-  expect(seen).toEqual([20])
+  expect(seen).toEqual([1, 20])
+})
+
+test('the orchestration prompt rides the first prompt after the hello, once', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE, MINBOX_ORCHESTRATOR_EVERY: '100' })
+  fakeServer(on, [], { orchestrator: 'ORCH-TEXT' })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const has = async () => {
+    const res: any = await $.prompt.submit({ text: 'p' })
+    return (res.context?.join('\n') ?? '').includes('ORCH-TEXT')
+  }
+  expect([await has(), await has(), await has()]).toEqual([true, false, false])
 })
 
 test('no orchestration prompt when the hello has none', async ($, on) => {
