@@ -4,8 +4,7 @@ import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeF
 import { useApp } from '../lib/app'
 import { deleteComposeDraft, getComposeDrafts, saveComposeDraft } from '../lib/drafts'
 import { IconPaperclip } from './icons'
-import { Button, MenuItem, Modal, Popover, StatusDot, cx } from './ui'
-import { waitsOnPerson } from './Sidebar'
+import { Button, MenuItem, Modal, Popover, cx } from './ui'
 
 /** New message: the person starts a thread with one session's Claude Code. */
 export function Compose({ sessionId, draftId, onClose }: { sessionId?: string; draftId?: string; onClose: () => void }) {
@@ -78,7 +77,6 @@ export function Compose({ sessionId, draftId, onClose }: { sessionId?: string; d
           >
             {session ? (
               <>
-                <StatusDot s={session} waits={waitsOnPerson(session)} size={7} ring={false} />
                 Claude Code · {session.name}
                 <span className="text-subtle">{session.status === 'idle' ? 'idle' : session.status}</span>
               </>
@@ -99,7 +97,6 @@ export function Compose({ sessionId, draftId, onClose }: { sessionId?: string; d
                 setToAnchor(null)
               }}
             >
-              <StatusDot s={s} waits={waitsOnPerson(s)} size={7} ring={false} />
               {s.name}
             </MenuItem>
           ))}

@@ -3,9 +3,8 @@ import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
 import { IconBack, IconClose, IconTerminal, IconImage, IconMore } from './icons'
-import { waitsOnPerson } from './Sidebar'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
-import { Segmented, StatusDot, cx, statusOf } from './ui'
+import { Segmented, EndedTag, cx } from './ui'
 import { api } from '../api'
 import { ThreadMoreMenu, ThreadView, unreadElsewhere, useThread } from './ThreadView'
 import { useAllThreads } from './ThreadList'
@@ -74,7 +73,6 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
   const all = useAllThreads()
   const v = useVisibleThreads()
   const siblings = useMemo(() => v.groups.flatMap((g) => g.items), [v.groups])
-  const st = statusOf(session, waitsOnPerson(session))
   const terminal = route.tab === 'terminal'
   const inThread = !terminal && !!route.t
   const home = () => navigate({ t: null, f: null, tab: 'inbox' }, { push: false })
@@ -113,7 +111,6 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 {thread?.subject ?? '…'}
               </span>
               <span data-testid="phone-session-name" className="mono flex max-w-full items-center gap-1.5 text-[11.5px] leading-[18px] text-fg2">
-                <StatusDot s={session} waits={waitsOnPerson(session)} size={6} ring={false} />
                 <span className="truncate">{session.name}</span>
               </span>
             </div>
@@ -162,10 +159,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
               <span className="text-[16px] font-[650]" data-testid="terminal-session-name">
                 {session.name}
               </span>
-              <span className={cx('flex items-center gap-1.5 text-[12px]', st.text)} data-testid="session-status">
-                <StatusDot s={session} waits={waitsOnPerson(session)} size={6} ring={false} />
-                {st.label}
-              </span>
+              {session.status === 'ended' && <EndedTag />}
             </div>
             {session.kind !== 'shell' ? (
               <button

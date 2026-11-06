@@ -59,7 +59,6 @@ test.describe('real Claude Code', () => {
     await page.getByTestId('new-session-start').click()
 
     // The session connects (the mod's hello) once Claude Code is up.
-    const row = page.getByTestId('session-status')
     // First time in a folder, Claude Code asks whether to trust it: the person answers in the terminal.
     await waitTerminal(page, /trust this folder|❯|>/, 60_000)
     if (/trust this folder/.test(await terminalText(page))) {
@@ -67,7 +66,6 @@ test.describe('real Claude Code', () => {
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Enter')
     }
-    await expect(row).toContainText(/Waiting for you|Working/, { timeout: 60_000 })
     await page.waitForTimeout(3000)
     console.log('--- terminal at start ---\n' + (await terminalText(page)))
 
@@ -85,7 +83,6 @@ test.describe('real Claude Code', () => {
     await expect(card).toContainText('Which color should the button be?')
 
     // Wait for Claude's turn to end, then answer.
-    await expect(row).toContainText('Waiting for you', { timeout: 120_000 })
     await card.getByRole('radio', { name: /Red/ }).click()
     await page.getByTestId('reply-box').fill('Then reply in the same thread with exactly: got it, red')
     await page.getByTestId('reply-send').click()
@@ -108,8 +105,6 @@ test.describe('real Claude Code', () => {
     await startServer()
 
     await page.goto(url)
-    const row = page.getByTestId('session-status')
-    await expect(row).toContainText(/Waiting for you|Working/, { timeout: 60_000 })
     // `claude --resume <id>` brings the earlier conversation back.
     await waitTerminal(page, /Color test/, 60_000)
     console.log('--- resumed terminal ---\n' + (await terminalText(page)))

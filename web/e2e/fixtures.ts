@@ -277,7 +277,7 @@ export async function phoneSelectSession(page: Page, name: string, open: 'filter
 }
 
 /** Desktop: the session header's status text. */
-export const sessionStatus = (page: Page) => page.getByTestId('session-status')
+export const sessionEnded = (page: Page) => page.getByTestId('session-ended')
 
 /** Desktop: selects a project in the far-left column ('' or 'All projects' = every project). */
 export async function selectProject(page: Page, name: string) {

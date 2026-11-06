@@ -1,4 +1,4 @@
-import { createSession, expect, expectTerminal, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, sessionEnded, terminalText, test, typeInTerminal } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // Restart of a RUNNING session: stop, wait for the exit, resume with `claude --resume`.
@@ -22,7 +22,7 @@ test('the session menu restarts a running session; the new process gets messages
   await page.getByTestId('menu-restart').click()
 
   // The session carries on (never shown as ended for good) with a new process.
-  await expect(sessionStatus(page)).toContainText('Waiting for you', { timeout: 20_000 })
+  await expect(sessionEnded(page)).toHaveCount(0, { timeout: 20_000 })
   await expect(page.getByTestId('resume')).toHaveCount(0)
   await expect.poll(() => terminalText(page), { timeout: 20_000 }).toMatch(/fake-claude (new|resume) session=[\s\S]*ready>/)
   // The terminal is connected to the new process.
@@ -63,7 +63,7 @@ test('the palette restarts the current running session', async ({ page, minbox }
   await page.getByTestId('palette-input').fill('>restart current')
   await expect(page.getByTestId('palette-item').first()).toContainText('Restart current session')
   await page.keyboard.press('Enter')
-  await expect(sessionStatus(page)).toContainText('Waiting for you', { timeout: 20_000 })
+  await expect(sessionEnded(page)).toHaveCount(0, { timeout: 20_000 })
   await expect(page.getByTestId('resume')).toHaveCount(0)
   await sendQuick(page, 'After palette restart')
   await expectTerminal(page, '<<< inbox [After palette restart]')

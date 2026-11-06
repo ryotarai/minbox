@@ -5,8 +5,8 @@ import { homeRelative } from '../lib/format'
 import { IconBack, IconMore, IconTerminal } from './icons'
 import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
-import { Button, HostTag, IconButton, StatusPill, cx } from './ui'
-import { SessionMenu, waitsOnPerson } from './Sidebar'
+import { Button, HostTag, IconButton, EndedTag, cx } from './ui'
+import { SessionMenu } from './Sidebar'
 
 /** The center column: the session's terminal with its header and the ended bar. */
 export function TerminalPane({ session, onThreads }: { session: Session | null; onThreads?: () => void }) {
@@ -86,9 +86,7 @@ export function TerminalPane({ session, onThreads }: { session: Session | null; 
         )}
         <HostTag name={session.host_name} />
         <span className="mono hidden min-w-0 truncate text-[12px] text-subtle min-[1800px]:inline">{homeRelative(session.cwd)}</span>
-        <span data-testid="session-status" className="flex">
-          <StatusPill s={session} waits={waitsOnPerson(session)} />
-        </span>
+        {session.status === 'ended' && <EndedTag />}
         <span className="flex-1" />
         {size && (
           <span className="sr-only" data-testid="pty-size">

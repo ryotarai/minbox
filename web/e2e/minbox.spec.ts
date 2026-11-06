@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { createSession, expect, expectTerminal, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, selectSession, sessionEnded, terminalText, test, typeInTerminal } from './fixtures'
 
 test('a session runs Claude Code in a terminal next to its inbox', async ({ page, minbox }) => {
   await page.goto(minbox.url)
@@ -7,7 +7,7 @@ test('a session runs Claude Code in a terminal next to its inbox', async ({ page
 
   // The fake claude prints its arguments: a new conversation with our mod.
   await expectTerminal(page, /fake-claude new session=[0-9a-f-]{36}/)
-  await expect(sessionStatus(page)).toContainText('Waiting for you')
+  await expect(sessionEnded(page)).toHaveCount(0)
   await expect(page.getByTestId('threads-pane')).toContainText('No threads yet')
 
   // Typing goes to the PTY.
@@ -102,11 +102,11 @@ test('stopping ends a session; Resume starts it again', async ({ page, minbox })
 
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-stop').click()
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
   await expect(page.getByTestId('resume')).toBeVisible()
 
   await page.getByTestId('resume').click()
-  await expect(sessionStatus(page)).toContainText('Waiting for you')
+  await expect(sessionEnded(page)).toHaveCount(0)
   await expectTerminal(page, /fake-claude (new|resume) session=/)
 })
 
@@ -115,7 +115,7 @@ test('Claude exiting by itself closes the session', async ({ page, minbox }) => 
   await createSession(page, minbox.dataDir, 'quitter')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
 })
 
 test('restarting the server keeps sessions running in the terminal host', async ({ page, minbox }) => {
@@ -128,7 +128,7 @@ test('restarting the server keeps sessions running in the terminal host', async 
   await minbox.start()
   await page.reload()
 
-  await expect(sessionStatus(page)).not.toContainText('Ended')
+  await expect(sessionEnded(page)).toHaveCount(0)
   // The same process: its scrollback is replayed, and it still answers.
   await expectTerminal(page, 'echo: before restart')
   await typeInTerminal(page, 'after restart')
@@ -143,7 +143,7 @@ test('after an OS restart, open sessions resume by themselves; closed ones do no
   await createSession(page, minbox.dataDir, 'closed-one')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
 
   // An OS restart: the server and the terminal host (with every PTY) are gone.
   await minbox.stop()
@@ -152,10 +152,10 @@ test('after an OS restart, open sessions resume by themselves; closed ones do no
   await page.reload()
 
   await selectSession(page, 'open-one')
-  await expect(sessionStatus(page)).not.toContainText('Ended')
+  await expect(sessionEnded(page)).toHaveCount(0)
   await expectTerminal(page, /fake-claude (new|resume) session=/)
   await selectSession(page, 'closed-one')
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
 })
 
 test('a reply written while the session is stopped is delivered after Resume', async ({ page, minbox }) => {
@@ -168,7 +168,7 @@ test('a reply written while the session is stopped is delivered after Resume', a
 
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-stop').click()
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
 
   await row.click()
   await page.getByTestId('reply-box').fill('Great, now write tests')

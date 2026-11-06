@@ -1,4 +1,4 @@
-import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, phoneSelectSession, sessionEnded, terminalText, test, typeInTerminal } from './fixtures'
 
 // Shell sessions (the host's own login shell: a terminal with no inbox) can no longer be created;
 // ones an older build left behind keep working.
@@ -7,7 +7,6 @@ import { createSession, createShellSession, expect, expectTerminal, phoneSelectS
 test('an existing shell session is a plain login shell with no inbox', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createShellSession(page, minbox, 'plain')
-  await expect(sessionStatus(page)).toHaveText('Shell')
   await expect(page.getByTestId('thread-pane')).toBeVisible()
   await typeInTerminal(page, 'echo "kind=$MINBOX_SESSION_ID/$((6*7))"')
   await expectTerminal(page, 'kind=/42') // a real shell, without minbox's mod variables
