@@ -212,7 +212,7 @@ function DiffView({ file, mode, attachmentId, threadId }: { file: ReviewFile; mo
         const here = comments.filter((c) => c.line === line && c.quote === row.text.trim().slice(0, 200))
         return (
           <div key={i}>
-            <div className={cx('group flex cursor-pointer', bg)} onClick={() => setEditing(i)} data-testid="diff-line">
+            <div className={cx('group flex cursor-default', bg)} onClick={() => setEditing(i)} data-testid="diff-line">
               {mode === 'split' ? (
                 <>
                   <span className="w-[52px] shrink-0 pr-3.5 text-right text-faint">{row.old ?? ''}</span>

@@ -101,7 +101,7 @@ export function BoardPage() {
                     onDragEnd={() => setDrag(null)}
                     onClick={() => setEditing(c)}
                     data-testid="board-card"
-                    className={cx('flex cursor-pointer flex-col gap-1.5 rounded-[10px] border bg-raised px-3 py-2.5', onYouCard ? 'border-wait/50' : 'border-line2')}
+                    className={cx('flex cursor-default flex-col gap-1.5 rounded-[10px] border bg-raised px-3 py-2.5', onYouCard ? 'border-wait/50' : 'border-line2')}
                   >
                     <span className={cx('text-[13.5px] leading-[1.45]', onYouCard ? 'font-[650]' : 'font-medium')}>{c.title}</span>
                     {c.note && <span className="text-[12px] leading-[1.45] text-muted">{c.created_by === 'agent' && !c.note.startsWith('Claude') ? `Claude: ${c.note}` : c.note}</span>}
