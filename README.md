@@ -10,7 +10,8 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
   (**working**, **need action**, **finished**) that Claude sets and you can change by hand.
   Filter by Waiting or Unread, group by activity, status or session.
 - **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one; each
-  project has a main session that new threads go to by default.
+  project has a main session that new threads go to by default. Give a project an icon (an emoji
+  or an uploaded image); it replaces the initials on the narrow rail's tiles.
 - **Thread**: Claude's messages with question cards (single, multiple and free-text choice),
   action items, attachments you can annotate, and guided reviews of its changes. Your reply
   reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is

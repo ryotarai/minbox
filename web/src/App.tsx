@@ -9,7 +9,7 @@ import { ThreadPane } from './components/ThreadPane'
 import { ThreadsPane } from './components/ThreadsPane'
 import { DecisionMode, DeleteProject, DeleteSession, DraftsList, Shortcuts, Toasts } from './components/Overlays'
 import { PhoneApp, PhoneShell } from './components/Phone'
-import { ProjectRail } from './components/ProjectRail'
+import { ProjectIconDialog, ProjectRail } from './components/ProjectRail'
 import { selectProject, useSelectedProject } from './lib/projects'
 import { NewSessionDialog } from './components/NewSession'
 import { DeviceGate } from './components/Devices'
@@ -110,6 +110,7 @@ function Root() {
       {overlay?.kind === 'new-session' && <NewSessionDialog projectId={overlay.projectId} onClose={close} />}
       {overlay?.kind === 'new-project' && <NewSessionDialog mode="project" onClose={close} />}
       {overlay?.kind === 'delete-project' && <DeleteProject project={overlay.project} onClose={close} />}
+      {overlay?.kind === 'project-icon' && <ProjectIconDialog project={overlay.project} onClose={close} />}
       {overlay?.kind === 'edit-project' && <NewSessionDialog mode="project-edit" project={overlay.project} onClose={close} />}
       <Toasts />
     </>

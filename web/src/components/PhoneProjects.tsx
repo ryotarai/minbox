@@ -3,7 +3,7 @@ import type { Project } from '../api'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir, useProjectStats, useSelectedProject } from '../lib/projects'
 import { IconClose, IconMore, IconPlus } from './icons'
-import { ProjectBadges, ProjectDot, ProjectMenu, RenameProject } from './ProjectRail'
+import { ProjectBadges, ProjectDot, ProjectIcon, ProjectMenu, RenameProject } from './ProjectRail'
 import { HostTag, cx } from './ui'
 
 /** Phone home header: the selected project; tap opens the project sheet. */
@@ -22,6 +22,7 @@ export function PhoneProjectButton() {
         className="ml-1 flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[10px] border-0 bg-transparent px-2 text-left"
       >
         {project && <ProjectDot stat={stat} size={8} />}
+        {project?.icon && <ProjectIcon icon={project.icon} size={22} />}
         <span data-testid="project-switch-name" className="min-w-0 truncate text-[15px] font-[650]">
           {project ? project.name : 'All projects'}
         </span>
@@ -87,6 +88,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="flex min-w-0 items-center gap-2">
+                    {p.icon && <ProjectIcon icon={p.icon} size={24} />}
                     <span data-testid="project-name" className="min-w-0 flex-1 truncate text-[15.5px] font-medium">
                       {p.name}
                     </span>
