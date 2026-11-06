@@ -3,11 +3,13 @@ import { FitAddon, Ghostty, Terminal as GhosttyTerminal } from 'ghostty-web'
 import { ensureSession, uploadImage } from '../api'
 import { cx } from './ui'
 
-const THEME = {
+const DARK_THEME = {
   background: '#0e0e11',
   foreground: '#d4d4d8',
   cursor: '#f2b14a',
+  cursorAccent: '#0e0e11',
   selectionBackground: '#3a3a42',
+  selectionForeground: '#ededf0',
   black: '#18181c',
   red: '#ff8a70',
   green: '#6fd6a0',
@@ -25,6 +27,35 @@ const THEME = {
   brightCyan: '#a0e8f4',
   brightWhite: '#ededf0',
 }
+
+/** For the light app theme: GitHub Light-like, every color readable on white (bright variants stay dark enough). */
+const LIGHT_THEME = {
+  background: '#ffffff',
+  foreground: '#24292f',
+  cursor: '#b25e00',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#b6d4fb',
+  selectionForeground: '#0b1f3a',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#116329',
+  yellow: '#7d4e00',
+  blue: '#0550ae',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#6e7781',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#1a7f37',
+  brightYellow: '#633c01',
+  brightBlue: '#0969da',
+  brightMagenta: '#6639ba',
+  brightCyan: '#3192aa',
+  brightWhite: '#424a53',
+}
+
+const isLight = () => document.documentElement.dataset.theme === 'light'
+const currentTheme = () => (isLight() ? LIGHT_THEME : DARK_THEME)
 
 /**
  * Text size zooms the page (CSS zoom on #root). ghostty-web turns mouse
@@ -142,6 +173,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
     let term: GhosttyTerminal | null = null
     let fit: FitAddon | null = null
     let observer: ResizeObserver | null = null
+    let themeObserver: MutationObserver | null = null
     let untouch: (() => void) | null = null
     const enc = new TextEncoder()
     // Every view tells the host the size it would fit; the PTY takes the
@@ -211,7 +243,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         ghostty,
         fontSize,
         fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
-        theme: THEME,
+        theme: currentTheme(),
         cursorBlink: false,
         scrollback: 10000,
       })
@@ -226,6 +258,19 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       // For end-to-end tests: the terminal draws on a canvas, so its text is read from the buffer.
       // The companion shell is kept apart, so it never replaces the session's own terminal here.
       ;(window as unknown as Record<string, GhosttyTerminal | undefined>)[testKey] = term
+      // Follow the app theme live: the renderer takes a new palette, then everything is repainted.
+      const applyTheme = () => {
+        const theme = currentTheme()
+        el.dataset.termTheme = isLight() ? 'light' : 'dark'
+        el.dataset.termBg = theme.background
+        const r = (term as unknown as { renderer?: { setTheme(t: unknown): void } }).renderer
+        if (!r) return
+        r.setTheme(theme)
+        redraw(term)
+      }
+      applyTheme()
+      themeObserver = new MutationObserver(applyTheme)
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
       api.current = { send, focus: () => term?.focus() }
 
@@ -664,6 +709,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       untouch?.()
       ime.remove()
       observer?.disconnect()
+      themeObserver?.disconnect()
       ws?.close()
       const w = window as unknown as Record<string, GhosttyTerminal | undefined>
       if (w[testKey] === term) delete w[testKey]
