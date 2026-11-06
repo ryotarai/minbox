@@ -507,7 +507,8 @@ const quickDrafts = new Map<string, string>()
 
 function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; full: boolean; onToggleFull: () => void; onSent: (t: Thread) => void }) {
   const { error, route, navigate } = useApp()
-  const { id: projectId } = useSelectedProject()
+  const { id: projectId, project } = useSelectedProject()
+  const { reloadSessions, reloadProjects } = useApp()
   const target = useComposeTarget()
   const key = target?.id ?? ''
   const [body, setBodyState] = useState(() => quickDrafts.get(key) ?? '')
@@ -536,13 +537,20 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
   const canSend = (!!body.trim() || hasFiles) && !uploading && !sending
   const send = async (to: Session | null = target) => {
     if (sending || uploading || (!body.trim() && !hasFiles)) return
-    if (!to) {
-      // No session in this project yet: start one, then send into it (NewSessionDialog's onCreated).
+    if (!to && !project) {
+      // All projects, no session at all: the dialog asks where (its onCreated sends).
       setCreating(true)
       return
     }
     setSending(true)
     try {
+      if (!to && project) {
+        // The project has no session yet: start its main session in the project's folder and host, no dialog.
+        to = await api.createSessionIn(project.id, project.name, 'claude', true)
+        setComposeTarget(to.id, to.id)
+        await Promise.all([reloadSessions(), reloadProjects()])
+      }
+      if (!to) return
       const th = await api.createThread(to.id, '', body.trim(), undefined, uploadIds(filesId))
       clearFiles(filesId)
       quickDrafts.delete(key)
@@ -555,7 +563,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
     }
   }
   const hint = !target
-    ? 'Sending starts a new session'
+    ? 'Sending starts the main session'
     : target.status === 'ended'
       ? 'Session ended: Claude gets this after Resume'
       : target.status === 'working'

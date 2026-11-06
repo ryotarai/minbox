@@ -290,16 +290,27 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
         }
         // The replay is drawn once the PTY's size is known (it comes after it).
         let held: (Uint8Array | string)[] | null = []
+        // ghostty-web copies each write into the wasm heap in one piece; the replay can be 2 MB, which
+        // has thrown "offset is out of bounds" there. Feed it in slices, and never let a failed write
+        // end the message handler.
+        const put = (d: Uint8Array | string) => {
+          try {
+            if (typeof d === 'string') term?.write(d)
+            else for (let i = 0; i < d.length; i += 32 * 1024) term?.write(d.subarray(i, i + 32 * 1024))
+          } catch (err) {
+            console.warn('minbox: terminal write failed', err)
+          }
+        }
         const flush = () => {
           if (!held || sock !== ws) return // an abandoned socket must not reset the new one's screen
-          if (reconnecting) term?.write('\x1bc') // RIS: the replay starts from a clean screen
-          for (const d of held) term?.write(d)
+          if (reconnecting) put('\x1bc') // RIS: the replay starts from a clean screen
+          for (const d of held) put(d)
           held = null
         }
         setTimeout(flush, 1500)
         const write = (d: Uint8Array | string) => {
           if (held) held.push(d)
-          else term?.write(d)
+          else put(d)
         }
         sock.onmessage = (e) => {
           if (sock !== ws) return
