@@ -223,3 +223,24 @@ the selected session) since the list is global.
   thread row and in the thread header (pulsing blue dot, amber dot, muted check). "Waiting" (chip, badges, rails,
   palette) is `need_action`. Grouping "Status" lists Needs action, Working, Blocked, Finished. The thread's More menu has
   "Mark as ...". There is no Working filter chip (keeps the chip row short on phones).
+
+## Diagrams and annotating images in the composer
+
+A pencil-on-shapes button (`compose-draw`, "Draw a diagram") sits right of the paperclip in both composers (new
+thread and reply). It opens a modal (90vw x 90vh, full screen on a phone) with a plain React + SVG editor
+(`web/src/components/Sketch.tsx`, helpers in `web/src/lib/sketch.ts`; no libraries).
+
+- Tools: select/move (corner handles on rectangles and ellipses, end handles on lines and arrows), rectangle,
+  ellipse, line, arrow, text (click, type, Enter; double-click to edit), pen, eraser. Stroke color palette, three
+  widths, fill, undo/redo (Cmd/Ctrl+Z, +Shift), clear, Delete for the selection. Shift snaps lines to 45 degrees and
+  shapes to squares. Pointer Events, so touch works. Esc closes (asks first if the drawing changed); Cmd/Ctrl+Enter
+  is Done.
+- Done rasterizes the SVG to a PNG (2x, white background, cropped to the content plus a margin) and adds it like a
+  pasted image (`sketch-YYYYMMDD-HHMMSS.png`, uploaded, tile shown).
+- Editing before sending: the tile keeps the scene (`ComposeFile.sketch`, client state only, not persisted in the
+  draft) and shows **Edit**; Done uploads the new PNG and drops the old entry.
+- Annotate: a raster image tile (png, jpeg, webp, gif) added in this page load shows **Annotate**. The image is the
+  untouched background layer (scene units = image pixels), the tools draw on top, and Done replaces the tile with
+  `<name>-annotated.png` at the image's natural resolution. The background stays in the scene, so Edit keeps working.
+  Images only known from a reloaded draft (no local copy) have no Annotate.
+- Tests: `web/e2e/sketch.spec.ts`.

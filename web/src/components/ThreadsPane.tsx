@@ -6,6 +6,7 @@ import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/dr
 import { useHotkeys } from '../lib/hotkeys'
 import { setComposeTarget, setThreadFilter, useComposeTargetPick, useThreadFilter, type ThreadFilter } from '../lib/threadFilter'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
+import { SketchButton } from './Sketch'
 import { IconBoard, IconBolt, IconChevronRight, IconExpand, IconInbox, IconMoreV, IconPaperclip, IconPlus, IconSearch, IconSettings } from './icons'
 import { CompletingTextarea } from './Compose'
 import { ConnectionBanner } from './Banners'
@@ -527,7 +528,8 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const filesId = `quick:${key}`
-  const { files, addFiles, addPastedText, remove: removeFile } = useComposeFiles(filesId)
+  const compose = useComposeFiles(filesId)
+  const { files, addFiles, addPastedText, remove: removeFile } = compose
   const io = fileInputHandlers(addFiles, addPastedText)
   const uploading = files.some((f) => f.state === 'uploading')
   const hasFiles = files.some((f) => f.state === 'done')
@@ -636,6 +638,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
         <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileRef.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
           <IconPaperclip />
         </button>
+        <SketchButton compose={compose} />
         <input
           ref={fileRef}
           type="file"
