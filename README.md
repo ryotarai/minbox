@@ -258,7 +258,7 @@ cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts   # re
 
 The e2e suites start their own servers on free ports, so several can run at once, and their cleanup kills only their own fake-claude processes.
 
-The suite runs fully parallel with 8 workers (about 45 s instead of 2.5 min). Pick another count with `PW_WORKERS=4 npx playwright test` or `--workers=N`; much above 10 on a laptop makes timing-sensitive tests flaky, and fewer is kinder when other suites run on the same machine. Run one spec with `npx playwright test e2e/shell-pane.spec.ts` (add `-g "part of the title"` for one test); the binary embeds the web assets, so `make build` first.
+The suite runs fully parallel with 6 workers (about 55 s instead of 2.5 min; 8 workers give about 43 s but threads-first turns flaky on a busy machine). Pick another count with `PW_WORKERS=4 npx playwright test` or `--workers=N`; much above 8 on a laptop makes timing-sensitive tests flaky, and fewer is kinder when other suites run on the same machine. Run one spec with `npx playwright test e2e/shell-pane.spec.ts` (add `-g "part of the title"` for one test); the binary embeds the web assets, so `make build` first.
 
 Contributing: do not add or lock an npm package version published less than 72 hours ago
 (`web/.npmrc` enforces it for `npm install`); see [CLAUDE.md](CLAUDE.md).
