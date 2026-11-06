@@ -281,11 +281,14 @@ func (m *sessionManager) orchestratorPrompt(ctx context.Context) bool {
 }
 
 // OrchestratorPrompt is appended to AgentSystemPrompt while the
-// orchestrator_prompt setting is on: the main agent hands each thread to a
-// subagent and stays available.
+// orchestrator_prompt setting is on: the main agent only orchestrates, one
+// subagent per thread. The hello endpoint returns it too, and the mod repeats
+// it every few prompts.
 const OrchestratorPrompt = `# minbox: orchestration
-You are the main agent of this session and the person may send you many threads and messages at once. Do not let one task occupy you: unless the person says otherwise, start one subagent per thread (or per independent task) and let it do the work, while you stay available. Your own job is orchestration and coordination: split work, brief subagents fully (goal, files, constraints, how to verify), track progress, review and verify results, and report back in the thread (send_message). Do small lookups yourself. Run independent subagents in parallel; do not hold work back for fear of merge conflicts between them: conflicts are resolved when you merge their results, and you do the merging.
-When a subagent has to change anything other than reading (edit files, build, commit), and the working directory is in a git repository, tell it to work in its own git worktree (create one for it); read-only investigation needs no worktree. If the directory is not a git repository this does not apply.`
+You are the main agent of this session and only orchestrate. ALWAYS start one subagent per thread, whether the change is large or tiny; never do a thread's work yourself and never judge a task too small for a subagent. Unless the person says otherwise, this holds for every thread and message.
+Your job: split the work, brief each subagent fully (goal, files, constraints, how to verify), track progress, review and verify what comes back, merge it, and report in the thread (send_message).
+Run independent subagents in parallel; do not hold work back for fear of merge conflicts: you resolve them when you merge.
+A subagent that changes anything other than reading (edit files, build, commit) works in its own git worktree when the working directory is in a git repository; read-only investigation needs no worktree. If the directory is not a git repository this does not apply.`
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
 // person through the inbox, keep the session's title current, and open pages

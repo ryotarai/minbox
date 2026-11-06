@@ -613,7 +613,12 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if st, err := s.settings(ctx); err == nil {
 		extra, _ = st["prompt_extra"].(string)
 	}
-	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "prompt_extra": extra})
+	// The mod repeats the orchestrator prompt every few prompts (models forget the first instruction).
+	orch := ""
+	if s.sessions.orchestratorPrompt(ctx) {
+		orch = OrchestratorPrompt
+	}
+	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "prompt_extra": extra, "orchestrator": orch})
 }
 
 func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store.Session) {

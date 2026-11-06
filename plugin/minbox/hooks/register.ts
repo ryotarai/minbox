@@ -40,6 +40,7 @@ import {
   asksPerson,
   inboxSection,
   nudgeText,
+  orchestratorReminderText,
   replyNudgeText,
   reminderText,
   sentText,
@@ -56,6 +57,8 @@ import {
 } from './text'
 
 const TICK_MS = 1000
+/** The orchestration prompt is repeated on every Nth prompt (models forget the first instruction). MINBOX_ORCHESTRATOR_EVERY overrides it. */
+const ORCHESTRATOR_EVERY = 5
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
 /** Every call gives up after this (the long poll waits POLL_WAIT_S on the server, plus a margin). */
@@ -88,6 +91,10 @@ let openToolName = `mcp__minbox__${OPEN_TOOL}`
 /** The tools whose use the reminder repeats from the system prompt. */
 const guided = () => ({ title: titleToolName, open: openToolName })
 let promptExtra: string | null = null
+/** The orchestration prompt from the hello (null: off). */
+let orchestrator: string | null = null
+/** Prompts seen in this session. */
+let promptCount = 0
 let helloing: Promise<void> | null = null
 let timer: { cancel(): void } | null = null
 let busy = false
@@ -180,6 +187,7 @@ async function hello($: any): Promise<void> {
     if (res.ok) {
       lastClaudeSessionId = id
       promptExtra = typeof res.json?.prompt_extra === 'string' ? res.json.prompt_extra : null
+      orchestrator = typeof res.json?.orchestrator === 'string' && res.json.orchestrator ? res.json.orchestrator : null
     }
   }
 }
@@ -341,8 +349,11 @@ export const register: Register = (on) => {
       idleTicks = 0 // the person typed: their turn goes first
       nudgeNext = false // and they answered in the chat
     }
-    if (!remindNext && !threadsNext) return next(e)
-    if (helloing) await helloing.catch(() => {}) // prompt_extra comes with the hello
+    promptCount++
+    if (helloing) await helloing.catch(() => {}) // prompt_extra and orchestrator come with the hello
+    const every = Number(await $.env.get('MINBOX_ORCHESTRATOR_EVERY')) || ORCHESTRATOR_EVERY
+    const periodic = orchestrator && promptCount % every === 0 ? orchestratorReminderText(orchestrator) : null
+    if (!remindNext && !threadsNext) return periodic ? next({ ...e, context: [...(e.context ?? []), periodic] }) : next(e)
     let extra: string | null = null
     if (threadsNext) {
       const res = await api($, 'GET', '/api/agent/threads')
@@ -351,7 +362,8 @@ export const register: Register = (on) => {
     extra ??= remindNext || threadsNext ? reminderText(sendToolName, promptExtra, guided()) : null
     remindNext = false
     threadsNext = false
-    return extra ? next({ ...e, context: [...(e.context ?? []), extra] }) : next(e)
+    const added = [extra, periodic].filter((t): t is string => !!t)
+    return added.length ? next({ ...e, context: [...(e.context ?? []), ...added] }) : next(e)
   })
 
   on('tool.call', { tool: `mcp__minbox__${SEND_TOOL}` }, async ($, e: any) => {

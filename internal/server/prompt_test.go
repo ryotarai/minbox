@@ -27,7 +27,7 @@ func TestOrchestratorPromptSetting(t *testing.T) {
 	if !strings.HasPrefix(p, AgentSystemPrompt) || !strings.Contains(p, OrchestratorPrompt) {
 		t.Fatalf("prompt = %q", p)
 	}
-	for _, want := range []string{"one subagent per thread", "own git worktree", "merge conflicts", "you do the merging", "not a git repository"} {
+	for _, want := range []string{"ALWAYS start one subagent per thread", "own git worktree", "merge conflicts", "you resolve them when you merge", "not a git repository"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("prompt lacks %q", want)
 		}
@@ -44,6 +44,21 @@ func TestOrchestratorPromptSetting(t *testing.T) {
 	_ = e.st.PutSettings(ctx, map[string]json.RawMessage{"orchestrator_prompt": json.RawMessage(`"x"`)})
 	if p := lastPrompt(e.srv.sessions.argv(ctx, sess, true)); !strings.Contains(p, "# minbox: orchestration") {
 		t.Fatalf("junk: prompt = %q", p)
+	}
+}
+
+func TestHelloReturnsOrchestrator(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess := e.createSession()
+	_, hello, _ := e.do("POST", "/api/agent/hello", map[string]any{}, bearer(sess))
+	if hello["orchestrator"] != OrchestratorPrompt {
+		t.Fatalf("on: hello = %v", hello)
+	}
+	_ = e.st.PutSettings(ctx, map[string]json.RawMessage{"orchestrator_prompt": json.RawMessage("false")})
+	_, hello, _ = e.do("POST", "/api/agent/hello", map[string]any{}, bearer(sess))
+	if v, ok := hello["orchestrator"]; !ok || v != "" {
+		t.Fatalf("off: hello = %v", hello)
 	}
 }
 
