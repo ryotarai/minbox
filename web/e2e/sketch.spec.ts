@@ -264,6 +264,43 @@ test('draw on an attached image; the tile becomes the annotated PNG', async ({ p
   expect([img.w, img.h]).toEqual([400, 300])
 })
 
+test('tile icons never overlap the file name (long name, narrow quick compose)', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'sk5')
+  await expectTerminal(page, 'ready>')
+  const b64 = await page.evaluate(() => {
+    const c = document.createElement('canvas')
+    c.width = 40
+    c.height = 30
+    c.getContext('2d')!.fillRect(0, 0, 40, 30)
+    return c.toDataURL('image/png').split(',')[1]
+  })
+  // The quick compose has no file input: paste a file with a long name into it.
+  await page.getByTestId('quick-body').evaluate((el, data) => {
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+    const dt = new DataTransfer()
+    dt.items.add(new File([bytes], 'pasted-image-2026-11-06-1027-with-a-very-long-descriptive-name.png', { type: 'image/png' }))
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+  }, b64)
+  const tile = page.getByTestId('compose-file')
+  await expect(tile).toHaveAttribute('data-state', 'done')
+  await expect(tile.getByTestId('file-annotate')).toBeVisible()
+  const name = tile.getByText(/pasted-image-2026/)
+  const quick = (await page.getByTestId('quick-body').boundingBox())!
+  expect(quick.width).toBeLessThan(400)
+  const n = (await name.boundingBox())!
+  const clear = async (l: Locator) => {
+    const r = (await l.boundingBox())!
+    expect(r.x).toBeGreaterThanOrEqual(n.x + n.width - 0.5)
+  }
+  await clear(tile.getByTestId('file-annotate'))
+  await clear(tile.getByRole('button', { name: /Remove/ }))
+  const t = (await tile.boundingBox())!
+  const x = (await tile.getByRole('button', { name: /Remove/ }).boundingBox())!
+  expect(x.x + x.width).toBeLessThanOrEqual(t.x + t.width + 0.5)
+})
+
 test('Option/Alt-drag duplicates a shape; an Alt-click does not', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1500, height: 900 })
   await page.goto(minbox.url)
