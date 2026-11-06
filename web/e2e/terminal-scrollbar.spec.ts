@@ -8,10 +8,14 @@ test('the terminal scrolls with the wheel and never paints a scrollbar', async (
   await expectTerminal(page, 'ready>')
   await page.getByTestId('shell-toggle').click()
   const pane = page.getByTestId('shell-pane').getByTestId('terminal')
+  // Typing before the shell has printed its prompt loses the keys under load.
+  await expect.poll(() => terminalText(page, 'shell'), { timeout: 15_000 }).toContain('❯')
   await pane.click()
   await page.keyboard.type('seq 1 300; echo done-$((6*7))')
   await page.keyboard.press('Enter')
   await expect.poll(() => terminalText(page, 'shell'), { timeout: 15_000 }).toContain('done-42')
+  // The seq output itself (its last line) is on screen, so the scrollback exists before we scroll.
+  await expect.poll(() => terminalText(page, 'shell')).toMatch(/^300$/m)
 
   const state = () =>
     page.evaluate(() => {
@@ -33,7 +37,14 @@ test('the terminal scrolls with the wheel and never paints a scrollbar', async (
   await pane.hover()
   await page.mouse.wheel(0, -600)
   await expect.poll(async () => (await state()).viewportY, { timeout: 5000 }).toBeGreaterThan(0)
-  await page.waitForTimeout(500) // past the 200 ms fade-in
-  // Sampled while the scroll would have faded the bar in (it stays up 1.5 s).
-  expect((await state()).colors).toBe(1)
+  // A real bar fades in within ~100 ms of the wheel event and stays up 1.5 s: a hidden one must stay
+  // single-coloured at every sample across the whole window, not just at one instant.
+  const deadline = Date.now() + 2000
+  let samples = 0
+  while (Date.now() < deadline) {
+    expect((await state()).colors, `sample ${samples}`).toBe(1)
+    samples++
+    await page.waitForTimeout(50)
+  }
+  expect(samples).toBeGreaterThan(5)
 })
