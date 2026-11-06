@@ -6,8 +6,7 @@ import { fuzzyFields } from '../lib/fuzzy'
 import { selectProject, shortDir, useProjectStats } from '../lib/projects'
 import { ProjectDot } from './ProjectRail'
 import { IconSearch } from './icons'
-import { Kbd, Modal, StatusDot, cx } from './ui'
-import { sectionOf, waitsOnPerson } from './Sidebar'
+import { Kbd, Modal, cx } from './ui'
 
 // ⌘K: one list of actions, sessions and threads, narrowed as you type. ">" shows only actions,
 // "@" only sessions, "#" only threads, "!" only projects. Enter runs the highlighted row.
@@ -189,7 +188,6 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const sessionItems = useMemo<Item[]>(
     () =>
       (sessions ?? []).map((s: Session) => {
-        const waits = waitsOnPerson(s)
         return {
           kind: 'session' as const,
           id: s.id,
@@ -197,9 +195,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
           detail: (projectName(s.project_id) ? `${projectName(s.project_id)} · ` : '') + homeRelative(s.cwd) + (s.host_name ? ` · ${s.host_name}` : ''),
           projectName: projectName(s.project_id),
           keywords: [s.title, s.kind === 'shell' ? 'shell' : 'claude', s.archived_at ? 'archived' : ''].filter(Boolean).join(' '),
-          leading: <StatusDot s={s} waits={waits} size={8} ring={false} />,
           unread: s.unread > 0,
-          waiting: ATTENTION.includes(sectionOf(s)),
+          waiting: false,
           run: () => {
             remember({ k: 'session', id: s.id })
             navigate({ s: s.id, t: null, f: null, view: 'main', tab: isTablet && s.kind === 'shell' ? 'terminal' : 'inbox' })

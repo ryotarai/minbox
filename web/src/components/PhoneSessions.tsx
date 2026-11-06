@@ -5,8 +5,8 @@ import { homeRelative } from '../lib/format'
 import { setThreadFilter, useThreadFilter } from '../lib/threadFilter'
 import { useSelectedProject } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconClose, IconMore, IconPlus, IconTerminal } from './icons'
-import { SessionMenu, groupSessions, waitsOnPerson } from './Sidebar'
-import { HostTag, StatusDot, cx, statusOf } from './ui'
+import { SessionMenu, groupSessions } from './Sidebar'
+import { EndedTag, HostTag, cx } from './ui'
 
 /**
  * Phone: the session picker. It is a sheet over the thread list: choosing a session filters the
@@ -96,7 +96,6 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
   const { error, reloadSessions } = useApp()
   const [name, setName] = useState(s.name)
   const ref = useRef<HTMLDivElement>(null)
-  const st = statusOf(s, waitsOnPerson(s))
   return (
     <div
       ref={ref}
@@ -120,7 +119,6 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
       ) : (
         <button type="button" onClick={onOpen} className={cx('flex min-w-0 flex-1 flex-col gap-1 border-0 bg-transparent pl-3.5 pr-1 text-left', strong ? 'py-3' : 'py-2.5')}>
           <div className="flex items-center gap-2">
-            <StatusDot s={s} waits={strong ?? false} size={9} ring={!!strong} />
             <span data-testid="session-name" className={cx('min-w-0 flex-1 truncate', strong ? 'text-[16px] font-[650]' : 'text-[15.5px] font-medium', s.status === 'ended' && 'text-muted')}>
               {s.name}
             </span>
@@ -137,14 +135,12 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
             )}
           </div>
           {s.title && (
-            <span data-testid="session-title" className={cx('truncate pl-[17px] text-[14.5px] font-semibold', s.status === 'ended' ? 'text-muted' : 'text-fg')}>
+            <span data-testid="session-title" className={cx('truncate text-[14.5px] font-semibold', s.status === 'ended' ? 'text-muted' : 'text-fg')}>
               {s.title}
             </span>
           )}
-          <div className="flex gap-2 pl-[17px] text-[13px]">
-            <span className={cx('shrink-0', st.text, strong && 'font-medium')} data-testid="session-status">
-              {st.label}
-            </span>
+          <div className="flex gap-2 text-[13px]">
+            {s.status === 'ended' && <EndedTag className="text-[13px]" />}
             <span className="mono truncate text-[12px] text-subtle">{homeRelative(s.cwd)}</span>
           </div>
         </button>

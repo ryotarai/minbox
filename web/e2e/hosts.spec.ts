@@ -68,7 +68,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await page.getByTestId('host-remove-confirm').click()
     await expect(page.getByTestId('host-row')).toHaveCount(1)
     await page.getByTestId('settings-back').click()
-    await expect(page.getByTestId('session-status')).toContainText('Ended')
+    await expect(page.getByTestId('session-ended')).toBeVisible()
   } finally {
     host?.kill('SIGTERM')
     host = null

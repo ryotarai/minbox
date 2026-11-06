@@ -1,17 +1,13 @@
 import { useState } from 'react'
-import { ATTENTION, SECTION_ORDER, api, type Section, type Session } from '../api'
-import { attentionOf, useApp } from '../lib/app'
+import { SECTION_ORDER, api, type Section, type Session } from '../api'
+import { useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
 import { IconInbox } from './icons'
-import { Button, MenuItem, MenuSep, Popover, StatusDot } from './ui'
+import { Button, MenuItem, MenuSep, Popover } from './ui'
 
 export function sectionOf(s: Session): Section {
   if (s.archived_at) return 'archived'
   return s.section ?? (s.waiting > 0 ? 'waiting' : s.unread > 0 ? 'new' : 'quiet')
-}
-
-export function waitsOnPerson(s: Session): boolean {
-  return ATTENTION.includes(sectionOf(s)) || attentionOf(s) > 0
 }
 
 export function groupSessions(sessions: Session[]): { section: Section; rows: Session[] }[] {
@@ -174,7 +170,6 @@ export function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
   return (
     <div className="rounded-lg bg-sel px-2.5 py-2">
       <div className="flex items-center gap-2">
-        <StatusDot s={s} waits={false} ring={false} />
         <input
           aria-label="Session name"
           data-testid="rename-input"

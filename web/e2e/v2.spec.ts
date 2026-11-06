@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionStatus, terminalText, test, typeInTerminal } from './fixtures'
+import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionEnded, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
 // attachments and reviews, search, settings, Board, Decision mode, phone.
@@ -196,7 +196,7 @@ test('an ended session can be archived; Resume brings it back', async ({ page, m
   await createSession(page, minbox.dataDir, 'old')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'exit')
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-archive').click()
   const archived = async () => (await (await page.request.get(minbox.url + '/api/sessions')).json())[0].archived_at
@@ -208,7 +208,7 @@ test('an ended session can be archived; Resume brings it back', async ({ page, m
   await page.getByTestId('session-menu').click()
   await page.getByTestId('menu-restart').click()
   await expect.poll(archived).toBeFalsy()
-  await expect(sessionStatus(page)).not.toContainText('Ended')
+  await expect(sessionEnded(page)).toHaveCount(0)
   await page.getByTestId('session-filter').click()
   await expect(page.getByTestId('session-option').filter({ hasText: 'old' })).toHaveCount(1)
 })
@@ -329,7 +329,7 @@ test('pin, snooze, forward to another session, list options, and the settings pa
   // alpha ends; a reply to it can go to beta instead.
   await page.getByTestId('terminal').click()
   await typeInTerminal(page, 'exit')
-  await expect(sessionStatus(page)).toContainText('Ended')
+  await expect(sessionEnded(page)).toBeVisible()
   await openThread(page, 'Note')
   await page.getByTestId('reply-box').fill('Please take this over')
   await page.getByTestId('reply-send').click()

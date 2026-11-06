@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { THREAD_STATUS_LABEL, type Session, type ThreadStatus } from '../api'
+import { THREAD_STATUS_LABEL, type ThreadStatus } from '../api'
 
 export function cx(...v: (string | false | null | undefined)[]): string {
   return v.filter(Boolean).join(' ')
@@ -42,32 +42,12 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
   return <kbd className={cx('rounded border border-linestrong px-1 text-[10.5px] leading-4 text-subtle', className)}>{children}</kbd>
 }
 
-const STATUS = {
-  wait: { label: 'Waiting for you', dot: 'bg-wait', text: 'text-wait', ring: 'shadow-[0_0_0_3px_color-mix(in_srgb,var(--mb-wait)_22%,transparent)]' },
-  idle: { label: 'Waiting for you', dot: 'bg-fg2', text: 'text-muted', ring: '' },
-  work: { label: 'Working', dot: 'bg-work', text: 'text-work', ring: 'shadow-[0_0_0_3px_color-mix(in_srgb,var(--mb-work)_18%,transparent)]' },
-  start: { label: 'Starting', dot: 'border-[1.5px] border-muted', text: 'text-muted', ring: '' },
-  shell: { label: 'Shell', dot: 'bg-fg2', text: 'text-muted', ring: '' },
-  end: { label: 'Ended', dot: 'border-[1.5px] border-faint', text: 'text-subtle', ring: '' },
-}
-
-/** How a session's state shows: filled amber when it waits on the person. */
-export function statusOf(s: Session, waitsOnPerson: boolean) {
-  if (s.status === 'ended') return STATUS.end
-  if (s.kind === 'shell') return STATUS.shell
-  if (s.status === 'starting') return STATUS.start
-  if (s.status === 'working') return STATUS.work
-  return waitsOnPerson ? STATUS.wait : STATUS.idle
-}
-
-export function StatusDot({ s, waits, size = 8, ring = true }: { s: Session; waits: boolean; size?: number; ring?: boolean }) {
-  const st = statusOf(s, waits)
+/** A session that has ended (and can be resumed): plain muted label. */
+export function EndedTag({ className }: { className?: string }) {
   return (
-    <span
-      aria-hidden="true"
-      style={{ width: size, height: size }}
-      className={cx('inline-block shrink-0 rounded-full box-border', st.dot, ring && st.ring, s.status === 'working' && 'mb-pulse')}
-    />
+    <span data-testid="session-ended" className={cx('shrink-0 text-[12px] text-subtle', className)}>
+      Ended
+    </span>
   )
 }
 
@@ -93,17 +73,6 @@ export function ThreadStatusBadge({ status, className }: { status: ThreadStatus;
         <span aria-hidden="true" className={cx('inline-block h-[6px] w-[6px] rounded-full', status === 'working' ? 'mb-pulse bg-work' : 'bg-wait')} />
       )}
       {THREAD_STATUS_LABEL[status]}
-    </span>
-  )
-}
-
-export function StatusPill({ s, waits }: { s: Session; waits: boolean }) {
-  const st = statusOf(s, waits)
-  const bg = waits && s.status === 'idle' ? 'bg-wait/12' : s.status === 'working' ? 'bg-work/12' : 'bg-chip'
-  return (
-    <span className={cx('inline-flex h-[22px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-semibold', bg, st.text)}>
-      <StatusDot s={s} waits={waits} size={6} ring={false} />
-      {st.label}
     </span>
   )
 }

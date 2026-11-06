@@ -59,7 +59,7 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
 **Filter row**: chips `All n`, `Waiting n` (stopped + holding + waiting sections: threads needing the person),
 `Unread n`, then `Session: All v` and a `Group v` button.
 
-- *Session filter* popover: searchable list of all sessions (status dot, name, host tag, waiting/unread count),
+- *Session filter* popover: searchable list of all sessions (name, host tag, waiting/unread count),
   `All sessions` on top, `+ New session` at the bottom. Choosing a session filters the list **and** selects it
   (terminal switches, so shell sessions with no threads are reachable here). Choosing `All sessions` only clears
   the filter. The filter persists in this browser (`minbox:v2-filter`).
@@ -126,7 +126,7 @@ removed; an old `rail` value in `minbox:layout` is ignored.
 
 ## 2. Terminal pane (right) and session header
 
-Header: session name (double-click or menu > Rename), Claude's title, cwd, status pill; right side:
+Header: session name (double-click or menu > Rename), Claude's title, cwd, `Ended` label when the session ended; right side:
 shell toggle (Ctrl+`), `...` session menu (Rename, Stop / Resume, Archive, Delete). The ended bar with
 `Resume` stays in the terminal. The `toggle-inbox` button is gone.
 
@@ -150,7 +150,7 @@ the session filter popover, Cmd+K > a session, the project's main session.
 
 - Target default: the session of the open/selected thread (`route.s`); if the person picks another one it
   sticks until they select a different session; if `route.s` is a shell, the last used Claude session.
-- Popover: search box, sessions sorted by activity with status dot (shell sessions excluded, ended ones
+- Popover: search box, sessions sorted by activity (shell sessions excluded, ended ones
   marked and still allowed: the message waits for Resume), and `+ New session...` at the bottom.
 - `+ New session...` opens the existing NewSession dialog. On creation the composer targets the new session
   and, if text was already typed, **sends it there right away** as the first thread (selecting it). Otherwise
@@ -161,13 +161,13 @@ the session filter popover, Cmd+K > a session, the project's main session.
 ## 4. Phone
 
 Home = the thread list (same `ThreadsPane`, phone variant): header (logo, search, `+`, `...`), filter chips,
-session filter opens a **session sheet** (the old session list: rows with status, rename/stop/archive menu,
+session filter opens a **session sheet** (the old session list: rows with an `Ended` label when ended, rename/stop/archive menu,
 `Terminal` shortcut), list, composer with the target selector pinned at the bottom. All inbox is gone: the
 home list is it.
 
 Tap a thread: thread screen. Header: back (with badge = other threads with unread), subject, **session chip**
-(name + status dot; tap = flip to that session's terminal), mark unread, archive. Terminal screen (`tab=terminal`):
-header back (to the thread if one is open, else home), session name + status, shell button (the existing
+(name; tap = flip to that session's terminal), mark unread, archive. Terminal screen (`tab=terminal`):
+header back (to the thread if one is open, else home), session name (+ `Ended` when ended), shell button (the existing
 full-screen overlay); a `Thread | Terminal` segmented control shows when a thread is open.
 
 **Attachments on the phone.** Tapping an attachment that opens beside the thread (image thumbnail, file tile, the

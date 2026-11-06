@@ -26,8 +26,7 @@ import {
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
-import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, StatusDot, ThreadStatusBadge, cx } from './ui'
-import { waitsOnPerson } from './Sidebar'
+import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
 type Props = {
   session: Session
@@ -527,7 +526,6 @@ function ThreadHeaderBar({ session, onBack, others = 0, children }: { session: S
             {others}
           </span>
         )}
-        <StatusDot s={session} waits={waitsOnPerson(session)} size={7} ring={false} />
         <span className="truncate">{session.name}</span>
       </button>
       <span className="flex-1" />
