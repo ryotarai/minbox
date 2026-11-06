@@ -26,7 +26,7 @@ export type Scene = {
   bg?: { href: string; w: number; h: number }
 }
 
-export const PALETTE = ['#111827', '#dc2626', '#ea580c', '#16a34a', '#2563eb', '#9333ea']
+export const PALETTE = ['#111827', '#dc2626', '#ea580c', '#16a34a', '#2563eb', '#9333ea', '#ffffff']
 export const WIDTHS = [2, 4, 7]
 export const TEXT_BASE = 18
 
