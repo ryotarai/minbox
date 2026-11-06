@@ -109,6 +109,22 @@ export function StatusPill({ s, waits }: { s: Session; waits: boolean }) {
 }
 
 /** A popover menu anchored to an element; closes on outside click or Esc. */
+/** Swallow the click that follows a mousedown on `anchor`; give up after 300 ms (no click came). */
+function swallowNextClick(anchor: HTMLElement) {
+  const stop = (e: MouseEvent) => {
+    if (!anchor.contains(e.target as Node)) return
+    e.stopPropagation()
+    e.preventDefault()
+    off()
+  }
+  const off = () => {
+    clearTimeout(timer)
+    document.removeEventListener('click', stop, true)
+  }
+  const timer = setTimeout(off, 300)
+  document.addEventListener('click', stop, true)
+}
+
 export function Popover({
   anchor,
   open,
@@ -154,7 +170,21 @@ export function Popover({
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element
       // A submenu (another popover) is not outside.
-      if (ref.current?.contains(t) || anchor?.contains(t) || t.closest?.('[role="menu"]')) return
+      if (anchor?.contains(t)) {
+        // Pressing the button that opened the menu closes it, and the click that follows must not
+        // run the button's own onClick (it would open the menu again).
+        swallowNextClick(anchor)
+        onClose()
+        return
+      }
+      if (ref.current?.contains(t) || t.closest?.('[role="menu"]')) return
+      onClose()
+    }
+    // Keyboard activation (Enter/Space) clicks the anchor without a mousedown: close, don't re-open.
+    const onClick = (e: MouseEvent) => {
+      if (!anchor?.contains(e.target as Node)) return
+      e.stopPropagation()
+      e.preventDefault()
       onClose()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -164,9 +194,11 @@ export function Popover({
       }
     }
     document.addEventListener('mousedown', onDown)
+    document.addEventListener('click', onClick, true)
     window.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('click', onClick, true)
       window.removeEventListener('keydown', onKey, true)
     }
   }, [open, onClose, anchor])
