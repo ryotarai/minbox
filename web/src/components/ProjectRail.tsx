@@ -187,7 +187,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
               <button
                 type="button"
                 aria-pressed={on}
-                title={`${p.name}\n${p.dir || 'no folder'}${p.host_name && p.host_id !== 'local' ? ` · ${p.host_name}` : ''}`}
+                title={`${p.name}\n${p.dir || 'no folder'}${p.host_name && p.host_id !== 'local' ? ` · ${p.host_name}` : ''}${tiles && stat ? `\n${stat.state}${stat.waiting > 0 ? ` · ${stat.waiting} waiting` : ''}${stat.unread > 0 ? ` · ${stat.unread} unread` : ''}` : ''}`}
                 data-testid="project-select"
                 onClick={() => selectProject(p.id)}
                 className={cx(
@@ -198,9 +198,6 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                 {tiles ? (
                   <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-chip text-[12px] font-bold text-fg2">
                     {initials(p.name)}
-                    <span className="absolute -right-1 -top-1">
-                      <ProjectDot stat={stat} size={9} />
-                    </span>
                     {stat && (stat.waiting > 0 || stat.unread > 0) && (
                       <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">{stat.waiting || stat.unread}</span>
                     )}
