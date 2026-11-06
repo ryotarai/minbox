@@ -145,7 +145,7 @@ the session filter popover, Cmd+K > a session, the project's main session.
  +-----------------------------+
  | Start a thread...           |    auto-grow, @ agents, / skills, paste/drop files
  +-----------------------------+
- [clip] [full]  Claude gets this as its next turn      [Send Cmd+Enter]
+ [clip] [full]  (state hint, only when not idle)          [Send Cmd+Enter]
 ```
 
 - Target default: the session of the open/selected thread (`route.s`); if the person picks another one it
@@ -155,6 +155,7 @@ the session filter popover, Cmd+K > a session, the project's main session.
 - `+ New session...` opens the existing NewSession dialog. On creation the composer targets the new session
   and, if text was already typed, **sends it there right away** as the first thread (selecting it). Otherwise
   the terminal shows the new session and the box waits.
+- The thread view's reply box uses the same bottom row (clip, full height, hint such as `Draft saved`, Send at the right); it has no Cancel or New message button.
 - Sending creates a NEW thread in the target and opens it. Draft text and files are kept **per target**
   (switching the target swaps the draft). Replies to an open thread stay in the thread view's own box.
 
