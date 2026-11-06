@@ -16,10 +16,12 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
   action items, attachments you can annotate, and guided reviews of its changes. Your reply
   reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is
   safe. Haiku can draft up to three one-click replies.
-- **Diagrams**: the pencil button next to the paperclip, in a new thread and in a reply, opens a
-  drawing tool (rectangle, ellipse, line, arrow, text, pen, eraser; colors, widths, fill, undo)
-  and attaches the result as a PNG. You can edit the drawing before sending, and draw on an
-  attached image with **Annotate**.
+- **Diagrams**: the draw button right of the paperclip, in a new thread and in a reply, opens a
+  drawing tool in a large modal: select/move, rectangle, ellipse, line, arrow, text (double-click
+  to edit), pen and eraser; 7 colors (including white), 3 widths, fill, undo/redo. Drag a
+  rubber band or Shift-click to multi-select (⌘/Ctrl+A for all); Option/Alt-drag duplicates.
+  **Done** attaches a PNG. Before sending, the pencil on its tile reopens the drawing, and the
+  pencil on any attached image (png, jpeg, webp, gif) lets you draw on top of it.
 - **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
   full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
   and types its path. Each Claude session also has a companion shell (Ctrl+`).
