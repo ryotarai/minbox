@@ -735,7 +735,7 @@ Another type declares its own fields; `events` is read for every type.
 
 ### Slack app config (`slack_app`)
 
-`{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD or name like #alerts, no spaces), include_body
+`{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD, name like #alerts, or a user ID U…/W… for a DM with the bot, no spaces), include_body
 (default true), thread_replies (default true), events}`. The type also publishes `help` (setup steps, one per line: create the
 app at api.slack.com/apps, Bot Token Scopes `chat:write` and optionally `chat:write.public`, install, copy the Bot User OAuth
 Token, `/invite @app` to the channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
@@ -743,6 +743,10 @@ with `Authorization: Bearer <token>` and JSON `{channel, text, blocks, unfurl_li
 reply_broadcast:false]}`; `blocks` are those of the webhook type. `<base>` is `https://slack.com/api`; the env
 `MINBOX_SLACK_API_BASE` overrides it for tests only (an `http://` URL on a loopback host; anything else is ignored so the token
 cannot be redirected).
+
+**DM.** A user ID as `channel` makes Slack deliver to the bot's DM with that user (scope `chat:write` only, no invite; the app's
+App Home Messages tab must be enabled). Slack answers with the real `D…` channel; that is what is stored, so thread replies go
+to the `D…` channel. Extra error codes: `user_not_found`, `cannot_dm_bot`, `messages_tab_disabled` (final, actionable text).
 
 **Grouping.** Table `notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, PRIMARY
 KEY(destination_id, minbox_thread_id))`. The first notification of a minbox thread is posted at the top level; the `ts` and the

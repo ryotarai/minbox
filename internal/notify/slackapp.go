@@ -42,8 +42,8 @@ var slackAppType = Type{
 	Fields: []Field{
 		{Key: "bot_token", Label: "Bot token", Kind: "secret", Required: true, Placeholder: "xoxb-…",
 			Hint: "The Bot User OAuth Token. Kept on the server; it is never shown again in full.", validate: validBotToken},
-		{Key: "channel", Label: "Channel", Kind: "text", Required: true, Placeholder: "C0123ABCD or #alerts",
-			Hint: "A channel ID (C0123ABCD) or a name (#alerts). The bot must be in the channel unless it has chat:write.public.", validate: validChannel},
+		{Key: "channel", Label: "Channel or user", Kind: "text", Required: true, Placeholder: "C0123ABCD, #alerts or U0123ABCD",
+			Hint: "A channel ID (C0123ABCD), a name (#alerts), or a user ID (U0123ABCD; Slack profile → ⋮ → Copy member ID) for a DM with the bot. A channel needs the bot in it unless it has chat:write.public; a DM needs no invite.", validate: validChannel},
 		{Key: "include_body", Label: "Send full message", Kind: "bool", Default: true, Hint: "Off: only the thread title."},
 		{Key: "thread_replies", Label: "Group a thread's messages in one Slack thread", Kind: "bool", Default: true,
 			Hint: "The first notification of a minbox thread is the parent; later ones are replies to it."},
@@ -56,7 +56,8 @@ var slackAppType = Type{
 		"1. Open api.slack.com/apps and choose Create New App (From scratch).\n" +
 		"2. OAuth & Permissions → Bot Token Scopes: add chat:write (and chat:write.public to post to channels the bot has not joined).\n" +
 		"3. Install to Workspace, then copy the Bot User OAuth Token (xoxb-…) into the Bot token field below.\n" +
-		"4. In Slack, invite the bot to the channel: /invite @your-app-name.",
+		"4. For a channel: invite the bot with /invite @your-app-name.\n" +
+		"5. For a DM with the bot instead: enter your user ID in the Channel field (Slack profile → ⋮ → Copy member ID, U…). The bot needs no invite and only chat:write. Enable the Messages tab in the app: App Home → Show Tabs → Messages Tab, and tick 'Allow users to send Slash commands and messages from the messages tab'.",
 	new: func(cfg map[string]any, c *http.Client, env Env) (Notifier, error) {
 		tok, _ := cfg["bot_token"].(string)
 		ch, _ := cfg["channel"].(string)
@@ -87,7 +88,7 @@ func validBotToken(s string) error {
 
 func validChannel(s string) error {
 	if strings.ContainsAny(s, " \t\r\n") {
-		return errors.New("must be a channel ID like C0123ABCD or a name like #alerts, without spaces")
+		return errors.New("must be a channel ID like C0123ABCD, a name like #alerts or a user ID like U0123ABCD, without spaces")
 	}
 	return nil
 }
@@ -246,7 +247,13 @@ func slackAPIError(r slackResp, retryAfter time.Duration) *SendError {
 	msg := ""
 	switch r.Error {
 	case "channel_not_found":
-		msg = "Slack cannot find that channel: check the channel ID or name (a private channel needs the bot invited)"
+		msg = "Slack cannot find that channel: check the channel ID or name (a private channel needs the bot invited; for a DM use the user ID, U…)"
+	case "user_not_found":
+		msg = "Slack cannot find that user: check the member ID (Slack profile → ⋮ → Copy member ID) and that the user is in the app's workspace"
+	case "cannot_dm_bot":
+		msg = "That ID is a bot, which cannot receive a DM from this app: enter your own member ID (U…)"
+	case "messages_tab_disabled":
+		msg = "The app's Messages tab is off, so it cannot DM: enable it under App Home → Show Tabs → Messages Tab (and allow users to send messages from it), then reinstall the app"
 	case "not_in_channel":
 		msg = "The bot is not in that channel: invite it with /invite @<app name>, or add the chat:write.public scope"
 	case "is_archived":
