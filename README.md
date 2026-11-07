@@ -158,7 +158,11 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
 
 - an [incoming webhook](https://api.slack.com/messaging/webhooks); or
 - a **Slack app** (bot token + channel): all messages of one thread are grouped as replies in one
-  Slack thread, and "Send test" checks the token and shows the workspace and bot name.
+  Slack thread, and "Send test" checks the token and shows the workspace and bot name. The
+  channel field takes a channel ID, `#name`, or your **user ID** (Slack profile → ⋮ → Copy member
+  ID) to get the notifications as a DM from the bot: no invite, only the `chat:write` scope, but
+  the app's Messages tab must be on (App Home → Show Tabs → Messages Tab, "Allow users to send
+  Slash commands and messages from the messages tab").
 
 You can limit a destination to messages that need your answer, or send only the title. Set the
 **public URL** (e.g. your Tailscale URL) there so each notification has an "Open thread" link.

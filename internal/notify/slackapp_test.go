@@ -230,6 +230,9 @@ func TestSlackAppErrorMapping(t *testing.T) {
 		{"channel_not_found", "cannot find that channel", false},
 		{"not_in_channel", "/invite @<app name>", false},
 		{"is_archived", "archived", false},
+		{"user_not_found", "cannot find that user", false},
+		{"cannot_dm_bot", "cannot receive a DM", false},
+		{"messages_tab_disabled", "Messages tab", false},
 		{"invalid_auth", "invalid or expired", false},
 		{"account_inactive", "deactivated", false},
 		{"token_revoked", "revoked", false},
@@ -394,5 +397,37 @@ func TestSlackAPIBaseOnlyLoopback(t *testing.T) {
 		if got := slackAPIBaseFromEnv(in); got != want {
 			t.Errorf("%q -> %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestSlackAppDMToUserID(t *testing.T) {
+	r := newRig(t)
+	f := newFakeSlackAPI(t, func(c appCall, n int) (int, http.Header, string) {
+		return 200, nil, `{"ok":true,"channel":"D0DMCHAN1","ts":"1700000000.00` + string(rune('0'+n)) + `"}`
+	})
+	tok := "xox" + "b-1234-DMTOKEN"
+	d := r.addApp(t, map[string]any{"bot_token": tok, "channel": "U0123ABCD"})
+	n := Notification{Session: "s", Title: "Hi", ThreadID: "thr_dm", Body: "x"}
+	r.d.Dispatch(n)
+	r.d.Wait()
+	r.d.Dispatch(n)
+	r.d.Wait()
+	calls := f.all()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d", len(calls))
+	}
+	if calls[0].body["channel"] != "U0123ABCD" || calls[0].auth != "Bearer "+tok {
+		t.Fatalf("first = %+v", calls[0])
+	}
+	if _, has := calls[0].body["thread_ts"]; has {
+		t.Fatal("parent has thread_ts")
+	}
+	// The reply goes to the D… channel Slack returned, as a thread reply.
+	if calls[1].body["channel"] != "D0DMCHAN1" || calls[1].body["thread_ts"] != "1700000000.001" {
+		t.Fatalf("reply = %v", calls[1].body)
+	}
+	st, ok, _ := r.st.GetSlackThread(context.Background(), d.ID, "thr_dm")
+	if !ok || st.ChannelID != "D0DMCHAN1" || st.TS != "1700000000.001" {
+		t.Fatalf("stored = %+v %v", st, ok)
 	}
 }
