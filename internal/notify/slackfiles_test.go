@@ -266,6 +266,9 @@ func TestPendingIdentifiedFirstTime(t *testing.T) {
 	if fmt.Sprint(p.in.threads) != "[proj_api|main|fix the build]" || len(p.posts()) != 0 {
 		t.Fatalf("threads=%q posts=%q", p.in.threads, p.posts())
 	}
+	if ref, ok, _ := p.st.GetSlackThread(context.Background(), p.dest.ID, "thr_new"); !ok || ref.TS != p.orig {
+		t.Fatalf("slack thread = %+v %v", ref, ok)
+	}
 }
 
 func TestPendingAskThenIdentified(t *testing.T) {

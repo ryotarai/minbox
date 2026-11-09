@@ -38,7 +38,10 @@ func (p *pendingPayload) conversation() string {
 // a message of an allowed member.
 func (w *pollWorker) newThread(ctx context.Context, channel, threadTS, text string, files []InFile) error {
 	if m := projectPrefix.FindStringSubmatch(text); m != nil {
-		_, err := w.p.In.NewThread(ctx, m[1], w.project, m[2], files)
+		tid, err := w.p.In.NewThread(ctx, m[1], w.project, m[2], files)
+		if err == nil {
+			w.bindThread(ctx, tid, channel, threadTS)
+		}
 		if !errors.Is(err, ErrUnknownProject) {
 			if err == nil {
 				log.Printf("slack inbound: %s: new thread: project from the #prefix", w.dest.ID)
@@ -67,8 +70,9 @@ func (w *pollWorker) newThread(ctx context.Context, channel, threadTS, text stri
 		}
 		why = "the fallback project (Claude was unsure and no project can be asked about)"
 	} else {
-		_, err := w.p.In.NewThread(ctx, p, w.project, text, files)
+		tid, err := w.p.In.NewThread(ctx, p, w.project, text, files)
 		if err == nil {
+			w.bindThread(ctx, tid, channel, threadTS)
 			log.Printf("slack inbound: %s: new thread: project picked by Claude", w.dest.ID)
 			return nil
 		}
@@ -77,8 +81,9 @@ func (w *pollWorker) newThread(ctx context.Context, channel, threadTS, text stri
 		}
 		why = "the fallback project (the picked project has no session)"
 	}
-	_, err := w.p.In.NewThread(ctx, "", w.project, text, files)
+	tid, err := w.p.In.NewThread(ctx, "", w.project, text, files)
 	if err == nil {
+		w.bindThread(ctx, tid, channel, threadTS)
 		log.Printf("slack inbound: %s: new thread: %s", w.dest.ID, why)
 	}
 	if errors.Is(err, ErrNoTarget) && !w.noTargetWarned {
@@ -86,6 +91,21 @@ func (w *pollWorker) newThread(ctx context.Context, channel, threadTS, text stri
 		log.Printf("slack inbound: %s: a DM arrived but no project could be chosen (Claude pick off or unsure, no valid 'Fallback project'); ignoring DMs that start threads", w.dest.ID)
 	}
 	return err
+}
+
+// bindThread roots the Slack thread of a new minbox thread at the person's own message, so every
+// notification is a reply under it and no second parent post is made. Failing to store it only
+// costs the grouping (the first notification then opens its own Slack thread), so it is logged,
+// not returned: the message is already delivered and must not be retried.
+func (w *pollWorker) bindThread(ctx context.Context, tid, channel, ts string) {
+	if tid == "" {
+		return
+	}
+	if err := w.p.Store.PutSlackThread(ctx, w.dest.ID, tid, store.SlackThread{ChannelID: channel, TS: ts}); err != nil {
+		log.Printf("slack inbound: %s: could not bind the new thread to the Slack message: %v", w.dest.ID, err)
+		return
+	}
+	_ = w.p.Store.SetSlackReplyCursor(ctx, w.dest.ID, tid, ts)
 }
 
 // post replies in a Slack thread; it returns the new message's ts.

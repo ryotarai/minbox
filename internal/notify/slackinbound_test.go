@@ -328,6 +328,63 @@ func TestInboundDMTopLevelCreatesThread(t *testing.T) {
 	}
 }
 
+// A DM that starts a thread roots the Slack thread at the person's own message: the first
+// notification is a reply under it (no new parent post, no mention), and the bot's reply is not
+// taken back in as input.
+func TestInboundNewThreadRootedAtUserMessage(t *testing.T) {
+	r := newInRig(t, nil)
+	ctx := context.Background()
+	userTS := ts(r.now.Unix()+10, 1)
+	s := &slackScript{history: []map[string]any{msg("U0ME", "plain note", userTS, nil)}}
+	var posts []map[string]any
+	h := s.handler()
+	newFakeSlackAPI(t, func(c appCall, n int) (int, http.Header, string) {
+		if c.method == "chat.postMessage" {
+			posts = append(posts, c.body)
+			return 200, nil, `{"ok":true,"channel":"` + dmChan + `","ts":"` + ts(r.now.Unix()+20, 1) + `"}`
+		}
+		return h(c, n)
+	})
+	w := r.worker(t)
+	w.cycle(ctx)
+	if len(r.in.threads) != 1 {
+		t.Fatalf("threads = %q", r.in.threads)
+	}
+	th, ok, _ := r.st.GetSlackThread(ctx, r.dest.ID, "thr_new")
+	if !ok || th.ChannelID != dmChan || th.TS != userTS {
+		t.Fatalf("binding = %+v ok=%v", th, ok)
+	}
+	if err := w.app.Send(ctx, Notification{Title: "t", Body: "b", ThreadID: "thr_new"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(posts) != 1 || posts[0]["thread_ts"] != userTS {
+		t.Fatalf("posts = %v", posts)
+	}
+	if txt, _ := posts[0]["text"].(string); strings.Contains(txt, "<@") {
+		t.Fatalf("mention in a reply under the user's message: %q", txt)
+	}
+	// The bot's own reply shows up under the user's message: not input.
+	s.replies = map[string][]map[string]any{userTS: {
+		msg("", "bot", ts(r.now.Unix()+20, 1), map[string]any{"bot_id": "B1"}),
+	}}
+	w.cycle(ctx)
+	w.cycle(ctx)
+	if len(r.in.replies) != 0 || len(r.in.threads) != 1 {
+		t.Fatalf("replies=%q threads=%q", r.in.replies, r.in.threads)
+	}
+	// The person answers in the thread: delivered as a reply to the minbox thread.
+	s.replies[userTS] = append(s.replies[userTS], msg("U0ME", "more", ts(r.now.Unix()+30, 1), nil))
+	w.cycle(ctx)
+	if fmt.Sprint(r.in.replies) != "[thr_new:more]" || len(r.in.threads) != 1 {
+		t.Fatalf("replies=%q threads=%q", r.in.replies, r.in.threads)
+	}
+	for _, p := range posts {
+		if p["thread_ts"] == nil {
+			t.Fatalf("a top-level post: %v", p)
+		}
+	}
+}
+
 func TestInboundNoDefaultProject(t *testing.T) {
 	r := newInRig(t, map[string]any{"default_project": ""})
 	s := &slackScript{history: []map[string]any{msg("U0ME", "hi", ts(r.now.Unix()+5, 1), nil)}}

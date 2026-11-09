@@ -167,7 +167,8 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   Slash commands and messages from the messages tab"). The first message of each Slack thread
   mentions you (`<@U…>`: the user ID in Channel, else the first allowed user ID), because Slack
   only notifies you about replies in a thread you are part of; turn that off with *Mention me
-  when starting a thread*.
+  when starting a thread*. A thread you start by DMing the bot is rooted at your own message:
+  Claude's messages arrive as replies under it (no new top-level post, no mention).
 - **Artifacts in Slack**: the files Claude attaches to a message (images, HTML, any file) and the
   images its message shows are uploaded to the same Slack thread (*Send artifacts*, on by default;
   scope `files:write`; up to 10 files and 20 MB each, larger ones are skipped with a log line). The
