@@ -96,13 +96,16 @@ export const useIsTablet = () => useQuery(tabletQuery)
 export const ALL_THREADS = '*'
 
 /** projectsRail: the project column shows 56 px tiles instead of names. */
-export type Layout = { sidebarW: number; inboxW: number; threadW: number; projectsRail?: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean }
+export type Layout = { sidebarW: number; inboxW: number; threadW: number; projectsRail?: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean
+  /** Desktop: the Claude Code terminal pane is shown (hidden by default: the threads are the way in). */
+  terminalPane: boolean
+}
 function defaultLayout(): Layout {
   const w = window.innerWidth
-  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false }
-  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false }
-  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false }
-  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false }
+  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false }
+  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false, terminalPane: false }
+  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false, terminalPane: false }
+  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false, terminalPane: false }
 }
 function readLayout(): Layout {
   try {

@@ -2,7 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, expectTerminal, test, typeInTerminal } from './fixtures'
+import { expect, expectTerminal, showTerminal, test, typeInTerminal } from './fixtures'
 
 // A second machine's host (here: another `minbox host --listen` on this one),
 // added through the wizard, paired with `minbox pair accept`, then used.
@@ -49,6 +49,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await page.getByTestId('new-session-cwd').fill(dir)
     await page.getByTestId('new-session-name').fill('remote')
     await page.getByTestId('new-session-start').click()
+    await showTerminal(page)
     await expect(page.getByTestId('terminal-session-name')).toHaveText('remote')
     await expect(page.getByTestId('host-tag').first()).toHaveText('devbox')
     await expectTerminal(page, 'ready>')

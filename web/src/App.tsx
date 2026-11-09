@@ -130,11 +130,14 @@ function Desktop() {
   // A narrow window gives way in this order: the shell pane narrows and goes, the threads list
   // narrows, the thread pane narrows. Below SINGLE_COLUMN_BELOW the phone layout takes over. The terminal keeps MIN_CENTER.
   // A column keeps the width it was dragged to as long as it fits, so a drag moves the edge 1:1.
-  const MIN_CENTER = MIN_W.terminal
+  // The terminal is hidden by default (layout.terminalPane); an open attachment viewer takes its column too.
+  // Without a main column the thread pane is the flexible one.
+  const showMain = layout.terminalPane || (!!route.f && !!session)
+  const MIN_CENTER = showMain ? MIN_W.terminal : MIN_W.thread
   const showShell = !!session && session.kind !== 'shell' && session.status !== 'ended' && layout.shellPane
   let shellW = showShell ? layout.shellW : 0
   let listW = layout.sidebarW
-  let threadW = layout.threadW
+  let threadW = showMain ? layout.threadW : 0
   // The project column (far left): names, or 56 px tiles when the window is narrow or the person asks.
   const projNarrow = layout.projectsRail ?? width < 1400
   const projW = projNarrow ? 56 : 176
@@ -163,8 +166,8 @@ function Desktop() {
   // A pane has only a minimum. It can grow until every other visible pane is at its own minimum.
   const room = (self: 'list' | 'thread' | 'shell') => {
     const others =
-      projW + (self === 'list' ? 0 : MIN_W.list) + (self === 'thread' ? 0 : MIN_W.thread) +
-      (showShell && self !== 'shell' ? MIN_W.shell + 9 : 0) + MIN_W.terminal + 18
+      projW + (self === 'list' ? 0 : MIN_W.list) + (self === 'thread' || !showMain ? 0 : MIN_W.thread) +
+      (showShell && self !== 'shell' ? MIN_W.shell + 9 : 0) + MIN_CENTER + 18
     return Math.max(MIN_W[self], width - others)
   }
   // Grow or shrink one pane by dx. A pane that grows squeezes the others (thread, then list, then
@@ -173,9 +176,9 @@ function Desktop() {
     const c = cur.current
     const key = { list: 'listW', thread: 'threadW', shell: 'shellW' } as const
     c[key[self]] = clamp(c[key[self]] + dx / zoom, MIN_W[self], room(self))
-    let over = projW + c.listW + c.threadW + (showShell ? c.shellW + 9 : 0) + MIN_W.terminal + 18 - width
+    let over = projW + c.listW + (showMain ? c.threadW : 0) + (showShell ? c.shellW + 9 : 0) + MIN_CENTER + 18 - width
     for (const k of ['thread', 'list', 'shell'] as const) {
-      if (k === self || over <= 0 || (k === 'shell' && !showShell)) continue
+      if (k === self || over <= 0 || (k === 'shell' && !showShell) || (k === 'thread' && !showMain)) continue
       const cut = Math.min(over, c[key[k]] - MIN_W[k])
       if (cut > 0) {
         c[key[k]] -= cut
@@ -185,7 +188,7 @@ function Desktop() {
     // Stored widths include what the project column takes from the thread and list at render.
     const thread = c.threadW > 440 ? c.threadW + projW : c.threadW
     const list = c.listW > 280 ? c.listW + (projW - (c.threadW > 440 ? projW : 0)) : c.listW
-    setLayout({ sidebarW: list, threadW: thread, ...(showShell ? { shellW: c.shellW } : {}) })
+    setLayout({ sidebarW: list, ...(showMain ? { threadW: thread } : {}), ...(showShell ? { shellW: c.shellW } : {}) })
   }
   const dragList = (dx: number) => drag('list', dx)
   // dx is positive when the edge moves right and widens the column on its left.
@@ -205,13 +208,17 @@ function Desktop() {
         <ThreadsPane />
       </div>
       <Resizer order={1} onDrag={dragList} />
-      <div style={{ width: threadW, order: o.thread }} className="shrink-0">
-        <ThreadPane session={session} />
+      <div style={{ width: showMain ? threadW : undefined, order: o.thread }} className={showMain ? 'shrink-0' : 'min-w-0 flex-1'}>
+        <ThreadPane session={session} terminalShown={layout.terminalPane} onTerminal={session ? () => setLayout({ terminalPane: !layout.terminalPane }) : undefined} />
       </div>
-      <Resizer grip order={o.rzThread} onDrag={(dx) => dragThread(swap ? -dx : dx)} />
-      <main style={{ order: o.main }} className="min-w-0 flex-1">
-        {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
-      </main>
+      {showMain && (
+        <>
+          <Resizer grip order={o.rzThread} onDrag={(dx) => dragThread(swap ? -dx : dx)} />
+          <main style={{ order: o.main }} className="min-w-0 flex-1">
+            {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
+          </main>
+        </>
+      )}
       {shellW > 0 && session && (
         <>
           <Resizer grip order={o.rzShell} onDrag={(dx) => dragShell(-dx)} />

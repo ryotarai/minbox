@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionEnded, terminalText, test, typeInTerminal } from './fixtures'
+import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionEnded, showTerminal, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
 // attachments and reviews, search, settings, Board, Decision mode, phone.
@@ -405,6 +405,7 @@ test('New session: browse folders, make one, catch a missing one, and pick a rec
   await expect(page.getByTestId('new-session-cwd')).toHaveValue(/projects\/beta$/)
   await expect(page.getByTestId('new-session-name')).toHaveAttribute('placeholder', 'beta')
   await page.getByTestId('new-session-cwd').press('Meta+Enter')
+  await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
   await expect.poll(async () => (await terminalText(page)).replace(/\n/g, ''), { timeout: 15_000 }).toMatch(/cwd=.*projects\/beta/)
 

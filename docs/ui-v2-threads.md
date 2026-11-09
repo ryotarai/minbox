@@ -45,6 +45,13 @@ beside the terminal without squeezing. Column order is `Threads | Thread | Termi
 with CSS `order`, so toggling it does not remount the terminal.) Every column edge has a Resizer (mouse and
 touch) as before; the terminal is the flexible column.
 
+**The terminal is hidden by default** (`layout.terminalPane`, stored in `localStorage` `minbox:layout` with the other
+layout prefs; default `false`). The **Terminal** button (`terminal-toggle`, `aria-pressed`) in the thread header, or in
+the empty thread pane, shows and hides it; the palette has *Show / Hide terminal* and *Go to terminal* reveals it. While
+hidden the terminal is unmounted (it holds no size lease; showing it attaches again and replays the session's output), the
+thread pane becomes the flexible column and its resizer is dropped. An open attachment viewer still takes the terminal's
+column. The shell pane (Ctrl+`) is independent of the terminal pane. Tablet and phone are unchanged (the terminal is a view).
+
 Narrow windows give way in this order: shell pane (to 280, then hidden), threads list (to 240), thread pane (to 380), terminal minimum 360.
 When even that does not fit (viewport below `THREE_COLUMN_FROM` = 1100 px, `lib/app.tsx`; the narrowest the three
 columns plus the 56 px project tiles get is 1054 px) the three-column layout is not used: see *Tablet: two panes*

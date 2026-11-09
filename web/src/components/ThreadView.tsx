@@ -37,7 +37,41 @@ type Props = {
   onBack: () => void
   /** Tablet: shows the Terminal button in the header (opens [thread | terminal]). */
   onTerminal?: () => void
+  /** Desktop: the terminal pane is a toggle, not a navigation; says whether it is shown. */
+  terminalShown?: boolean
   phone?: boolean
+}
+
+/** Header button for the terminal: tablet opens [thread | terminal]; desktop (shown given) toggles the pane. */
+export function TerminalButton({ session, onClick, shown }: { session: Session; onClick: () => void; shown?: boolean }) {
+  if (shown === undefined)
+    return (
+      <button
+        type="button"
+        data-testid="tablet-terminal"
+        aria-label={`Open ${session.name}'s terminal`}
+        title="Show the terminal next to this thread"
+        onClick={onClick}
+        className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
+      >
+        <IconTerminal size={14} />
+        Terminal
+      </button>
+    )
+  return (
+    <button
+      type="button"
+      data-testid="terminal-toggle"
+      aria-label={shown ? 'Hide terminal' : 'Show terminal'}
+      title={shown ? 'Hide the terminal' : 'Show the terminal'}
+      aria-pressed={shown}
+      onClick={onClick}
+      className={cx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] hover:bg-raised', shown ? 'text-wait' : 'text-fg2')}
+    >
+      <IconTerminal size={14} />
+      Terminal
+    </button>
+  )
 }
 
 export function useThread(threadId: string | null): [Thread | null, () => void] {
@@ -77,7 +111,7 @@ function openKeys(m: Message): Set<string> {
   return out
 }
 
-export function ThreadView({ session, threadId, siblings, onBack, onTerminal, phone }: Props) {
+export function ThreadView({ session, threadId, siblings, onBack, onTerminal, terminalShown, phone }: Props) {
   const { navigate, route, toast, error, sessions, setLayout } = useApp()
   const [thread] = useThread(threadId)
   const draft = useReplyDraft(threadId)
@@ -308,19 +342,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, ph
     <div className="flex h-full flex-col" data-testid="thread-view" data-thread-id={thread.id}>
       {!phone && (
         <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
-          {onTerminal && (
-            <button
-              type="button"
-              data-testid="tablet-terminal"
-              aria-label={`Open ${session.name}'s terminal`}
-              title="Show the terminal next to this thread"
-              onClick={onTerminal}
-              className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
-            >
-              <IconTerminal size={14} />
-              Terminal
-            </button>
-          )}
+          {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
           <button
             type="button"
             data-testid="mark-read"

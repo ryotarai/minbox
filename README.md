@@ -36,12 +36,14 @@ module), not by typing into the terminal. Background and design goals: [WHAT.md]
 
 ## The screen
 
-Columns, left to right: **projects | threads | thread | terminal** (the thread and the terminal
+Columns, left to right: **projects | threads | thread | terminal** (on a desktop width the terminal is hidden by
+default: the threads are all you need; the **Terminal** button in the thread header shows it and hides it again, and the
+choice is remembered in this browser) (the thread and the terminal
 swap places with **Settings → Swap terminal and thread**). The layout follows the window width:
 
 | Width | Layout |
 | --- | --- |
-| 1100 px and up | Three columns next to the project column, plus the companion shell pane (Ctrl+`) beside the terminal. Column edges can be dragged. |
+| 1100 px and up | Threads and thread next to the project column; the terminal is a third column you show with the **Terminal** button (it is hidden by default), plus the companion shell pane (Ctrl+`) beside the terminal. Column edges can be dragged. |
 | 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
 | below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay. |
 

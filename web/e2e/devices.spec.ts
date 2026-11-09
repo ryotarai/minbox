@@ -1,4 +1,4 @@
-import { createSession, createShellSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
+import { createSession, createShellSession, expect, expectTerminal, showTerminal, test, typeInTerminal } from './fixtures'
 
 // A browser that reaches minbox over the network (here: requests carrying
 // X-Forwarded-For, as through tailscale serve) pairs its key first; a browser
@@ -66,6 +66,7 @@ test('a paired remote browser signs in again by itself after the server forgets 
   await expect(page.getByTestId('pair-request-banner')).toBeVisible({ timeout: 10_000 })
   await page.getByTestId('pair-request-banner').getByRole('button', { name: 'Review' }).click()
   await page.getByTestId('device-request').getByTestId('device-accept').click()
+  await showTerminal(phone)
   await expect(phone.getByTestId('terminal-session-name')).toHaveText('home', { timeout: 15_000 })
   await typeInTerminal(phone, 'echo before-$((1+1))')
   await expectTerminal(phone, 'before-2')

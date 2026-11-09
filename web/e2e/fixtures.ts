@@ -160,6 +160,18 @@ export const test = base.extend<{ minbox: Minbox }>({
 
 export { expect }
 
+/**
+ * Desktop: the Claude Code terminal pane is hidden by default; clicks the header toggle to show it.
+ * A no-op when it is already shown and on phone/tablet widths (their terminal is a view, not a pane).
+ */
+export async function showTerminal(page: Page) {
+  if ((page.viewportSize()?.width ?? 1500) < 1100) return
+  const toggle = page.getByTestId('terminal-toggle')
+  await toggle.waitFor({ timeout: 5_000 })
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
+  await expect(page.getByTestId('terminal')).toBeVisible()
+}
+
 /** The terminal's visible text (it is drawn on a canvas). */
 export async function terminalText(page: Page, which: 'session' | 'shell' = 'session'): Promise<string> {
   return page.evaluate((which) => {
@@ -184,6 +196,7 @@ export async function terminalText(page: Page, which: 'session' | 'shell' = 'ses
 }
 
 export async function expectTerminal(page: Page, re: RegExp | string) {
+  await showTerminal(page)
   await expect
     .poll(() => terminalText(page), { timeout: 15_000 })
     .toMatch(typeof re === 'string' ? new RegExp(re.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) : re)
@@ -191,6 +204,7 @@ export async function expectTerminal(page: Page, re: RegExp | string) {
 
 /** Types a line into the terminal. */
 export async function typeInTerminal(page: Page, text: string) {
+  await showTerminal(page)
   await page.getByTestId('terminal').click()
   await page.keyboard.type(text)
   await page.keyboard.press('Enter')
@@ -223,7 +237,8 @@ export async function createSession(page: Page, cwd: string, name: string) {
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
   await page.getByTestId('new-session-start').click()
-  await expect(page.getByTestId('terminal-session-name').or(page.getByTestId('phone'))).toBeVisible()
+  await expect(page.getByTestId('terminal-toggle').or(page.getByTestId('terminal-session-name')).or(page.getByTestId('phone')).first()).toBeVisible()
+  await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
 }
 
@@ -257,6 +272,7 @@ c.commit()
   if (!r.ok) throw new Error('restart of the seeded shell session failed: ' + (await r.text()))
   await page.goto('about:blank') // a fresh load: the open app would keep its own route
   await page.goto(`${minbox.url}/#s=${id}&tab=terminal`)
+  await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
   return id
 }
@@ -265,6 +281,7 @@ c.commit()
 export async function selectSession(page: Page, name: string) {
   await page.getByTestId('session-filter').click()
   await page.getByTestId('session-option').filter({ hasText: name }).first().click()
+  await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name')).toHaveText(name)
 }
 
