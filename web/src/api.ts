@@ -356,7 +356,28 @@ export type NotifyDestination = {
   last_ok_at: string | null
   last_error: string
   last_error_at: string | null
+  /** Slack app destinations with "Receive messages from Slack" on. */
+  receive_status?: ReceiveStatus
 }
+export type ReceiveStatus = {
+  receiving: boolean
+  last_poll_at: string | null
+  last_poll_ok: boolean | null
+  last_poll_error: string
+  summary: string
+  next_poll_at: string | null
+  paused_until: string | null
+  interval_seconds: number
+  configured_seconds: number
+  slowed: boolean
+  dm_known: boolean
+  delivered: number
+  last_delivered_at: string | null
+  watched_threads: number
+  problems: string[]
+  missing_scopes: string[]
+}
+export type ReceiveCheck = { ran: boolean; busy: boolean; summary: string; status: ReceiveStatus }
 
 export type SearchHit = {
   thread_id: string
@@ -558,6 +579,7 @@ export const api = {
   createNotification: (b: { type: string; name: string; enabled?: boolean; config: Record<string, unknown> }) => call<NotifyDestination>('POST', '/api/notifications', b),
   updateNotification: (id: string, b: { name?: string; enabled?: boolean; config?: Record<string, unknown> }) => call<NotifyDestination>('PATCH', `/api/notifications/${id}`, b),
   deleteNotification: (id: string) => call<Ok>('DELETE', `/api/notifications/${id}`),
+  checkNotification: (id: string) => call<ReceiveCheck>('POST', `/api/notifications/${id}/check`),
   testNotification: (id: string) => call<{ ok: boolean; error?: string; message?: string }>('POST', `/api/notifications/${id}/test`),
   storage: () => call<Storage>('GET', '/api/storage'),
   clearScratch: () => call<{ removed: number }>('POST', '/api/storage/clear-scratch'),

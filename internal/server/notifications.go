@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"github.com/ryotarai/minbox/internal/question"
 	"net/http"
 	"net/url"
@@ -64,6 +65,8 @@ type destView struct {
 	LastOKAt    *time.Time     `json:"last_ok_at"`
 	LastError   string         `json:"last_error"`
 	LastErrorAt *time.Time     `json:"last_error_at"`
+	// ReceiveStatus is set for a Slack app destination whose "Receive messages from Slack" is on.
+	ReceiveStatus *notify.RecvStatus `json:"receive_status,omitempty"`
 }
 
 func viewDest(d *store.Destination) destView {
@@ -73,7 +76,13 @@ func viewDest(d *store.Destination) destView {
 	} else {
 		cfg = map[string]any{}
 	}
-	return destView{d.ID, d.Type, d.Name, d.Enabled, cfg, d.CreatedAt, d.LastOKAt, d.LastError, d.LastErrorAt}
+	return destView{ID: d.ID, Type: d.Type, Name: d.Name, Enabled: d.Enabled, Config: cfg, CreatedAt: d.CreatedAt, LastOKAt: d.LastOKAt, LastError: d.LastError, LastErrorAt: d.LastErrorAt}
+}
+
+func (s *Server) viewDestStatus(ctx context.Context, d *store.Destination) destView {
+	v := viewDest(d)
+	v.ReceiveStatus = s.poller.Status(ctx, d)
+	return v
 }
 
 func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +93,7 @@ func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []destView{}
 	for i := range dests {
-		out = append(out, viewDest(&dests[i]))
+		out = append(out, s.viewDestStatus(r.Context(), &dests[i]))
 	}
 	writeJSON(w, 200, map[string]any{"types": notify.Types(), "destinations": out})
 }
@@ -169,7 +178,7 @@ func (s *Server) patchNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.publish(Event{Type: "notifications"})
-	writeJSON(w, 200, viewDest(d))
+	writeJSON(w, 200, s.viewDestStatus(r.Context(), d))
 }
 
 func (s *Server) deleteNotification(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +215,31 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 	res := map[string]any{"ok": true}
 	if info != "" {
 		res["message"] = info
+	}
+	writeJSON(w, 200, res)
+}
+
+// checkNotification runs one receive cycle of a Slack app destination now ("Check receiving
+// now"): the normal cycle early, within the same budget and pause. 200 with the summary and the
+// new status; 409 when the destination is not receiving.
+func (s *Server) checkNotification(w http.ResponseWriter, r *http.Request) {
+	d, err := s.store.GetDestination(r.Context(), r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if !notify.ReceivesFrom(d) {
+		httpError(w, 400, "Receiving from Slack is not switched on for this destination")
+		return
+	}
+	res, err := s.poller.CheckNow(r.Context(), d)
+	if errors.Is(err, notify.ErrNotReceiving) {
+		httpError(w, 409, "Not receiving now: the destination is switched off, or the receiver has not started yet (try again in a few seconds)")
+		return
+	}
+	if err != nil {
+		httpError(w, 500, err.Error())
+		return
 	}
 	writeJSON(w, 200, res)
 }

@@ -186,6 +186,32 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   1 request a minute for apps distributed in the Marketplace (and non-Marketplace apps created
   after 2025-05-29 that are commercially distributed), not for an internal app of your workspace.
 
+**Slack app setup** (the same steps are in the destination's form):
+
+1. [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From scratch*.
+2. OAuth & Permissions → Bot Token Scopes: `chat:write`, `im:history` (to receive) and optionally
+   `reactions:write` (the ✅). Not needed: `chat:write.public`, `im:write`, `channels:*`.
+3. App Home → Show Tabs → turn **Messages Tab** on, and tick *Allow users to send Slash commands
+   and messages from the messages tab*.
+4. Install to Workspace (**Reinstall** after every scope change), then copy the *Bot User OAuth
+   Token* (`xoxb-…`) into Bot token.
+5. No Event Subscriptions, no Socket Mode, no Request URL: minbox polls Slack.
+6. Channel = your member ID (Slack profile → ⋮ → Copy member ID). Press **Send test** first: the
+   DM channel is learned from the first notification or test, and receiving needs it.
+7. Turn *Receive messages from Slack* on, set *Allowed Slack user IDs* and a *Fallback project*.
+
+**Receiving status.** Under a destination with receiving on, the card lists: whether the receiver
+runs, the last poll (time and ok / error), the next poll (or "paused until … (rate limited)") and
+the current interval (longer than the setting when polling slowed down while nothing is going on),
+whether the DM is known, how many messages were delivered since receiving was switched on and
+when, how many notification threads are watched, and warnings: Channel is not a user ID, no
+allowed users, no project route (Fallback project empty and Claude pick off; a `#project` prefix
+still works), missing scopes (`im:history`, `reactions:write`). **Check receiving now** runs one
+poll cycle immediately (the normal cycle: same allowlist, call budget, de-duplication; while Slack
+has asked to wait nothing is called) and shows what it did, e.g. "fetched 200 messages, 0 new" or
+the error. To debug further: the destination's red *Failed … Receiving from Slack: …* line, and
+`grep "slack inbound" ~/.minbox/minbox.log`.
+
 You can limit a destination to messages that need your answer, or send only the title. Set the
 **public URL** (e.g. your Tailscale URL) there so each notification has an "Open thread" link.
 Secrets stay on the server and are shown masked. Browser notifications, a sound and the tab-title

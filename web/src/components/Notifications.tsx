@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type NotifyDestination, type NotifyField, type NotifyType } from '../api'
+import { api, type NotifyDestination, type NotifyField, type NotifyType, type ReceiveStatus } from '../api'
 import { useApp } from '../lib/app'
 import { Button, Modal, Switch, cx } from './ui'
 
@@ -12,6 +12,16 @@ function ago(iso?: string | null): string {
   const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000))
   if (min < 1) return 'just now'
   return min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} d ago`
+}
+
+// A time relative to now, past ("2 min ago") or future ("in 40 s").
+function rel(iso: string | null | undefined, now: number): string {
+  if (!iso) return ''
+  const s = Math.round((new Date(iso).getTime() - now) / 1000)
+  const a = Math.abs(s)
+  const span = a < 60 ? `${a} s` : a < 3600 ? `${Math.round(a / 60)} min` : a < 48 * 3600 ? `${Math.round(a / 3600)} h` : `${Math.round(a / 86400)} d`
+  if (a < 5) return 'just now'
+  return s < 0 ? `${span} ago` : `in ${span}`
 }
 
 // What a destination points at: its masked secret (webhook URL, token), plus the channel when it has one.
@@ -90,6 +100,7 @@ export function NotificationsSection() {
                 <span data-testid="notif-status" data-state={failed ? 'failed' : d.last_ok_at ? 'ok' : 'never'} className={cx('text-[12px]', failed ? 'text-danger' : 'text-subtle')}>
                   {failed ? `Failed ${ago(d.last_error_at)}: ${d.last_error}` : d.last_ok_at ? `Last sent ${ago(d.last_ok_at)}` : 'Nothing sent yet'}
                 </span>
+                {d.receive_status && <ReceiveStatusView d={d} s={d.receive_status} onChecked={load} />}
                 {res && (
                   <span data-testid="notif-test-result" className={cx('text-[12px]', res !== 'sending' && !res.ok ? 'text-danger' : 'text-ok')}>
                     {res === 'sending' ? 'Sending…' : res.text}
@@ -182,6 +193,72 @@ export function NotificationsSection() {
         </Modal>
       )}
     </>
+  )
+}
+
+// What the receiver of a Slack app destination is doing, and "Check receiving now" to run one poll
+// early and see what happened.
+function ReceiveStatusView({ d, s, onChecked }: { d: NotifyDestination; s: ReceiveStatus; onChecked: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 10_000)
+    return () => clearInterval(t)
+  }, [])
+  const [busy, setBusy] = useState(false)
+  const [summary, setSummary] = useState<{ ok: boolean; text: string } | null>(null)
+  const check = () => {
+    setBusy(true)
+    setSummary(null)
+    api
+      .checkNotification(d.id)
+      .then((r) => setSummary({ ok: r.status.last_poll_ok !== false && !r.status.problems.length, text: r.summary }))
+      .catch((e) => setSummary({ ok: false, text: String(e?.message ?? e) }))
+      .finally(() => {
+        setBusy(false)
+        onChecked()
+      })
+  }
+  const paused = s.paused_until && new Date(s.paused_until).getTime() > now
+  const rows: [string, string, boolean][] = [] // label, value, warning
+  rows.push(['Receiving', s.receiving ? 'on' : 'not running', !s.receiving])
+  rows.push(['Last poll', s.last_poll_at ? `${rel(s.last_poll_at, now)}${s.last_poll_ok === false ? ': ' + s.last_poll_error : ', ok'}` : 'not yet', s.last_poll_ok === false])
+  if (s.receiving) {
+    const every = `every ${s.interval_seconds || s.configured_seconds} s${s.slowed ? ` (slowed: nothing going on, set ${s.configured_seconds} s)` : ''}`
+    rows.push(['Next poll', paused ? `paused until ${new Date(s.paused_until!).toLocaleTimeString()} (rate limited), ${every}` : `${rel(s.next_poll_at, now) || 'soon'}, ${every}`, !!paused])
+  }
+  rows.push(['DM', s.dm_known ? 'known' : 'not known yet: press Send test first', !s.dm_known])
+  rows.push(['Delivered', `${s.delivered}${s.last_delivered_at ? `, last ${rel(s.last_delivered_at, now)}` : ''} · watching ${s.watched_threads} thread${s.watched_threads === 1 ? '' : 's'}`, false])
+  return (
+    <div data-testid="slack-receive-status" data-receiving={s.receiving} className="mt-1.5 flex max-w-full flex-col gap-1.5 rounded-lg border border-line bg-sunken px-3 py-2.5 text-[12px] leading-[1.5]">
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+        {rows.map(([k, v, warn]) => (
+          <div key={k} className="contents" data-testid={`slack-receive-${k.toLowerCase().replace(/ /g, '-')}`}>
+            <dt className="text-subtle">{k}</dt>
+            <dd className={cx('m-0 min-w-0 break-words', warn ? 'text-wait' : 'text-body')}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {s.problems.length > 0 && (
+        <ul data-testid="slack-receive-problems" className="m-0 flex list-none flex-col gap-0.5 p-0 text-wait">
+          {s.problems.map((p) => (
+            <li key={p} className="break-words">
+              ⚠ {p}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" data-testid="slack-check-now" disabled={busy || !s.receiving} onClick={check}>
+          {busy && <span aria-hidden className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
+          Check receiving now
+        </Button>
+        {summary && (
+          <span data-testid="slack-check-result" className={cx('min-w-0 break-words', summary.ok ? 'text-ok' : 'text-wait')}>
+            {summary.text}
+          </span>
+        )}
+      </div>
+    </div>
   )
 }
 

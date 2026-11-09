@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ryotarai/minbox/internal/store"
@@ -190,6 +191,15 @@ type pollWorker struct {
 	noTargetWarned bool
 	pick           bool        // let the model pick the project of a new thread
 	pickCalls      []time.Time // model calls within the last minute
+
+	// Receiving status (see slackstatus.go): cyc is the cycle in progress (loop goroutine only),
+	// st its published outcome (under smu).
+	cyc     cycStats
+	smu     sync.Mutex
+	st      recvState
+	running atomic.Bool
+	kick    chan chan struct{}
+	stopped chan struct{}
 }
 
 // slackPickPerMinute caps the model calls of one destination.
@@ -202,7 +212,7 @@ func (p *Poller) newWorker(d store.Destination) (*pollWorker, error) {
 		return nil, err
 	}
 	app := n.(*SlackApp)
-	w := &pollWorker{p: p, dest: d, app: app, allowed: map[string]bool{}, fingerprint: fingerprint(d.Config)}
+	w := &pollWorker{p: p, dest: d, app: app, allowed: map[string]bool{}, fingerprint: fingerprint(d.Config), kick: make(chan chan struct{}, 1), stopped: make(chan struct{})}
 	a, _ := d.Config["allowed_users"].(string)
 	for _, id := range SplitUserIDs(a) {
 		w.allowed[id] = true
@@ -225,14 +235,22 @@ func (p *Poller) newWorker(d store.Destination) (*pollWorker, error) {
 }
 
 func (w *pollWorker) loop(ctx context.Context) {
+	defer close(w.stopped)
+	var done chan struct{}
 	for {
 		wait := w.cycle(ctx)
+		if done != nil {
+			close(done)
+			done = nil
+		}
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			t.Stop()
 			return
 		case <-t.C:
+		case done = <-w.kick: // "Check receiving now": the next cycle, early
+			t.Stop()
 		}
 	}
 }
@@ -256,16 +274,18 @@ func (w *pollWorker) take() error {
 	return nil
 }
 
-// cycle polls once (unless paused) and returns how long to wait before the next one.
-func (w *pollWorker) cycle(ctx context.Context) time.Duration {
+// step polls once (unless paused) and returns how long to wait before the next one.
+func (w *pollWorker) step(ctx context.Context) time.Duration {
 	now := w.p.Now()
 	if now.Before(w.pauseUntil) {
+		w.cyc.paused = true
 		return w.pauseUntil.Sub(now)
 	}
 	err := w.run(ctx)
 	if err != nil && !errors.Is(err, errBudget) && ctx.Err() == nil {
 		return w.failed(err)
 	}
+	w.cyc.budget = errors.Is(err, errBudget)
 	if err == nil || errors.Is(err, errBudget) {
 		w.fails = 0
 		w.recordOK(ctx)
@@ -276,6 +296,7 @@ func (w *pollWorker) cycle(ctx context.Context) time.Duration {
 	}
 	if !w.active {
 		d = min(d*3, slackMaxBackoff)
+		w.cyc.slowed = true
 	}
 	if errors.Is(err, errBudget) {
 		d = max(d, 15*time.Second)
@@ -289,6 +310,7 @@ func (w *pollWorker) failed(err error) time.Duration {
 	if errors.As(err, &se) {
 		msg = se.Msg
 	}
+	w.cyc.errMsg = msg
 	w.recordErr(msg)
 	if errors.As(err, &se) && se.Status == http.StatusTooManyRequests {
 		d := se.retryAfterExact
@@ -405,6 +427,7 @@ func (w *pollWorker) run(ctx context.Context) error {
 	}
 	dm, _ := st.GetSlackState(ctx, id, "dm_channel")
 	if dm == "" {
+		w.cyc.dmUnknown = true
 		return nil
 	}
 	all, err := st.ListSlackThreads(ctx, id)
@@ -424,6 +447,12 @@ func (w *pollWorker) run(ctx context.Context) error {
 	r, err := w.call(ctx, "conversations.history", url.Values{"channel": {dm}, "limit": {"200"}})
 	if err != nil {
 		return err
+	}
+	w.cyc.fetched, w.cyc.called = len(r.Messages), true
+	for _, m := range r.Messages {
+		if _, ok := byTS[m.TS]; ok {
+			w.cyc.watched++
+		}
 	}
 	runErr := w.processPage(ctx, pc, r.Messages)
 	if pc.newDM != dmCursor {
@@ -462,7 +491,9 @@ func (w *pollWorker) processPage(ctx context.Context, pc *pageCtx, msgs []slackM
 			pc.newDM = maxTS(pc.newDM, m.TS)
 			continue
 		}
+		before := w.cyc.delivered
 		err := w.accept(ctx, pc.channel, m, w.newThread)
+		w.cyc.threads += w.cyc.delivered - before
 		if err != nil && !errors.Is(err, ErrNoTarget) {
 			return err
 		}
@@ -570,9 +601,11 @@ func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cu
 		if tsCmp(m.TS, cursor) <= 0 || m.TS == t.TS {
 			continue
 		}
+		before := w.cyc.delivered
 		err := w.accept(ctx, t.ChannelID, m, func(ctx context.Context, text string) error {
 			return w.p.In.DeliverReply(ctx, t.ThreadID, text)
 		})
+		w.cyc.replies += w.cyc.delivered - before
 		if err != nil && !errors.Is(err, ErrGone) {
 			failure = err
 			break
@@ -617,6 +650,10 @@ func (w *pollWorker) accept(ctx context.Context, channel string, m slackMsg, del
 		return err
 	}
 	_ = st.SetSlackState(ctx, w.dest.ID, "last_inbound", strconv.FormatInt(w.p.Now().Unix(), 10))
+	n, _ := st.GetSlackState(ctx, w.dest.ID, "delivered_count")
+	c, _ := strconv.Atoi(n)
+	_ = st.SetSlackState(ctx, w.dest.ID, "delivered_count", strconv.Itoa(c+1))
+	w.cyc.delivered++
 	w.active = true
 	w.ack(ctx, channel, m.TS)
 	return nil
@@ -639,6 +676,7 @@ func (w *pollWorker) ack(ctx context.Context, channel, ts string) {
 	case !w.reactWarned:
 		w.reactWarned = true
 		if se.code == "missing_scope" {
+			w.cyc.reactScope = true
 			log.Printf("slack inbound: %s: no ✅ reaction: add the reactions:write scope and reinstall the app to get it", w.dest.ID)
 		} else {
 			log.Printf("slack inbound: %s: could not add the ✅ reaction: %s", w.dest.ID, se.Msg)

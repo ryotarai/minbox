@@ -731,7 +731,26 @@ at from outside, e.g. the Tailscale URL.
 - `DELETE /api/notifications/{id}`; 404 for an unknown id (also for PATCH and test).
 - `POST /api/notifications/{id}/test` sends a sample once (no retries; works while disabled) and answers 200
   `{ok: true}` or `{ok: false, error}`; the result is recorded like any send.
+- `POST /api/notifications/{id}/check` ("Check receiving now") makes the destination's receive worker run ONE poll cycle now
+  (the normal cycle: allowlist, 20 calls/min budget, de-duplication; the cursor and seen set are shared) and answers 200
+  `{ran, busy, summary, status}`: `ran` false with the pause text in `summary` and NO Slack call while Slack's `Retry-After`
+  pause is on; `busy` true when a cycle is already running or queued (nothing started); `summary` one line, e.g. `fetched 200
+  messages, 0 new`, `fetched 3 messages, delivered 1 reply`, `Error: The app lacks the im:history scope…`, `Nothing to poll
+  yet: the DM with the bot is not known. Press Send test first`. `status` is the `receive_status` below. 404 unknown id, 400
+  when the destination does not receive (not a Slack app / `receive` off), 409 when it has no running worker (destination off,
+  or the worker has not started yet: workers are reconciled every 10 s). Same guard as every `/api` route (Host, cross-site
+  Origin, Tailscale login, paired device).
 - SSE `notifications` fires when a destination changes or a send's result was recorded.
+
+`receive_status` (in each destination of `GET`/`POST`/`PATCH`, only for a `slack_app` whose `receive` is on): `{receiving
+(a worker runs), last_poll_at|null, last_poll_ok|null, last_poll_error (same text as last_error), summary (latest cycle),
+next_poll_at|null, paused_until|null (Retry-After), interval_seconds (effective wait; longer than configured_seconds when
+`slowed`: idle x3 up to 5 min, or backing off), configured_seconds, slowed, dm_known (the D… channel is learned from the first
+notification or Send test), delivered (since receive was switched on; persisted), last_delivered_at|null, watched_threads
+(notified parents in the last history page), problems[] (config: Channel not a user ID, allowed users empty/invalid, no
+project route; scopes: missing im:history / reactions:write), missing_scopes[]}`. The poll state is in the worker's memory:
+it restarts with the server or when the destination is re-created or its config changes; `delivered`, `last_delivered_at`
+and `dm_known` come from the store.
 
 ### Slack config
 
@@ -743,8 +762,9 @@ Another type declares its own fields; `events` is read for every type.
 
 `{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD, name like #alerts, or a user ID U…/W… for a DM with the bot, no spaces), include_body
 (default true), thread_replies (default true), mention_me (bool, default true), events}`. The type also publishes `help` (setup steps, one per line: create the
-app at api.slack.com/apps, Bot Token Scopes `chat:write` and optionally `chat:write.public`, install, copy the Bot User OAuth
-Token, `/invite @app` to the channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
+app at api.slack.com/apps, Bot Token Scopes `chat:write`, `im:history`, optional `reactions:write` (not needed:
+`chat:write.public`, `im:write`, `channels:*`), App Home Messages tab on, install/reinstall, copy the Bot User OAuth Token,
+Channel = your member ID and Send test first; `/invite @app` for a channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
 with `Authorization: Bearer <token>` and JSON `{channel, text, blocks, unfurl_links:false, unfurl_media:false[, thread_ts,
 reply_broadcast:false]}`; `blocks` are those of the webhook type. `<base>` is `https://slack.com/api`; the env
 `MINBOX_SLACK_API_BASE` overrides it for tests only (an `http://` URL on a loopback host; anything else is ignored so the token

@@ -67,13 +67,15 @@ var slackAppType = Type{
 		}, Hint: "Polling slows down by itself (up to 5 minutes) while nothing is going on, and stays within 20 Slack API calls a minute."},
 	},
 	finish: finishSlackApp,
-	Help: "How to create the Slack app:\n" +
-		"1. Open api.slack.com/apps and choose Create New App (From scratch).\n" +
-		"2. OAuth & Permissions → Bot Token Scopes: add chat:write (and chat:write.public to post to channels the bot has not joined).\n" +
-		"3. Install to Workspace, then copy the Bot User OAuth Token (xoxb-…) into the Bot token field below.\n" +
-		"4. For a channel: invite the bot with /invite @your-app-name.\n" +
-		"5. For a DM with the bot instead: enter your user ID in the Channel field (Slack profile → ⋮ → Copy member ID, U…). The bot needs no invite and only chat:write. Enable the Messages tab in the app: App Home → Show Tabs → Messages Tab, and tick 'Allow users to send Slash commands and messages from the messages tab'.\n" +
-		"6. To reply from Slack: turn on 'Receive messages from Slack' (DM only: Channel must be your user ID). Add the im:history scope (and reactions:write for the ✅ that confirms delivery), reinstall the app, and make sure you are in the Allowed Slack user IDs. Your replies in a notification's thread go into that minbox thread; a DM to the bot starts a new thread in the project set below. Slack is polled (nothing is exposed), so a message takes up to the poll interval to arrive. Slack limits conversations.history/replies to 1 request a minute for apps distributed in the Marketplace (and for non-Marketplace apps created after 2025-05-29 that are commercially distributed); an internal app is not limited that way, and minbox backs off by Retry-After if it is.",
+	Help: "Slack app setup:\n" +
+		"1. Open api.slack.com/apps → Create New App → From scratch.\n" +
+		"2. OAuth & Permissions → Bot Token Scopes: add chat:write, im:history (to receive your replies) and optionally reactions:write (the ✅ on delivered messages). Not needed: chat:write.public, im:write, channels:*.\n" +
+		"3. App Home → Show Tabs: turn Messages Tab on and tick 'Allow users to send Slash commands and messages from the messages tab'.\n" +
+		"4. Install to Workspace (Reinstall after any scope change), then copy the Bot User OAuth Token (xoxb-…) into Bot token.\n" +
+		"5. No Event Subscriptions, no Socket Mode, no Request URL: minbox polls Slack, nothing is exposed.\n" +
+		"6. Channel: your member ID (Slack profile → ⋮ → Copy member ID, U…) for a DM with the bot. Press Send test first: the DM is learned from it.\n" +
+		"7. To reply from Slack: turn Receive messages from Slack on, set Allowed Slack user IDs and a Fallback project. Replies in a notification's thread go into that minbox thread; a DM to the bot starts a new thread (#project text picks the project). A message takes up to the poll interval to arrive; the status under the destination shows what went wrong, with Check receiving now.\n" +
+		"Posting to a channel instead of a DM: use its ID (C…) or #name as Channel and /invite the bot (or add chat:write.public); receiving needs the DM.",
 	new: func(cfg map[string]any, c *http.Client, env Env) (Notifier, error) {
 		tok, _ := cfg["bot_token"].(string)
 		ch, _ := cfg["channel"].(string)

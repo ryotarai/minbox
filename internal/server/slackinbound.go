@@ -71,7 +71,5 @@ func (in slackInbound) NewThread(ctx context.Context, project, defaultProject, t
 
 // RunSlackInbound polls Slack for the destinations that receive messages, until ctx ends.
 func (s *Server) RunSlackInbound(ctx context.Context) {
-	p := notify.NewPoller(s.store, slackInbound{s})
-	p.Changed = func() { s.hub.publish(Event{Type: "notifications"}) }
-	p.Run(ctx)
+	s.poller.Run(ctx)
 }

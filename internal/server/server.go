@@ -53,6 +53,8 @@ type Server struct {
 	hub      *hub
 	sessions *sessionManager
 	suggest  *suggester
+	// poller receives messages from Slack (RunSlackInbound runs it); its status feeds the Notifications API.
+	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
 	pickRun func(ctx context.Context, prompt string) ([]byte, error)
 	web     fs.FS
@@ -114,6 +116,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 			}},
 		},
 	}
+	s.poller = notify.NewPoller(st, slackInbound{s})
+	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runClaudeSuggest)
 	s.pickRun = s.runClaudePick
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
@@ -232,6 +236,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/notifications/{id}", s.patchNotification)
 	mux.HandleFunc("DELETE /api/notifications/{id}", s.deleteNotification)
 	mux.HandleFunc("POST /api/notifications/{id}/test", s.testNotification)
+	mux.HandleFunc("POST /api/notifications/{id}/check", s.checkNotification)
 	mux.HandleFunc("GET /api/storage", s.storage)
 	mux.HandleFunc("POST /api/storage/clear-scratch", s.clearScratch)
 	mux.HandleFunc("GET /api/about", s.about)
