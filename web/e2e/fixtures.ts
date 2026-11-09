@@ -205,6 +205,10 @@ export async function expectTerminal(page: Page, re: RegExp | string) {
 /** Types a line into the terminal. */
 export async function typeInTerminal(page: Page, text: string) {
   await showTerminal(page)
+  // Keystrokes are sent only over an open socket and dropped otherwise. The terminal is mounted
+  // (and its socket created) only when shown, so right after showTerminal, and again while it
+  // reconnects, the socket may not be open yet: wait for the "connecting…"/"disconnected" badge to go.
+  await expect(page.getByTestId('terminal').locator('xpath=..').getByText(/^(connecting…|disconnected)$/)).toHaveCount(0)
   await page.getByTestId('terminal').click()
   await page.keyboard.type(text)
   await page.keyboard.press('Enter')
