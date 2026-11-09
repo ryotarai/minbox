@@ -337,7 +337,7 @@ A message that arrives as "minbox inbox: … (thread_id: …)" comes from the pe
 The person sees this session in minbox's session list under a title you set with mcp__minbox__set_session_title. Keep it current:
 - Set it once the task is clear, early in the first turn: a few words naming the work (e.g. "Fix login redirect loop"), not a status or a sentence.
 - Set it again whenever the main task changes (a new request, a different bug, the next phase); leave it alone for small steps within the same task.
-- Plain text, at most 80 characters, in the person's language. Do not mention the title in your replies.
+- Plain text, short (around 80 characters is plenty; a guide, not a hard limit), in the person's language. Do not mention the title in your replies.
 
 # minbox: opening pages
 When the person asks you to open, show or view a web page (a PR, an issue, a CI run, a URL), call mcp__minbox__open_url with its URL. It opens the page in the browser they are using minbox from.

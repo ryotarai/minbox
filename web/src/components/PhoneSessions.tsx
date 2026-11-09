@@ -119,7 +119,7 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
       ) : (
         <button type="button" onClick={onOpen} className={cx('flex min-w-0 flex-1 flex-col gap-1 border-0 bg-transparent pl-3.5 pr-1 text-left', strong ? 'py-3' : 'py-2.5')}>
           <div className="flex items-center gap-2">
-            <span data-testid="session-name" className={cx('min-w-0 flex-1 truncate', strong ? 'text-[16px] font-[650]' : 'text-[15.5px] font-medium', s.status === 'ended' && 'text-muted')}>
+            <span data-testid="session-name" title={s.name} className={cx('min-w-0 flex-1 truncate', strong ? 'text-[16px] font-[650]' : 'text-[15.5px] font-medium', s.status === 'ended' && 'text-muted')}>
               {s.name}
             </span>
             <HostTag name={s.host_name} phone />
@@ -135,7 +135,7 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
             )}
           </div>
           {s.title && (
-            <span data-testid="session-title" className={cx('truncate text-[14.5px] font-semibold', s.status === 'ended' ? 'text-muted' : 'text-fg')}>
+            <span data-testid="session-title" title={s.title} className={cx('line-clamp-2 break-words text-[14.5px] font-semibold', s.status === 'ended' ? 'text-muted' : 'text-fg')}>
               {s.title}
             </span>
           )}

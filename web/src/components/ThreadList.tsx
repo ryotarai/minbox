@@ -76,7 +76,7 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
       <div className="flex min-w-0 items-center gap-2">
         {t.unread > 0 && <span aria-label="Unread" className="h-[7px] w-[7px] shrink-0 rounded-full bg-wait" />}
         {t.pinned_at && <IconPin size={12} className="shrink-0 text-muted" />}
-        <span className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'text-fg2')}>{t.subject}</span>
+        <span title={t.subject} className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'text-fg2')}>{t.subject}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
         {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}

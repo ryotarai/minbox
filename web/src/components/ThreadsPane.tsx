@@ -304,7 +304,7 @@ function FilterRow({ v, phone, onSheet }: { v: ReturnType<typeof useVisibleThrea
           onClick={(e) => (phone ? onSheet() : setSAnchor(e.currentTarget))}
           className={cx('flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-transparent px-2.5 text-left text-[12.5px]', phone ? 'h-9' : 'h-7', sel ? 'border-accent text-waitfg' : 'border-linestrong text-fg2')}
         >
-          <span className="truncate">Session: {sel ? sel.name : 'All'}</span>
+          <span className="truncate" title={sel ? sel.name : undefined}>Session: {sel ? sel.name : 'All'}</span>
           <span className="flex-1" />
           <span aria-hidden="true" className="text-subtle">▾</span>
         </button>
@@ -409,7 +409,7 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
             >
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate text-[13px] text-fg">{s.name}</span>
+                  <span className="line-clamp-2 break-words text-[13px] text-fg" title={s.name}>{s.name}</span>
                   {s.is_main && (
                     <span data-testid="session-main-badge" className="shrink-0 rounded-[5px] border border-linestrong px-1 text-[10px] font-semibold uppercase leading-[15px] tracking-[0.04em] text-muted">
                       main
@@ -417,7 +417,7 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
                   )}
                 </span>
                 {(s.status === 'ended' || s.title) && (
-                  <span className={cx('truncate text-[11.5px]', s.status === 'ended' ? 'text-subtle' : 'text-muted')}>
+                  <span className={cx('line-clamp-2 break-words text-[11.5px]', s.status === 'ended' ? 'text-subtle' : 'text-muted')} title={[s.status === 'ended' ? 'Ended' : '', s.title].filter(Boolean).join(' · ')}>
                     {[s.status === 'ended' ? 'Ended' : '', s.title].filter(Boolean).join(' · ')}
                   </span>
                 )}

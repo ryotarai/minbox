@@ -28,7 +28,7 @@ test('clickable rows, their text and menu items use the default arrow cursor', a
   await page.getByTestId('session-filter').click()
   const opt = page.getByTestId('session-option').first()
   expect(await cursorOf(opt)).toBe('default')
-  expect(await cursorOf(opt.locator('span.truncate').first())).toBe('default')
+  expect(await cursorOf(opt.locator('span.line-clamp-2').first())).toBe('default')
 
   await page.keyboard.press('Escape')
   await row.click()

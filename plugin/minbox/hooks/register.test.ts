@@ -140,21 +140,19 @@ test('send_message is refused without a usable thread_title', async ($, on) => {
   const send = (extra: object): Promise<any> => $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', ...extra } as any)
   expect(JSON.stringify(await send({}))).toContain('thread_title is required')
   expect(JSON.stringify(await send({ thread_title: '   ' }))).toContain('thread_title is required')
-  expect(JSON.stringify(await send({ thread_title: 'x'.repeat(31) }))).toContain('at most 30 characters')
-  expect(JSON.stringify(await send({ thread_title: 'あ'.repeat(31) }))).toContain('at most 30 characters')
   expect(server.calls.filter((c) => c.path === '/api/agent/messages')).toHaveLength(0)
 })
 
-test('send_message accepts a thread_title of exactly 30 characters, Japanese too', async ($, on) => {
+test('send_message accepts a long thread_title in full (30 characters is only guidance)', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', thread_title: 'x'.repeat(30) } as any)
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', thread_title: 'あ'.repeat(30) } as any)
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', thread_title: 'あ'.repeat(100) } as any)
   const posts = server.calls.filter((c) => c.path === '/api/agent/messages')
   expect(posts).toHaveLength(2)
-  expect(posts[1]?.body.thread_title).toBe('あ'.repeat(30))
+  expect(posts[1]?.body.thread_title).toBe('あ'.repeat(100))
 })
 
 test('send_message forwards status', async ($, on) => {

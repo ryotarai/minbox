@@ -615,8 +615,8 @@ cancels it.
 
 ## Thread title from the agent (`thread_title`)
 
-- `POST /api/agent/messages` takes `thread_title?` (the `send_message` tool's `thread_title`). Given and non-empty, it sets the thread's title (the stored `subject`): the initial title of a new thread, and the new title of an existing one when the call carries `thread_id`. The `send_message` tool requires it on every message (the mod refuses a missing, blank or over-30-character title), but the server does not, so older mods keep working. Omitted or empty: nothing changes (a new thread still derives its title from the first line of `body`, 60 characters).
-- The title is one line (whitespace runs collapse to a space) and at most 30 characters (longer is cut, ending in `…`).
+- `POST /api/agent/messages` takes `thread_title?` (the `send_message` tool's `thread_title`). Given and non-empty, it sets the thread's title (the stored `subject`): the initial title of a new thread, and the new title of an existing one when the call carries `thread_id`. The `send_message` tool requires it on every message (the mod refuses a missing or blank title; about 30 characters is only guidance to the agent), but the server does not, so older mods keep working. Omitted or empty: nothing changes (a new thread still derives its title from the first line of `body`, in full).
+- The title is one line (whitespace runs collapse to a space) and is never cut for length (the same goes for the session title from `set_session_title`).
 - `subject` is kept as an alias of `thread_title` (when both are sent, `thread_title` wins); the tool documents only `thread_title`. Before, `subject` was ignored with `thread_id`; it now applies there too.
 - A changed title is published like any thread change: `thread` and `threads` SSE events. `name` (the tag the person edits in the UI) is a separate field and is never touched; the UI has no manual rename of the title.
 

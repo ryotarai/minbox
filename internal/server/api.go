@@ -308,7 +308,7 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 	}
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" {
-		subject = firstLine(body, 60)
+		subject = firstLine(body)
 	}
 	if subject == "" && len(ups) > 0 {
 		subject = ups[0].Name
@@ -332,22 +332,15 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, th)
 }
 
-// cleanTitle makes a thread title: one line, whitespace collapsed, 30 characters at most (agent-set titles; the mod already refuses longer).
+// cleanTitle makes a thread title: one line, whitespace collapsed. No length limit (the ~30 characters in the agent's instructions is only guidance).
 func cleanTitle(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 30 {
-		return string(r[:29]) + "…"
-	}
-	return s
+	return strings.Join(strings.Fields(s), " ")
 }
 
-func firstLine(s string, max int) string {
+// firstLine is the first non-empty line of s, in full (a fallback thread subject).
+func firstLine(s string) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	s = strings.TrimSpace(strings.TrimLeft(s, "#>*- "))
-	if r := []rune(s); len(r) > max {
-		return string(r[:max-1]) + "…"
-	}
-	return s
+	return strings.Join(strings.Fields(strings.TrimLeft(s, "#>*- ")), " ")
 }
 
 func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
@@ -644,10 +637,7 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// SessionTitleMax is the longest title set_session_title keeps (in characters).
-const SessionTitleMax = 80
-
-// agentTitle sets the session's title: one line, cut to SessionTitleMax.
+// agentTitle sets the session's title: one line, kept in full (the ~80 characters in the instructions is only guidance).
 func (s *Server) agentTitle(w http.ResponseWriter, r *http.Request, sess *store.Session) {
 	var req struct {
 		Title string `json:"title"`
@@ -659,9 +649,6 @@ func (s *Server) agentTitle(w http.ResponseWriter, r *http.Request, sess *store.
 	if title == "" {
 		httpError(w, 400, "title is required")
 		return
-	}
-	if rs := []rune(title); len(rs) > SessionTitleMax {
-		title = strings.TrimSpace(string(rs[:SessionTitleMax-1])) + "…"
 	}
 	if title != sess.Title {
 		if err := s.store.SetSessionTitle(r.Context(), sess.ID, title); err != nil {
@@ -789,7 +776,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	} else {
 		subject = title
 		if subject == "" {
-			subject = firstLine(body, 60)
+			subject = firstLine(body)
 		}
 		th, msg, err := s.store.CreateThread(ctx, sess.ID, subject, m)
 		if err != nil {

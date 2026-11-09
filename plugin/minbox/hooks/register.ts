@@ -372,10 +372,7 @@ export const register: Register = (on) => {
     }
     const title = typeof e.thread_title === 'string' && e.thread_title.trim() ? e.thread_title : typeof e.subject === 'string' ? e.subject : ''
     if (!title.trim()) {
-      return { deny: 'thread_title is required: name what the thread is about now, in at most 30 characters. Send the message again with it.' }
-    }
-    if ([...title.trim()].length > 30) {
-      return { deny: `thread_title is too long (${[...title.trim()].length} characters): use at most 30 characters. Send the message again with a shorter title.` }
+      return { deny: 'thread_title is required: name what the thread is about now, in about 30 characters or fewer. Send the message again with it.' }
     }
     const res = await api($, 'POST', '/api/agent/messages', {
       body,

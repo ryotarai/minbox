@@ -411,7 +411,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       >
         {!phone && (
           <div className="flex flex-col gap-1.5">
-            <h2 data-testid="thread-subject" className="m-0 text-[19px] font-[650] leading-[1.35]">
+            <h2 data-testid="thread-subject" className="m-0 break-words text-[19px] font-[650] leading-[1.35]">
               {thread.subject}
             </h2>
             <div className="flex flex-wrap items-center gap-2 text-[12px] text-subtle">
