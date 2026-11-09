@@ -492,6 +492,12 @@ Secure, SameSite=Strict, 12 h, re-issued by signing again); without it only thes
 `GET /` (the app, which shows the pairing screen), static assets, and `/api/devices/pair*`,
 `/api/devices/auth*`. `/api/agent/*` stays as it is (bearer).
 
+Cross-site: a request with `Sec-Fetch-Site: cross-site` is refused (403) except a safe top-level
+launch: GET/HEAD with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document` to a path outside
+`/api/` (the app shell and static files). Android Chrome opens a home-screen app that way. Never
+allowed: frames, fetch/XHR, state-changing methods, any `/api/` path. The cookie stays Strict: the
+launch request lacks it (the shell is open anyway); the app's own requests are same-origin and carry it.
+
 Browser key: ECDSA P-256 made with WebCrypto, private key non-extractable, kept in IndexedDB.
 
 ```

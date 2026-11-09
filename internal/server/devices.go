@@ -257,7 +257,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" {
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !launchNavigation(r) {
 			httpError(w, http.StatusForbidden, "cross-site request refused")
 			return
 		}
@@ -281,6 +281,19 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// launchNavigation: a cross-site request that is only the browser opening the
+// app (Android Chrome sends the launch of a home-screen shortcut / WebAPK as a
+// cross-site top-level navigation). Allowed only for a safe top-level document
+// navigation (GET/HEAD, Sec-Fetch-Mode navigate, Sec-Fetch-Dest document: not
+// a frame, fetch or XHR) to a path outside /api/, i.e. the app shell and its
+// static files. Every /api/ route and every state-changing method stays refused.
+func launchNavigation(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		r.Header.Get("Sec-Fetch-Dest") == "document" &&
+		!strings.HasPrefix(r.URL.Path, "/api/")
 }
 
 // requestHost is the host the browser used (tailscale serve passes it on).

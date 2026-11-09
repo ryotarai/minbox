@@ -364,6 +364,50 @@ func TestListenAnyNeedsPairingFromElsewhere(t *testing.T) {
 	}
 }
 
+// Android Chrome launches a home-screen app as a cross-site top-level
+// navigation: the shell must load; nothing else cross-site may.
+func TestCrossSiteLaunchNavigation(t *testing.T) {
+	e := newEnv(t)
+	remote := remoteHeaders("")
+	k := newBrowserKey(t)
+	_, obj, _ := e.do("POST", "/api/devices/pair", map[string]string{"public_key": k.spki, "name": "Pixel"}, remote)
+	e.do("POST", "/api/devices/requests/"+obj["request_id"].(string)+"/accept", nil, nil)
+	_, cookie := e.signIn(k, remote)
+	if cookie == "" {
+		t.Fatal("no cookie")
+	}
+	nav := with(remote, "Sec-Fetch-Site", "cross-site", "Sec-Fetch-Mode", "navigate", "Sec-Fetch-Dest", "document")
+	// The launch: the shell loads, with or without the (Strict) cookie.
+	for _, c := range []string{"", cookie} {
+		if code, _, _ := e.get("/", with(nav, "Cookie", c)); code != 200 {
+			t.Fatalf("launch with cookie %q: %d", c, code)
+		}
+	}
+	// Then the app's own requests are same-origin and carry the cookie.
+	same := with(remote, "Cookie", cookie, "Sec-Fetch-Site", "same-origin", "Sec-Fetch-Mode", "cors", "Sec-Fetch-Dest", "empty")
+	if code, _, _ := e.get("/api/sessions", same); code != 200 {
+		t.Fatalf("session after launch: %d", code)
+	}
+	refused := map[string]map[string]string{
+		"iframe":   with(nav, "Cookie", cookie, "Sec-Fetch-Dest", "iframe"),
+		"cors":     with(nav, "Cookie", cookie, "Sec-Fetch-Mode", "cors"),
+		"no-fetch": with(remote, "Cookie", cookie, "Sec-Fetch-Site", "cross-site"),
+	}
+	for name, h := range refused {
+		if code, _, _ := e.get("/", h); code != 403 {
+			t.Errorf("%s: %d", name, code)
+		}
+	}
+	if code, _, _ := e.do("POST", "/", nil, with(nav, "Cookie", cookie)); code != 403 {
+		t.Errorf("POST: %d", code)
+	}
+	for _, p := range []string{"/api/sessions", "/api/devices/me", "/api/settings"} {
+		if code, _, _ := e.get(p, with(nav, "Cookie", cookie)); code != 403 {
+			t.Errorf("%s: %d", p, code)
+		}
+	}
+}
+
 func TestSameHostToleratesAPortlessProxyHost(t *testing.T) {
 	cases := []struct {
 		origin, req string
