@@ -89,6 +89,8 @@ func (s *Store) UpdateDestination(ctx context.Context, d *Destination) error {
 
 func (s *Store) DeleteDestination(ctx context.Context, id string) error {
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE destination_id=?`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_state WHERE destination_id=?`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_seen WHERE destination_id=?`, id)
 	return s.exec(ctx, `DELETE FROM notification_destinations WHERE id=?`, id)
 }
 
@@ -118,8 +120,8 @@ func (s *Store) GetSlackThread(ctx context.Context, destID, threadID string) (Sl
 
 // PutSlackThread stores (or replaces) the Slack parent of a minbox thread.
 func (s *Store) PutSlackThread(ctx context.Context, destID, threadID string, t SlackThread) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at) VALUES(?,?,?,?,?)`,
-		destID, threadID, t.ChannelID, t.TS, ms(s.now()))
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, last_notified_at) VALUES(?,?,?,?,?,?)`,
+		destID, threadID, t.ChannelID, t.TS, ms(s.now()), ms(s.now()))
 	return err
 }
 

@@ -51,13 +51,25 @@ var slackAppType = Type{
 			{Value: EventsAll, Label: "Every message from Claude"},
 			{Value: EventsAction, Label: "Only messages that need your answer"},
 		}},
+		{Key: "receive", Label: "Receive messages from Slack", Kind: "bool", Default: false,
+			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (and reactions:write for the ✅ ack), and takes up to the poll interval to arrive."},
+		{Key: "allowed_users", Label: "Allowed Slack user IDs", Kind: "text", Placeholder: "U0123ABCD, U0456EFGH",
+			Hint: "Only messages from these members are taken (comma separated). Empty: the user ID in Channel. Required when receiving is on.", validate: validUserIDs},
+		{Key: "default_project", Label: "Project for new threads from a DM", Kind: "text", Placeholder: "my-project",
+			Hint: "A project name: a DM to the bot starts a new thread in that project's main session. Start a DM with #other-project to choose another. Empty: only replies in notification threads are received."},
+		{Key: "poll_interval", Label: "Poll interval", Kind: "select", Default: "60", Options: []Option{
+			{Value: "30", Label: "30 seconds"}, {Value: "60", Label: "1 minute"},
+			{Value: "120", Label: "2 minutes"}, {Value: "300", Label: "5 minutes"},
+		}, Hint: "Polling slows down by itself (up to 5 minutes) while nothing is going on, and stays within 20 Slack API calls a minute."},
 	},
+	finish: finishSlackApp,
 	Help: "How to create the Slack app:\n" +
 		"1. Open api.slack.com/apps and choose Create New App (From scratch).\n" +
 		"2. OAuth & Permissions → Bot Token Scopes: add chat:write (and chat:write.public to post to channels the bot has not joined).\n" +
 		"3. Install to Workspace, then copy the Bot User OAuth Token (xoxb-…) into the Bot token field below.\n" +
 		"4. For a channel: invite the bot with /invite @your-app-name.\n" +
-		"5. For a DM with the bot instead: enter your user ID in the Channel field (Slack profile → ⋮ → Copy member ID, U…). The bot needs no invite and only chat:write. Enable the Messages tab in the app: App Home → Show Tabs → Messages Tab, and tick 'Allow users to send Slash commands and messages from the messages tab'.",
+		"5. For a DM with the bot instead: enter your user ID in the Channel field (Slack profile → ⋮ → Copy member ID, U…). The bot needs no invite and only chat:write. Enable the Messages tab in the app: App Home → Show Tabs → Messages Tab, and tick 'Allow users to send Slash commands and messages from the messages tab'.\n" +
+		"6. To reply from Slack: turn on 'Receive messages from Slack' (DM only: Channel must be your user ID). Add the im:history scope (and reactions:write for the ✅ that confirms delivery), reinstall the app, and make sure you are in the Allowed Slack user IDs. Your replies in a notification's thread go into that minbox thread; a DM to the bot starts a new thread in the project set below. Slack is polled (nothing is exposed), so a message takes up to the poll interval to arrive. Slack limits conversations.history/replies to 1 request a minute for apps distributed in the Marketplace (and for non-Marketplace apps created after 2025-05-29 that are commercially distributed); an internal app is not limited that way, and minbox backs off by Retry-After if it is.",
 	new: func(cfg map[string]any, c *http.Client, env Env) (Notifier, error) {
 		tok, _ := cfg["bot_token"].(string)
 		ch, _ := cfg["channel"].(string)
@@ -82,6 +94,48 @@ var slackAppType = Type{
 func validBotToken(s string) error {
 	if strings.ContainsAny(s, " \t\r\n") {
 		return errors.New("must not contain spaces")
+	}
+	return nil
+}
+
+// slackUserID matches a member ID (U… or W…).
+func slackUserID(s string) bool {
+	if len(s) < 3 || len(s) > 30 || (s[0] != 'U' && s[0] != 'W') {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !(c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// SplitUserIDs splits a comma/space separated list of member IDs.
+func SplitUserIDs(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' || r == ';' })
+}
+
+func validUserIDs(s string) error {
+	for _, id := range SplitUserIDs(s) {
+		if !slackUserID(id) {
+			return fmt.Errorf("%q is not a member ID (U0123ABCD or W0123ABCD; Slack profile → ⋮ → Copy member ID)", safeCode(id))
+		}
+	}
+	return nil
+}
+
+// finishSlackApp: receiving needs a DM (v1) and an allowlist; the allowlist defaults to the DM's user.
+func finishSlackApp(cfg map[string]any) error {
+	if on, _ := cfg["receive"].(bool); !on {
+		return nil
+	}
+	ch, _ := cfg["channel"].(string)
+	if !slackUserID(ch) {
+		return errors.New("Receive messages from Slack works for a DM only: put your user ID (U0123ABCD) in Channel")
+	}
+	if a, _ := cfg["allowed_users"].(string); strings.TrimSpace(a) == "" {
+		cfg["allowed_users"] = ch
 	}
 	return nil
 }
@@ -122,6 +176,21 @@ type slackResp struct {
 	TS      string `json:"ts"`
 	Team    string `json:"team"`
 	User    string `json:"user"`
+	// conversations.history / conversations.replies
+	Messages []slackMsg `json:"messages"`
+	HasMore  bool       `json:"has_more"`
+}
+
+type slackMsg struct {
+	Type     string `json:"type"`
+	Subtype  string `json:"subtype"`
+	User     string `json:"user"`
+	BotID    string `json:"bot_id"`
+	Text     string `json:"text"`
+	TS       string `json:"ts"`
+	ThreadTS string `json:"thread_ts"`
+	// LatestReply is the ts of the newest reply to this message (set on a thread parent).
+	LatestReply string `json:"latest_reply"`
 }
 
 // Send posts the notification (grouped in the Slack thread of its minbox thread when enabled).
@@ -141,6 +210,7 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 	if ok {
 		_, err := s.post(ctx, n, parent.ChannelID, parent.TS)
 		if err == nil {
+			_ = s.Store.TouchSlackThread(ctx, s.DestID, n.ThreadID)
 			return nil
 		}
 		var se *SendError
@@ -194,7 +264,12 @@ func (s *SlackApp) post(ctx context.Context, n Notification, channel, threadTS s
 		body["thread_ts"] = threadTS
 		body["reply_broadcast"] = false
 	}
-	return s.call(ctx, "chat.postMessage", body)
+	r, err := s.call(ctx, "chat.postMessage", body)
+	// The DM channel (D…) is where the replies and the DMs to the bot are read from.
+	if err == nil && s.Store != nil && s.DestID != "" && strings.HasPrefix(r.Channel, "D") {
+		_ = s.Store.SetSlackState(ctx, s.DestID, "dm_channel", r.Channel)
+	}
+	return r, err
 }
 
 func (s *SlackApp) call(ctx context.Context, method string, body map[string]any) (slackResp, error) {
@@ -208,6 +283,21 @@ func (s *SlackApp) call(ctx context.Context, method string, body map[string]any)
 		return r, &SendError{Msg: "bad Slack API URL"}
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	return s.do(ctx, req)
+}
+
+// callForm calls a read method (conversations.history/replies take form-encoded parameters).
+func (s *SlackApp) callForm(ctx context.Context, method string, v url.Values) (slackResp, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(s.Base, "/")+"/"+method, strings.NewReader(v.Encode()))
+	if err != nil {
+		return slackResp{}, &SendError{Msg: "bad Slack API URL"}
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return s.do(ctx, req)
+}
+
+func (s *SlackApp) do(ctx context.Context, req *http.Request) (slackResp, error) {
+	var r slackResp
 	req.Header.Set("Authorization", "Bearer "+s.Token)
 	resp, err := s.Client.Do(req)
 	if err != nil {
@@ -215,12 +305,13 @@ func (s *SlackApp) call(ctx context.Context, method string, body map[string]any)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	retryAfter := time.Duration(0)
+	retryAfter, exact := time.Duration(0), time.Duration(0)
 	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
-		retryAfter = min(time.Duration(secs)*time.Second, time.Minute)
+		exact = time.Duration(secs) * time.Second
+		retryAfter = min(exact, time.Minute)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return r, &SendError{Msg: "Slack is rate limiting this app; will retry", Status: 429, Retry: true, RetryAfter: retryAfter, code: "ratelimited"}
+		return r, &SendError{Msg: "Slack is rate limiting this app; will retry", Status: 429, Retry: true, RetryAfter: retryAfter, retryAfterExact: exact, code: "ratelimited"}
 	}
 	if resp.StatusCode >= 500 {
 		return r, &SendError{Msg: fmt.Sprintf("Slack answered %d", resp.StatusCode), Status: resp.StatusCode, Retry: true, RetryAfter: retryAfter}
@@ -229,7 +320,9 @@ func (s *SlackApp) call(ctx context.Context, method string, body map[string]any)
 		return r, &SendError{Msg: fmt.Sprintf("Slack answered %d with something that is not JSON", resp.StatusCode), Status: resp.StatusCode}
 	}
 	if !r.OK {
-		return r, slackAPIError(r, retryAfter)
+		e := slackAPIError(r, retryAfter)
+		e.retryAfterExact = exact
+		return r, e
 	}
 	return r, nil
 }

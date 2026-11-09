@@ -382,6 +382,19 @@ CREATE TABLE IF NOT EXISTS notification_slack_threads (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (destination_id, minbox_thread_id)
 );
+CREATE TABLE IF NOT EXISTS notification_slack_state (
+  destination_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (destination_id, key)
+);
+CREATE TABLE IF NOT EXISTS notification_slack_seen (
+  destination_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (destination_id, channel_id, ts)
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -423,6 +436,8 @@ var addedColumns = []struct{ table, column, def string }{
 	{"hosts", "tailscale_login", "TEXT NOT NULL DEFAULT ''"},
 	{"hosts", "paired", "INTEGER NOT NULL DEFAULT 0"},
 	{"hosts", "pairing_code", "TEXT NOT NULL DEFAULT ''"},
+	{"notification_slack_threads", "last_notified_at", "INTEGER NOT NULL DEFAULT 0"},
+	{"notification_slack_threads", "reply_cursor", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func migrate(db *sql.DB) error {

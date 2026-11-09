@@ -165,6 +165,18 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   ID) to get the notifications as a DM from the bot: no invite, only the `chat:write` scope, but
   the app's Messages tab must be on (App Home → Show Tabs → Messages Tab, "Allow users to send
   Slash commands and messages from the messages tab").
+- **Reply from Slack** (opt-in, per Slack app destination): switch on *Receive messages from Slack*
+  (DM only, so Channel must be your user ID) and minbox polls Slack with the bot token: no public
+  URL, no Socket Mode. A reply you write in a notification's Slack thread lands in that minbox
+  thread, and a DM to the bot starts a new thread in the project you set (`#other-project text`
+  picks another one). Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
+  delivered messages get a ✅. Add the `im:history` scope (and `reactions:write` for the ✅) under
+  OAuth & Permissions and reinstall the app. Messages arrive within the poll interval (30 s to
+  5 min; polling slows down when nothing is going on) and polling stays within 20 Slack calls a
+  minute and obeys `Retry-After`. Each poll reads the latest 200 top-level messages of the DM (one
+  call), so replies in threads older than those are not seen. Note that Slack limits `conversations.history`/`replies` to
+  1 request a minute for apps distributed in the Marketplace (and non-Marketplace apps created
+  after 2025-05-29 that are commercially distributed), not for an internal app of your workspace.
 
 You can limit a destination to messages that need your answer, or send only the title. Set the
 **public URL** (e.g. your Tailscale URL) there so each notification has an "Open thread" link.
