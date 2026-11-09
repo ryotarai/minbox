@@ -56,7 +56,7 @@ export function useVisibleThreads(): { all: Thread[] | null; groups: { key: stri
 
 /** The pane: top bar, filters, every thread of every session, and the composer. */
 export function ThreadsPane({ phone }: { phone?: boolean }) {
-  const { route, navigate, settings } = useApp()
+  const { route, navigate, settings, sessions } = useApp()
   const v = useVisibleThreads()
   const { filter } = v
   const flat = useMemo(() => v.groups.flatMap((g) => g.items), [v.groups])
@@ -103,6 +103,24 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
     if (settings.list.keep_panel && !phone && !route.t && flat[0]) open(flat[0])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v.all])
+
+  // Switching project (or loading the page on one) opens the project's top thread, so the list and the thread
+  // pane agree. One shot per project: once the person closes the thread the pane stays empty until the next
+  // switch. Not on the phone, where opening would skip the list. We wait until the route's session is in the
+  // project (Root has finished moving there and cleared the old thread) and the thread list has loaded.
+  const autoPending = useRef<string | null>(null)
+  useEffect(() => {
+    autoPending.current = projectId || null
+  }, [projectId])
+  useEffect(() => {
+    if (phone || !projectId || autoPending.current !== projectId || !v.all || !sessions) return
+    const cur = sessions.find((s) => s.id === route.s)
+    if (!cur || cur.project_id !== projectId) return
+    autoPending.current = null
+    if (route.t || route.tab === 'terminal') return
+    if (flat[0]) open(flat[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, projectId, v.all, sessions, route.s, route.t, route.tab, flat])
 
   const allCount = v.counts.all
   return (

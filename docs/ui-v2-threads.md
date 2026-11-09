@@ -141,6 +141,12 @@ shell toggle (Ctrl+`), `...` session menu (Rename, Stop / Resume, Archive, Delet
 The terminal element sits at a fixed position in the tree and is keyed by session id, so moving between
 threads of one session never remounts it. A thread of another session reattaches the terminal.
 
+**Project switch** (desktop and tablet, never the phone): switching project (rail, Cmd+K) or loading the page on a
+project with no `t` opens the project's top visible thread (first list row, folded Snoozed/Archived excluded), once
+the thread list has loaded and `route.s` is inside the project. One shot per project: closing the thread (Escape,
+back) leaves the pane empty until the next switch; a `t` in the URL is never overridden. A project with no threads
+shows the empty state below. Opening marks the thread read, as any open does.
+
 **No thread selected** (`t` null): the thread pane shows a quiet empty hint (icon and `Pick a thread to read it
 here.`, no session list); the terminal still shows `route.s`. With no
 session selected on load we pick the most urgent session. Opening a terminal without a thread: the session chip in the phone thread header,
