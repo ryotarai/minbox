@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Component, useEffect, useState, type ReactNode } from 'react'
 import { api, type About, type Session, type Storage, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { notificationPermission, notify, requestNotifications, dingDong } from '../lib/alerts'
@@ -64,6 +64,7 @@ export function SettingsPage() {
           <h1 className="m-0 text-[22px] font-bold">{NAV.find((n) => n.id === section)?.label ?? 'General'}</h1>
           {section === 'general' && about && <span className="mono text-[12px] text-subtle">minbox {about.version}</span>}
         </div>
+        <SectionBoundary key={section}>
         {section === 'general' && <General />}
         {section === 'notifications' && <NotificationsSection />}
         {section === 'hosts' && <HostsSection />}
@@ -73,9 +74,31 @@ export function SettingsPage() {
         {section === 'archived' && <Archived />}
         {section === 'storage' && <StorageSection />}
         {section === 'about' && <AboutSection about={about} />}
+        </SectionBoundary>
       </main>
     </div>
   )
+}
+
+// A crash inside one settings section shows a message here instead of blanking the whole app.
+class SectionBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
+  state = { err: null as Error | null }
+  static getDerivedStateFromError(err: Error) {
+    return { err }
+  }
+  componentDidCatch(err: Error) {
+    console.error('settings section crashed', err)
+  }
+  render() {
+    if (!this.state.err) return this.props.children
+    return (
+      <div data-testid="settings-crash" role="alert" className="flex max-w-[720px] flex-col gap-2 rounded-xl border border-line bg-surface px-4 py-4 text-[13.5px]">
+        <strong className="text-danger">This section failed to render.</strong>
+        <span className="mono break-words text-[12px] text-muted">{String(this.state.err.message || this.state.err)}</span>
+        <span className="text-muted">Reload the page; if it keeps happening, report the message above.</span>
+      </div>
+    )
+  }
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {

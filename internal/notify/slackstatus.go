@@ -143,7 +143,7 @@ func contains(l []string, s string) bool {
 
 // configProblems reads what is wrong with a destination's receiving config.
 func configProblems(cfg map[string]any) []string {
-	var out []string
+	out := []string{} // never nil: the UI reads .length of the JSON array
 	if ch, _ := cfg["channel"].(string); !slackUserID(ch) {
 		out = append(out, "Channel is not a user ID: receiving works for a DM only (put your member ID, U…, in Channel)")
 	}

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -216,5 +217,22 @@ func TestCheckNowRespectsAllowlistAndDedupe(t *testing.T) {
 	defer r.in.mu.Unlock()
 	if len(r.in.replies) != 1 || r.in.replies[0] != "thr_1:yes" {
 		t.Fatalf("replies = %q", r.in.replies)
+	}
+}
+
+// A healthy destination has no problems; they must encode as [] not null (the settings page
+// reads .length and crashed on null).
+func TestStatusJSONArraysAreNeverNull(t *testing.T) {
+	r := newInRig(t, nil)
+	b, err := json.Marshal(r.p.Status(context.Background(), r.dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	for _, k := range []string{"problems", "missing_scopes"} {
+		if _, ok := m[k].([]any); !ok {
+			t.Fatalf("%s = %v in %s, want an array", k, m[k], b)
+		}
 	}
 }

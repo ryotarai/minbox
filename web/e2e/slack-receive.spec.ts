@@ -65,3 +65,41 @@ test('Slack receiving status and Check receiving now', async ({ page, minbox }) 
   await expect(box.getByTestId('slack-receive-dm')).toHaveText(/known$/)
   await expect(box.getByTestId('slack-check-now')).toBeEnabled()
 })
+
+// Regression: Settings > Notifications went black (a React crash) when a receiving Slack app had no
+// problems, because the server sent "problems": null and the page read .length. Also old stored
+// destinations (no config), null lists and a null status must render, not crash.
+test('Notifications renders with problems null, old destinations and null lists', async ({ page, minbox }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  const token = 'xox' + 'b-1-fakefakefake'
+  const created = await (
+    await fetch(minbox.url + '/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'slack_app', name: 'Healthy Slack', config: { bot_token: token, channel: 'U0ME' } }),
+    })
+  ).json()
+  await page.route('**/api/notifications', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    const body = await res.json()
+    const status = { receiving: true, last_poll_at: null, last_poll_ok: null, last_poll_error: null, summary: '', next_poll_at: null, paused_until: null, interval_seconds: 60, configured_seconds: 60, slowed: false, dm_known: true, delivered: 0, last_delivered_at: null, watched_threads: 0, problems: null, missing_scopes: null }
+    const old = { enabled: true, created_at: new Date().toISOString(), last_ok_at: null, last_error: '', last_error_at: null }
+    body.destinations = [
+      ...body.destinations.map((d: any) => (d.id === created.id ? { ...d, receive_status: status } : d)),
+      { ...old, id: 'old1', type: 'slack_app', name: 'Old one', config: null, receive_status: null },
+      { ...old, id: 'old2', type: 'gone_type', name: 'Unknown type', config: {} },
+    ]
+    body.types = body.types.map((t: any) => ({ ...t, fields: t.fields.map((f: any) => ({ ...f, options: f.options ?? null })) }))
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(`${minbox.url}/#v=settings&ss=notifications`)
+  await expect(page.getByTestId('notif-list')).toBeVisible()
+  await expect(page.getByTestId('notif-row')).toHaveCount(3)
+  await expect(page.getByTestId('slack-receive-status')).toHaveCount(1)
+  await expect(page.getByTestId('settings-crash')).toHaveCount(0)
+  await page.getByTestId('notif-edit').first().click()
+  await expect(page.getByTestId('notif-form-name')).toBeVisible()
+  expect(errors).toEqual([])
+})

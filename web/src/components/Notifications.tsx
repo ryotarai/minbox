@@ -26,8 +26,9 @@ function rel(iso: string | null | undefined, now: number): string {
 
 // What a destination points at: its masked secret (webhook URL, token), plus the channel when it has one.
 function target(d: NotifyDestination): string {
-  const secret = String(d.config.webhook_url ?? d.config.bot_token ?? '')
-  const channel = String(d.config.channel ?? '')
+  const cfg = d.config ?? {}
+  const secret = String(cfg.webhook_url ?? cfg.bot_token ?? '')
+  const channel = String(cfg.channel ?? '')
   return channel ? `${channel} · ${secret}` : secret
 }
 
@@ -42,7 +43,10 @@ export function NotificationsSection() {
   const [url, setUrl] = useState(settings.public_url)
   useEffect(() => setUrl(settings.public_url), [settings.public_url])
   const load = useCallback(() => {
-    api.notifications().then(setData).catch(error)
+    api
+      .notifications()
+      .then((d) => setData({ types: (d.types ?? []).map((t) => ({ ...t, fields: t.fields ?? [] })), destinations: d.destinations ?? [] }))
+      .catch(error)
   }, [error])
   useEffect(() => {
     load()
@@ -211,13 +215,14 @@ function ReceiveStatusView({ d, s, onChecked }: { d: NotifyDestination; s: Recei
     setSummary(null)
     api
       .checkNotification(d.id)
-      .then((r) => setSummary({ ok: r.status.last_poll_ok !== false && !r.status.problems.length, text: r.summary }))
+      .then((r) => setSummary({ ok: r.status?.last_poll_ok !== false && !(r.status?.problems ?? []).length, text: r.summary }))
       .catch((e) => setSummary({ ok: false, text: String(e?.message ?? e) }))
       .finally(() => {
         setBusy(false)
         onChecked()
       })
   }
+  const problems = s.problems ?? [] // null from an older server
   const paused = s.paused_until && new Date(s.paused_until).getTime() > now
   const rows: [string, string, boolean][] = [] // label, value, warning
   rows.push(['Receiving', s.receiving ? 'on' : 'not running', !s.receiving])
@@ -238,9 +243,9 @@ function ReceiveStatusView({ d, s, onChecked }: { d: NotifyDestination; s: Recei
           </div>
         ))}
       </dl>
-      {s.problems.length > 0 && (
+      {problems.length > 0 && (
         <ul data-testid="slack-receive-problems" className="m-0 flex list-none flex-col gap-0.5 p-0 text-wait">
-          {s.problems.map((p) => (
+          {problems.map((p) => (
             <li key={p} className="break-words">
               ⚠ {p}
             </li>
@@ -266,15 +271,15 @@ function initialValues(t: NotifyType, edit?: NotifyDestination): Record<string, 
   const v: Record<string, unknown> = {}
   for (const f of t.fields) {
     if (f.kind === 'secret') v[f.key] = '' // never filled: empty keeps the stored one
-    else v[f.key] = edit && f.key in edit.config ? edit.config[f.key] : (f.default ?? (f.kind === 'bool' ? false : ''))
+    else v[f.key] = edit?.config && f.key in edit.config ? edit.config[f.key] : (f.default ?? (f.kind === 'bool' ? false : ''))
   }
   return v
 }
 
 function DestinationForm({ types, edit, onClose, onSaved }: { types: NotifyType[]; edit?: NotifyDestination; onClose: () => void; onSaved: () => void }) {
   const { isPhone } = useApp()
-  const [typeId, setTypeId] = useState(edit?.type ?? types[0].id)
-  const type = types.find((t) => t.id === typeId) ?? types[0]
+  const [typeId, setTypeId] = useState(edit?.type ?? types[0]?.id ?? '')
+  const type = types.find((t) => t.id === typeId) ?? types[0] ?? { id: typeId, label: typeId, fields: [] }
   const [name, setName] = useState(edit?.name ?? '')
   const [values, setValues] = useState(() => initialValues(type, edit))
   const [problem, setProblem] = useState('')
@@ -332,7 +337,7 @@ function DestinationForm({ types, edit, onClose, onSaved }: { types: NotifyType[
         <input data-testid="notif-form-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={type.label} className={inputCls} />
       </label>
       {type.fields.map((f) => (
-        <FieldInput key={f.key} f={f} value={values[f.key]} onChange={(v) => set(f.key, v)} stored={edit ? String(edit.config[f.key] ?? '') : ''} />
+        <FieldInput key={f.key} f={f} value={values[f.key]} onChange={(v) => set(f.key, v)} stored={edit ? String(edit.config?.[f.key] ?? '') : ''} />
       ))}
       {problem && (
         <span data-testid="notif-form-error" className="text-[13px] text-danger">
@@ -370,8 +375,8 @@ function FieldInput({ f, value, onChange, stored }: { f: NotifyField; value: unk
     <label className="flex flex-col gap-1.5 text-[13px] text-muted">
       {f.label}
       {f.kind === 'select' ? (
-        <select data-testid={testid} value={String(value)} onChange={(e) => onChange(e.target.value)} className={inputCls}>
-          {f.options?.map((o) => (
+        <select data-testid={testid} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+          {(f.options ?? []).map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
