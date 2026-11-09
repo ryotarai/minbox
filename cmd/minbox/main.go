@@ -585,6 +585,7 @@ func serve(args []string) error {
 		log.Printf("terminal host not ready yet: %v (retrying in the background)", err)
 	}
 
+	go srv.RunSlackInbound(ctx) // polls Slack for the destinations that opted in to receive
 	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 	hs.RegisterOnShutdown(srv.Close)
 	go func() {

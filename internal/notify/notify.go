@@ -67,6 +67,8 @@ type Type struct {
 	Help string `json:"help,omitempty"`
 
 	new func(cfg map[string]any, c *http.Client, env Env) (Notifier, error)
+	// finish checks (and may complete) a normalized config as a whole; nil: nothing to do.
+	finish func(cfg map[string]any) error
 }
 
 // Env is what a notifier may need besides its config: the store (for state such as the Slack
@@ -193,6 +195,11 @@ func (t *Type) Normalize(old, in map[string]any) (map[string]any, error) {
 			out[f.Key] = s
 		}
 	}
+	if t.finish != nil {
+		if err := t.finish(out); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 
@@ -232,6 +239,8 @@ type SendError struct {
 	RetryAfter time.Duration
 	Retry      bool
 	code       string // Slack's error code, when there was one
+	// retryAfterExact is Retry-After as Slack sent it (RetryAfter is capped for the send retries).
+	retryAfterExact time.Duration
 }
 
 func (e *SendError) Error() string { return e.Msg }

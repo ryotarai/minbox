@@ -767,6 +767,44 @@ as a thread parent); the answer is `{ok: true, message: "Connected to <team> as 
 
 The token is shown masked as `xoxb-…` + last 4 characters, never in full, never logged, and never in an error text.
 
+### Receiving messages from Slack (`slack_app`, opt-in, polling)
+
+Extra config fields: `receive` (bool, default **false**; nothing is polled unless true; requires `channel` to be a user ID, i.e. a
+DM, else 400), `allowed_users` (comma separated member IDs `U…`/`W…`; empty defaults to the `channel` user; only these members'
+messages are taken), `default_project` (a project NAME; a DM starts a new thread in its main session; empty: DMs are ignored, one
+log line), `poll_interval` (select `30|60|120|300` seconds, default 60). Transport is polling of the Web API with the bot token
+(no Socket Mode, no public URL). Code: `internal/notify/slackinbound.go` (poller), `internal/server/slackinbound.go` (turns a
+message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply` does; `CreateThread` as `POST
+/api/sessions/{id}/threads` does; messages are stored as the person's own words, no source marker), started by `main.go`
+(`RunSlackInbound`), stopped with the server.
+
+- **Watching**: each cycle makes ONE `conversations.history(<D… channel>, limit=200)` call: the latest 200 top-level messages
+  of the DM (no time horizon, no paging; replies in threads older than those 200 messages are not seen). Every notification
+  parent in it carries `latest_reply`; `conversations.replies(channel, ts=<parent>, oldest=<cursor>)` is called only for a parent
+  whose `latest_reply` is newer than the stored reply cursor (at most 8 per cycle), so the steady state is one call per cycle
+  however many threads exist. Replies older than the moment receiving was enabled are never delivered. A top-level message newer
+  than the DM cursor starts a new thread; an optional `#<project> text` prefix
+  picks another project (if no project has that name the whole text is used with the default). The D… channel is learned from
+  the first notification/test sent. Skipped: `bot_id`, any `subtype` (edits, deletes, joins), non-allowed members (log line
+  without the text), empty text. Text: Slack `<url|label>` becomes `label`, `&lt;&gt;&amp;` decoded, capped at 4000 characters
+  (a note is appended). Delivered messages get a ✅ (`reactions.add white_check_mark`); `missing_scope` /
+  `already_reacted` never fail the delivery (one log line).
+- **State** (additive): columns `notification_slack_threads.last_notified_at`, `.reply_cursor`; tables
+  `notification_slack_state(destination_id, key, value)` (`since`, `dm_channel`, `dm_cursor`, `last_inbound`) and
+  `notification_slack_seen(destination_id, channel_id, ts, at)` (PK; a message is taken with INSERT OR IGNORE before delivery and
+  released if delivery fails, so it is delivered at most once; pruned after 7 days). On first enable `since` = now: no history is
+  imported. A PATCH that changes `receive`, `channel` or `bot_token` resets this state.
+- **Rate limits**: at most 20 API calls/minute per destination (all methods, the ✅ included; sliding window), a 429 pauses the
+  whole poller for exactly `Retry-After`, other errors back off exponentially with jitter (cap 5 minutes), success resets. With
+  nothing notified and nothing received in 24h the interval is multiplied by 3 (cap 5 minutes). Slack gives apps distributed in
+  the Marketplace (and non-Marketplace apps created after 2025-05-29 that are commercially distributed) only 1 request/minute on
+  `conversations.history` / `.replies`; an internal customer-built app has Tier 3 (about 50/minute). minbox backs off by
+  Retry-After either way, which is slow but safe.
+- **Errors**: a polling failure is shown in `last_error` prefixed "Receiving from Slack:", e.g. `missing_scope` -> "The app lacks the
+  im:history scope: add it under OAuth & Permissions … and reinstall the app"; the next successful poll clears it.
+- **Scopes**: `im:history` (DM history and replies), `reactions:write` (optional ✅), plus `chat:write`. v1 is DM only; private
+  channels (`groups:history`) and public channels (`channels:history`) are not supported.
+
 ### Secrecy
 
 The webhook URL is never returned in full, by the API or the UI: a `secret` field comes back as scheme + host + `/…` + its last

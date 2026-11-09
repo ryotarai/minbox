@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,7 +39,15 @@ func newFakeSlackAPI(t *testing.T, reply func(c appCall, n int) (int, http.Heade
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		var m map[string]any
-		_ = json.Unmarshal(b, &m)
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+			q, _ := url.ParseQuery(string(b))
+			m = map[string]any{}
+			for k := range q {
+				m[k] = q.Get(k)
+			}
+		} else {
+			_ = json.Unmarshal(b, &m)
+		}
 		c := appCall{method: strings.TrimPrefix(r.URL.Path, "/"), auth: r.Header.Get("Authorization"), body: m}
 		f.mu.Lock()
 		f.calls = append(f.calls, c)

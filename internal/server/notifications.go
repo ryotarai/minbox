@@ -158,6 +158,10 @@ func (s *Server) patchNotification(w http.ResponseWriter, r *http.Request) {
 		if cfg["channel"] != d.Config["channel"] || cfg["bot_token"] != d.Config["bot_token"] {
 			_ = s.store.DeleteSlackThreads(r.Context(), d.ID)
 		}
+		// Receiving starts from "now" again when it is switched on, or the token or channel changed.
+		if cfg["receive"] != d.Config["receive"] || cfg["channel"] != d.Config["channel"] || cfg["bot_token"] != d.Config["bot_token"] {
+			_ = s.store.ResetSlackInbound(r.Context(), d.ID)
+		}
 		d.Config = cfg
 	}
 	if err := s.store.UpdateDestination(r.Context(), d); err != nil {
