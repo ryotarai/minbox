@@ -47,6 +47,8 @@ var slackAppType = Type{
 		{Key: "include_body", Label: "Send full message", Kind: "bool", Default: true, Hint: "Off: only the thread title."},
 		{Key: "thread_replies", Label: "Group a thread's messages in one Slack thread", Kind: "bool", Default: true,
 			Hint: "The first notification of a minbox thread is the parent; later ones are replies to it."},
+		{Key: "mention_me", Label: "Mention me when starting a thread", Kind: "bool", Default: true,
+			Hint: "The first message of a Slack thread mentions you (the user ID in Channel, else the first Allowed Slack user ID), because Slack only notifies about replies in a thread you take part in or are mentioned in. Later messages of the thread do not repeat it."},
 		{Key: "events", Label: "Notify for", Kind: "select", Default: EventsAll, Options: []Option{
 			{Value: EventsAll, Label: "Every message from Claude"},
 			{Value: EventsAction, Label: "Only messages that need your answer"},
@@ -55,8 +57,10 @@ var slackAppType = Type{
 			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (and reactions:write for the ✅ ack), and takes up to the poll interval to arrive."},
 		{Key: "allowed_users", Label: "Allowed Slack user IDs", Kind: "text", Placeholder: "U0123ABCD, U0456EFGH",
 			Hint: "Only messages from these members are taken (comma separated). Empty: the user ID in Channel. Required when receiving is on.", validate: validUserIDs},
-		{Key: "default_project", Label: "Project for new threads from a DM", Kind: "text", Placeholder: "my-project",
-			Hint: "A project name: a DM to the bot starts a new thread in that project's main session. Start a DM with #other-project to choose another. Empty: only replies in notification threads are received."},
+		{Key: "pick_project", Label: "Let Claude Haiku pick the project", Kind: "bool", Default: true,
+			Hint: "A DM that starts a new thread (without a #project prefix) is sent to Claude Haiku together with your project names, and the thread goes to the project it picks. At most one call per DM and 10 a minute; the DM text is sent to Claude. Only matters when receiving is on."},
+		{Key: "default_project", Label: "Fallback project (when Claude cannot tell)", Kind: "text", Placeholder: "my-project",
+			Hint: "A project name used when Claude Haiku is off, unsure or fails. Start a DM with #other-project to choose a project yourself (no Claude call). Empty and no project found: the DM is ignored; only replies in notification threads are received."},
 		{Key: "poll_interval", Label: "Poll interval", Kind: "select", Default: "60", Options: []Option{
 			{Value: "30", Label: "30 seconds"}, {Value: "60", Label: "1 minute"},
 			{Value: "120", Label: "2 minutes"}, {Value: "300", Label: "5 minutes"},
@@ -87,7 +91,12 @@ var slackAppType = Type{
 		if !ok {
 			thr = true
 		}
-		return &SlackApp{Token: tok, Channel: ch, IncludeBody: inc, ThreadReplies: thr, Client: c, Store: env.Store, DestID: env.DestID, Base: slackAPIBase}, nil
+		men, ok := cfg["mention_me"].(bool)
+		if !ok {
+			men = true
+		}
+		allowed, _ := cfg["allowed_users"].(string)
+		return &SlackApp{Token: tok, Channel: ch, IncludeBody: inc, ThreadReplies: thr, MentionMe: men, AllowedUsers: allowed, Client: c, Store: env.Store, DestID: env.DestID, Base: slackAPIBase}, nil
 	},
 }
 
@@ -153,10 +162,29 @@ type SlackApp struct {
 	Channel       string
 	IncludeBody   bool
 	ThreadReplies bool
+	MentionMe     bool   // mention the person in the parent post of a Slack thread
+	AllowedUsers  string // Allowed Slack user IDs (the mention falls back to the first)
 	Client        *http.Client
 	Store         *store.Store // thread grouping; nil: always top-level
 	DestID        string
 	Base          string // API base URL
+}
+
+// mentionID is who the parent post mentions: the Channel when it is a user ID, else the first
+// allowed user; "" when neither is known (or mentioning is off).
+func (s *SlackApp) mentionID() string {
+	if !s.MentionMe {
+		return ""
+	}
+	if slackUserID(s.Channel) {
+		return s.Channel
+	}
+	for _, id := range SplitUserIDs(s.AllowedUsers) {
+		if slackUserID(id) {
+			return id
+		}
+	}
+	return ""
 }
 
 // One lock per (destination, minbox thread): two notifications of one thread at the same
@@ -197,7 +225,7 @@ type slackMsg struct {
 // Errors never contain the token.
 func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 	if n.Test || !s.ThreadReplies || s.Store == nil || n.ThreadID == "" {
-		_, err := s.post(ctx, n, s.Channel, "")
+		_, err := s.post(ctx, n, s.Channel, "", n.Test)
 		return err
 	}
 	mu := slackThreadLock(s.DestID, n.ThreadID)
@@ -208,7 +236,7 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 		return &SendError{Msg: "reading the Slack thread: " + err.Error()}
 	}
 	if ok {
-		_, err := s.post(ctx, n, parent.ChannelID, parent.TS)
+		_, err := s.post(ctx, n, parent.ChannelID, parent.TS, false)
 		if err == nil {
 			_ = s.Store.TouchSlackThread(ctx, s.DestID, n.ThreadID)
 			return nil
@@ -219,7 +247,7 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 		}
 		// The parent was deleted in Slack: this message becomes the new one.
 	}
-	r, err := s.post(ctx, n, s.Channel, "")
+	r, err := s.post(ctx, n, s.Channel, "", true)
 	if err != nil {
 		return err
 	}
@@ -248,14 +276,25 @@ func (s *SlackApp) Test(ctx context.Context, n Notification) (string, error) {
 	if r.User != "" {
 		info += " as " + r.User
 	}
-	if _, err := s.post(ctx, n, s.Channel, ""); err != nil {
+	if _, err := s.post(ctx, n, s.Channel, "", true); err != nil {
 		return "", err
 	}
 	return info, nil
 }
 
-func (s *SlackApp) post(ctx context.Context, n Notification, channel, threadTS string) (slackResp, error) {
+func (s *SlackApp) post(ctx context.Context, n Notification, channel, threadTS string, parent bool) (slackResp, error) {
 	p := BuildSlackPayload(n, s.IncludeBody)
+	if id := s.mentionID(); id != "" && parent && threadTS == "" {
+		m := "<@" + id + "> "
+		p.Text = m + p.Text
+		if len(p.Blocks) > 0 && p.Blocks[0].Text != nil {
+			b := *p.Blocks[0].Text
+			b.Text = m + b.Text
+			first := p.Blocks[0]
+			first.Text = &b
+			p.Blocks = append([]SlackBlock{first}, p.Blocks[1:]...)
+		}
+	}
 	body := map[string]any{
 		"channel": channel, "text": p.Text, "blocks": p.Blocks,
 		"unfurl_links": false, "unfurl_media": false,

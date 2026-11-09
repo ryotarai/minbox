@@ -47,6 +47,9 @@ type Inbound interface {
 	// NewThread starts a thread from a DM. project "" is the destination's default project;
 	// ErrUnknownProject when project names none, ErrNoTarget when there is no session to put it in.
 	NewThread(ctx context.Context, project, defaultProject, text string) (threadID string, err error)
+	// PickProject asks a model which project (id or name, as NewThread takes it) the text of a new
+	// DM belongs to. "" with no error: unsure. Any error: the caller falls back.
+	PickProject(ctx context.Context, text string) (project string, err error)
 }
 
 var (
@@ -185,7 +188,12 @@ type pollWorker struct {
 	lastErrMsg     string
 	reactWarned    bool
 	noTargetWarned bool
+	pick           bool        // let the model pick the project of a new thread
+	pickCalls      []time.Time // model calls within the last minute
 }
+
+// slackPickPerMinute caps the model calls of one destination.
+const slackPickPerMinute = 10
 
 func (p *Poller) newWorker(d store.Destination) (*pollWorker, error) {
 	t, _ := Lookup("slack_app")
@@ -203,6 +211,11 @@ func (p *Poller) newWorker(d store.Destination) (*pollWorker, error) {
 		return nil, errors.New("no allowed users")
 	}
 	w.project, _ = d.Config["default_project"].(string)
+	if v, ok := d.Config["pick_project"].(bool); ok {
+		w.pick = v
+	} else {
+		w.pick = true
+	}
 	secs, _ := strconv.Atoi(fmt.Sprint(d.Config["poll_interval"]))
 	w.interval = min(max(time.Duration(secs)*time.Second, 30*time.Second), slackMaxBackoff)
 	if p.IntervalFn != nil {
@@ -477,18 +490,64 @@ func (w *pollWorker) call(ctx context.Context, method string, v url.Values) (sla
 
 var projectPrefix = regexp.MustCompile(`(?s)^#([^\s#]+)\s+(.+)$`)
 
+// takePick reserves one model call of the per-minute cap.
+func (w *pollWorker) takePick() bool {
+	now := w.p.Now()
+	kept := w.pickCalls[:0]
+	for _, t := range w.pickCalls {
+		if now.Sub(t) < time.Minute {
+			kept = append(kept, t)
+		}
+	}
+	w.pickCalls = kept
+	if len(kept) >= slackPickPerMinute {
+		return false
+	}
+	w.pickCalls = append(w.pickCalls, now)
+	return true
+}
+
+// newThread decides the project of a new thread: an explicit #project prefix (no model), else the
+// model's pick, else the fallback project. Only called for a message of an allowed member.
 func (w *pollWorker) newThread(ctx context.Context, text string) error {
 	if m := projectPrefix.FindStringSubmatch(text); m != nil {
 		_, err := w.p.In.NewThread(ctx, m[1], w.project, m[2])
 		if !errors.Is(err, ErrUnknownProject) {
+			if err == nil {
+				log.Printf("slack inbound: %s: new thread: project from the #prefix", w.dest.ID)
+			}
 			return err
 		}
 		// Not a project name: the whole text is the message.
 	}
+	why := "the fallback project"
+	if !w.pick {
+		why = "the fallback project (Claude pick is off)"
+	} else if !w.takePick() {
+		why = "the fallback project (Claude pick rate cap reached)"
+		log.Printf("slack inbound: %s: more than %d project picks in a minute; using the fallback project", w.dest.ID, slackPickPerMinute)
+	} else if p, err := w.p.In.PickProject(ctx, text); err != nil {
+		why = "the fallback project (Claude pick failed)"
+	} else if p == "" {
+		why = "the fallback project (Claude was unsure)"
+	} else {
+		_, err := w.p.In.NewThread(ctx, p, w.project, text)
+		if err == nil {
+			log.Printf("slack inbound: %s: new thread: project picked by Claude", w.dest.ID)
+			return nil
+		}
+		if !errors.Is(err, ErrUnknownProject) && !errors.Is(err, ErrNoTarget) {
+			return err
+		}
+		why = "the fallback project (the picked project has no session)"
+	}
 	_, err := w.p.In.NewThread(ctx, "", w.project, text)
+	if err == nil {
+		log.Printf("slack inbound: %s: new thread: %s", w.dest.ID, why)
+	}
 	if errors.Is(err, ErrNoTarget) && !w.noTargetWarned {
 		w.noTargetWarned = true
-		log.Printf("slack inbound: %s: a DM arrived but no (valid) 'Project for new threads' is set; ignoring DMs that start threads", w.dest.ID)
+		log.Printf("slack inbound: %s: a DM arrived but no project could be chosen (Claude pick off or unsure, no valid 'Fallback project'); ignoring DMs that start threads", w.dest.ID)
 	}
 	return err
 }

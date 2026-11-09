@@ -266,6 +266,11 @@ func firstNonEmpty(a ...string) string {
 // suggestArgv: the executable is Config.SuggestCommand (MINBOX_SUGGEST_COMMAND) if set, else only the
 // first word of the Claude command (the person's own flags, such as --model, are not carried over).
 func (s *Server) suggestArgv() []string {
+	return s.claudeArgv("haiku", suggestSystemPrompt, suggestSchema)
+}
+
+// claudeArgv: a tool-less, session-less, settings-less `claude -p` run with a JSON schema.
+func (s *Server) claudeArgv(model, system, schema string) []string {
 	base := s.cfg.SuggestCommand
 	if len(base) == 0 && len(s.cfg.ClaudeCommand) > 0 {
 		base = s.cfg.ClaudeCommand[:1]
@@ -276,27 +281,35 @@ func (s *Server) suggestArgv() []string {
 	argv := append([]string{}, base...)
 	return append(argv,
 		"-p",
-		"--model", "haiku",
+		"--model", model,
 		"--effort", "low",
-		"--system-prompt", suggestSystemPrompt,
+		"--system-prompt", system,
 		"--tools", "",
 		"--no-session-persistence",
 		"--setting-sources", "",
 		"--strict-mcp-config",
 		"--disable-slash-commands",
 		"--output-format", "json",
-		"--json-schema", suggestSchema,
+		"--json-schema", schema,
 	)
 }
 
 // runClaudeSuggest runs claude in a fresh empty directory, the prompt on stdin.
 func (s *Server) runClaudeSuggest(ctx context.Context, prompt string) ([]string, error) {
-	dir, err := os.MkdirTemp("", "minbox-suggest-")
+	out, err := s.runClaudeRaw(ctx, s.suggestArgv(), prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseSuggestions(out)
+}
+
+// runClaudeRaw runs argv in a fresh empty directory, the prompt on stdin, and returns stdout.
+func (s *Server) runClaudeRaw(ctx context.Context, argv []string, prompt string) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "minbox-claude-")
 	if err != nil {
 		return nil, errors.New("no temp directory")
 	}
 	defer os.RemoveAll(dir)
-	argv := s.suggestArgv()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(prompt)
@@ -312,7 +325,7 @@ func (s *Server) runClaudeSuggest(ctx context.Context, prompt string) ([]string,
 		}
 		return nil, fmt.Errorf("claude failed: %s", truncRunes(strings.TrimSpace(firstNonEmpty(errb.String(), err.Error())), 120))
 	}
-	return parseSuggestions(out.Bytes())
+	return out.Bytes(), nil
 }
 
 // GET /api/threads/{id}/suggestions

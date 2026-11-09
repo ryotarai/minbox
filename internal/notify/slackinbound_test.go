@@ -20,6 +20,16 @@ type fakeInbound struct {
 	threads  []string // "project|text"
 	noTarget bool
 	failNext bool
+	pick     string // what the fake model answers
+	pickErr  error
+	picked   []string // texts that reached the model
+}
+
+func (f *fakeInbound) PickProject(_ context.Context, text string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.picked = append(f.picked, text)
+	return f.pick, f.pickErr
 }
 
 func (f *fakeInbound) DeliverReply(_ context.Context, threadID, text string) error {

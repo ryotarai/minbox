@@ -33,10 +33,12 @@ type Config struct {
 	ClaudeCommand []string // e.g. ["claude"]
 	// SuggestCommand starts the reply-suggestions generator (MINBOX_SUGGEST_COMMAND); empty: the first word of ClaudeCommand.
 	SuggestCommand []string
-	PluginDir      string // the extracted minbox mod
-	ServerFile     string // where the server writes its URL for the mod
-	ScratchDir     string // pasted images go here
-	HostURL        string // how the built-in host is shown (unix://…)
+	// PickModel is the model that picks the project of a new thread from a Slack DM (MINBOX_PICK_MODEL); empty: claude-haiku-5-5.
+	PickModel  string
+	PluginDir  string // the extracted minbox mod
+	ServerFile string // where the server writes its URL for the mod
+	ScratchDir string // pasted images go here
+	HostURL    string // how the built-in host is shown (unix://…)
 	// Tailscale: requests through tailscale serve must come from this login
 	// (empty: any). PublicHosts are the Host names the server answers to
 	// besides loopback (its MagicDNS name).
@@ -51,8 +53,10 @@ type Server struct {
 	hub      *hub
 	sessions *sessionManager
 	suggest  *suggester
-	web      fs.FS
-	handler  http.Handler
+	// pickRun runs the project-picking model (replaced in tests).
+	pickRun func(ctx context.Context, prompt string) ([]byte, error)
+	web     fs.FS
+	handler http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}
@@ -111,6 +115,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		},
 	}
 	s.suggest = newSuggester(s.runClaudeSuggest)
+	s.pickRun = s.runClaudePick
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)

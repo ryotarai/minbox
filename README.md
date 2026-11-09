@@ -164,12 +164,20 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   channel field takes a channel ID, `#name`, or your **user ID** (Slack profile → ⋮ → Copy member
   ID) to get the notifications as a DM from the bot: no invite, only the `chat:write` scope, but
   the app's Messages tab must be on (App Home → Show Tabs → Messages Tab, "Allow users to send
-  Slash commands and messages from the messages tab").
+  Slash commands and messages from the messages tab"). The first message of each Slack thread
+  mentions you (`<@U…>`: the user ID in Channel, else the first allowed user ID), because Slack
+  only notifies you about replies in a thread you are part of; turn that off with *Mention me
+  when starting a thread*.
 - **Reply from Slack** (opt-in, per Slack app destination): switch on *Receive messages from Slack*
   (DM only, so Channel must be your user ID) and minbox polls Slack with the bot token: no public
   URL, no Socket Mode. A reply you write in a notification's Slack thread lands in that minbox
-  thread, and a DM to the bot starts a new thread in the project you set (`#other-project text`
-  picks another one). Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
+  thread, and a DM to the bot starts a new thread. Its project is chosen in this order: a
+  `#project-name text` prefix (no model call); else **Claude Haiku** (*Let Claude Haiku pick the
+  project*, on by default) is given the DM text and your project names with their latest thread
+  titles and picks one (it can only answer with an existing project, otherwise it is treated as
+  unsure; at most 10 calls a minute, 20 s each; the DM text is sent to Claude); else the
+  *Fallback project*; else the DM is ignored. Only allowed members' DMs ever reach the model. The
+  model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions. Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
   delivered messages get a ✅. Add the `im:history` scope (and `reactions:write` for the ✅) under
   OAuth & Permissions and reinstall the app. Messages arrive within the poll interval (30 s to
   5 min; polling slows down when nothing is going on) and polling stays within 20 Slack calls a

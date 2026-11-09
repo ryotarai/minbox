@@ -46,7 +46,7 @@ func (in slackInbound) NewThread(ctx context.Context, project, defaultProject, t
 	}
 	var target *store.Project
 	for i := range projects {
-		if strings.EqualFold(projects[i].Name, name) {
+		if projects[i].ID == name || strings.EqualFold(projects[i].Name, name) {
 			target = &projects[i]
 			break
 		}

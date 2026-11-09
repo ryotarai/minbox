@@ -515,6 +515,7 @@ func serve(args []string) error {
 		DataDir:        *dataDir,
 		ClaudeCommand:  strings.Fields(*claudeCmd),
 		SuggestCommand: strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
+		PickModel:      os.Getenv("MINBOX_PICK_MODEL"),
 		PluginDir:      pluginDir,
 		ServerFile:     filepath.Join(*dataDir, "server.json"),
 		ScratchDir:     filepath.Join(*dataDir, "scratch"),

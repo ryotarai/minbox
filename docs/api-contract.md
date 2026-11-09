@@ -742,7 +742,7 @@ Another type declares its own fields; `events` is read for every type.
 ### Slack app config (`slack_app`)
 
 `{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD, name like #alerts, or a user ID U…/W… for a DM with the bot, no spaces), include_body
-(default true), thread_replies (default true), events}`. The type also publishes `help` (setup steps, one per line: create the
+(default true), thread_replies (default true), mention_me (bool, default true), events}`. The type also publishes `help` (setup steps, one per line: create the
 app at api.slack.com/apps, Bot Token Scopes `chat:write` and optionally `chat:write.public`, install, copy the Bot User OAuth
 Token, `/invite @app` to the channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
 with `Authorization: Bearer <token>` and JSON `{channel, text, blocks, unfurl_links:false, unfurl_media:false[, thread_ts,
@@ -753,6 +753,12 @@ cannot be redirected).
 **DM.** A user ID as `channel` makes Slack deliver to the bot's DM with that user (scope `chat:write` only, no invite; the app's
 App Home Messages tab must be enabled). Slack answers with the real `D…` channel; that is what is stored, so thread replies go
 to the `D…` channel. Extra error codes: `user_not_found`, `cannot_dm_bot`, `messages_tab_disabled` (final, actionable text).
+
+**Mention.** With `mention_me` on and a known ID, the PARENT post of a Slack thread (the first notification of a minbox thread,
+and the "Send test" sample) starts with `<@U…>`: the `channel` when it is a user ID, else the first valid ID of `allowed_users`,
+else no mention. It is put at the start of both `text` (the push-notification fallback) and the first block's text. Replies in
+the thread (`thread_ts` set) never mention. With `thread_replies` off there are no threads, so nothing is mentioned (except the
+test sample).
 
 **Grouping.** Table `notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, PRIMARY
 KEY(destination_id, minbox_thread_id))`. The first notification of a minbox thread is posted at the top level; the `ts` and the
@@ -778,7 +784,8 @@ The token is shown masked as `xoxb-…` + last 4 characters, never in full, neve
 Extra config fields: `receive` (bool, default **false**; nothing is polled unless true; requires `channel` to be a user ID, i.e. a
 DM, else 400), `allowed_users` (comma separated member IDs `U…`/`W…`; empty defaults to the `channel` user; only these members'
 messages are taken), `default_project` (a project NAME; a DM starts a new thread in its main session; empty: DMs are ignored, one
-log line), `poll_interval` (select `30|60|120|300` seconds, default 60). Transport is polling of the Web API with the bot token
+log line; relabelled "Fallback project (when Claude cannot tell)"), `pick_project` (bool, default **true**; only matters when
+`receive` is on), `poll_interval` (select `30|60|120|300` seconds, default 60). Transport is polling of the Web API with the bot token
 (no Socket Mode, no public URL). Code: `internal/notify/slackinbound.go` (poller), `internal/server/slackinbound.go` (turns a
 message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply` does; `CreateThread` as `POST
 /api/sessions/{id}/threads` does; messages are stored as the person's own words, no source marker), started by `main.go`
@@ -789,8 +796,19 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   parent in it carries `latest_reply`; `conversations.replies(channel, ts=<parent>, oldest=<cursor>)` is called only for a parent
   whose `latest_reply` is newer than the stored reply cursor (at most 8 per cycle), so the steady state is one call per cycle
   however many threads exist. Replies older than the moment receiving was enabled are never delivered. A top-level message newer
-  than the DM cursor starts a new thread; an optional `#<project> text` prefix
-  picks another project (if no project has that name the whole text is used with the default). The D… channel is learned from
+  than the DM cursor starts a new thread. **Project of a new thread**, in order: (1) an explicit `#<project> text` prefix naming
+  a project (no model call; if no project has that name the whole text is the message and goes on to 2); (2) when `pick_project`
+  is on: Claude Haiku (`Inbound.PickProject`, `internal/server/slackpick.go`); (3) `default_project`; (4) none: the DM is ignored
+  with one log line. The allowed-member check happens before any of this, so a non-allowed sender never reaches the model and
+  no project name is exposed. The model call: the same mechanism as reply suggestions (`claude -p --output-format json
+  --json-schema`, no tools, no settings, empty temp dir, prompt on stdin; `Config.SuggestCommand`/first word of the Claude
+  command), with `--model` = `Config.PickModel` (env `MINBOX_PICK_MODEL`, default `claude-haiku-5-5`). One call per new DM, 20 s
+  timeout, the text cut to 2000 characters, at most 10 calls per minute per destination (over the cap: fallback). The prompt holds
+  the text in `<message>` tags and up to 40 projects (archived projects and projects without a main session left out) as `id`,
+  name and the titles of their 3 newest threads, with the instruction that both are untrusted data. The answer must be
+  `{"project_id": "<id>"|null}`; it is only ever compared with the listed project ids (anything else, `null`, an error or a
+  timeout means "unsure" and falls back); it is never executed or shown. Logs name the outcome (prefix, Claude, fallback and why),
+  never the message text. `NewThread` accepts a project id as well as a name. The D… channel is learned from
   the first notification/test sent. Skipped: `bot_id`, any `subtype` (edits, deletes, joins), non-allowed members (log line
   without the text), empty text. Text: Slack `<url|label>` becomes `label`, `&lt;&gt;&amp;` decoded, capped at 4000 characters
   (a note is appended). Delivered messages get a ✅ (`reactions.add white_check_mark`); `missing_scope` /
