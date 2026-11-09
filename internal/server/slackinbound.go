@@ -60,7 +60,7 @@ func (in slackInbound) NewThread(ctx context.Context, project, defaultProject, t
 	if target.MainSessionID == "" {
 		return "", notify.ErrNoTarget
 	}
-	th, _, err := s.store.CreateThread(ctx, target.MainSessionID, firstLine(text, 60), store.NewMessage{Author: store.AuthorUser, Body: text, Words: text})
+	th, _, err := s.store.CreateThread(ctx, target.MainSessionID, firstLine(text), store.NewMessage{Author: store.AuthorUser, Body: text, Words: text})
 	if err != nil {
 		return "", err
 	}
