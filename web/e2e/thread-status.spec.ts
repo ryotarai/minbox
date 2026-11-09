@@ -23,8 +23,11 @@ test('status badges follow the agent, the person and the Mark as menu; filters a
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'mark working Starting')
   await expect(badge(page, 'Status note')).toHaveAttribute('data-status', 'working')
+  await row(page, 'Status note').click()
+  await expect(page.getByTestId('thread-view').getByTestId('thread-working')).toContainText('Working')
   await typeInTerminal(page, 'mark done All done')
   await expectTerminal(page, /marked thr_[\s\S]*marked thr_/)
+  await expect(page.getByTestId('thread-working')).toHaveCount(0)
   await expect(badge(page, 'Status note')).toHaveAttribute('data-status', 'finished')
   await expect(page.getByTestId('filter-waiting-count')).toHaveText('1')
 

@@ -230,6 +230,8 @@ the selected session) since the list is global.
   thread row and in the thread header (pulsing blue dot, amber dot, muted check). "Waiting" (chip, badges, rails,
   palette) is `need_action`. Grouping "Status" lists Needs action, Working, Blocked, Finished. The thread's More menu has
   "Mark as ...". There is no Working filter chip (keeps the chip row short on phones).
+  While a thread is `working`, the end of the message list shows a "Working…" indicator (pulsing dots, `thread-working`; static
+  under reduced motion); a view at the bottom follows it, one scrolled up stays put.
 
 ## Diagrams and annotating images in the composer
 

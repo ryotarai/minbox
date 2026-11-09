@@ -154,6 +154,13 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, messages.length])
 
+  // The working indicator appearing grows the list: a view at the bottom stays at the bottom.
+  const working = thread?.status === 'working'
+  useEffect(() => {
+    if (working && pinned.current) requestAnimationFrame(toBottom)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [working])
+
   // Select text in the messages: a bubble offers Reply, which quotes it into the reply box.
   const [quote, setQuote] = useState<{ text: string; x: number; y: number; below: boolean } | null>(null)
   useEffect(() => {
@@ -484,6 +491,12 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
             {m === lastUser && <DeliveryLine m={m} session={session} />}
           </div>
         ))}
+        {!showArtifacts && thread.status === 'working' && (
+          <div data-testid="thread-working" role="status" className="flex items-center gap-2 px-1 text-[12.5px] text-subtle">
+            <span className="working-dots" aria-hidden="true"><i /><i /><i /></span>
+            <span>Working…</span>
+          </div>
+        )}
       </div>
       </div>
 
