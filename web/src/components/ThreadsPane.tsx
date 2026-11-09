@@ -61,20 +61,27 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
   const { filter } = v
   const flat = useMemo(() => v.groups.flatMap((g) => g.items), [v.groups])
   const [cursor, setCursor] = useState(0)
+  // The J/K cursor is drawn only after the keys moved it; otherwise a list with no open thread would
+  // look as if its first row were selected while the thread pane says "Pick a thread".
+  const [cursorOn, setCursorOn] = useState(false)
   const [full, setFull] = useState(false)
   const [foldOpen, setFoldOpen] = useState(false)
   const [sheet, setSheet] = useState(false)
   const { id: projectId } = useSelectedProject()
+  useEffect(() => {
+    setCursorOn(false)
+    setCursor(0)
+  }, [route.t, projectId])
 
   const open = (t: Thread) => navigate({ s: t.session_id, t: t.id, f: null, view: 'main', tab: 'inbox' })
 
   // The list's own keys work while no thread is open; an open thread takes J/K for itself.
   useHotkeys(
     {
-      j: () => setCursor((c) => Math.min(c + 1, flat.length - 1)),
-      k: () => setCursor((c) => Math.max(c - 1, 0)),
-      arrowdown: () => setCursor((c) => Math.min(c + 1, flat.length - 1)),
-      arrowup: () => setCursor((c) => Math.max(c - 1, 0)),
+      j: () => (setCursorOn(true), setCursor((c) => Math.min(c + 1, flat.length - 1))),
+      k: () => (setCursorOn(true), setCursor((c) => Math.max(c - 1, 0))),
+      arrowdown: () => (setCursorOn(true), setCursor((c) => Math.min(c + 1, flat.length - 1))),
+      arrowup: () => (setCursorOn(true), setCursor((c) => Math.max(c - 1, 0))),
       enter: () => {
         const t = flat[cursor]
         if (t) open(t)
@@ -141,7 +148,7 @@ export function ThreadsPane({ phone }: { phone?: boolean }) {
                     key={t.id}
                     t={t}
                     phone={phone}
-                    focused={route.t ? route.t === t.id : flat[cursor]?.id === t.id}
+                    focused={route.t ? route.t === t.id : cursorOn && flat[cursor]?.id === t.id}
                     onOpen={() => open(t)}
                   />
                 ))}

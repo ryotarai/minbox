@@ -65,6 +65,7 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen()}
       data-testid="thread-row"
       data-thread-id={t.id}
+      data-focused={focused ? 'true' : 'false'}
       onClick={onOpen}
       className={cx(
         'flex w-full flex-col gap-1 rounded-[9px] border px-3 text-left',
