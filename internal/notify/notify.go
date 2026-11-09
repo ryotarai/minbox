@@ -31,6 +31,17 @@ type Notification struct {
 	Link string
 	// Test marks the sample notification of "Send test".
 	Test bool
+	// Files are the artifacts (files the agent attached, images its message shows) of the
+	// message, as files on the server. Destinations that can carry files send them too.
+	Files []File
+}
+
+// File is an artifact of a notification: a local file (a blob of the server).
+type File struct {
+	Name string
+	Path string // where the bytes are, on the server
+	Mime string
+	Size int64
 }
 
 // Notifier sends notifications to one configured destination.

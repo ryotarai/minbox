@@ -168,6 +168,10 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   mentions you (`<@U…>`: the user ID in Channel, else the first allowed user ID), because Slack
   only notifies you about replies in a thread you are part of; turn that off with *Mention me
   when starting a thread*.
+- **Artifacts in Slack**: the files Claude attaches to a message (images, HTML, any file) and the
+  images its message shows are uploaded to the same Slack thread (*Send artifacts*, on by default;
+  scope `files:write`; up to 10 files and 20 MB each, larger ones are skipped with a log line). The
+  message itself is never held back or repeated if an upload fails; the destination shows the error.
 - **Reply from Slack** (opt-in, per Slack app destination): switch on *Receive messages from Slack*
   (DM only, so Channel must be your user ID) and minbox polls Slack with the bot token: no public
   URL, no Socket Mode. A reply you write in a notification's Slack thread lands in that minbox
@@ -175,10 +179,20 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   `#project-name text` prefix (no model call); else **Claude Haiku** (*Let Claude Haiku pick the
   project*, on by default) is given the DM text and your project names with their latest thread
   titles and picks one (it can only answer with an existing project, otherwise it is treated as
-  unsure; at most 10 calls a minute, 20 s each; the DM text is sent to Claude); else the
-  *Fallback project*; else the DM is ignored. Only allowed members' DMs ever reach the model. The
+  unsure; at most 10 calls a minute, 20 s each; the DM text is sent to Claude). When Haiku is
+  unsure, minbox does **not** guess: it replies in the Slack thread asking which project (listing
+  the names) and holds your message and its images; your answer in that thread, together with
+  the earlier conversation, goes to Haiku again, and the minbox thread is created then, in the
+  project it names (later replies in the Slack thread go to it). Still unsure: it asks again, up
+  to 3 questions, then uses the *Fallback project* if one is set, otherwise tells you in Slack that
+  it dropped the message. If Haiku itself fails (for example `claude` is missing), or *Let Claude
+  Haiku pick* is off, the *Fallback project* is used straight away; with none, the DM is ignored. Only allowed members' DMs ever reach the model. The
   model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions. Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
-  delivered messages get a ✅. Add the `im:history` scope (and `reactions:write` for the ✅) under
+  delivered messages get a ✅. **Images and files you send** in Slack (a DM, or a reply in a
+  notification's thread) are downloaded with the bot token (scope `files:read`) and attached to
+  the minbox message exactly like a file you attach in the web UI, so Claude gets their paths:
+  images, text and JSON files and PDFs only, 5 files and 20 MB each at most, only from allowed
+  members; anything else is skipped with a note in the message. Add the `im:history` scope (and `reactions:write` for the ✅) under
   OAuth & Permissions and reinstall the app. Messages arrive within the poll interval (30 s to
   5 min; polling slows down when nothing is going on) and polling stays within 20 Slack calls a
   minute and obeys `Retry-After`. Each poll reads the latest 200 top-level messages of the DM (one
@@ -189,8 +203,9 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
 **Slack app setup** (the same steps are in the destination's form):
 
 1. [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From scratch*.
-2. OAuth & Permissions → Bot Token Scopes: `chat:write`, `im:history` (to receive) and optionally
-   `reactions:write` (the ✅). Not needed: `chat:write.public`, `im:write`, `channels:*`.
+2. OAuth & Permissions → Bot Token Scopes: `chat:write`, `im:history` (to receive),
+   `files:write` (to send Claude's images and files), `files:read` (to take images you send) and
+   optionally `reactions:write` (the ✅). Not needed: `chat:write.public`, `im:write`, `channels:*`.
 3. App Home → Show Tabs → turn **Messages Tab** on, and tick *Allow users to send Slash commands
    and messages from the messages tab*.
 4. Install to Workspace (**Reinstall** after every scope change), then copy the *Bot User OAuth

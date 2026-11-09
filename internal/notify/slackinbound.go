@@ -38,19 +38,23 @@ const (
 	slackMaxBackoff   = 5 * time.Minute // upper bound of any wait
 	slackMaxText      = 4000            // runes of a received message
 	slackSeenKeep     = 7 * 24 * time.Hour
+	slackPendingKeep  = 24 * time.Hour // a thread that asked which project and got no answer is dropped
+	slackAskRounds    = 3              // times the person is asked which project before giving up
 )
 
 // Inbound is what a received Slack message is turned into; the server implements it with the same
 // code paths as the web UI.
 type Inbound interface {
 	// DeliverReply adds the person's reply to a minbox thread (ErrGone when the thread is gone).
-	DeliverReply(ctx context.Context, threadID, text string) error
+	DeliverReply(ctx context.Context, threadID, text string, files []InFile) error
 	// NewThread starts a thread from a DM. project "" is the destination's default project;
 	// ErrUnknownProject when project names none, ErrNoTarget when there is no session to put it in.
-	NewThread(ctx context.Context, project, defaultProject, text string) (threadID string, err error)
+	NewThread(ctx context.Context, project, defaultProject, text string, files []InFile) (threadID string, err error)
 	// PickProject asks a model which project (id or name, as NewThread takes it) the text of a new
 	// DM belongs to. "" with no error: unsure. Any error: the caller falls back.
 	PickProject(ctx context.Context, text string) (project string, err error)
+	// ProjectNames are the names of the projects a thread can start in (to ask the person).
+	ProjectNames(ctx context.Context) ([]string, error)
 }
 
 var (
@@ -442,7 +446,14 @@ func (w *pollWorker) run(ctx context.Context) error {
 	}
 	dmCursor, _ := st.GetSlackState(ctx, id, "dm_cursor")
 	dmCursor = maxTS(dmCursor, since)
-	pc := &pageCtx{channel: dm, since: since, dmCursor: dmCursor, newDM: dmCursor, byTS: byTS}
+	_ = st.PruneSlackPending(ctx, now.Add(-slackPendingKeep))
+	pend := map[string]store.SlackPending{}
+	if ps, err := st.ListSlackPending(ctx, id, dm); err == nil {
+		for _, p := range ps {
+			pend[p.ThreadTS] = p
+		}
+	}
+	pc := &pageCtx{pend: pend, channel: dm, since: since, dmCursor: dmCursor, newDM: dmCursor, byTS: byTS}
 	// The one history call of the cycle: the latest 200 top-level messages of the DM.
 	r, err := w.call(ctx, "conversations.history", url.Values{"channel": {dm}, "limit": {"200"}})
 	if err != nil {
@@ -469,11 +480,22 @@ type pageCtx struct {
 	newDM          string // the DM cursor to store
 	byTS           map[string]store.SlackThreadRef
 	repliesCalls   int
+	pend           map[string]store.SlackPending // DM threads waiting for the person to name the project
 }
 
 func (w *pollWorker) processPage(ctx context.Context, pc *pageCtx, msgs []slackMsg) error {
 	sort.SliceStable(msgs, func(i, j int) bool { return tsCmp(msgs[i].TS, msgs[j].TS) < 0 })
 	for _, m := range msgs {
+		if pd, ok := pc.pend[m.TS]; ok { // a DM thread that asked which project
+			cur := maxTS(pd.ReplyCursor, pd.ThreadTS)
+			if m.LatestReply != "" && tsCmp(m.LatestReply, cur) > 0 && pc.repliesCalls < slackMaxReplies {
+				pc.repliesCalls++
+				if err := w.pollPending(ctx, pd, cur); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		if ref, ok := pc.byTS[m.TS]; ok { // a parent we notified
 			cur := maxTS(ref.ReplyCursor, pc.since)
 			if m.LatestReply != "" && tsCmp(m.LatestReply, cur) > 0 && pc.repliesCalls < slackMaxReplies {
@@ -492,7 +514,9 @@ func (w *pollWorker) processPage(ctx context.Context, pc *pageCtx, msgs []slackM
 			continue
 		}
 		before := w.cyc.delivered
-		err := w.accept(ctx, pc.channel, m, w.newThread)
+		err := w.accept(ctx, pc.channel, m, func(ctx context.Context, text string, files []InFile) error {
+			return w.newThread(ctx, pc.channel, m.TS, text, files)
+		})
 		w.cyc.threads += w.cyc.delivered - before
 		if err != nil && !errors.Is(err, ErrNoTarget) {
 			return err
@@ -538,51 +562,6 @@ func (w *pollWorker) takePick() bool {
 	return true
 }
 
-// newThread decides the project of a new thread: an explicit #project prefix (no model), else the
-// model's pick, else the fallback project. Only called for a message of an allowed member.
-func (w *pollWorker) newThread(ctx context.Context, text string) error {
-	if m := projectPrefix.FindStringSubmatch(text); m != nil {
-		_, err := w.p.In.NewThread(ctx, m[1], w.project, m[2])
-		if !errors.Is(err, ErrUnknownProject) {
-			if err == nil {
-				log.Printf("slack inbound: %s: new thread: project from the #prefix", w.dest.ID)
-			}
-			return err
-		}
-		// Not a project name: the whole text is the message.
-	}
-	why := "the fallback project"
-	if !w.pick {
-		why = "the fallback project (Claude pick is off)"
-	} else if !w.takePick() {
-		why = "the fallback project (Claude pick rate cap reached)"
-		log.Printf("slack inbound: %s: more than %d project picks in a minute; using the fallback project", w.dest.ID, slackPickPerMinute)
-	} else if p, err := w.p.In.PickProject(ctx, text); err != nil {
-		why = "the fallback project (Claude pick failed)"
-	} else if p == "" {
-		why = "the fallback project (Claude was unsure)"
-	} else {
-		_, err := w.p.In.NewThread(ctx, p, w.project, text)
-		if err == nil {
-			log.Printf("slack inbound: %s: new thread: project picked by Claude", w.dest.ID)
-			return nil
-		}
-		if !errors.Is(err, ErrUnknownProject) && !errors.Is(err, ErrNoTarget) {
-			return err
-		}
-		why = "the fallback project (the picked project has no session)"
-	}
-	_, err := w.p.In.NewThread(ctx, "", w.project, text)
-	if err == nil {
-		log.Printf("slack inbound: %s: new thread: %s", w.dest.ID, why)
-	}
-	if errors.Is(err, ErrNoTarget) && !w.noTargetWarned {
-		w.noTargetWarned = true
-		log.Printf("slack inbound: %s: a DM arrived but no project could be chosen (Claude pick off or unsure, no valid 'Fallback project'); ignoring DMs that start threads", w.dest.ID)
-	}
-	return err
-}
-
 func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cursor string) error {
 	cursor = maxTS(cursor, t.TS)
 	r, err := w.call(ctx, "conversations.replies", url.Values{"channel": {t.ChannelID}, "ts": {t.TS}, "oldest": {cursor}, "limit": {"50"}, "inclusive": {"false"}})
@@ -602,8 +581,8 @@ func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cu
 			continue
 		}
 		before := w.cyc.delivered
-		err := w.accept(ctx, t.ChannelID, m, func(ctx context.Context, text string) error {
-			return w.p.In.DeliverReply(ctx, t.ThreadID, text)
+		err := w.accept(ctx, t.ChannelID, m, func(ctx context.Context, text string, files []InFile) error {
+			return w.p.In.DeliverReply(ctx, t.ThreadID, text, files)
 		})
 		w.cyc.replies += w.cyc.delivered - before
 		if err != nil && !errors.Is(err, ErrGone) {
@@ -622,8 +601,8 @@ func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cu
 
 // accept delivers one message when it is from an allowed member, at most once, then acks it.
 // Skipped messages (bots, edits, other people) return nil.
-func (w *pollWorker) accept(ctx context.Context, channel string, m slackMsg, deliver func(context.Context, string) error) error {
-	if m.BotID != "" || m.Subtype != "" || (m.Type != "" && m.Type != "message") {
+func (w *pollWorker) accept(ctx context.Context, channel string, m slackMsg, deliver func(context.Context, string, []InFile) error) error {
+	if m.BotID != "" || (m.Subtype != "" && m.Subtype != "file_share") || (m.Type != "" && m.Type != "message") {
 		return nil
 	}
 	if !w.allowed[m.User] {
@@ -631,7 +610,7 @@ func (w *pollWorker) accept(ctx context.Context, channel string, m slackMsg, del
 		return nil
 	}
 	text := cleanSlackText(m.Text)
-	if text == "" {
+	if text == "" && len(m.Files) == 0 {
 		return nil
 	}
 	st := w.p.Store
@@ -642,7 +621,19 @@ func (w *pollWorker) accept(ctx context.Context, channel string, m slackMsg, del
 	if !first {
 		return nil
 	}
-	if err := deliver(ctx, text); err != nil {
+	files, notes, err := w.fetchFiles(ctx, m.Files)
+	if err != nil {
+		_ = st.UnmarkSlackSeen(ctx, w.dest.ID, channel, m.TS)
+		return err
+	}
+	if len(notes) > 0 {
+		text = strings.TrimSpace(text + "\n\n[" + strings.Join(notes, "; ") + "]")
+	}
+	if len(files) == 0 && cleanSlackText(m.Text) == "" {
+		log.Printf("slack inbound: %s: a message with only files nothing could be taken from (%s)", w.dest.ID, safeCode(strings.Join(notes, "; ")))
+		return nil
+	}
+	if err := deliver(ctx, text, files); err != nil {
 		if errors.Is(err, ErrNoTarget) || errors.Is(err, ErrGone) {
 			return err // dropped on purpose: stays marked, never retried
 		}
@@ -700,4 +691,50 @@ func cleanSlackText(s string) string {
 		s = string(r[:slackMaxText]) + "\n\n[truncated: the Slack message was longer than " + strconv.Itoa(slackMaxText) + " characters]"
 	}
 	return s
+}
+
+// pickText is what the project picker reads for a message that has no words.
+func pickText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return "(a file without text)"
+	}
+	return text
+}
+
+// fetchFiles downloads the files of a message from an allowed member: at most SlackInFileMax,
+// images and text-like types only. Files that are skipped come back as notes for the message;
+// only a failure worth retrying (network, rate limit) is an error.
+func (w *pollWorker) fetchFiles(ctx context.Context, fs []slackFile) ([]InFile, []string, error) {
+	var out []InFile
+	var notes []string
+	for i, f := range fs {
+		name := f.Name
+		if name == "" {
+			name = "slack-file-" + f.ID
+		}
+		skip := func(why string) {
+			notes = append(notes, "Slack file "+strconv.Quote(safeCode(name))+" not taken: "+why)
+			log.Printf("slack inbound: %s: file %s not taken: %s", w.dest.ID, safeCode(f.ID), why)
+		}
+		switch {
+		case i >= SlackInFileMax:
+			skip("more than " + strconv.Itoa(SlackInFileMax) + " files in one message")
+		case !acceptedMime(f.Mimetype):
+			skip("type " + safeCode(f.Mimetype) + " is not an image or text")
+		case f.Size > SlackInFileMaxBytes:
+			skip("larger than " + strconv.Itoa(SlackInFileMaxBytes>>20) + " MB")
+		default:
+			b, err := w.app.download(ctx, f)
+			var sk *errSkipFile
+			if errors.As(err, &sk) {
+				skip(sk.why)
+				continue
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			out = append(out, InFile{Name: name, Mime: f.Mimetype, Data: b})
+		}
+	}
+	return out, notes, nil
 }

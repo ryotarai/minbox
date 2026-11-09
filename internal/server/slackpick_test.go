@@ -39,7 +39,7 @@ func TestPickProjectValidatesTheModelAnswer(t *testing.T) {
 	}
 
 	// The same id works through NewThread.
-	if _, err := in.NewThread(ctx, got, "", "hello"); err != nil {
+	if _, err := in.NewThread(ctx, got, "", "hello", nil); err != nil {
 		t.Fatalf("NewThread by id: %v", err)
 	}
 

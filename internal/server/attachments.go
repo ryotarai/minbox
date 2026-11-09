@@ -1161,8 +1161,8 @@ func writeErr(w http.ResponseWriter, err error) {
 	httpError(w, 400, err.Error())
 }
 
-func (s *Server) attachUploads(r *http.Request, ups []*store.Upload, threadID, messageID string) error {
-	host, _, err := s.store.HostOfThread(r.Context(), threadID)
+func (s *Server) attachUploads(ctx context.Context, ups []*store.Upload, threadID, messageID string) error {
+	host, _, err := s.store.HostOfThread(ctx, threadID)
 	if err != nil {
 		return err
 	}
@@ -1177,12 +1177,12 @@ func (s *Server) attachUploads(r *http.Request, ups []*store.Upload, threadID, m
 		if err != nil {
 			return err
 		}
-		p, err := fsys.WriteFile(r.Context(), hostfs.AreaUploads, id+"/"+u.Name, src, true)
+		p, err := fsys.WriteFile(ctx, hostfs.AreaUploads, id+"/"+u.Name, src, true)
 		src.Close()
 		if err != nil {
 			return err
 		}
-		real, err := fsys.EvalSymlinks(r.Context(), p)
+		real, err := fsys.EvalSymlinks(ctx, p)
 		if err != nil {
 			real = p
 		}
@@ -1190,10 +1190,10 @@ func (s *Server) attachUploads(r *http.Request, ups []*store.Upload, threadID, m
 		a := store.Attachment{ID: id, ThreadID: threadID, MessageID: messageID, Author: store.AuthorUser, Kind: store.AttachmentFile,
 			Type: u.Type, Name: u.Name, Path: real, Mime: u.Mime, Size: u.Size, SHA256: u.SHA256, Width: u.Width, Height: u.Height,
 			DurationMs: u.DurationMs, SentMtime: &now, SearchText: u.SearchText}
-		if err := s.store.AddAttachment(r.Context(), &a, nil, ""); err != nil {
+		if err := s.store.AddAttachment(ctx, &a, nil, ""); err != nil {
 			return err
 		}
-		_ = s.store.DeleteUpload(r.Context(), u.ID)
+		_ = s.store.DeleteUpload(ctx, u.ID)
 	}
 	return nil
 }

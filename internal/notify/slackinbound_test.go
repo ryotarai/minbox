@@ -23,16 +23,25 @@ type fakeInbound struct {
 	pick     string // what the fake model answers
 	pickErr  error
 	picked   []string // texts that reached the model
+	names    []string // projects that can be asked about
+	files    []string // "where:name:size" of received files
+	pickSeq  []string // when set, the model's answers in order (the last repeats)
 }
+
+func (f *fakeInbound) ProjectNames(context.Context) ([]string, error) { return f.names, nil }
 
 func (f *fakeInbound) PickProject(_ context.Context, text string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.picked = append(f.picked, text)
+	if len(f.pickSeq) > 0 {
+		i := min(len(f.picked)-1, len(f.pickSeq)-1)
+		return f.pickSeq[i], f.pickErr
+	}
 	return f.pick, f.pickErr
 }
 
-func (f *fakeInbound) DeliverReply(_ context.Context, threadID, text string) error {
+func (f *fakeInbound) DeliverReply(_ context.Context, threadID, text string, files []InFile) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.failNext {
@@ -40,10 +49,13 @@ func (f *fakeInbound) DeliverReply(_ context.Context, threadID, text string) err
 		return fmt.Errorf("boom")
 	}
 	f.replies = append(f.replies, threadID+":"+text)
+	for _, x := range files {
+		f.files = append(f.files, threadID+":"+x.Name+":"+fmt.Sprint(len(x.Data)))
+	}
 	return nil
 }
 
-func (f *fakeInbound) NewThread(_ context.Context, project, def, text string) (string, error) {
+func (f *fakeInbound) NewThread(_ context.Context, project, def, text string, files []InFile) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if project == "nope" {
@@ -53,6 +65,9 @@ func (f *fakeInbound) NewThread(_ context.Context, project, def, text string) (s
 		return "", ErrNoTarget
 	}
 	f.threads = append(f.threads, project+"|"+def+"|"+text)
+	for _, x := range files {
+		f.files = append(f.files, "new:"+x.Name+":"+fmt.Sprint(len(x.Data)))
+	}
 	return "thr_new", nil
 }
 

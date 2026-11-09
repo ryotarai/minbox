@@ -35,10 +35,10 @@ func threadLinkURL(publicURL, sessionID, threadID string) string {
 
 // notifyAgentMessage tells the destinations about a message the agent just stored; the sending
 // happens in the background.
-func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, threadID, messageID, subject, body string, needsAction bool) {
+func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, threadID, messageID, subject, body string, needsAction bool, files []notify.File) {
 	n := notify.Notification{
 		Session: sess.Name, Title: subject, ThreadID: threadID, MessageID: messageID,
-		From: "Claude", Body: question.Readable(body), NeedsAction: needsAction,
+		From: "Claude", Body: question.Readable(body), NeedsAction: needsAction, Files: files,
 	}
 	if sess.ProjectID != "" {
 		if p, err := s.store.GetProject(ctx, sess.ProjectID); err == nil {
@@ -242,4 +242,23 @@ func (s *Server) checkNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, res)
+}
+
+// artifactFiles are the files of a message that destinations can carry along: the files the agent
+// attached and the images its message shows (reviews are not files).
+func (s *Server) artifactFiles(snaps []*attachmentSnapshot, inline []store.Attachment) []notify.File {
+	var out []notify.File
+	add := func(a *store.Attachment) {
+		if a.Kind != store.AttachmentFile || a.SHA256 == "" {
+			return
+		}
+		out = append(out, notify.File{Name: a.Name, Path: s.blobPath(a.SHA256), Mime: a.Mime, Size: a.Size})
+	}
+	for _, sn := range snaps {
+		add(&sn.att)
+	}
+	for i := range inline {
+		add(&inline[i])
+	}
+	return out
 }

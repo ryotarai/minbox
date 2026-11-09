@@ -104,3 +104,52 @@ func (s *Store) ResetSlackInbound(ctx context.Context, destID string) error {
 func (s *Store) ListSlackThreads(ctx context.Context, destID string) ([]SlackThreadRef, error) {
 	return s.RecentSlackThreads(ctx, destID, time.Time{}, 1<<30)
 }
+
+// SlackPending is a Slack DM thread whose project is not known yet: minbox asked which project in
+// the thread and holds the conversation (Payload, opaque JSON owned by the notify package) until
+// the person answers.
+type SlackPending struct {
+	ChannelID   string
+	ThreadTS    string // the DM message that started it
+	Rounds      int    // how many times the person was asked
+	ReplyCursor string
+	Payload     string
+	UpdatedAt   time.Time
+}
+
+// PutSlackPending creates or replaces a pending thread.
+func (s *Store) PutSlackPending(ctx context.Context, destID string, p SlackPending) error {
+	return s.exec2(ctx, `INSERT OR REPLACE INTO notification_slack_pending(destination_id, channel_id, thread_ts, rounds, reply_cursor, payload, updated_at) VALUES(?,?,?,?,?,?,?)`,
+		destID, p.ChannelID, p.ThreadTS, p.Rounds, p.ReplyCursor, p.Payload, ms(s.now()))
+}
+
+// ListSlackPending lists the destination's pending threads in a channel, oldest first.
+func (s *Store) ListSlackPending(ctx context.Context, destID, channelID string) ([]SlackPending, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT channel_id, thread_ts, rounds, reply_cursor, payload, updated_at FROM notification_slack_pending
+		WHERE destination_id=? AND channel_id=? ORDER BY thread_ts`, destID, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SlackPending{}
+	for rows.Next() {
+		var p SlackPending
+		var at int64
+		if err := rows.Scan(&p.ChannelID, &p.ThreadTS, &p.Rounds, &p.ReplyCursor, &p.Payload, &at); err != nil {
+			return nil, err
+		}
+		p.UpdatedAt = fromMs(at)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// DeleteSlackPending drops a pending thread.
+func (s *Store) DeleteSlackPending(ctx context.Context, destID, channelID, threadTS string) error {
+	return s.exec2(ctx, `DELETE FROM notification_slack_pending WHERE destination_id=? AND channel_id=? AND thread_ts=?`, destID, channelID, threadTS)
+}
+
+// PruneSlackPending forgets pending threads nobody answered since `before`.
+func (s *Store) PruneSlackPending(ctx context.Context, before time.Time) error {
+	return s.exec2(ctx, `DELETE FROM notification_slack_pending WHERE updated_at<?`, ms(before))
+}

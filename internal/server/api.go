@@ -319,7 +319,7 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	if err := s.attachUploads(r, ups, th.ID, msg.ID); err != nil {
+	if err := s.attachUploads(r.Context(), ups, th.ID, msg.ID); err != nil {
 		storeError(w, err)
 		return
 	}
@@ -469,7 +469,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 			storeError(w, err)
 			return
 		}
-		if err := s.attachUploads(r, ups, nt.ID, msg.ID); err != nil {
+		if err := s.attachUploads(r.Context(), ups, nt.ID, msg.ID); err != nil {
 			storeError(w, err)
 			return
 		}
@@ -489,7 +489,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	if err := s.attachUploads(r, ups, id, msg.ID); err != nil {
+	if err := s.attachUploads(r.Context(), ups, id, msg.ID); err != nil {
 		storeError(w, err)
 		return
 	}
@@ -822,7 +822,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		}
 	}
 	s.publishThread(sess.ID, threadID)
-	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body, len(questions) > 0)
+	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body, len(questions) > 0, s.artifactFiles(snaps, inline))
 	type qInfo struct {
 		Key    string `json:"key"`
 		Kind   string `json:"kind"`

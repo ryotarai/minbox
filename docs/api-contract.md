@@ -761,14 +761,25 @@ Another type declares its own fields; `events` is read for every type.
 ### Slack app config (`slack_app`)
 
 `{bot_token (secret, required, no spaces), channel (required: ID like C0123ABCD, name like #alerts, or a user ID U…/W… for a DM with the bot, no spaces), include_body
-(default true), thread_replies (default true), mention_me (bool, default true), events}`. The type also publishes `help` (setup steps, one per line: create the
-app at api.slack.com/apps, Bot Token Scopes `chat:write`, `im:history`, optional `reactions:write` (not needed:
+(default true), thread_replies (default true), mention_me (bool, default true), send_artifacts (bool, default true), events}`. The type also publishes `help` (setup steps, one per line: create the
+app at api.slack.com/apps, Bot Token Scopes `chat:write`, `im:history`, `files:write`, `files:read`, optional `reactions:write` (not needed:
 `chat:write.public`, `im:write`, `channels:*`), App Home Messages tab on, install/reinstall, copy the Bot User OAuth Token,
 Channel = your member ID and Send test first; `/invite @app` for a channel), which the form shows under the type picker. Delivery: HTTPS `POST <base>/chat.postMessage`
 with `Authorization: Bearer <token>` and JSON `{channel, text, blocks, unfurl_links:false, unfurl_media:false[, thread_ts,
 reply_broadcast:false]}`; `blocks` are those of the webhook type. `<base>` is `https://slack.com/api`; the env
 `MINBOX_SLACK_API_BASE` overrides it for tests only (an `http://` URL on a loopback host; anything else is ignored so the token
 cannot be redirected).
+
+**Artifacts** (`send_artifacts`, default on; `Notification.Files`). `POST /api/agent/send` collects the message's file attachments
+(`kind` file, so not reviews) and the inline images of its body as `notify.File{Name, Path (the server's blob), Mime, Size}`. After
+the message is posted, `internal/notify/slackfiles.go` uploads them with Slack's external flow, with the bot token: form
+`files.getUploadURLExternal(filename, length)` -> `{upload_url, file_id}`; a raw `POST` of the bytes to `upload_url` (no
+`Authorization`, no redirects, host must be slack.com or the API base); one JSON `files.completeUploadExternal({files:[{id,title}],
+channel_id, thread_ts})` with the Slack thread of the minbox thread (parent post created by this very message when it is the first;
+top level when `thread_replies` is off). At most 10 files per message, files above 20 MB (and empty ones) skipped with a log line.
+Scope `files:write`; `missing_scope` is reported as "Message sent, but its files were not: the app lacks the files:write scope ...".
+An upload failure is not retried (that would repeat the message). `events: action` applies to the files too (they follow their
+message). Test notifications carry no files.
 
 **DM.** A user ID as `channel` makes Slack deliver to the bot's DM with that user (scope `chat:write` only, no invite; the app's
 App Home Messages tab must be enabled). Slack answers with the real `D…` channel; that is what is stored, so thread replies go
@@ -818,8 +829,20 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   however many threads exist. Replies older than the moment receiving was enabled are never delivered. A top-level message newer
   than the DM cursor starts a new thread. **Project of a new thread**, in order: (1) an explicit `#<project> text` prefix naming
   a project (no model call; if no project has that name the whole text is the message and goes on to 2); (2) when `pick_project`
-  is on: Claude Haiku (`Inbound.PickProject`, `internal/server/slackpick.go`); (3) `default_project`; (4) none: the DM is ignored
-  with one log line. The allowed-member check happens before any of this, so a non-allowed sender never reaches the model and
+  is on: Claude Haiku (`Inbound.PickProject`, `internal/server/slackpick.go`); (3) Haiku unsure (`null`) and at least one project
+  to offer (`Inbound.ProjectNames`): **no thread is created and `default_project` is not used**; minbox posts in the Slack thread
+  of the DM "Which project is this for? ... Projects: `a`, `b`" and stores a pending state; (4) `default_project` (pick off, rate
+  cap, model error, no project to ask about, or the question cap below); (5) none: the DM is ignored with one log line.
+  **Pending state** (additive table `notification_slack_pending(destination_id, channel_id, thread_ts, rounds, reply_cursor,
+  payload, updated_at)`, payload = JSON `{orig, answers[], files[]}` with the held message and its downloaded images; dropped after 24 h
+  without answer or when the destination is deleted). Pending parents are found in the same `conversations.history` call
+  (via `latest_reply`) and their replies read with `conversations.replies` under the same budget (the question's own ts is the
+  initial cursor). An answer from an allowed member (same dedupe/allowlist/✅ as any message; its files are added) goes to Haiku
+  with "Message: <orig>" and each answer; identified -> `NewThread` with the ORIGINAL text and all held files, `notification_slack_threads`
+  is set to this Slack thread (so later replies in it are delivered to the minbox thread and the agent's notifications reply
+  there), a short "Started a thread" post, pending removed. Unsure again -> ask again ("I still could not tell ..."), at most 3
+  questions; after the third unanswered-by-Haiku answer: `default_project` if set (with a note in Slack), else a post saying the
+  message was dropped. A model error during a pending round uses the `default_project` rule too. Calls count against the 10/min pick cap. The allowed-member check happens before any of this, so a non-allowed sender never reaches the model and
   no project name is exposed. The model call: the same mechanism as reply suggestions (`claude -p --output-format json
   --json-schema`, no tools, no settings, empty temp dir, prompt on stdin; `Config.SuggestCommand`/first word of the Claude
   command), with `--model` = `Config.PickModel` (env `MINBOX_PICK_MODEL`, default `claude-haiku-5-5`). One call per new DM, 20 s
@@ -830,7 +853,15 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   timeout means "unsure" and falls back); it is never executed or shown. Logs name the outcome (prefix, Claude, fallback and why),
   never the message text. `NewThread` accepts a project id as well as a name. The D… channel is learned from
   the first notification/test sent. Skipped: `bot_id`, any `subtype` (edits, deletes, joins), non-allowed members (log line
-  without the text), empty text. Text: Slack `<url|label>` becomes `label`, `&lt;&gt;&amp;` decoded, capped at 4000 characters
+  without the text), empty text. **Files**: a message may carry `files[]` (subtype `file_share` is accepted; other subtypes
+  still are not). From allowed members only, each file (at most 5 per message, 20 MB, mimetype `image/*` except SVG, `text/*`,
+  `application/json`, `application/pdf`) is downloaded with `GET <url_private_download>` and `Authorization: Bearer <token>`: the URL
+  host must be slack.com (or the API base), redirects are not followed to another host (so the token never leaves), a 200 HTML page
+  (Slack's answer without `files:read`) or 401/403/404 is "not taken (add files:read)", 5xx/429/network errors are retried next cycle
+  (the message is unmarked). Taken files are stored like a web UI upload (`Inbound.DeliverReply/NewThread(..., files []InFile)`:
+  blob + `store.Upload`, then `attachUploads`: a read-only copy on the session's host and an attachment with `author: user`), so the
+  agent reads them from the same paths as web uploads. Skipped files add a bracketed note to the message text; a message of only
+  skipped files and no text is ignored. A file-only message gets the first file name as its thread subject. Text: Slack `<url|label>` becomes `label`, `&lt;&gt;&amp;` decoded, capped at 4000 characters
   (a note is appended). Delivered messages get a ✅ (`reactions.add white_check_mark`); `missing_scope` /
   `already_reacted` never fail the delivery (one log line).
 - **State** (additive): columns `notification_slack_threads.last_notified_at`, `.reply_cursor`; tables

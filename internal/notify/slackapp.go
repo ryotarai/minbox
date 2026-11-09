@@ -49,18 +49,20 @@ var slackAppType = Type{
 			Hint: "The first notification of a minbox thread is the parent; later ones are replies to it."},
 		{Key: "mention_me", Label: "Mention me when starting a thread", Kind: "bool", Default: true,
 			Hint: "The first message of a Slack thread mentions you (the user ID in Channel, else the first Allowed Slack user ID), because Slack only notifies about replies in a thread you take part in or are mentioned in. Later messages of the thread do not repeat it."},
+		{Key: "send_artifacts", Label: "Send artifacts (images, HTML, files)", Kind: "bool", Default: true,
+			Hint: "Files Claude attaches to a message (and images its message shows) are uploaded to the same Slack thread, up to 10 files and 20 MB each. Needs the files:write scope; without it the message still arrives and the status says what is missing."},
 		{Key: "events", Label: "Notify for", Kind: "select", Default: EventsAll, Options: []Option{
 			{Value: EventsAll, Label: "Every message from Claude"},
 			{Value: EventsAction, Label: "Only messages that need your answer"},
 		}},
 		{Key: "receive", Label: "Receive messages from Slack", Kind: "bool", Default: false,
-			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (and reactions:write for the ✅ ack), and takes up to the poll interval to arrive."},
+			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (files:read to take images you send, reactions:write for the ✅ ack), and takes up to the poll interval to arrive."},
 		{Key: "allowed_users", Label: "Allowed Slack user IDs", Kind: "text", Placeholder: "U0123ABCD, U0456EFGH",
 			Hint: "Only messages from these members are taken (comma separated). Empty: the user ID in Channel. Required when receiving is on.", validate: validUserIDs},
 		{Key: "pick_project", Label: "Let Claude Haiku pick the project", Kind: "bool", Default: true,
-			Hint: "A DM that starts a new thread (without a #project prefix) is sent to Claude Haiku together with your project names, and the thread goes to the project it picks. At most one call per DM and 10 a minute; the DM text is sent to Claude. Only matters when receiving is on."},
+			Hint: "A DM that starts a new thread (without a #project prefix) is sent to Claude Haiku together with your project names, and the thread goes to the project it picks. When Haiku is unsure it asks you in the Slack thread which project (up to 3 times) instead of guessing. At most 10 calls a minute; the DM text and your answers are sent to Claude. Only matters when receiving is on."},
 		{Key: "default_project", Label: "Fallback project (when Claude cannot tell)", Kind: "text", Placeholder: "my-project",
-			Hint: "A project name used when Claude Haiku is off, unsure or fails. Start a DM with #other-project to choose a project yourself (no Claude call). Empty and no project found: the DM is ignored; only replies in notification threads are received."},
+			Hint: "A project name used when Claude Haiku is off or fails, or is still unsure after 3 questions in Slack. Start a DM with #other-project to choose a project yourself (no Claude call). Empty and no project found: the DM is ignored; only replies in notification threads are received."},
 		{Key: "poll_interval", Label: "Poll interval", Kind: "select", Default: "60", Options: []Option{
 			{Value: "30", Label: "30 seconds"}, {Value: "60", Label: "1 minute"},
 			{Value: "120", Label: "2 minutes"}, {Value: "300", Label: "5 minutes"},
@@ -69,12 +71,12 @@ var slackAppType = Type{
 	finish: finishSlackApp,
 	Help: "Slack app setup:\n" +
 		"1. Open api.slack.com/apps → Create New App → From scratch.\n" +
-		"2. OAuth & Permissions → Bot Token Scopes: add chat:write, im:history (to receive your replies) and optionally reactions:write (the ✅ on delivered messages). Not needed: chat:write.public, im:write, channels:*.\n" +
+		"2. OAuth & Permissions → Bot Token Scopes: add chat:write, im:history (to receive your replies), files:write (to send images, HTML and other files Claude attaches), files:read (to take images you send in Slack as input) and optionally reactions:write (the ✅ on delivered messages). Not needed: chat:write.public, im:write, channels:*.\n" +
 		"3. App Home → Show Tabs: turn Messages Tab on and tick 'Allow users to send Slash commands and messages from the messages tab'.\n" +
 		"4. Install to Workspace (Reinstall after any scope change), then copy the Bot User OAuth Token (xoxb-…) into Bot token.\n" +
 		"5. No Event Subscriptions, no Socket Mode, no Request URL: minbox polls Slack, nothing is exposed.\n" +
 		"6. Channel: your member ID (Slack profile → ⋮ → Copy member ID, U…) for a DM with the bot. Press Send test first: the DM is learned from it.\n" +
-		"7. To reply from Slack: turn Receive messages from Slack on, set Allowed Slack user IDs and a Fallback project. Replies in a notification's thread go into that minbox thread; a DM to the bot starts a new thread (#project text picks the project). A message takes up to the poll interval to arrive; the status under the destination shows what went wrong, with Check receiving now.\n" +
+		"7. To reply from Slack: turn Receive messages from Slack on, set Allowed Slack user IDs and a Fallback project. If Claude cannot tell the project of a DM it asks in the Slack thread; answer there. Images you send are taken as input (files:read). Replies in a notification's thread go into that minbox thread; a DM to the bot starts a new thread (#project text picks the project). A message takes up to the poll interval to arrive; the status under the destination shows what went wrong, with Check receiving now.\n" +
 		"Posting to a channel instead of a DM: use its ID (C…) or #name as Channel and /invite the bot (or add chat:write.public); receiving needs the DM.",
 	new: func(cfg map[string]any, c *http.Client, env Env) (Notifier, error) {
 		tok, _ := cfg["bot_token"].(string)
@@ -98,7 +100,11 @@ var slackAppType = Type{
 			men = true
 		}
 		allowed, _ := cfg["allowed_users"].(string)
-		return &SlackApp{Token: tok, Channel: ch, IncludeBody: inc, ThreadReplies: thr, MentionMe: men, AllowedUsers: allowed, Client: c, Store: env.Store, DestID: env.DestID, Base: slackAPIBase}, nil
+		art, ok := cfg["send_artifacts"].(bool)
+		if !ok {
+			art = true
+		}
+		return &SlackApp{SendArtifacts: art, Token: tok, Channel: ch, IncludeBody: inc, ThreadReplies: thr, MentionMe: men, AllowedUsers: allowed, Client: c, Store: env.Store, DestID: env.DestID, Base: slackAPIBase}, nil
 	},
 }
 
@@ -164,6 +170,7 @@ type SlackApp struct {
 	Channel       string
 	IncludeBody   bool
 	ThreadReplies bool
+	SendArtifacts bool   // upload the notification's Files to the Slack thread
 	MentionMe     bool   // mention the person in the parent post of a Slack thread
 	AllowedUsers  string // Allowed Slack user IDs (the mention falls back to the first)
 	Client        *http.Client
@@ -206,6 +213,9 @@ type slackResp struct {
 	TS      string `json:"ts"`
 	Team    string `json:"team"`
 	User    string `json:"user"`
+	// files.getUploadURLExternal
+	UploadURL string `json:"upload_url"`
+	FileID    string `json:"file_id"`
 	// conversations.history / conversations.replies
 	Messages []slackMsg `json:"messages"`
 	HasMore  bool       `json:"has_more"`
@@ -221,14 +231,28 @@ type slackMsg struct {
 	ThreadTS string `json:"thread_ts"`
 	// LatestReply is the ts of the newest reply to this message (set on a thread parent).
 	LatestReply string `json:"latest_reply"`
+	// Files shared with the message (images and other uploads).
+	Files []slackFile `json:"files"`
+}
+
+type slackFile struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Mimetype           string `json:"mimetype"`
+	Size               int64  `json:"size"`
+	URLPrivateDownload string `json:"url_private_download"`
+	URLPrivate         string `json:"url_private"`
 }
 
 // Send posts the notification (grouped in the Slack thread of its minbox thread when enabled).
 // Errors never contain the token.
 func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 	if n.Test || !s.ThreadReplies || s.Store == nil || n.ThreadID == "" {
-		_, err := s.post(ctx, n, s.Channel, "", n.Test)
-		return err
+		r, err := s.post(ctx, n, s.Channel, "", n.Test)
+		if err != nil {
+			return err
+		}
+		return s.uploadFiles(ctx, n, r.Channel, "") // top level: the message is not a thread
 	}
 	mu := slackThreadLock(s.DestID, n.ThreadID)
 	mu.Lock()
@@ -241,7 +265,7 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 		_, err := s.post(ctx, n, parent.ChannelID, parent.TS, false)
 		if err == nil {
 			_ = s.Store.TouchSlackThread(ctx, s.DestID, n.ThreadID)
-			return nil
+			return s.uploadFiles(ctx, n, parent.ChannelID, parent.TS)
 		}
 		var se *SendError
 		if !errors.As(err, &se) || (se.code != "thread_not_found" && se.code != "message_not_found") {
@@ -261,6 +285,7 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 		if e := s.Store.PutSlackThread(ctx, s.DestID, n.ThreadID, store.SlackThread{ChannelID: ch, TS: r.TS}); e != nil {
 			return &SendError{Msg: "storing the Slack thread: " + e.Error()}
 		}
+		return s.uploadFiles(ctx, n, ch, r.TS)
 	}
 	return nil
 }

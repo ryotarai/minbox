@@ -395,6 +395,16 @@ CREATE TABLE IF NOT EXISTS notification_slack_seen (
   at INTEGER NOT NULL,
   PRIMARY KEY (destination_id, channel_id, ts)
 );
+CREATE TABLE IF NOT EXISTS notification_slack_pending (
+  destination_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  thread_ts TEXT NOT NULL,
+  rounds INTEGER NOT NULL,
+  reply_cursor TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (destination_id, channel_id, thread_ts)
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

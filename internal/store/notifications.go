@@ -91,6 +91,7 @@ func (s *Store) DeleteDestination(ctx context.Context, id string) error {
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE destination_id=?`, id)
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_state WHERE destination_id=?`, id)
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_seen WHERE destination_id=?`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_pending WHERE destination_id=?`, id)
 	return s.exec(ctx, `DELETE FROM notification_destinations WHERE id=?`, id)
 }
 
