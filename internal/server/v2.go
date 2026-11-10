@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
@@ -210,7 +211,11 @@ func (s *Server) reask(w http.ResponseWriter, r *http.Request) {
 	if n > 1 {
 		noun = "questions"
 	}
-	words := fmt.Sprintf("Asked Claude Code to ask the %d open %s again.", n, noun)
+	label := agent.Must(agent.Claude).Label()
+	if sess, err := s.store.GetSession(ctx, th.SessionID); err == nil {
+		label = agent.Must(sess.Agent).Label()
+	}
+	words := fmt.Sprintf("Asked %s to ask the %d open %s again.", label, n, noun)
 	body := fmt.Sprintf("Please ask your %d open %s in this thread again (they may be out of date): send them again as :::question blocks with send_message and thread_id %s.", n, noun, id)
 	msg, err := s.store.AddMessage(ctx, id, store.NewMessage{Author: store.AuthorUser, Body: body, Words: words, Kind: store.KindNote})
 	if err != nil {
@@ -410,7 +415,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 func defaultSettings() map[string]any {
 	return map[string]any{
 		"theme": "system", "text_size": 13, "notifications": true, "sound": true, "tab_count": true, "single_key": true,
-		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "reply_suggestions": true, "public_url": "",
+		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
 		"list": map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
 	}
 }
@@ -462,6 +467,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		if len(v) > 64<<10 {
 			httpError(w, 400, "setting "+k+" is too large")
 			return
+		}
+		if k == "default_agent" {
+			var a string
+			if json.Unmarshal(v, &a) != nil || (a != "" && !agent.Valid(a)) {
+				httpError(w, 400, "default_agent must be empty, claude or pi")
+				return
+			}
 		}
 		if k == "public_url" {
 			var u string
@@ -674,7 +686,7 @@ func (s *Server) clearScratch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) about(w http.ResponseWriter, r *http.Request) {
-	out := map[string]any{"version": Version, "server_protocol": ProtocolVersion, "required_host": RequiredHostVersion, "host": nil, "data_dir": s.cfg.DataDir, "claude_command": strings.Join(s.cfg.ClaudeCommand, " ")}
+	out := map[string]any{"version": Version, "server_protocol": ProtocolVersion, "required_host": RequiredHostVersion, "host": nil, "data_dir": s.cfg.DataDir, "claude_command": strings.Join(s.cfg.ClaudeCommand, " "), "pi_command": strings.Join(s.cfg.PiCommand, " "), "agents": s.sessions.commands().Infos()}
 	if h, ok := s.sessions.getHost().(interface {
 		Version(ctx context.Context) (termhost.VersionInfo, error)
 	}); ok && h != nil {

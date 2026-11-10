@@ -31,6 +31,12 @@ type Config struct {
 	Addr          string   // listen address, e.g. 127.0.0.1:4848
 	DataDir       string   // ~/.minbox
 	ClaudeCommand []string // e.g. ["claude"]
+	// PiCommand starts Pi (MINBOX_PI), e.g. ["pi"]; empty: Pi is not offered.
+	PiCommand []string
+	// PiExtension is the extracted minbox extension for Pi (plugin/pi/minbox.ts), passed with -e.
+	PiExtension string
+	// PiHelperModel is the model Pi uses for one-shot helper runs (MINBOX_PI_HELPER_MODEL); empty: Pi's own default.
+	PiHelperModel string
 	// SuggestCommand starts the reply-suggestions generator (MINBOX_SUGGEST_COMMAND); empty: the first word of ClaudeCommand.
 	SuggestCommand []string
 	// PickModel is the model that picks the project of a new thread from a Slack DM (MINBOX_PICK_MODEL); empty: claude-haiku-5-5.
@@ -118,8 +124,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	}
 	s.poller = notify.NewPoller(st, slackInbound{s})
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
-	s.suggest = newSuggester(s.runClaudeSuggest)
-	s.pickRun = s.runClaudePick
+	s.suggest = newSuggester(s.runSuggest)
+	s.pickRun = s.runPick
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)
@@ -240,6 +246,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/storage", s.storage)
 	mux.HandleFunc("POST /api/storage/clear-scratch", s.clearScratch)
 	mux.HandleFunc("GET /api/about", s.about)
+	mux.HandleFunc("GET /api/agents", s.listAgents)
 	mux.HandleFunc("GET /api/hosts", s.listHosts)
 	mux.HandleFunc("POST /api/hosts", s.addHost)
 	mux.HandleFunc("GET /api/hosts/tailscale", s.tailscaleInfo)

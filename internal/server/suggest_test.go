@@ -240,12 +240,12 @@ func TestSuggestArgv(t *testing.T) {
 func TestRunClaudeSuggestFake(t *testing.T) {
 	e := newEnv(t)
 	e.srv.cfg.SuggestCommand = []string{"/bin/sh", "-c", `cat >/dev/null; echo '{"type":"result","structured_output":{"suggestions":["hi"]}}'`, "sh"}
-	res, err := e.srv.runClaudeSuggest(context.Background(), "p")
+	res, err := e.srv.runSuggest(context.Background(), "p")
 	if err != nil || len(res) != 1 || res[0] != "hi" {
 		t.Fatalf("%v %v", res, err)
 	}
 	e.srv.cfg.SuggestCommand = []string{"/nonexistent/claude"}
-	if _, err := e.srv.runClaudeSuggest(context.Background(), "p"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := e.srv.runSuggest(context.Background(), "p"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("missing: %v", err)
 	}
 }

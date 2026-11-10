@@ -131,11 +131,15 @@ type Session struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 	ArchivedAt      *time.Time `json:"archived_at"`
 	HostID          string     `json:"host_id"`
-	Kind            string     `json:"kind"`                // KindClaude or KindShell
-	Title           string     `json:"title"`               // what Claude says the session is doing (set_session_title)
-	HostName        string     `json:"host_name,omitempty"` // filled by the server
-	ProjectID       string     `json:"project_id"`
-	IsMain          bool       `json:"is_main"` // the project's main session
+	Kind            string     `json:"kind"` // KindClaude or KindShell
+	// Agent: the coding agent a KindClaude session runs ("claude" or "pi"; see internal/agent).
+	// ClaudeSessionID / PrevClaudeSessionID are that agent's conversation ids whatever the agent is
+	// (the names are kept: they are stored columns and API keys).
+	Agent     string `json:"agent"`
+	Title     string `json:"title"`               // what Claude says the session is doing (set_session_title)
+	HostName  string `json:"host_name,omitempty"` // filled by the server
+	ProjectID string `json:"project_id"`
+	IsMain    bool   `json:"is_main"` // the project's main session
 	// Folder change (see RelocateSession): RelocateTo is the project's new folder, applied at the
 	// next start; PrevDir and PrevClaudeSessionID name the conversation left behind in the old folder.
 	RelocateTo          string `json:"relocate_to,omitempty"`
@@ -430,13 +434,15 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "host_id", "TEXT NOT NULL DEFAULT 'local'"},
 	{"sessions", "kind", "TEXT NOT NULL DEFAULT 'claude'"},
 	{"sessions", "title", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "agent", "TEXT NOT NULL DEFAULT 'claude'"}, // which coding agent runs the session (see internal/agent); claude_session_id holds its conversation id
 	{"sessions", "project_id", "TEXT"},
 	{"sessions", "relocate_to", "TEXT NOT NULL DEFAULT ''"},            // the project's folder changed: start in this folder next time
 	{"sessions", "prev_dir", "TEXT NOT NULL DEFAULT ''"},               // where the conversation before the move ran
 	{"sessions", "prev_claude_session_id", "TEXT NOT NULL DEFAULT ''"}, // that conversation's Claude Code id
 	{"sessions", "prev_chain", "TEXT NOT NULL DEFAULT ''"},             // JSON [PrevConv]: the conversations before that one
 	{"projects", "main_session_id", "TEXT"},
-	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"}, // '' | 'emoji' | 'image'
+	{"projects", "default_agent", "TEXT NOT NULL DEFAULT ''"}, // '' = the settings' default agent
+	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"},     // '' | 'emoji' | 'image'
 	{"projects", "icon_emoji", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "icon_png", "BLOB"}, // 128x128 PNG; never selected by the project list
 	{"projects", "icon_updated_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -583,8 +589,16 @@ func (s *Store) CreateSessionKind(ctx context.Context, hostID, kind, name, cwd, 
 // CreateSessionIn records a new session in a project (on the project's host). cwd is where it
 // runs: the project's dir, or a folder of the person's choosing.
 func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd, claudeSessionID string) (*Session, error) {
+	return s.CreateSessionAgent(ctx, projectID, kind, "", name, cwd, claudeSessionID)
+}
+
+// CreateSessionAgent is CreateSessionIn for a given coding agent ("" is Claude Code).
+func (s *Store) CreateSessionAgent(ctx context.Context, projectID, kind, agentKind, name, cwd, claudeSessionID string) (*Session, error) {
 	if kind == "" {
 		kind = KindClaude
+	}
+	if agentKind == "" {
+		agentKind = "claude"
 	}
 	p, err := s.GetProject(ctx, projectID)
 	if err != nil {
@@ -596,14 +610,14 @@ func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd,
 	hostID := p.HostID
 	now := s.now()
 	sess := &Session{ID: NewID("ses"), Name: name, Cwd: cwd, Status: StatusStarting, ClaudeSessionID: claudeSessionID,
-		Token: NewID("tok") + NewID(""), CreatedAt: now, UpdatedAt: now, HostID: hostID, Kind: kind, ProjectID: p.ID}
+		Token: NewID("tok") + NewID(""), CreatedAt: now, UpdatedAt: now, HostID: hostID, Kind: kind, Agent: agentKind, ProjectID: p.ID}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,name,cwd,status,claude_session_id,token,created_at,updated_at,host_id,kind,project_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		sess.ID, sess.Name, sess.Cwd, sess.Status, sess.ClaudeSessionID, sess.Token, ms(now), ms(now), hostID, kind, p.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,name,cwd,status,claude_session_id,token,created_at,updated_at,host_id,kind,project_id,agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		sess.ID, sess.Name, sess.Cwd, sess.Status, sess.ClaudeSessionID, sess.Token, ms(now), ms(now), hostID, kind, p.ID, agentKind); err != nil {
 		return nil, err
 	}
 	// A session in an archived project brings it back.
@@ -625,14 +639,14 @@ func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd,
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id), relocate_to, prev_dir, prev_claude_session_id, prev_chain`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
 	var chain string
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

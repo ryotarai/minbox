@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/store"
 )
 
@@ -40,7 +41,7 @@ const suggestSchema = `{"type":"object","properties":{"suggestions":{"type":"arr
 // SuggestResult is the endpoint's answer.
 type SuggestResult struct {
 	Suggestions []string `json:"suggestions"`
-	Reason      string   `json:"reason,omitempty"` // not_needed | disabled
+	Reason      string   `json:"reason,omitempty"` // not_needed | disabled | no_agent (no coding agent is installed)
 	Error       string   `json:"error,omitempty"`
 }
 
@@ -129,7 +130,7 @@ func (g *suggester) get(ctx context.Context, key, prompt string) (res []string, 
 				c.err = errors.New("timed out waiting for a free slot")
 			}
 			if c.err == nil && rctx.Err() != nil {
-				c.res, c.err = nil, errors.New("claude took too long")
+				c.res, c.err = nil, errors.New("the coding agent took too long")
 			}
 			if c.err == nil {
 				g.put(key, c.res)
@@ -261,7 +262,7 @@ func firstNonEmpty(a ...string) string {
 	return ""
 }
 
-// ---- the claude run ----
+// ---- the helper run ----
 
 // suggestArgv: the executable is Config.SuggestCommand (MINBOX_SUGGEST_COMMAND) if set, else only the
 // first word of the Claude command (the person's own flags, such as --model, are not carried over).
@@ -271,6 +272,45 @@ func (s *Server) suggestArgv() []string {
 
 // claudeArgv: a tool-less, session-less, settings-less `claude -p` run with a JSON schema.
 func (s *Server) claudeArgv(model, system, schema string) []string {
+	return agent.Must(agent.Claude).Headless(agent.HeadlessSpec{Command: s.claudeBase(), Model: model, System: system, Schema: schema}).Argv
+}
+
+// runSuggest runs the helper agent for reply suggestions, the prompt on stdin.
+func (s *Server) runSuggest(ctx context.Context, prompt string) ([]string, error) {
+	out, err := s.runHelper(ctx, "haiku", suggestSystemPrompt, suggestSchema, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseSuggestions(out)
+}
+
+// helperPlan chooses the agent for a one-shot helper run (reply suggestions, Slack project pick) and
+// builds its command line. Config.SuggestCommand (MINBOX_SUGGEST_COMMAND), if set, is a Claude-format
+// helper and wins. Otherwise the default agent runs it (the default_agent setting, else the installed
+// one), falling back to the other agent when the preferred one is not installed; with none
+// installed the error is agent.ErrNoneInstalled and the feature is simply off. claudeModel is the
+// model for Claude Code; Pi uses Config.PiHelperModel (or its own default).
+func (s *Server) helperPlan(ctx context.Context, claudeModel, system, schema string) (name string, h agent.Headless, err error) {
+	claudeSpec := func() agent.Headless {
+		return agent.Must(agent.Claude).Headless(agent.HeadlessSpec{Command: s.claudeBase(), Model: claudeModel, System: system, Schema: schema})
+	}
+	if len(s.cfg.SuggestCommand) > 0 {
+		return "claude", claudeSpec(), nil
+	}
+	cmds := s.sessions.commands()
+	kind := s.sessions.defaultAgent(ctx)
+	if !cmds.Installed(kind) {
+		return "", agent.Headless{}, agent.ErrNoneInstalled
+	}
+	if kind == agent.Pi {
+		return "pi", agent.Must(agent.Pi).Headless(agent.HeadlessSpec{Command: cmds[agent.Pi][:1], Model: s.cfg.PiHelperModel, System: system, Schema: schema}), nil
+	}
+	return "claude", claudeSpec(), nil
+}
+
+// claudeBase is the executable of Claude Code's helper runs: Config.SuggestCommand if set, else only the
+// first word of the Claude command (the person's own flags, such as --model, are not carried over).
+func (s *Server) claudeBase() []string {
 	base := s.cfg.SuggestCommand
 	if len(base) == 0 && len(s.cfg.ClaudeCommand) > 0 {
 		base = s.cfg.ClaudeCommand[:1]
@@ -278,34 +318,26 @@ func (s *Server) claudeArgv(model, system, schema string) []string {
 	if len(base) == 0 {
 		base = []string{"claude"}
 	}
-	argv := append([]string{}, base...)
-	return append(argv,
-		"-p",
-		"--model", model,
-		"--effort", "low",
-		"--system-prompt", system,
-		"--tools", "",
-		"--no-session-persistence",
-		"--setting-sources", "",
-		"--strict-mcp-config",
-		"--disable-slash-commands",
-		"--output-format", "json",
-		"--json-schema", schema,
-	)
+	return base
 }
 
-// runClaudeSuggest runs claude in a fresh empty directory, the prompt on stdin.
-func (s *Server) runClaudeSuggest(ctx context.Context, prompt string) ([]string, error) {
-	out, err := s.runClaudeRaw(ctx, s.suggestArgv(), prompt)
+// runHelper runs the helper agent in a fresh empty directory with the prompt on stdin and returns
+// the answer in the envelope parseSuggestions and parsePick read.
+func (s *Server) runHelper(ctx context.Context, claudeModel, system, schema, prompt string) ([]byte, error) {
+	name, h, err := s.helperPlan(ctx, claudeModel, system, schema)
 	if err != nil {
 		return nil, err
 	}
-	return parseSuggestions(out)
+	out, err := runHelperRaw(ctx, name, h.Argv, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return h.Normalize(out)
 }
 
-// runClaudeRaw runs argv in a fresh empty directory, the prompt on stdin, and returns stdout.
-func (s *Server) runClaudeRaw(ctx context.Context, argv []string, prompt string) ([]byte, error) {
-	dir, err := os.MkdirTemp("", "minbox-claude-")
+// runHelperRaw runs argv in a fresh empty directory, the prompt on stdin, and returns stdout.
+func runHelperRaw(ctx context.Context, name string, argv []string, prompt string) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "minbox-helper-")
 	if err != nil {
 		return nil, errors.New("no temp directory")
 	}
@@ -319,11 +351,11 @@ func (s *Server) runClaudeRaw(ctx context.Context, argv []string, prompt string)
 	if err := cmd.Run(); err != nil {
 		switch {
 		case errors.Is(ctx.Err(), context.DeadlineExceeded):
-			return nil, errors.New("claude took too long")
+			return nil, fmt.Errorf("%s took too long", name)
 		case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
-			return nil, errors.New("claude was not found")
+			return nil, fmt.Errorf("%s was not found", name)
 		}
-		return nil, fmt.Errorf("claude failed: %s", truncRunes(strings.TrimSpace(firstNonEmpty(errb.String(), err.Error())), 120))
+		return nil, fmt.Errorf("%s failed: %s", name, truncRunes(strings.TrimSpace(firstNonEmpty(errb.String(), err.Error())), 120))
 	}
 	return out.Bytes(), nil
 }
@@ -361,6 +393,11 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
 	if err != nil {
+		if errors.Is(err, agent.ErrNoneInstalled) {
+			// No coding agent on this machine: the feature is off, not broken.
+			empty(SuggestResult{Reason: "no_agent"})
+			return
+		}
 		empty(SuggestResult{Error: err.Error()})
 		return
 	}

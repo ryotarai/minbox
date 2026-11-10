@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
@@ -126,6 +127,12 @@ func (m *sessionManager) Create(ctx context.Context, name, cwd, hostID string) (
 // belongs to that project: its host, and its folder unless cwd names another one. Without, the
 // project is the one for (host, folder), created on first use.
 func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID, projectID string) (*store.Session, error) {
+	return m.CreateAgent(ctx, kind, "", name, cwd, hostID, projectID)
+}
+
+// CreateAgent is CreateKind with the coding agent to run. agentKind "" means the project's
+// default agent, else the default_agent setting, else the installed agent (Claude Code if both are).
+func (m *sessionManager) CreateAgent(ctx context.Context, kind, agentKind, name, cwd, hostID, projectID string) (*store.Session, error) {
 	switch kind {
 	case "":
 		kind = store.KindClaude
@@ -166,12 +173,22 @@ func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID
 	if name == "" {
 		name = filepath.Base(cwd)
 	}
+	if agentKind == "" && project != nil {
+		agentKind = project.DefaultAgent
+	}
+	agentKind, err = m.resolveAgent(ctx, agentKind, hostID)
+	if err != nil {
+		return nil, err
+	}
 	claudeID := newUUID()
 	var sess *store.Session
 	if project != nil {
-		sess, err = m.store.CreateSessionIn(ctx, project.ID, kind, name, cwd, claudeID)
+		sess, err = m.store.CreateSessionAgent(ctx, project.ID, kind, agentKind, name, cwd, claudeID)
 	} else {
-		sess, err = m.store.CreateSessionKind(ctx, hostID, kind, name, cwd, claudeID)
+		var p *store.Project
+		if p, _, err = m.store.EnsureProject(ctx, hostID, cwd); err == nil {
+			sess, err = m.store.CreateSessionAgent(ctx, p.ID, kind, agentKind, name, cwd, claudeID)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -185,6 +202,37 @@ func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID
 	m.hub.publish(Event{Type: "sessions"})
 	m.hub.publish(Event{Type: "projects"})
 	return m.store.GetSession(ctx, sess.ID)
+}
+
+// commands are the configured commands of the coding agents.
+func (m *sessionManager) commands() agent.Commands {
+	return agent.Commands{agent.Claude: m.cfg.ClaudeCommand, agent.Pi: m.cfg.PiCommand}
+}
+
+// defaultAgent is the agent a new session gets when nobody says: the default_agent setting if that
+// agent is installed, else the installed one (Claude Code when both are, or neither).
+func (m *sessionManager) defaultAgent(ctx context.Context) string {
+	stored, _ := m.store.Settings(ctx)
+	return m.commands().Choose(settingString(stored, "default_agent"))
+}
+
+// resolveAgent turns the requested agent ("" = default) into the one to run on a host, and refuses
+// one that cannot run there: an unknown kind, Pi when it is not installed, Pi on another machine.
+func (m *sessionManager) resolveAgent(ctx context.Context, requested, hostID string) (string, error) {
+	if requested == "" {
+		requested = m.defaultAgent(ctx)
+	}
+	a, err := agent.For(requested)
+	if err != nil {
+		return "", err
+	}
+	if m.remote(hostID) && !a.Caps().RemoteHosts {
+		return "", fmt.Errorf("%s sessions run on the server's own machine only for now (host %s is another machine)", a.Label(), hostID)
+	}
+	if a.Kind() == agent.Pi && !m.commands().Installed(agent.Pi) {
+		return "", m.commands().NotInstalledError(agent.Pi)
+	}
+	return a.Kind(), nil
 }
 
 func resolveDir(dir string) (string, error) {
@@ -232,32 +280,55 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	if sess.Kind == store.KindShell {
 		return shellArgv
 	}
-	argv := append([]string{}, m.cfg.ClaudeCommand...)
-	plugin := m.cfg.PluginDir
-	if m.remote(sess.HostID) {
-		plugin = termhost.PluginDirPlaceholder
-	}
-	argv = append(argv, "--plugin-dir", plugin)
-	exists := false
-	if resume && sess.ClaudeSessionID != "" {
-		if f, err := m.fsOf(sess.HostID); err == nil {
-			exists = f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID)
-		} else {
-			log.Printf("session %s (%s): cannot check for a transcript on host %q (%v)", sess.ID, sess.Name, sess.HostID, err)
+	a := agent.Must(sess.Agent)
+	req := agent.ArgvReq{ConversationID: sess.ClaudeSessionID}
+	if a.Kind() == agent.Pi {
+		req.Command = m.cfg.PiCommand
+		req.Extension = m.cfg.PiExtension
+		if resume && sess.ClaudeSessionID != "" {
+			// --session-id continues the conversation if the folder has it, else starts it.
+			log.Printf("session %s (%s): resume check: Pi conversation %s, cwd %q, session file found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, m.piConversationExists(sess))
 		}
-		log.Printf("session %s (%s): resume check: conversation %s, cwd %q, host %q, transcript found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, sess.HostID, exists)
+	} else {
+		req.Command = m.cfg.ClaudeCommand
+		req.Extension = m.cfg.PluginDir
+		if m.remote(sess.HostID) {
+			req.Extension = termhost.PluginDirPlaceholder
+		}
+		exists := false
+		if resume && sess.ClaudeSessionID != "" {
+			if f, err := m.fsOf(sess.HostID); err == nil {
+				exists = f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID)
+			} else {
+				log.Printf("session %s (%s): cannot check for a transcript on host %q (%v)", sess.ID, sess.Name, sess.HostID, err)
+			}
+			log.Printf("session %s (%s): resume check: conversation %s, cwd %q, host %q, transcript found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, sess.HostID, exists)
+		}
+		if resume && sess.ClaudeSessionID != "" && !exists {
+			log.Printf("session %s (%s): no transcript for conversation %s found (looked for %s.jsonl under ~/.claude/projects/%s/, the symlink-resolved cwd, and every project folder on host %q): starting a NEW conversation with --session-id",
+				sess.ID, sess.Name, sess.ClaudeSessionID, sess.ClaudeSessionID, projectDirName(sess.Cwd), sess.HostID)
+		}
+		req.Resume = exists
 	}
-	if resume && sess.ClaudeSessionID != "" && !exists {
-		log.Printf("session %s (%s): no transcript for conversation %s found (looked for %s.jsonl under ~/.claude/projects/%s/, the symlink-resolved cwd, and every project folder on host %q): starting a NEW conversation with --session-id",
-			sess.ID, sess.Name, sess.ClaudeSessionID, sess.ClaudeSessionID, projectDirName(sess.Cwd), sess.HostID)
+	req.Instructions = m.instructions(ctx, sess)
+	return a.Argv(req)
+}
+
+// piConversationExists reports whether Pi has a session file for the session's conversation (this
+// machine only: Pi sessions do not run on other hosts yet).
+func (m *sessionManager) piConversationExists(sess *store.Session) bool {
+	if m.remote(sess.HostID) {
+		return false
 	}
-	if exists {
-		argv = append(argv, "--resume", sess.ClaudeSessionID)
-	} else if sess.ClaudeSessionID != "" {
-		argv = append(argv, "--session-id", sess.ClaudeSessionID)
+	return agent.PiConversationFile(agent.PiSessionsRoot(), sess.Cwd, sess.ClaudeSessionID) != ""
+}
+
+// conversationExists reports whether the session's agent has a saved conversation `id` in cwd.
+func (m *sessionManager) conversationExists(ctx context.Context, f hostfs.FS, sess *store.Session, id string) bool {
+	if sess.Agent == agent.Pi {
+		return !m.remote(sess.HostID) && agent.PiConversationFile(agent.PiSessionsRoot(), sess.Cwd, id) != ""
 	}
-	argv = append(argv, "--append-system-prompt", m.instructions(ctx, sess))
-	return argv
+	return f.TranscriptExists(ctx, sess.Cwd, id)
 }
 
 // instructions is the one text that tells the agent how to work with minbox:
@@ -270,7 +341,9 @@ func (m *sessionManager) instructions(ctx context.Context, sess *store.Session) 
 	if err != nil {
 		stored = nil
 	}
-	text := buildInstructions(settingOn(stored, "orchestrator_prompt", true), settingString(stored, "prompt_extra"))
+	a := agent.Must(sess.Agent)
+	// The orchestrator prompt tells the main agent to start subagents: only for agents that have them.
+	text := buildInstructionsFor(a, settingOn(stored, "orchestrator_prompt", true) && a.Caps().Subagents, settingString(stored, "prompt_extra"))
 	if note := relocationNote(sess); note != "" {
 		text += "\n\n" + note
 	}
@@ -279,21 +352,17 @@ func (m *sessionManager) instructions(ctx context.Context, sess *store.Session) 
 
 // relocationNote tells the agent of a session whose project folder changed that its earlier
 // conversation ran in the old folder: where the transcript is, so it can look things up. It is part
-// of the instructions text, so every way the text reaches the agent carries it.
+// of the instructions text, so every way the text reaches the agent carries it. The wording is the
+// session's agent's (where it keeps conversations).
 func relocationNote(sess *store.Session) string {
 	if sess == nil || sess.PrevDir == "" || sess.PrevClaudeSessionID == "" {
 		return ""
 	}
-	note := fmt.Sprintf(`# minbox: this thread moved to a new folder
-The project's folder changed, so this session now runs in %s. It was worked on before in %s, as Claude Code session %s. That earlier conversation cannot be resumed from here, but its transcript can be read (it is JSON lines) at ~/.claude/projects/%s/%s.jsonl (under $CLAUDE_CONFIG_DIR instead of ~/.claude when that is set). If it is not there, look for ~/.claude/projects/*/%s.jsonl. Read it only when you need what was said or done before, for example when the person refers to earlier work; the files themselves are now where the project's folder points.`,
-		sess.Cwd, sess.PrevDir, sess.PrevClaudeSessionID, projectDirName(sess.PrevDir), sess.PrevClaudeSessionID, sess.PrevClaudeSessionID)
-	if len(sess.PrevChain) > 0 {
-		note += "\nEven earlier conversations of this thread (oldest first; transcripts are found the same way):"
-		for _, c := range sess.PrevChain {
-			note += fmt.Sprintf("\n- %s, Claude Code session %s", c.Dir, c.ClaudeSessionID)
-		}
+	r := agent.Relocation{Cwd: sess.Cwd, Prev: agent.Prev{Dir: sess.PrevDir, ConversationID: sess.PrevClaudeSessionID}}
+	for _, c := range sess.PrevChain {
+		r.Chain = append(r.Chain, agent.Prev{Dir: c.Dir, ConversationID: c.ClaudeSessionID})
 	}
-	return note
+	return agent.Must(sess.Agent).RelocationNote(r)
 }
 
 // maxPrevChain bounds how many older conversations a session remembers.
@@ -328,7 +397,7 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 	// stays and so do the older prev_* fields: only the folder moves.
 	prevDir, prevID, newID := "", "", sess.ClaudeSessionID
 	var chain []store.PrevConv
-	if sess.ClaudeSessionID != "" && f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID) {
+	if sess.ClaudeSessionID != "" && m.conversationExists(ctx, f, sess, sess.ClaudeSessionID) {
 		prevDir, prevID, newID = sess.Cwd, sess.ClaudeSessionID, newUUID()
 		chain = append(chain, sess.PrevChain...)
 		if sess.PrevDir != "" && sess.PrevClaudeSessionID != "" {
@@ -351,15 +420,28 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 
 // buildInstructions assembles the instructions text from its parts.
 func buildInstructions(orchestrator bool, extra string) string {
+	return buildInstructionsFor(agent.Must(agent.Claude), orchestrator, extra)
+}
+
+// buildInstructionsFor assembles the instructions text for an agent. The text is written once,
+// with Claude Code's tool names (mcp__minbox__send_message); another agent gets the same text with
+// its own tool names. For Claude Code this is the text unchanged.
+func buildInstructionsFor(a agent.Agent, orchestrator bool, extra string) string {
 	text := AgentSystemPrompt
 	if orchestrator {
 		text += "\n\n" + OrchestratorPrompt
+	}
+	if p := a.Tools().Prefix; p != toolPrefix {
+		text = strings.ReplaceAll(text, toolPrefix, p)
 	}
 	if extra = strings.TrimSpace(extra); extra != "" {
 		text += "\n\nThe person adds: " + extra
 	}
 	return text
 }
+
+// toolPrefix is what the instruction constants write before a tool's name (Claude Code's).
+const toolPrefix = "mcp__minbox__"
 
 func settingOn(stored map[string]json.RawMessage, key string, def bool) bool {
 	var on bool

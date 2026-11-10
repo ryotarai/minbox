@@ -122,9 +122,10 @@ func parsePick(out []byte) (string, error) {
 	return strings.TrimSpace(*body.ProjectID), nil
 }
 
-// runClaudePick runs the model of the project pick; the prompt goes on stdin.
-func (s *Server) runClaudePick(ctx context.Context, prompt string) ([]byte, error) {
-	return s.runClaudeRaw(ctx, s.claudeArgv(s.pickModel(), pickSystemPrompt, pickSchema), prompt)
+// runPick runs the helper agent for the project pick; the prompt goes on stdin. With no coding
+// agent installed it fails with agent.ErrNoneInstalled and the DM falls back to the default project.
+func (s *Server) runPick(ctx context.Context, prompt string) ([]byte, error) {
+	return s.runHelper(ctx, s.pickModel(), pickSystemPrompt, pickSchema, prompt)
 }
 
 // PickProject asks the model which project the DM text belongs to and returns that project's

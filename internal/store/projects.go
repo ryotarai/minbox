@@ -38,6 +38,8 @@ type Project struct {
 	PinnedAt   *time.Time `json:"pinned_at"`
 	// MainSessionID: the session a new thread goes to by default; '' until the project has a Claude Code session.
 	MainSessionID string `json:"main_session_id"`
+	// DefaultAgent: the coding agent new sessions of the project start with ("claude", "pi"); '' follows the default_agent setting.
+	DefaultAgent string `json:"default_agent"`
 	// Icon: an emoji or an uploaded image; nil when the project has none.
 	Icon *ProjectIcon `json:"icon"`
 	// Derived.
@@ -113,13 +115,13 @@ func uniqueProjectName(ctx context.Context, q querier, base, hostID string) (str
 	}
 }
 
-const projectCols = `id, name, dir, host_id, created_at, archived_at, pinned_at, COALESCE(main_session_id,'')`
+const projectCols = `id, name, dir, host_id, created_at, archived_at, pinned_at, COALESCE(main_session_id,''), default_agent`
 
 func scanProject(row interface{ Scan(...any) error }) (*Project, error) {
 	var p Project
 	var created int64
 	var archived, pinned sql.NullInt64
-	if err := row.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &p.DefaultAgent); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -259,7 +261,7 @@ func (s *Store) ListProjects(ctx context.Context, includeArchived bool) ([]Proje
 }
 
 func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, COALESCE(p.main_session_id,''), p.icon_kind, p.icon_emoji, p.icon_updated_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, COALESCE(p.main_session_id,''), p.default_agent, p.icon_kind, p.icon_emoji, p.icon_updated_at,
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id),
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id AND s.archived_at IS NULL AND s.status!=?),
 	  (SELECT COALESCE(MAX(s.updated_at),0) FROM sessions s WHERE s.project_id=p.id),
@@ -275,7 +277,7 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 		var created, sUp, tUp, iconAt int64
 		var archived, pinned sql.NullInt64
 		var iconKind, iconEmoji string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &p.DefaultAgent, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = fromMs(created)
@@ -320,6 +322,8 @@ type ProjectPatch struct {
 	Dir         *string
 	HostID      *string
 	Pinned      *bool
+	// DefaultAgent: "" clears it (follow the setting); the caller validates the kind.
+	DefaultAgent *string
 }
 
 // UpdateProject renames, pins, or (only while it has no sessions) moves a project.
@@ -394,11 +398,14 @@ func (s *Store) UpdateProject(ctx context.Context, id string, patch ProjectPatch
 			p.Dir, p.HostID = dir, host
 		}
 	}
+	if patch.DefaultAgent != nil {
+		p.DefaultAgent = *patch.DefaultAgent
+	}
 	var pinned any
 	if p.PinnedAt != nil {
 		pinned = ms(*p.PinnedAt)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE projects SET name=?, dir=?, host_id=?, pinned_at=? WHERE id=?`, p.Name, p.Dir, p.HostID, pinned, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET name=?, dir=?, host_id=?, pinned_at=?, default_agent=? WHERE id=?`, p.Name, p.Dir, p.HostID, pinned, p.DefaultAgent, id); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

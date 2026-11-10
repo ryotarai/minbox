@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/question"
 	"github.com/ryotarai/minbox/internal/store"
@@ -43,6 +44,8 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Cwd    string `json:"cwd"`
 		HostID string `json:"host_id"`
 		Kind   string `json:"kind"` // "claude" (default); "shell" is rejected
+		// Agent: the coding agent, "claude" or "pi"; omitted: the project's default_agent, else the default_agent setting, else the installed one.
+		Agent string `json:"agent"`
 		// ProjectID: start in this project (its host; its folder unless cwd is given). Without it
 		// the project is the one for (host_id, cwd), created on first use.
 		ProjectID string `json:"project_id"`
@@ -52,7 +55,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	sess, err := s.sessions.CreateKind(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID), strings.TrimSpace(req.ProjectID))
+	sess, err := s.sessions.CreateAgent(r.Context(), strings.TrimSpace(req.Kind), strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), strings.TrimSpace(req.Cwd), strings.TrimSpace(req.HostID), strings.TrimSpace(req.ProjectID))
 	if err != nil {
 		httpError(w, 400, err.Error())
 		return
@@ -588,15 +591,30 @@ func (s *Server) agent(h agentHandler) http.HandlerFunc {
 
 func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.Session) {
 	var req struct {
+		// ClaudeSessionID is the old name of AgentSessionID, still sent by the Claude Code mod.
 		ClaudeSessionID string `json:"claude_session_id"`
+		// AgentSessionID: the agent's current conversation id (any agent).
+		AgentSessionID string `json:"agent_session_id"`
+		// Agent and ExtVersion are informational (what the integration thinks it runs in, and its version).
+		Agent      string `json:"agent"`
+		ExtVersion string `json:"ext_version"`
+		// SessionFile: the agent's own file for the conversation (Pi); recorded in the log only.
+		SessionFile string `json:"session_file"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
 	ctx := r.Context()
-	// /clear gives the conversation a new id: resume that one later.
-	if req.ClaudeSessionID != "" && req.ClaudeSessionID != sess.ClaudeSessionID {
-		_ = s.store.SetClaudeSessionID(ctx, sess.ID, req.ClaudeSessionID)
+	convID := firstNonEmpty(req.AgentSessionID, req.ClaudeSessionID)
+	// /clear (Claude Code) or /new (Pi) gives the conversation a new id: resume that one later.
+	if convID != "" && convID != sess.ClaudeSessionID {
+		_ = s.store.SetClaudeSessionID(ctx, sess.ID, convID)
+	}
+	if req.Agent != "" && req.Agent != agent.Must(sess.Agent).Kind() {
+		log.Printf("session %s (%s): hello from a %q integration, but the session runs %q", sess.ID, sess.Name, req.Agent, agent.Must(sess.Agent).Kind())
+	}
+	if req.ExtVersion != "" || req.SessionFile != "" {
+		log.Printf("session %s (%s): hello: agent %q extension %q conversation %q file %q", sess.ID, sess.Name, req.Agent, req.ExtVersion, convID, req.SessionFile)
 	}
 	if sess.Status == store.StatusStarting {
 		_ = s.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
@@ -609,10 +627,10 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	// instructions is the single text the mod injects (first prompt, after a
 	// compaction, every few prompts); prompt_extra and orchestrator stay for old mods.
 	orch := ""
-	if s.sessions.orchestratorPrompt(ctx) {
+	if s.sessions.orchestratorPrompt(ctx) && agent.Must(sess.Agent).Caps().Subagents {
 		orch = OrchestratorPrompt
 	}
-	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch})
+	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "agent": agent.Must(sess.Agent).Kind(), "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch})
 }
 
 func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store.Session) {
