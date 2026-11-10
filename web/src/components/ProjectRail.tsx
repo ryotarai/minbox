@@ -83,7 +83,6 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
       .then(() => (reloadProjects(), reloadSessions()))
       .catch(error)
   }
-  const empty = project.session_count === 0
   return (
     <Popover anchor={anchor} open={!!anchor} onClose={onClose} align="start" side="right" className="w-[220px]">
       <MenuItem testid="project-rename" onClick={() => (onClose(), onRename())}>
@@ -91,14 +90,12 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
       </MenuItem>
       <MenuItem
         testid="project-edit"
-        disabled={!empty}
-        hint={empty ? undefined : 'has sessions'}
         onClick={() => {
           onClose()
           setOverlay({ kind: 'edit-project', project })
         }}
       >
-        Change folder or host…
+        Change folder…
       </MenuItem>
       <MenuItem
         testid="project-icon-set"

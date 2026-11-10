@@ -44,7 +44,7 @@ const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 /**
  * New session: choose a project (its host and folder are fixed), or a folder that has no project
  * yet (browse for it; the project is made from it). The same dialog makes a project
- * (mode "project": host, folder, name) and moves an empty one (mode "project-edit").
+ * (mode "project": host, folder, name) and edits one (mode "project-edit"; the host is fixed once it has sessions).
  */
 export function NewSessionDialog({
   onClose,
@@ -144,7 +144,7 @@ export function NewSessionDialog({
     try {
       if (mode !== 'session') {
         const p = editing
-          ? await api.patchProject(editing.id, { name: name.trim() || undefined, dir: cwd.trim(), host_id: hostId || undefined })
+          ? await api.patchProject(editing.id, { name: name.trim() || undefined, dir: cwd.trim(), host_id: editing.session_count > 0 ? undefined : hostId || undefined })
           : await api.createProject({ dir: cwd.trim(), host_id: hostId || undefined, name: name.trim() || undefined })
         rememberCwd(cwd.trim(), hostId)
         reloadProjects()
@@ -410,6 +410,15 @@ export function NewSessionDialog({
     </label>
   )
 
+  // Existing sessions keep the folder they started in; only new ones use the new folder.
+  const editNote =
+    mode === 'project-edit' && editing && editing.session_count > 0 ? (
+      <p data-testid="project-edit-note" className="m-0 text-[12.5px] leading-snug text-subtle">
+        This project has {editing.session_count} session{editing.session_count === 1 ? '' : 's'}. They keep their current folder (their conversations
+        belong to it); new sessions start in the folder chosen here. The host cannot change.
+      </p>
+    ) : null
+
   // Which project the session starts in; a project fixes its host and folder.
   const projectPicker =
     mode !== 'session' || !projects || projects.length === 0 ? null : (
@@ -497,6 +506,7 @@ export function NewSessionDialog({
           </>
         )}
         {nameInput}
+        {editNote}
       </>
     } footer={
       <button
@@ -530,6 +540,7 @@ export function NewSessionDialog({
             </>
           )}
           {nameInput}
+          {editNote}
         </div>
       </div>
       <div className="flex h-16 shrink-0 items-center gap-2.5 border-t border-line2 px-5">

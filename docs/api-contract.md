@@ -644,7 +644,11 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
                                         a live project for (host, dir) exists → 409; an archived one is brought back
 PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
                                         main_session_id must be a Claude Code session of the project (400)
-                                        dir/host_id change only while the project has no sessions (else 409)
+                                        dir is resolved/checked as in POST (400; another live project has it -> 409) and may change at any
+                                        time. Sessions already created keep their own `cwd` (resume is cwd-dependent: Claude Code looks a
+                                        conversation up by the folder it ran in), so they and their threads are untouched; new sessions
+                                        (POST /api/sessions with project_id) start in the new dir. The old folder is not touched on disk.
+                                        host_id changes only while the project has no sessions (else 409)
 PUT    /api/projects/{id}/icon        sets the icon → Project (SSE projects). Body: JSON {emoji} (1-3 grapheme-ish characters,
                                         at most 16 bytes, no control chars, no letters/URLs; 400 otherwise), or an image: raw body
                                         (Content-Type image/*) or multipart field `file`; PNG, JPEG or GIF, at most 2 MB. The server

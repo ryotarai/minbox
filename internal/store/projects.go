@@ -367,12 +367,17 @@ func (s *Store) UpdateProject(ctx context.Context, id string, patch ProjectPatch
 			host = *patch.HostID
 		}
 		if dir != p.Dir || host != p.HostID {
-			var n int
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE project_id=?`, id).Scan(&n); err != nil {
-				return nil, err
-			}
-			if n > 0 {
-				return nil, fmt.Errorf("%w: folder and host cannot change", ErrProjectBusy)
+			// The folder may change while sessions exist: they keep the cwd they were
+			// created with (see docs/api-contract.md). The host may not, since a session
+			// lives on its project's host.
+			if host != p.HostID {
+				var n int
+				if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE project_id=?`, id).Scan(&n); err != nil {
+					return nil, err
+				}
+				if n > 0 {
+					return nil, fmt.Errorf("%w: host cannot change", ErrProjectBusy)
+				}
 			}
 			if o, err := findProject(ctx, tx, host, dir); err == nil && o.ID != id && o.ArchivedAt == nil {
 				return nil, ErrProjectExists

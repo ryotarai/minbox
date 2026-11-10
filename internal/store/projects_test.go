@@ -298,10 +298,10 @@ func TestProjectRules(t *testing.T) {
 
 	// dir/host change only while empty.
 	dir := "/elsewhere"
-	if _, err := s.UpdateProject(ctx, pid, ProjectPatch{Dir: &dir}); !errors.Is(err, ErrProjectBusy) {
-		t.Fatalf("dir change with sessions: %v", err)
-	}
 	host := "gpu1"
+	if _, err := s.UpdateProject(ctx, pid, ProjectPatch{HostID: &host}); !errors.Is(err, ErrProjectBusy) {
+		t.Fatalf("host change with sessions: %v", err)
+	}
 	moved, err := s.UpdateProject(ctx, other.ID, ProjectPatch{Dir: &dir, HostID: &host})
 	if err != nil || moved.Dir != "/elsewhere" || moved.HostID != "gpu1" {
 		t.Fatalf("move empty project: %+v %v", moved, err)

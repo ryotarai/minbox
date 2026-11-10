@@ -174,8 +174,39 @@ func TestProjectsAPI(t *testing.T) {
 	if code, got, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"name": "Website"}, nil); code != 200 || got["name"] != "Website" {
 		t.Fatalf("rename: %d %v", code, got)
 	}
-	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": e.mkdir("other")}, nil); code != 409 {
-		t.Fatalf("dir change with sessions: %d", code)
+	// The folder can change with sessions: they keep their cwd, new sessions use the new folder.
+	other := e.mkdir("other")
+	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": filepath.Join(e.dir, "nope")}, nil); code != 400 {
+		t.Fatalf("dir change to a missing folder: %d", code)
+	}
+	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": e.dir + "/other/../other"}, nil); code != 200 {
+		t.Fatalf("dir change normalised: %d", code)
+	}
+	if code, got, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": other}, nil); code != 200 || got["dir"] != other || got["session_count"] != float64(2) {
+		t.Fatalf("dir change with sessions: %d %v", code, got)
+	}
+	if old, err := e.st.GetSession(context.Background(), s["id"].(string)); err != nil || old.Cwd != web {
+		t.Fatalf("existing session cwd changed: %v %v", old, err)
+	}
+	if code, s3, _ := e.do("POST", "/api/sessions", map[string]string{"project_id": id}, nil); code != 201 || s3["cwd"] != other {
+		t.Fatalf("new session after dir change: %d %v", code, s3)
+	} else if code, _, _ := e.do("POST", "/api/sessions/"+s3["id"].(string)+"/stop", nil, nil); code != 200 {
+		t.Fatalf("stop: %d", code)
+	}
+	// Another live project already has the folder: 409, as at creation.
+	code, taken, _ := e.do("POST", "/api/projects", map[string]string{"dir": e.mkdir("taken")}, nil)
+	if code != 201 {
+		t.Fatalf("create taken: %d", code)
+	}
+	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": filepath.Join(e.dir, "taken")}, nil); code != 409 {
+		t.Fatalf("dir collision: %d", code)
+	}
+	if code, _, _ := e.do("DELETE", "/api/projects/"+taken["id"].(string), nil, nil); code != 200 {
+		t.Fatalf("delete taken: %d", code)
+	}
+	// Back, so the rest of the test sees the original folder.
+	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"dir": web}, nil); code != 200 {
+		t.Fatalf("dir back: %d", code)
 	}
 	if code, _, _ := e.do("PATCH", "/api/projects/"+id, map[string]any{"name": " "}, nil); code != 400 {
 		t.Fatalf("empty name: %d", code)

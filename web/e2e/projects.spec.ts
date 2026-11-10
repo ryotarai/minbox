@@ -157,7 +157,7 @@ test('the composer targets follow the selected project; All projects groups them
   await expect(page.getByTestId('session-picker-group')).toHaveCount(0)
 })
 
-test('rename; folder and host change only while empty; archive is refused while a session lives', async ({ page, minbox }) => {
+test('rename; the folder changes (existing sessions keep theirs), the host only while empty; archive is refused while a session lives', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox)
 
@@ -169,7 +169,20 @@ test('rename; folder and host change only while empty; archive is refused while 
   await expect(item(page, 'manual')).toBeVisible()
 
   await item(page, 'manual').getByTestId('project-menu').click({ force: true })
-  await expect(page.getByTestId('project-edit')).toBeDisabled()
+  // The folder can change while it has sessions: they keep theirs, a new session uses the new one.
+  await expect(page.getByTestId('project-edit')).toBeEnabled()
+  await page.getByTestId('project-edit').click()
+  await expect(page.getByTestId('project-edit-note')).toContainText('keep their current folder')
+  const moved = folder(minbox, 'docs-moved')
+  await page.getByTestId('new-session-cwd').fill(moved)
+  await page.getByTestId('new-session-start').click()
+  await expect(item(page, 'manual').getByTestId('project-dir')).toContainText('docs-moved')
+  const after = await (await fetch(minbox.url + '/api/projects')).json()
+  expect(after.find((p: { name: string }) => p.name === 'manual').dir).toBe(moved)
+  const sess = await (await fetch(minbox.url + '/api/sessions')).json()
+  expect(sess.filter((x: { cwd: string }) => x.cwd === moved)).toHaveLength(0)
+
+  await item(page, 'manual').getByTestId('project-menu').click({ force: true })
   await page.getByTestId('project-delete').click()
   await expect(page.getByTestId('project-delete-warning')).toHaveText(
     'This also deletes 1 session and 1 thread (all messages and attachments). 1 is running and will be stopped. The folder on disk is not touched. This cannot be undone.',
