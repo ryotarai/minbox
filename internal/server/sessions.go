@@ -284,10 +284,20 @@ func relocationNote(sess *store.Session) string {
 	if sess == nil || sess.PrevDir == "" || sess.PrevClaudeSessionID == "" {
 		return ""
 	}
-	return fmt.Sprintf(`# minbox: this thread moved to a new folder
+	note := fmt.Sprintf(`# minbox: this thread moved to a new folder
 The project's folder changed, so this session now runs in %s. It was worked on before in %s, as Claude Code session %s. That earlier conversation cannot be resumed from here, but its transcript can be read (it is JSON lines) at ~/.claude/projects/%s/%s.jsonl (under $CLAUDE_CONFIG_DIR instead of ~/.claude when that is set). If it is not there, look for ~/.claude/projects/*/%s.jsonl. Read it only when you need what was said or done before, for example when the person refers to earlier work; the files themselves are now where the project's folder points.`,
 		sess.Cwd, sess.PrevDir, sess.PrevClaudeSessionID, projectDirName(sess.PrevDir), sess.PrevClaudeSessionID, sess.PrevClaudeSessionID)
+	if len(sess.PrevChain) > 0 {
+		note += "\nEven earlier conversations of this thread (oldest first; transcripts are found the same way):"
+		for _, c := range sess.PrevChain {
+			note += fmt.Sprintf("\n- %s, Claude Code session %s", c.Dir, c.ClaudeSessionID)
+		}
+	}
+	return note
 }
+
+// maxPrevChain bounds how many older conversations a session remembers.
+const maxPrevChain = 5
 
 // relocate applies a pending folder change (the project's folder changed while the session had
 // its own cwd) before the session starts: it runs in the project's new folder. Claude Code keys a
@@ -300,7 +310,7 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 		return
 	}
 	if sess.RelocateTo == sess.Cwd {
-		_ = m.store.RelocateSession(ctx, sess.ID, sess.Cwd, "", "", "")
+		_ = m.store.RelocateSession(ctx, sess.ID, sess.Cwd, "", "", "", nil)
 		sess.RelocateTo = ""
 		return
 	}
@@ -314,18 +324,28 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 		log.Printf("session %s (%s): folder change postponed: %v", sess.ID, sess.Name, err)
 		return
 	}
+	// With no transcript in the old folder (the person never sent a prompt there) the Claude id
+	// stays and so do the older prev_* fields: only the folder moves.
 	prevDir, prevID, newID := "", "", sess.ClaudeSessionID
+	var chain []store.PrevConv
 	if sess.ClaudeSessionID != "" && f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID) {
 		prevDir, prevID, newID = sess.Cwd, sess.ClaudeSessionID, newUUID()
+		chain = append(chain, sess.PrevChain...)
+		if sess.PrevDir != "" && sess.PrevClaudeSessionID != "" {
+			chain = append(chain, store.PrevConv{Dir: sess.PrevDir, ClaudeSessionID: sess.PrevClaudeSessionID})
+		}
+		if len(chain) > maxPrevChain {
+			chain = chain[len(chain)-maxPrevChain:]
+		}
 	}
-	if err := m.store.RelocateSession(ctx, sess.ID, dir, newID, prevDir, prevID); err != nil {
+	if err := m.store.RelocateSession(ctx, sess.ID, dir, newID, prevDir, prevID, chain); err != nil {
 		log.Printf("session %s (%s): folder change: %v", sess.ID, sess.Name, err)
 		return
 	}
 	log.Printf("session %s (%s): moved from %s to %s (previous conversation %q)", sess.ID, sess.Name, sess.Cwd, dir, prevID)
 	sess.Cwd, sess.RelocateTo, sess.ClaudeSessionID = dir, "", newID
 	if prevDir != "" {
-		sess.PrevDir, sess.PrevClaudeSessionID = prevDir, prevID
+		sess.PrevDir, sess.PrevClaudeSessionID, sess.PrevChain = prevDir, prevID, chain
 	}
 }
 

@@ -113,6 +113,12 @@ const UrgentAfter = 5 * time.Minute
 // ClaimTimeout: a claim older than this, made by another mod instance, is stale.
 const ClaimTimeout = 60 * time.Second
 
+// PrevConv names a conversation left behind in a folder the project used to have.
+type PrevConv struct {
+	Dir             string `json:"dir"`
+	ClaudeSessionID string `json:"claude_session_id"`
+}
+
 type Session struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
@@ -135,6 +141,8 @@ type Session struct {
 	RelocateTo          string `json:"relocate_to,omitempty"`
 	PrevDir             string `json:"prev_dir,omitempty"`
 	PrevClaudeSessionID string `json:"prev_claude_session_id,omitempty"`
+	// PrevChain: the conversations before that one (oldest first), from earlier moves.
+	PrevChain []PrevConv `json:"prev_chain,omitempty"`
 	// Derived.
 	Unread        int    `json:"unread"`
 	OpenQuestions int    `json:"open_questions"`
@@ -426,6 +434,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "relocate_to", "TEXT NOT NULL DEFAULT ''"},            // the project's folder changed: start in this folder next time
 	{"sessions", "prev_dir", "TEXT NOT NULL DEFAULT ''"},               // where the conversation before the move ran
 	{"sessions", "prev_claude_session_id", "TEXT NOT NULL DEFAULT ''"}, // that conversation's Claude Code id
+	{"sessions", "prev_chain", "TEXT NOT NULL DEFAULT ''"},             // JSON [PrevConv]: the conversations before that one
 	{"projects", "main_session_id", "TEXT"},
 	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"}, // '' | 'emoji' | 'image'
 	{"projects", "icon_emoji", "TEXT NOT NULL DEFAULT ''"},
@@ -616,17 +625,21 @@ func (s *Store) CreateSessionIn(ctx context.Context, projectID, kind, name, cwd,
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id), relocate_to, prev_dir, prev_claude_session_id`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id), relocate_to, prev_dir, prev_claude_session_id, prev_chain`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID); err != nil {
+	var chain string
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
+	}
+	if chain != "" {
+		_ = json.Unmarshal([]byte(chain), &sess.PrevChain)
 	}
 	if exit.Valid {
 		v := int(exit.Int64)
@@ -742,12 +755,18 @@ func (s *Store) SetClaudeSessionID(ctx context.Context, id, claudeID string) err
 // RelocateTo is cleared. With prevDir set, the conversation it leaves behind (prevDir, prevClaudeID)
 // is remembered and the session gets a fresh claude_session_id (claudeID), since `claude --resume`
 // only finds a conversation from the folder it ran in. With prevDir empty the Claude id is kept.
-func (s *Store) RelocateSession(ctx context.Context, id, cwd, claudeID, prevDir, prevClaudeID string) error {
+// chain is the conversations before prev (oldest first); with prevDir empty the older prev_* stay.
+func (s *Store) RelocateSession(ctx context.Context, id, cwd, claudeID, prevDir, prevClaudeID string, chain []PrevConv) error {
 	if prevDir == "" {
 		return s.exec(ctx, `UPDATE sessions SET cwd=?, relocate_to='', updated_at=? WHERE id=?`, cwd, ms(s.now()), id)
 	}
-	return s.exec(ctx, `UPDATE sessions SET cwd=?, relocate_to='', claude_session_id=?, prev_dir=?, prev_claude_session_id=?, updated_at=? WHERE id=?`,
-		cwd, claudeID, prevDir, prevClaudeID, ms(s.now()), id)
+	cj := ""
+	if len(chain) > 0 {
+		b, _ := json.Marshal(chain)
+		cj = string(b)
+	}
+	return s.exec(ctx, `UPDATE sessions SET cwd=?, relocate_to='', claude_session_id=?, prev_dir=?, prev_claude_session_id=?, prev_chain=?, updated_at=? WHERE id=?`,
+		cwd, claudeID, prevDir, prevClaudeID, cj, ms(s.now()), id)
 }
 
 func (s *Store) RenameSession(ctx context.Context, id, name string) error {
