@@ -106,16 +106,33 @@ export const SEND_SCHEMA = {
   additionalProperties: false,
 } as const
 
-export const READ_DESCRIPTION =
-  "Read the person's minbox inbox for this session: with `thread_id` (the id every reply from the person carries), that thread's messages and the answers given; without, the list of this session's threads."
+export const READ_DESCRIPTION = [
+  "Read the person's minbox inbox.",
+  'With `thread_id` (the id every reply from the person carries, or one from list_threads / search): that thread\'s messages and the answers given. Any thread can be read, also one of another session (read-only).',
+  'It returns the newest `limit` messages (default 30, at most 100), oldest first, and says how many exist; pass `before` (the message id the answer names) to page back to older ones. Long messages are cut and the whole answer is bounded, with a marker where text is missing.',
+  "Without `thread_id`: the list of this session's threads (use list_threads for other sessions and filters).",
+].join(' ')
 
 export const READ_SCHEMA = {
   type: 'object',
   properties: {
-    thread_id: { type: 'string', description: 'The thread to read. Leave out to list threads.' },
+    thread_id: { type: 'string', description: "The thread to read. Leave out to list this session's threads." },
+    limit: { type: 'number', description: 'Most messages to return: the newest ones (default 30, at most 100).' },
+    before: { type: 'string', description: 'A message id from an earlier answer ("older messages: before <id>"): returns the messages before it.' },
   },
   additionalProperties: false,
 } as const
+
+/** The API path of read_thread. */
+export function readPath(e: { thread_id?: unknown; limit?: unknown; before?: unknown }): string {
+  const id = typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : null
+  if (!id) return '/api/agent/threads'
+  const p = new URLSearchParams()
+  if (typeof e.limit === 'number' && e.limit > 0) p.set('limit', String(Math.floor(e.limit)))
+  if (typeof e.before === 'string' && e.before) p.set('before', e.before)
+  const qs = p.toString()
+  return `/api/agent/threads/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`
+}
 
 export const TITLE_TOOL = 'set_session_title'
 
@@ -271,6 +288,15 @@ export type Thread = {
   last_body: string
   last_author: string
   messages?: Message[]
+  // read_thread (paged) only
+  status?: string
+  project_name?: string
+  session_name?: string
+  own?: boolean
+  message_count?: number
+  has_more?: boolean
+  older?: number
+  next_before?: string
 }
 
 const REPLY_LINE =
@@ -341,16 +367,24 @@ export function sentText(r: SendResult): string {
 }
 
 /** read_thread's answer for one thread. */
-export function threadText(t: Thread): string {
+export function threadText(t: Thread, readTool = 'read_thread'): string {
   const lines = [`Thread ${t.id}: ${t.subject}`]
+  const meta = [t.status, t.project_name ? `project ${t.project_name}` : '', t.session_name ? `session ${t.session_name}${t.own === false ? ' (not yours)' : ''}` : '']
+    .filter(Boolean)
+    .join(' · ')
+  if (meta) lines.push(meta)
+  const shown = (t.messages ?? []).length
+  if (t.message_count !== undefined && t.has_more) {
+    lines.push(`Showing the newest ${shown} of ${t.message_count} messages; ${t.older ?? t.message_count - shown} older ones are not shown. For them call ${readTool} with this thread_id and before "${t.next_before}".`)
+  }
   for (const m of t.messages ?? []) {
-    lines.push('', `[${m.author === 'agent' ? 'you' : 'person'} · ${m.created_at}]`, m.body.trim())
+    lines.push('', `[${m.author === 'agent' ? (t.own === false ? 'agent' : 'you') : 'person'} · ${m.created_at} · ${m.id}]`, m.body.trim())
     for (const a of m.attachments ?? []) {
       lines.push(a.kind === 'review' ? `Guided review: ${a.name}` : `Attached: ${a.name} (${a.path})${a.type ? ` [${a.type}]` : ''}`)
     }
     for (const a of m.inline_images ?? []) lines.push(`Image shown: ${a.ref ?? a.name} (${a.path})`)
   }
-  if (t.open_questions > 0) lines.push('', `(${t.open_questions} of your questions are still open; the person will answer in the inbox.)`)
+  if (t.open_questions > 0) lines.push('', `(${t.open_questions} question${t.open_questions > 1 ? 's are' : ' is'} still open; the person will answer in the inbox.)`)
   return lines.join('\n')
 }
 

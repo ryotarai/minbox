@@ -241,6 +241,24 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
 - New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
   403 `the Board is off in minbox settings` unless settings.board.
 
+## Navigation tools (read-only agent API)
+
+Tools `list_projects`, `get_project`, `list_sessions`, `list_threads`, `search` (Claude: `mcp__minbox__*`, deferred, found with ToolSearch; Pi: `minbox_*`)
+and the extended `read_thread` are GETs on `/api/agent/*` with the session's bearer token (401 without; `internal/server/agentread.go`).
+They answer projections of the stored rows, never tokens, notification destinations, Slack or device data, project icons or the agent's
+conversation ids. Text and schemas: `plugin/minbox/hooks/nav.ts` (shared by the mod and the Pi extension). Lists are bounded (`limit`, default 50, at most 200) and say `total` and `has_more`.
+
+- `GET /api/agent/projects?archived=1` -> `[{id, name, dir, host_id, host_name, default_agent, main_session_id, pinned, archived, session_count, live_sessions, thread_count, need_action, unread, last_activity}]` (thread counts: live threads, archived ones excluded).
+  `GET /api/agent/projects/{id}` -> the same plus `sessions: [agentSession]` (Claude-kind sessions, newest first, at most 50); 404 `no such project`.
+- `GET /api/agent/sessions?project_id=&status=&agent=&archived=1&limit=` -> `{sessions: [{id, name, title, cwd, status, agent, kind, project_id, host_id, host_name, is_main, archived, unread, waiting, last_activity, self?}], total, has_more}`. Shell terminals are not listed; `archived=1` lists archived sessions instead of live ones.
+- `GET /api/agent/inbox?project_id=&session_id=(id|self)&status=&awaiting=person|agent&unread=1&q=&archived=1&limit=` -> `{threads: [{id, subject, name?, session_id, session_name, project_id, project_name, status, section, updated_at, unread, open_questions, message_count, last_author, last_body (at most 300 bytes), archived, self?}], total, has_more}`, newest first, across all live sessions (with `session_id`, also an archived session's).
+  `status` is working | need_action | blocked | finished (aliases accepted); `awaiting=person`: status need_action or open questions; `awaiting=agent`: the person wrote last; `q`: all words in subject, name or last message (case-insensitive). Bad `status` / `awaiting`: 400. `archived=1` lists archived threads instead of live ones.
+  (`GET /api/agent/threads` stays: this session's threads, an array, used for the open-threads reminder.)
+- `GET /api/agent/search?q=&project_id=&session_id=(id|self)&from=agent|user&limit=` (limit default 20, at most 50 per kind) -> `{threads, messages, files}` as `GET /api/search` (hits with `thread_id`, `session_id`, `session_name`, `subject`, `snippet` cut at 400 bytes, `author`, `archived`, `section`, `created_at`). Empty `q`: 400. `project_id` filters after the search, so it may return fewer than `limit`.
+- `GET /api/agent/threads/{id}?limit=&before=` reads ANY thread by id, also another session's (writing stays limited to the own session: `POST /api/agent/messages` with a foreign `thread_id` is 404). Answer:
+  `{id, subject, session_id, session_name, project_id, project_name, status, section, updated_at, unread, open_questions, own, message_count, messages: [{id, author, body, truncated?, body_bytes?, created_at, questions?: [prompt], attachments?: [{id, name, kind, type, path, ref?}], inline_images?}], has_more, older, next_before?}`.
+  Messages are the newest `limit` (default 30, at most 100), oldest first. `before` is a message id of the thread (an id not in it: 400): the page ends just before it. A body over 8,000 bytes is cut on a rune boundary and ends with `… [message cut: N more bytes]` (`truncated`, `body_bytes` = full size); the bodies of a page together are bounded at 60,000 bytes: the oldest messages of the page drop first (always at least the newest one stays). `has_more` / `older` count the messages before the page; `next_before` (the page's first message id) is the next `before`. Annotations, answers and delivery state are not part of the answer; the text of the tool says how many messages exist and how to page.
+
 ## Terminal attach
 
 After the replay, and after every resize, the host sends every attached client a

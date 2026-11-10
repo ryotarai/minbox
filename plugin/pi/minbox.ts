@@ -5,8 +5,9 @@
  * the Claude Code mod (plugin/minbox/hooks/register.ts) and talks to the same /api/agent/* API;
  * the text of the tools and of the delivered replies is shared (../minbox/hooks/text.ts).
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url
- *   and minbox_card. A failing call throws (Pi turns that into a failed tool result).
+ * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
+ *   minbox_card and the read-only navigation tools (minbox_list_projects, minbox_get_project,
+ *   minbox_list_sessions, minbox_list_threads, minbox_search; nav.ts). A failing call throws (Pi turns that into a failed tool result).
  * - Reports whether Pi is working or idle (agent_start -> working, agent_settled -> idle).
  * - Long-polls the server for the person's messages. Once Pi has been idle for a moment each is
  *   claimed (so one instance delivers it), started as a user turn with pi.sendUserMessage, then
@@ -29,6 +30,7 @@
  * without Pi (minbox.test.ts, run with `node --test`); the default export wires the real thing.
  */
 import { readFileSync } from 'node:fs'
+import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
 import {
   CARD_DESCRIPTION,
   CARD_SCHEMA,
@@ -42,6 +44,7 @@ import {
   READ_DESCRIPTION,
   READ_SCHEMA,
   READ_TOOL,
+  readPath,
   SEND_DESCRIPTION,
   SEND_SCHEMA,
   SEND_TOOL,
@@ -100,6 +103,9 @@ export function realDeps(): Deps {
 }
 
 type ApiResult = { ok: boolean; status: number; json: any }
+
+/** Tool names in a shared description, as Pi names them. */
+const piNames = (text: string) => text.replace(/\b(read_thread|list_threads)\b/g, TOOL_PREFIX + '$1')
 
 const textResult = (text: string) => ({ content: [{ type: 'text', text }], details: undefined })
 
@@ -222,15 +228,31 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   pi.registerTool({
     name: names.read,
     label: 'minbox: read thread',
-    description: READ_DESCRIPTION,
+    description: piNames(READ_DESCRIPTION),
     parameters: READ_SCHEMA,
     async execute(_id: string, e: any) {
       const id = typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : null
-      const res = await api('GET', id ? `/api/agent/threads/${encodeURIComponent(id)}` : '/api/agent/threads')
+      const res = await api('GET', readPath(e))
       if (!res.ok) fail(res)
-      return textResult(id ? threadText(res.json as Thread) : threadListText(res.json as Thread[]))
+      return textResult(id ? threadText(res.json as Thread, names.read) : threadListText(res.json as Thread[]))
     },
   })
+
+  for (const tool of NAV_TOOLS) {
+    pi.registerTool({
+      name: TOOL_PREFIX + tool,
+      label: `minbox: ${tool.replace('_', ' ')}`,
+      description: piNames(NAV_DESCRIPTION[tool]),
+      parameters: NAV_SCHEMA[tool],
+      async execute(_id: string, e: any) {
+        const req = navPath(tool, e ?? {})
+        if ('error' in req) throw new Error(req.error)
+        const res = await api('GET', req.path)
+        if (!res.ok) fail(res)
+        return textResult(navText(tool, res.json))
+      },
+    })
+  }
 
   pi.registerTool({
     name: names.title,

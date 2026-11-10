@@ -515,7 +515,10 @@ The person sees this session in minbox's session list under a title you set with
 # minbox: opening pages
 When the person asks you to open, show or view a web page (a PR, an issue, a CI run, a URL), call mcp__minbox__open_url with its URL. It opens the page in the browser they are using minbox from.
 - Never open pages with Bash (` + "`open URL`, `xdg-open`, `gh pr view --web`, `gh browse`" + `, …): those open on the machine you run on, which may be a remote host the person is not sitting at.
-- With gh, get the URL first (e.g. ` + "`gh pr view --json url -q .url`" + `), then pass it to the tool.`
+- With gh, get the URL first (e.g. ` + "`gh pr view --json url -q .url`" + `), then pass it to the tool.
+
+# minbox: finding things
+To look up a project, session or earlier thread the person mentions, use the read-only tools mcp__minbox__list_projects, mcp__minbox__get_project, mcp__minbox__list_sessions, mcp__minbox__list_threads and mcp__minbox__search (they may be deferred: find them with ToolSearch), then mcp__minbox__read_thread with the thread_id (any thread; the newest messages first, older ones with before). Do not guess ids.`
 
 // shellArgv starts the login shell of the machine that runs the terminal:
 // the host's own $SHELL (the host's environment, see InheritEnv), else the

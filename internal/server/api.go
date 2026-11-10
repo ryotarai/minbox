@@ -867,15 +867,6 @@ func (s *Server) agentListThreads(w http.ResponseWriter, r *http.Request, sess *
 	writeJSON(w, 200, threads)
 }
 
-func (s *Server) agentReadThread(w http.ResponseWriter, r *http.Request, sess *store.Session) {
-	th, err := s.store.GetThread(r.Context(), r.PathValue("id"))
-	if err != nil || th.SessionID != sess.ID {
-		httpError(w, 404, "no such thread in this session")
-		return
-	}
-	writeJSON(w, 200, th)
-}
-
 // agentPending answers the person's undelivered messages. With ?wait=N it
 // holds the request up to N seconds (at most 25) until there is one.
 func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *store.Session) {

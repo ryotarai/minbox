@@ -6,7 +6,7 @@ import { install, TOOL_PREFIX, type Deps } from './minbox.ts'
 
 type Call = { method: string; path: string; body: any }
 
-function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail?: (c: Call) => boolean } = {}) {
+function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail?: (c: Call) => boolean; reply?: (c: Call) => unknown } = {}) {
   const handlers = new Map<string, Function>()
   const tools = new Map<string, any>()
   const sent: { text: string; opts?: any }[] = []
@@ -49,6 +49,8 @@ function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail
       }
       if (u.pathname === '/api/agent/messages') return ok({ thread_id: 'thr_1', new_thread: true })
       if (u.pathname === '/api/agent/title') return ok({ ok: true, title: 'T' })
+      const r = opts.reply?.(c)
+      if (r !== undefined) return ok(r)
       return ok({})
     },
   }
@@ -68,7 +70,7 @@ test('does nothing without the minbox environment', () => {
 
 test('registers the minbox tools under Pi names', () => {
   const t = setup()
-  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'card']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
+  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'card', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
   assert.equal(t.tools.get('minbox_send_message').parameters.required.includes('thread_title'), true)
   t.ext!.stop()
 })
@@ -190,4 +192,58 @@ test('a busy turn with no event for 120 s is given up on, unless a subagent or a
   await settle()
   assert.equal(statuses(c).at(-1), 'working')
   c.ext!.stop()
+})
+
+test('navigation tools are read-only GETs on the agent API, with filters passed through', async () => {
+  const t = setup({
+    reply: (c) =>
+      c.path.startsWith('/api/agent/projects') && !c.path.includes('/projects/')
+        ? [{ id: 'prj_1', name: 'minbox', dir: '/w/minbox', host_name: 'local', default_agent: 'pi', session_count: 2, live_sessions: 1, thread_count: 3, need_action: 1, unread: 2, last_activity: '2026-11-10T01:02:03Z' }]
+        : c.path.startsWith('/api/agent/inbox')
+          ? { threads: [{ id: 'thr_9', subject: 'Plan', status: 'need_action', project_name: 'minbox', session_name: 's', open_questions: 1, unread: 1, message_count: 4, last_author: 'agent', updated_at: '2026-11-10T01:02:03Z', last_body: 'A or B?' }], total: 7, has_more: true }
+          : c.path.startsWith('/api/agent/search')
+            ? { threads: [], messages: [{ thread_id: 'thr_9', subject: 'Plan', session_name: 's', author: 'user', snippet: 'the zeppelin', created_at: '2026-11-10T01:02:03Z' }], files: [] }
+            : undefined,
+  })
+  const projects = await t.tools.get('minbox_list_projects').execute('1', {})
+  assert.match(projects.content[0].text, /prj_1 "minbox" · \/w\/minbox on local · default agent pi · 2 sessions \(1 live\)/)
+  const threads = await t.tools.get('minbox_list_threads').execute('1', { project_id: 'prj_1', awaiting: 'person', unread: true, query: 'plan b', limit: 5, archived: false })
+  const call = t.calls.find((c) => c.path.startsWith('/api/agent/inbox'))!
+  assert.equal(call.method, 'GET')
+  assert.equal(call.path, '/api/agent/inbox?project_id=prj_1&awaiting=person&unread=1&q=plan+b&limit=5')
+  assert.match(threads.content[0].text, /thr_9 "Plan" · need_action · minbox \/ s · 1 open question · 1 unread/)
+  assert.match(threads.content[0].text, /\(1 of 7 threads shown/)
+  const found = await t.tools.get('minbox_search').execute('1', { query: 'zeppelin', from: 'person', session_id: 'self' })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/search?q=zeppelin&session_id=self&from=user')
+  assert.match(found.content[0].text, /thread thr_9 "Plan" \(session s\) · person 2026-11-10 01:02: the zeppelin/)
+  await t.tools.get('minbox_get_project').execute('1', { project_id: 'a/b' })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/projects/a%2Fb')
+  await t.tools.get('minbox_list_sessions').execute('1', { status: 'idle', agent: 'pi' })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/sessions?status=idle&agent=pi')
+  await assert.rejects(t.tools.get('minbox_search').execute('1', { query: ' ' }), /query is required/)
+  await assert.rejects(t.tools.get('minbox_get_project').execute('1', {}), /project_id is required/)
+  assert.ok(t.calls.every((c) => c.method === 'GET' || !c.path.startsWith('/api/agent/') || ['/api/agent/hello', '/api/agent/status'].includes(c.path)))
+  assert.match(t.tools.get('minbox_list_threads').description, /minbox_read_thread/)
+  t.ext!.stop()
+})
+
+test('read_thread pages: limit and before are passed on, the answer says what is missing', async () => {
+  const msgs = [1, 2].map((i) => ({ id: `msg_${i}`, author: i === 1 ? 'user' : 'agent', body: `body ${i}`, created_at: `t${i}` }))
+  const t = setup({
+    reply: (c) =>
+      c.path.startsWith('/api/agent/threads/')
+        ? { id: 'thr_5', subject: 'Long', status: 'working', project_name: 'minbox', session_name: 'other', own: false, open_questions: 0, message_count: 40, has_more: true, older: 38, next_before: 'msg_1', messages: msgs }
+        : c.path === '/api/agent/threads'
+          ? []
+          : undefined,
+  })
+  const r = await t.tools.get('minbox_read_thread').execute('1', { thread_id: 'thr_5', limit: 2, before: 'msg_9' })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/threads/thr_5?limit=2&before=msg_9')
+  const text = r.content[0].text
+  assert.match(text, /Showing the newest 2 of 40 messages; 38 older ones are not shown\. For them call minbox_read_thread with this thread_id and before "msg_1"/)
+  assert.match(text, /session other \(not yours\)/)
+  assert.match(text, /\[agent · t2 · msg_2\]\nbody 2/)
+  await t.tools.get('minbox_read_thread').execute('1', {})
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/threads')
+  t.ext!.stop()
 })

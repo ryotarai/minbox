@@ -3,8 +3,9 @@
  * and the environment MINBOX_TOKEN (this session's bearer token) and
  * MINBOX_SERVER_FILE (a JSON file holding the server's current URL).
  *
- * - Registers `send_message`, `read_thread`, `set_session_title` and `open_url`,
- *   served over minbox's HTTP API, and system prompt sections asking Claude to
+ * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url`, `card` and the
+ *   read-only navigation tools of nav.ts (list_projects, get_project, list_sessions, list_threads,
+ *   search), served over minbox's HTTP API, and system prompt sections asking Claude to
  *   keep the session's title (shown in the session list) current and to open
  *   pages with `open_url`: in the person's browser, not on the host. Bash
  *   commands that would open a page on the host are refused.
@@ -19,6 +20,7 @@
  * Anywhere else (no MINBOX_TOKEN, a -p run) every hook passes through.
  */
 import type { Register } from 'claude-code'
+import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from './nav'
 import {
   CARD_DESCRIPTION,
   CARD_SCHEMA,
@@ -27,6 +29,7 @@ import {
   READ_DESCRIPTION,
   READ_SCHEMA,
   READ_TOOL,
+  readPath,
   SEND_DESCRIPTION,
   SEND_SCHEMA,
   SEND_TOOL,
@@ -283,6 +286,10 @@ export const register: Register = (on) => {
     const open = await $.tool.register({ name: OPEN_TOOL, description: OPEN_DESCRIPTION, inputSchema: OPEN_SCHEMA, isDeferred: false })
     openToolName = open?.tool ?? openToolName
     await $.tool.register({ name: CARD_TOOL, description: CARD_DESCRIPTION, inputSchema: CARD_SCHEMA, isDeferred: true })
+    // Read-only navigation (projects, sessions, threads, search): deferred, found with ToolSearch.
+    for (const name of NAV_TOOLS) {
+      await $.tool.register({ name, description: NAV_DESCRIPTION[name], inputSchema: NAV_SCHEMA[name] as any, isDeferred: true })
+    }
 
     timer?.cancel()
     timer = $.clock.every(TICK_MS, () => tick($))
@@ -415,10 +422,21 @@ export const register: Register = (on) => {
   on('tool.call', { tool: `mcp__minbox__${READ_TOOL}` }, async ($, e: any) => {
     if (!conn) return { deny: 'minbox is not connected in this session.' }
     const id = typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : null
-    const res = await api($, 'GET', id ? `/api/agent/threads/${encodeURIComponent(id)}` : '/api/agent/threads')
+    const res = await api($, 'GET', readPath(e))
     if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    return { result: id ? threadText(res.json as Thread) : threadListText(res.json as Thread[]) }
+    return { result: id ? threadText(res.json as Thread, readToolName) : threadListText(res.json as Thread[]) }
   })
+
+  for (const name of NAV_TOOLS) {
+    on('tool.call', { tool: `mcp__minbox__${name}` }, async ($, e: any) => {
+      if (!conn) return { deny: 'minbox is not connected in this session.' }
+      const req = navPath(name, e)
+      if ('error' in req) return { deny: req.error }
+      const res = await api($, 'GET', req.path)
+      if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
+      return { result: navText(name, res.json) }
+    })
+  }
 
   on('tool.call', { tool: `mcp__minbox__${CARD_TOOL}` }, async ($, e: any) => {
     if (!conn) return { deny: 'minbox is not connected in this session.' }

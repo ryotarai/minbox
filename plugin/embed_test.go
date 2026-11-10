@@ -27,6 +27,12 @@ func TestExtractPi(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "..", "minbox", "hooks", "text.ts")); err != nil {
 		t.Fatalf("shared text.ts missing next to the extension: %v", err)
 	}
+	if !strings.Contains(string(src), "'../minbox/hooks/nav.ts'") {
+		t.Fatal("the extension no longer imports ../minbox/hooks/nav.ts: update piSources")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "..", "minbox", "hooks", "nav.ts")); err != nil {
+		t.Fatalf("shared nav.ts missing next to the extension: %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "minbox.test.ts")); err == nil {
 		t.Fatal("the test file was extracted")
 	}

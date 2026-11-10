@@ -3,6 +3,8 @@ import { asksPerson, replyNudgeText, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCR
 
 const SERVER_FILE = '/data/server.json'
 
+const registeredTools: Record<string, boolean> = {}
+
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
@@ -16,7 +18,10 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId ?? 't' }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
-  on('tool.register', (_: any, e: any) => ({ value: { tool: `mcp__minbox__${e.name}` } }))
+  on('tool.register', (_: any, e: any) => {
+    registeredTools[e.name] = e.isDeferred
+    return { value: { tool: `mcp__minbox__${e.name}` } }
+  })
   on('http.fetch', (_: any, e: any) => {
     const url = new URL(e.url)
     const body = e.init?.body ? JSON.parse(e.init.body) : undefined
@@ -50,6 +55,12 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
     }
     if (url.pathname === '/api/agent/messages') {
       return ok({ thread_id: 'thr_1', message_id: 'msg_1', new_thread: true, questions: [{ key: 'q-1', kind: 'single', prompt: 'A or B?' }] })
+    }
+    if (url.pathname === '/api/agent/inbox') {
+      return ok({ threads: [{ id: 'thr_9', subject: 'Plan', status: 'need_action', project_name: 'minbox', session_name: 's', open_questions: 0, unread: 0, message_count: 2, last_author: 'user', updated_at: '2026-11-10T01:02:03Z', last_body: 'go' }], total: 1, has_more: false })
+    }
+    if (url.pathname.startsWith('/api/agent/threads/')) {
+      return ok({ id: 'thr_5', subject: 'Long', status: 'working', own: false, session_name: 'other', open_questions: 0, message_count: 40, has_more: true, older: 38, next_before: 'msg_1', messages: [{ id: 'msg_1', author: 'user', body: 'hello', created_at: 't1' }] })
     }
     if (url.pathname === '/api/agent/threads') {
       return ok([{ id: 'thr_1', subject: 'Plan', section: 'waiting', open_questions: 1, last_author: 'agent', last_body: 'A or B?' }])
@@ -499,4 +510,30 @@ test('a turn that answered an inbox message with send_message is not reminded', 
   await $.turn.complete({ turnId: 't1', answer: 'Done.', reason: 'answer', isAborted: false, durationMs: 1 } as any)
   await clock.advance(5000)
   expect(server.submitted.length).toBe(1)
+})
+
+test('navigation tools are registered (deferred) and answer from the read-only API', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  for (const n of ['list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) expect([n, registeredTools[n]]).toEqual([n, true])
+
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__list_threads', status: 'need_action', awaiting: 'person', query: 'plan' } as any)
+  expect(server.calls.find((c) => c.path === '/api/agent/inbox')).toBeTruthy()
+  expect(JSON.stringify(res)).toContain('thr_9 \\"Plan\\" · need_action · minbox / s')
+  const bad: any = await $.tool.call({ tool: 'mcp__minbox__search', query: '' } as any)
+  expect(bad.deny).toContain('query is required')
+})
+
+test('read_thread pages through any thread and says what is missing', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  const res: any = await $.tool.call({ tool: 'mcp__minbox__read_thread', thread_id: 'thr_5', limit: 1 } as any)
+  const text = JSON.stringify(res)
+  expect(text).toContain('Showing the newest 1 of 40 messages; 38 older ones are not shown.')
+  expect(text).toContain('mcp__minbox__read_thread with this thread_id and before \\"msg_1\\"')
+  expect(text).toContain('session other (not yours)')
 })

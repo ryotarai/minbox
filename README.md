@@ -123,10 +123,14 @@ up the list and shows the question.
   | Tool | What it does |
   | --- | --- |
   | `send_message` | Send a message, `:::question` blocks, attachments or a guided review to a thread. `thread_title` (required, about 30 characters or fewer as a guide) names what the thread is about now, `status` (`working` / `need_action` / `blocked` / `finished`) its status. |
-  | `read_thread` | Read a thread (or list them) |
+  | `read_thread` | Read any thread by id, also another session's: the newest 30 messages (`limit` up to 100), older ones with `before`, long text cut with a marker. Without an id: list this session's threads |
   | `set_session_title` | Set the title of the session |
   | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |
   | `card` | Create and update cards on the Board (when it is on) |
+  | `list_projects`, `get_project` | Projects (folder, host, default agent, session and thread counts) and one project with its sessions. Read-only |
+  | `list_sessions` | Sessions by project, status or agent. Read-only |
+  | `list_threads` | Threads across all sessions, filtered by project, session, status, who is waited on, unread and words. Read-only |
+  | `search` | Full-text search of thread titles, messages and attachments (the ⌘K search). Read-only |
 
   minbox's instructions are one text, owned by the server. They reach Claude two ways:
   - `--append-system-prompt`;

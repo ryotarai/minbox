@@ -78,8 +78,9 @@ one alone is enough**: minbox starts, shows its UI and runs sessions on a machin
   where the old session file is (`agent.pi.RelocationNote`). Resuming the old file across folders with
   `--session <path>` might work in Pi but is **not verified**; it would be better than a new conversation.
 * **Extension** (`plugin/pi/minbox.ts`, loaded by Pi's jiti, no build): tools `minbox_send_message`,
-  `minbox_read_thread`, `minbox_set_session_title`, `minbox_open_url`, `minbox_card` (same descriptions and schemas as
-  the mod; shared `plugin/minbox/hooks/text.ts`); `tool_call` blocks Bash commands that open a page on the host;
+  `minbox_read_thread`, `minbox_set_session_title`, `minbox_open_url`, `minbox_card` and the read-only navigation tools
+  `minbox_list_projects`, `minbox_get_project`, `minbox_list_sessions`, `minbox_list_threads`, `minbox_search` (same descriptions
+  and schemas as the mod; shared `plugin/minbox/hooks/text.ts` and `nav.ts`); `tool_call` blocks Bash commands that open a page on the host;
   `agent_start` / `agent_settled` set the session working / idle; a long poll on `/api/agent/pending`
   claims the person's messages once Pi has been idle for 2 s and the person is not typing, delivers them with
   `pi.sendUserMessage` and marks them delivered (a failed delivery releases the claim); an urgent message

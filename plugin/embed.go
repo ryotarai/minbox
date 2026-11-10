@@ -106,7 +106,7 @@ func piSources() ([]piSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(out, piSource{&files, "minbox/hooks/text.ts"}), nil
+	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}), nil
 }
 
 // PiSubagentPath is the subagent extension (for a second `pi -e`) next to the entry ExtractPi returned.
