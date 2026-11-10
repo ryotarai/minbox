@@ -1,4 +1,4 @@
-// Command minbox: an inbox for Claude Code sessions, with their terminals.
+// Command minbox: an inbox for Claude Code and Pi sessions, with their terminals.
 //
 //	minbox start         start the server as a daemon (and the terminal host, if none runs)
 //	minbox stop          stop the server (sessions keep running in the terminal host)
@@ -440,10 +440,10 @@ func hostCmd(args []string) error {
 
 // serveFlags are the flags of `minbox start` (and its old name, serve).
 type serveFlags struct {
-	fs                                                   *flag.FlagSet
-	addr, listen, dataDir, claudeCmd, tsService, tsLogin *string
-	noOpen, tsServe, foreground                          *bool
-	tsPort                                               *int
+	fs                                                          *flag.FlagSet
+	addr, listen, dataDir, claudeCmd, piCmd, tsService, tsLogin *string
+	noOpen, tsServe, foreground                                 *bool
+	tsPort                                                      *int
 }
 
 func newServeFlags(name string) *serveFlags {
@@ -454,6 +454,7 @@ func newServeFlags(name string) *serveFlags {
 	f.listen = fs.String("listen", "", "listen on this address instead, e.g. 0.0.0.0:4848; browsers from other machines must be paired (minbox pair accept <code>)")
 	f.dataDir = fs.String("data-dir", defaultDataDir(), "data directory")
 	f.claudeCmd = fs.String("claude", envOr("MINBOX_CLAUDE", "claude"), "command that starts Claude Code (split on spaces)")
+	f.piCmd = fs.String("pi", envOr("MINBOX_PI", "pi"), "command that starts Pi (split on spaces); either agent alone is enough")
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser")
 	f.tsServe = fs.Bool("tailscale", false, "also serve minbox on the tailnet through tailscale serve (HTTPS); browsers there must be paired")
 	f.tsService = fs.String("tailscale-service", "", "serve minbox as this Tailscale Service (svc:<name>, https://<name>.<tailnet>.ts.net) instead of on this machine's name; the service must be defined in the Tailscale admin console")
@@ -466,7 +467,7 @@ func newServeFlags(name string) *serveFlags {
 func serve(args []string) error {
 	f := newServeFlags("start")
 	_ = f.fs.Parse(args)
-	addr, listen, dataDir, claudeCmd, noOpen := f.addr, f.listen, f.dataDir, f.claudeCmd, f.noOpen
+	addr, listen, dataDir, claudeCmd, piCmd, noOpen := f.addr, f.listen, f.dataDir, f.claudeCmd, f.piCmd, f.noOpen
 	tsServe, tsService, tsPort, tsLogin := f.tsServe, f.tsService, f.tsPort, f.tsLogin
 	*tsService = strings.TrimPrefix(strings.TrimSpace(*tsService), "svc:")
 	if *tsService != "" {
@@ -509,11 +510,21 @@ func serve(args []string) error {
 	if err != nil {
 		return fmt.Errorf("extract mod: %w", err)
 	}
+	piCommand := strings.Fields(*piCmd)
+	piExt, err := plugin.ExtractPi(filepath.Join(*dataDir, "pi-extension"))
+	if err != nil {
+		// Pi is optional: without its extension Pi is simply not offered.
+		log.Printf("extract the Pi extension: %v (Pi sessions are unavailable)", err)
+		piCommand, piExt = nil, ""
+	}
 
 	cfg := server.Config{
 		Addr:           *addr,
 		DataDir:        *dataDir,
 		ClaudeCommand:  strings.Fields(*claudeCmd),
+		PiCommand:      piCommand,
+		PiExtension:    piExt,
+		PiHelperModel:  os.Getenv("MINBOX_PI_HELPER_MODEL"),
 		SuggestCommand: strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
 		PickModel:      os.Getenv("MINBOX_PICK_MODEL"),
 		PluginDir:      pluginDir,

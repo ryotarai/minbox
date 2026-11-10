@@ -1,5 +1,5 @@
-// Package plugin holds the minbox Claude Code mod, embedded into the binary
-// and written out to the data directory for `claude --plugin-dir`.
+// Package plugin holds the minbox Claude Code mod and the minbox Pi extension, embedded into the
+// binary and written out to the data directory for `claude --plugin-dir` and `pi -e`.
 package plugin
 
 import (
@@ -79,4 +79,67 @@ func Extract(root string) (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+//go:embed all:pi
+var piFiles embed.FS
+
+// piSources are the files of the Pi extension, relative to the embedded roots: the extension
+// itself, and the text helpers it shares with the Claude Code mod (it imports ../minbox/hooks/text.ts,
+// so the extracted folder keeps that layout).
+var piSources = []struct {
+	fs   *embed.FS
+	path string
+}{
+	{&piFiles, "pi/minbox.ts"},
+	{&files, "minbox/hooks/text.ts"},
+}
+
+// ExtractPi writes the Pi extension under root/<content hash>/ (as pi/minbox.ts next to
+// minbox/hooks/text.ts) and returns the path of minbox.ts, the file for `pi -e`. Like Extract, each
+// version gets its own folder.
+func ExtractPi(root string) (string, error) {
+	h := sha256.New()
+	contents := make([][]byte, len(piSources))
+	for i, src := range piSources {
+		b, err := src.fs.ReadFile(src.path)
+		if err != nil {
+			return "", err
+		}
+		contents[i] = b
+		h.Write([]byte(src.path))
+		h.Write(b)
+	}
+	dir := filepath.Join(root, hex.EncodeToString(h.Sum(nil))[:12])
+	entry := filepath.Join(dir, "pi", "minbox.ts")
+	if _, err := os.Stat(filepath.Join(dir, ".complete")); err == nil {
+		return entry, nil
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	tmp, err := os.MkdirTemp(root, ".extract-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+	for i, src := range piSources {
+		dst := filepath.Join(tmp, filepath.FromSlash(src.path))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(dst, contents[i], 0o644); err != nil {
+			return "", err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".complete"), nil, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		if _, serr := os.Stat(filepath.Join(dir, ".complete")); serr == nil {
+			return entry, nil // another process extracted it first
+		}
+		return "", err
+	}
+	return entry, nil
 }

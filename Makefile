@@ -1,5 +1,5 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-.PHONY: all web build test test-go test-mod test-e2e dev clean
+.PHONY: all web build test test-go test-mod test-pi test-e2e dev clean
 
 all: build
 
@@ -13,13 +13,16 @@ web: web/node_modules
 build: web
 	go build -ldflags "-X github.com/ryotarai/minbox/internal/server.Version=$(VERSION)" -o bin/minbox ./cmd/minbox
 
-test: test-go test-mod test-e2e
+test: test-go test-mod test-pi test-e2e
 
 test-go:
 	go test ./...
 
 test-mod:
 	cd plugin/minbox && claude plugin test .
+
+test-pi:
+	node --test plugin/pi/minbox.test.ts
 
 test-e2e: build
 	cd web && npx playwright test
