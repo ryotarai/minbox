@@ -15,7 +15,7 @@ import { NewSessionDialog } from './NewSession'
 import { NextStep } from './NextStep'
 import { NotificationAsk, Logo, groupSessions } from './Sidebar'
 import { ThreadRow, useAllThreads } from './ThreadList'
-import { Button, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, cx } from './ui'
+import { Button, AgentTag, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, cx } from './ui'
 import { PhoneSessionSheet } from './PhoneSessions'
 import { PhoneProjectButton } from './PhoneProjects'
 
@@ -448,6 +448,7 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
                 )}
               </span>
               <HostTag name={s.host_name} />
+              <AgentTag agent={s.agent} />
               {s.waiting > 0 ? (
                 <span className="rounded-[6px] bg-accent px-1.5 text-[11px] font-bold text-onaccent">{s.waiting}</span>
               ) : s.unread > 0 ? (

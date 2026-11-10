@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, type Host, type Project, type Session } from '../api'
+import { api, type AgentKind, type Host, type Project, type Session } from '../api'
+import { agentLabel, installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir } from '../lib/projects'
 import { homeRelative, isMac } from '../lib/format'
@@ -97,7 +98,16 @@ export function NewSessionDialog({
   const [mkdir, setMkdir] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(!isPhone)
   const [claudeCmd, setClaudeCmd] = useState('claude')
-  const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : 'Start Claude Code'
+  // Coding agents: the picker shows only when more than one is installed (a session's agent; a
+  // project's default agent when editing a project). '' is "the default".
+  const agentsInfo = useAgents()
+  const installed = installedAgents(agentsInfo)
+  const showAgentPicker = installed.length > 1 && (mode === 'session' || mode === 'project-edit')
+  const [agentPick, setAgentPick] = useState<AgentKind | ''>(() => (mode === 'project-edit' ? editing?.default_agent ?? '' : ''))
+  const preferred = [proj?.default_agent, agentsInfo?.default].find((k) => k && installed.some((a) => a.kind === k)) as AgentKind | undefined
+  const agentKind: AgentKind = (mode === 'session' && agentPick) || preferred || 'claude'
+  const agentCmd = agentsInfo?.agents.find((a) => a.kind === agentKind)?.command || claudeCmd
+  const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : `Start ${agentLabel(agentsInfo, agentKind)}`
   // A project fixes host and folder: the browser is only for a new folder or a project.
   const showFolder = !proj
   const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New session'
@@ -144,7 +154,7 @@ export function NewSessionDialog({
     try {
       if (mode !== 'session') {
         const p = editing
-          ? await api.patchProject(editing.id, { name: name.trim() || undefined, dir: cwd.trim(), host_id: editing.session_count > 0 ? undefined : hostId || undefined })
+          ? await api.patchProject(editing.id, { name: name.trim() || undefined, dir: cwd.trim(), host_id: editing.session_count > 0 ? undefined : hostId || undefined, default_agent: showAgentPicker && agentPick !== (editing.default_agent ?? '') ? agentPick : undefined })
           : await api.createProject({ dir: cwd.trim(), host_id: hostId || undefined, name: name.trim() || undefined })
         rememberCwd(cwd.trim(), hostId)
         reloadProjects()
@@ -153,7 +163,7 @@ export function NewSessionDialog({
         onClose()
         return
       }
-      const s = proj ? await api.createSessionIn(proj.id, name.trim(), 'claude', makeMain) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, 'claude')
+      const s = proj ? await api.createSessionIn(proj.id, name.trim(), 'claude', makeMain, agentPick || undefined) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, 'claude', agentPick || undefined)
       if (!proj) rememberCwd(cwd.trim(), hostId)
       reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
@@ -364,6 +374,32 @@ export function NewSessionDialog({
       </div>
     )
 
+  // Which coding agent runs the session (or, editing a project, its default). Hidden with one agent installed.
+  const agentPicker = !showAgentPicker ? null : (
+    <div className="flex flex-col gap-1.5">
+      <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>{mode === 'session' ? 'Coding agent' : 'Default coding agent'}</span>
+      <div role="radiogroup" aria-label="Coding agent" data-testid="new-session-agent" className="flex gap-2">
+        {([...(mode === 'project-edit' ? [{ kind: '' as const, label: 'Default' }] : []), ...installed]).map((a) => {
+          const on = mode === 'session' ? agentKind === a.kind : agentPick === a.kind
+          return (
+            <button
+              key={a.kind || 'default'}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              data-testid="new-session-agent-option"
+              data-agent={a.kind}
+              onClick={() => setAgentPick(a.kind as AgentKind | '')}
+              className={cx('h-9 rounded-[9px] border px-3 text-[13px] font-semibold', on ? 'border-wait/55 bg-wait/10' : 'border-line2 bg-transparent')}
+            >
+              {a.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   const cwdInput = (
     <label className={cx('flex flex-col gap-1.5 text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>
       Working directory
@@ -415,8 +451,8 @@ export function NewSessionDialog({
     mode === 'project-edit' && editing && editing.session_count > 0 ? (
       <p data-testid="project-edit-note" className="m-0 text-[12.5px] leading-snug text-subtle">
         This project has {editing.session_count} session{editing.session_count === 1 ? '' : 's'}. Each one starts in the new folder the next time it
-        starts (a restart, or after the server restarts); a running session is not interrupted. Claude Code ties a conversation to its folder, so the
-        session begins a fresh conversation there and is told the old folder and its Claude session id, to read the earlier transcript if it needs to.
+        starts (a restart, or after the server restarts); a running session is not interrupted. A coding agent ties a conversation to its folder, so the
+        session begins a fresh conversation there and is told the old folder and its session id, to read the earlier transcript if it needs to.
         The host cannot change.
       </p>
     ) : null
@@ -489,6 +525,7 @@ export function NewSessionDialog({
     return <PhoneSheet onClose={onClose} title={title} body={
       <>
         {projectPicker}
+        {agentPicker}
         {showFolder && (
           <>
             {hostPicker}
@@ -534,6 +571,7 @@ export function NewSessionDialog({
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>
         <div className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-4">
             {projectPicker}
+          {agentPicker}
           {showFolder && (
             <>
               {hostPicker}
@@ -548,8 +586,8 @@ export function NewSessionDialog({
       <div className="flex h-16 shrink-0 items-center gap-2.5 border-t border-line2 px-5">
         <span className="mono min-w-0 flex-1 truncate text-[12px] text-subtle">
           {proj
-            ? `${proj.host_name ?? proj.host_id} · ${claudeCmd} · ${proj.dir || '~'}`
-            : `${host ? `${host.name} · ` : ''}${mode !== 'session' ? '' : `${claudeCmd} · `}${listing ? listing.display : cwd}`}
+            ? `${proj.host_name ?? proj.host_id} · ${agentCmd} · ${proj.dir || '~'}`
+            : `${host ? `${host.name} · ` : ''}${mode !== 'session' ? '' : `${agentCmd} · `}${listing ? listing.display : cwd}`}
         </span>
         <Button variant="quiet" className="h-[38px] text-[13.5px]" onClick={onClose}>
           Cancel

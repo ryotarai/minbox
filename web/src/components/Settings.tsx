@@ -1,5 +1,6 @@
 import { Component, useEffect, useState, type ReactNode } from 'react'
 import { api, type About, type Session, type Storage, type Thread } from '../api'
+import { installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { notificationPermission, notify, requestNotifications, dingDong } from '../lib/alerts'
 import { bytes, homeRelative, shortTime } from '../lib/format'
@@ -246,13 +247,64 @@ function Prompts() {
 function Capabilities() {
   const { settings, saveSettings } = useApp()
   return (
-    <Group title="Optional parts of minbox">
+    <>
+      <AgentsGroup />
+      <Group title="Optional parts of minbox">
       <Row label="Board" desc="Lay work out as cards (Backlog → Shipped). Claude Code can add cards with its card tool.">
         <Switch label="Board" on={settings.board} onChange={(v) => saveSettings({ board: v })} />
       </Row>
       <Row label="Decision mode (Experimental)" desc="Every waiting question across sessions, one at a time. Pick with 1–9; answers are sent per thread.">
         <Switch label="Decision mode" on={settings.decision_mode} onChange={(v) => saveSettings({ decision_mode: v })} />
       </Row>
+      </Group>
+    </>
+  )
+}
+
+// Which coding agents this machine has, and which one new sessions start with. Any one is enough.
+function AgentsGroup() {
+  const { settings, saveSettings } = useApp()
+  const info = useAgents()
+  const installed = installedAgents(info)
+  return (
+    <Group title="Coding agents">
+      {!info && <span className="text-[13px] text-subtle">Loading…</span>}
+      {info?.agents.map((a) => (
+        <Row
+          key={a.kind}
+          label={a.label}
+          desc={a.installed ? `Found at ${a.path}` : `Not installed: no “${a.command.split(' ')[0] || a.kind}” on the server's PATH`}
+        >
+          <span data-testid={`agent-status-${a.kind}`} className={cx('mono text-[12.5px]', a.installed ? 'text-ok' : 'text-subtle')}>
+            {a.installed ? 'installed' : 'not installed'}
+          </span>
+        </Row>
+      ))}
+      {info && installed.length === 0 && (
+        <p className="m-0 text-[13px] leading-[1.6] text-muted">No coding agent is installed, so sessions cannot start. Install Claude Code or Pi; either one alone is enough.</p>
+      )}
+      {installed.length > 1 && (
+        <Row label="Default agent" desc="For a new session when neither the dialog nor the project says. Projects can set their own.">
+          <select
+            data-testid="default-agent"
+            value={settings.default_agent}
+            onChange={(e) => saveSettings({ default_agent: e.target.value as '' | 'claude' | 'pi' })}
+            className="h-8 rounded-md border border-linestrong bg-sunken px-2 text-[13px]"
+          >
+            <option value="">Claude Code, unless it is missing</option>
+            {installed.map((a) => (
+              <option key={a.kind} value={a.kind}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+      )}
+      {info?.agents.some((a) => a.kind === 'pi' && a.installed) && (
+        <p className="m-0 text-[12.5px] leading-[1.6] text-subtle">
+          Pi runs with your user's full permissions and has no permission prompts, like Claude Code with every permission granted. It works on this machine only for now (not on other hosts) and has no subagents, so the orchestrator prompt does not apply to it.
+        </p>
+      )}
     </Group>
   )
 }

@@ -37,10 +37,26 @@ export type TopThread = {
 
 export type SessionKind = 'claude' | 'shell'
 
+/** The coding agent a session runs (sessions.agent); a missing value means Claude Code. */
+export type AgentKind = 'claude' | 'pi'
+
+/** A coding agent minbox can run, and whether it is installed on the server's machine (GET /api/agents). */
+export type AgentInfo = {
+  kind: AgentKind
+  label: string
+  installed: boolean
+  command: string
+  path: string
+  caps: { subagents: boolean; preassigned_id: boolean; remote_hosts: boolean; completions: boolean }
+}
+export type AgentsInfo = { agents: AgentInfo[]; default: AgentKind }
+
 export type Session = {
   id: string
   /** claude: Claude Code with the inbox; shell: a plain login shell (terminal only). */
   kind?: SessionKind
+  /** Which coding agent runs the session (kind claude means "has the inbox"; this says which one). */
+  agent?: AgentKind
   /** What Claude says it is working on (set_session_title); '' until set. */
   title?: string
   name: string
@@ -88,6 +104,8 @@ export type Project = {
   pinned_at: string | null
   /** The Claude Code session a new thread goes to by default ('' until the project has one). */
   main_session_id: string
+  /** The agent new sessions of the project start with; '' follows the default_agent setting. */
+  default_agent?: AgentKind | ''
   session_count: number
   live_sessions: number
   last_activity: string
@@ -313,11 +331,13 @@ export type Settings = {
   reply_suggestions: boolean
   /** The address this minbox is reached at from outside (Tailscale URL): notifications link to it. */
   public_url: string
+  /** The agent a new session gets when nothing else says ('' : the installed one, Claude Code if both). */
+  default_agent: AgentKind | ''
   list: ListOptions
 }
 
 /** Drafted replies for a thread (the server caches them per last message). */
-export type SuggestResult = { suggestions: string[]; reason?: 'disabled' | 'not_needed'; error?: string }
+export type SuggestResult = { suggestions: string[]; reason?: 'disabled' | 'not_needed' | 'no_agent'; error?: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -333,6 +353,7 @@ export const DEFAULT_SETTINGS: Settings = {
   orchestrator_prompt: true,
   reply_suggestions: true,
   public_url: '',
+  default_agent: '',
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
 
@@ -489,9 +510,10 @@ export type ReplyRequest = {
 
 export const api = {
   sessions: () => call<Session[]>('GET', '/api/sessions'),
-  createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind }),
+  createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind, agent }),
   /** A session inside a project: its host and folder. */
-  createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined }),
+  createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined, agent }),
+  agents: () => call<AgentsInfo>('GET', '/api/agents'),
   setMainSession: (project_id: string, session_id: string) => call<Project>('PATCH', `/api/projects/${project_id}`, { main_session_id: session_id }),
   setProjectEmoji: (id: string, emoji: string) => call<Project>('PUT', `/api/projects/${id}/icon`, { emoji }),
   clearProjectIcon: (id: string) => call<Project>('DELETE', `/api/projects/${id}/icon`),
@@ -503,7 +525,7 @@ export const api = {
   },
   projects: (archived = false) => call<Project[]>('GET', `/api/projects${archived ? '?archived=1' : ''}`),
   createProject: (p: { dir: string; host_id?: string; name?: string }) => call<Project>('POST', '/api/projects', p),
-  patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string }) => call<Project>('PATCH', `/api/projects/${id}`, p),
+  patchProject: (id: string, p: { name?: string; pinned?: boolean; dir?: string; host_id?: string; default_agent?: AgentKind | '' }) => call<Project>('PATCH', `/api/projects/${id}`, p),
   projectDeletePreview: (id: string) => call<{ sessions: number; running_sessions: number; threads: number; messages: number }>('GET', `/api/projects/${id}/delete-preview`),
   deleteProject: (id: string) => call<Ok>('DELETE', `/api/projects/${id}`),
   archiveProject: (id: string, archive = true) => call<Ok>('POST', `/api/projects/${id}/${archive ? 'archive' : 'unarchive'}`),

@@ -351,6 +351,20 @@ export function useAutoFocus<T extends HTMLElement>(): React.RefObject<T | null>
 }
 
 /** The host a session runs on, as a small tag. */
+/** Marks a session that runs a coding agent other than Claude Code (the default, so it is left unmarked). */
+export function AgentTag({ agent, phone }: { agent?: string; phone?: boolean }) {
+  if (!agent || agent === 'claude') return null
+  return (
+    <span
+      title="Coding agent"
+      data-testid="agent-tag"
+      className={cx('mono shrink-0 whitespace-nowrap rounded border border-line2 px-[5px] text-subtle', phone ? 'text-[11px] leading-[17px]' : 'text-[10.5px] leading-4')}
+    >
+      {agent === 'pi' ? 'Pi' : agent}
+    </span>
+  )
+}
+
 export function HostTag({ name, phone }: { name?: string; phone?: boolean }) {
   if (!name) return null
   return (

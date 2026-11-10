@@ -6,7 +6,7 @@ import { setThreadFilter, useThreadFilter } from '../lib/threadFilter'
 import { useSelectedProject } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconClose, IconMore, IconPlus, IconTerminal } from './icons'
 import { SessionMenu, groupSessions } from './Sidebar'
-import { EndedTag, HostTag, cx } from './ui'
+import { EndedTag, AgentTag, HostTag, cx } from './ui'
 
 /**
  * Phone: the session picker. It is a sheet over the thread list: choosing a session filters the
@@ -123,6 +123,7 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
               {s.name}
             </span>
             <HostTag name={s.host_name} phone />
+            <AgentTag agent={s.agent} phone />
             {s.open_questions > 0 && (
               <span data-testid="badge-questions" className="flex h-[22px] items-center rounded-full bg-accent px-2 text-[12.5px] font-extrabold text-onaccent">
                 ?{s.open_questions}

@@ -12,6 +12,7 @@ const ROOT = resolve(__dirname, '../..')
 const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 const FAKE_SUGGEST = join(__dirname, 'fake-suggest.py')
+const FAKE_PI = join(__dirname, 'fake-pi.py')
 
 // Concurrent suites (other worktrees, other runs) must not share a server: ask the OS for a free
 // port per instance. MINBOX_E2E_PORT, if set, is the first port to use (then counts up).
@@ -77,6 +78,10 @@ export class Minbox {
   constructor(
     public dataDir: string,
     public port: number,
+    /** The Pi command; by default Pi is not installed (so tests do not depend on a real `pi` on PATH). */
+    public pi = 'minbox-e2e-no-such-pi',
+    /** The Claude Code command; the fake claude by default. */
+    public claude = `python3 ${FAKE}`,
   ) {}
 
   get url() {
@@ -85,7 +90,7 @@ export class Minbox {
 
   async start() {
     if (!this.slackApi.url) await this.slackApi.start()
-    this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', `python3 ${FAKE}`], {
+    this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url },
     })
@@ -138,6 +143,7 @@ export class Minbox {
       // Only this server's fakes: the command line carries `--plugin-dir <dataDir>/plugin/...`, so
       // suites in other worktrees and tests of other workers keep their own.
       execSync(`pkill -f "${FAKE}.*${this.dataDir}" || true`)
+      execSync(`pkill -f "${FAKE_PI}.*${this.dataDir}" || true`)
     } catch {
       /* none */
     }
@@ -146,7 +152,25 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox }>({
+  // A minbox on a machine with only Pi: there is no `claude` at all.
+  piOnlyMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`, 'minbox-e2e-no-such-claude')
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
+  // A minbox where Pi is installed too (the fake pi), so both agents are offered.
+  piMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`)
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
   minbox: async ({}, use, testInfo) => {
     // A short path: the host's Unix socket lives in the data directory.
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
@@ -230,7 +254,7 @@ export async function chooseFolder(page: Page) {
 }
 
 /** Creates a session in the given directory through the UI. */
-export async function createSession(page: Page, cwd: string, name: string) {
+export async function createSession(page: Page, cwd: string, name: string, agent?: 'claude' | 'pi') {
   // With no sessions the dialog opens by itself, maybe right after we look:
   // press New only while the dialog is not there, briefly each time.
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
@@ -240,6 +264,7 @@ export async function createSession(page: Page, cwd: string, name: string) {
   await chooseFolder(page)
   await page.getByTestId('new-session-cwd').fill(cwd)
   await page.getByTestId('new-session-name').fill(name)
+  if (agent) await page.locator(`[data-testid="new-session-agent-option"][data-agent="${agent}"]`).click()
   await page.getByTestId('new-session-start').click()
   await expect(page.getByTestId('terminal-toggle').or(page.getByTestId('terminal-session-name')).or(page.getByTestId('phone')).first()).toBeVisible()
   await showTerminal(page)
