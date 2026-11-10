@@ -156,3 +156,38 @@ test('a busy Pi takes only urgent messages, as steering; a failed delivery is re
   assert.equal(t2.order.includes('delivered'), false)
   t2.ext!.stop()
 })
+
+test('a busy turn with no event for 120 s is given up on, unless a subagent or a tool update shows life', async () => {
+  const statuses = (t: ReturnType<typeof setup>) => t.calls.filter((c) => c.path === '/api/agent/status').map((c) => c.body.status)
+  // No sign of life: the stale rule turns it idle again.
+  const a = setup()
+  await a.handlers.get('session_start')!({ reason: 'startup' }, a.ctx(() => false))
+  await a.handlers.get('agent_start')!({})
+  a.advance(130_000)
+  await settle()
+  assert.equal(statuses(a).at(-1), 'idle')
+  a.ext!.stop()
+
+  // The shared marker (subagent.ts) counts as life.
+  const { touchBusy } = await import('./busy.ts')
+  const b = setup()
+  await b.handlers.get('session_start')!({ reason: 'startup' }, b.ctx(() => false))
+  await b.handlers.get('agent_start')!({})
+  await settle()
+  b.advance(130_000)
+  touchBusy()
+  await settle()
+  assert.equal(statuses(b).at(-1), 'working')
+  b.ext!.stop()
+
+  // So does a tool_execution_update (a streaming minbox_subagent result).
+  const c = setup()
+  await c.handlers.get('session_start')!({ reason: 'startup' }, c.ctx(() => false))
+  await c.handlers.get('agent_start')!({})
+  await settle()
+  c.advance(130_000)
+  await c.handlers.get('tool_execution_update')!({})
+  await settle()
+  assert.equal(statuses(c).at(-1), 'working')
+  c.ext!.stop()
+})

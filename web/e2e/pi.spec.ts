@@ -16,7 +16,7 @@ test('with two agents installed the dialog offers both and starts a Pi session',
   await typeInTerminal(page, 'args')
   await expectTerminal(page, /args \[[\s\S]*\]\s*ready>/)
   const flat = (await terminalText(page)).replace(/\s+/g, '')
-  expect(flat).toMatch(/"-e","[^"]*pi-extension[^"]*minbox\.ts","--session-id","[0-9a-f-]{36}","--append-system-prompt"/)
+  expect(flat).toMatch(/"-e","[^"]*pi-extension[^"]*minbox\.ts","-e","[^"]*pi-extension[^"]*subagent\.ts","--session-id","[0-9a-f-]{36}","--append-system-prompt"/)
 
   // The API says so too.
   const sessions = await (await fetch(piMinbox.url + '/api/sessions')).json()

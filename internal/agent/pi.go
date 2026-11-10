@@ -23,7 +23,8 @@ func (pi) Kind() string     { return Pi }
 func (pi) Label() string    { return "Pi" }
 func (pi) Tools() ToolNames { return ToolNames{Prefix: "minbox_"} }
 
-// Caps: Pi has no subagents (the orchestrator prompt is off), accepts a preassigned conversation id
+// Caps: Pi has no subagents of its own (the orchestrator prompt is off; the minbox_subagent tool of
+// plugin/pi/subagent.ts is described by a short section of the instructions instead), accepts a preassigned conversation id
 // (--session-id), and in this first version runs on the server's machine only.
 func (pi) Caps() Caps { return Caps{PreassignedID: true} }
 
@@ -33,6 +34,9 @@ func (pi) Caps() Caps { return Caps{PreassignedID: true} }
 func (pi) Argv(req ArgvReq) []string {
 	argv := append([]string{}, req.Command...)
 	argv = append(argv, "-e", req.Extension)
+	for _, x := range req.ExtraExtensions {
+		argv = append(argv, "-e", x)
+	}
 	if req.ConversationID != "" {
 		argv = append(argv, "--session-id", req.ConversationID)
 	}

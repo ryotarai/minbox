@@ -285,6 +285,9 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	if a.Kind() == agent.Pi {
 		req.Command = m.cfg.PiCommand
 		req.Extension = m.cfg.PiExtension
+		if m.cfg.PiSubagentExtension != "" {
+			req.ExtraExtensions = []string{m.cfg.PiSubagentExtension}
+		}
 		if resume && sess.ClaudeSessionID != "" {
 			// --session-id continues the conversation if the folder has it, else starts it.
 			log.Printf("session %s (%s): resume check: Pi conversation %s, cwd %q, session file found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, m.piConversationExists(sess))
@@ -434,6 +437,10 @@ func buildInstructionsFor(a agent.Agent, orchestrator bool, extra string) string
 	if p := a.Tools().Prefix; p != toolPrefix {
 		text = strings.ReplaceAll(text, toolPrefix, p)
 	}
+	if a.Kind() == agent.Pi {
+		// Pi has no Task tool; the subagent extension registers minbox_subagent.
+		text += "\n\n" + PiSubagentPrompt
+	}
 	if extra = strings.TrimSpace(extra); extra != "" {
 		text += "\n\nThe person adds: " + extra
 	}
@@ -477,6 +484,14 @@ You are the main agent of this session and only orchestrate. ALWAYS start one su
 Your job: split the work, brief each subagent fully (goal, files, constraints, how to verify), track progress, review and verify what comes back, merge it, and report in the thread (send_message).
 Run independent subagents in parallel; do not hold work back for fear of merge conflicts: you resolve them when you merge.
 A subagent that changes anything other than reading (edit files, build, commit) works in its own git worktree when the working directory is in a git repository; read-only investigation needs no worktree. If the directory is not a git repository this does not apply.`
+
+// PiSubagentPrompt is Pi's counterpart of the orchestration block: a short note on the
+// minbox_subagent tool (plugin/pi/subagent.ts). It is added for Pi only; Claude's text is unchanged.
+const PiSubagentPrompt = `# minbox: subagents
+minbox_subagent runs up to 8 tasks (4 at a time) in separate Pi processes with their own context; use it to investigate, review or implement pieces in parallel. Brief each task fully (goal, files, constraints, how to verify): a child sees nothing of this conversation.
+- Default children are read-only (read, grep, find, ls). role picks a prepared prompt: scout (recon), planner, reviewer, worker.
+- Set write: true only for a task that must change files. That child works in its own git worktree on a new branch minbox-sub/<id> (the folder must be inside a git repository), and the result names the branch and path. Review the diff and merge the branch yourself; a child never touches your own checkout.
+- Children cannot use minbox_* tools; report to the person yourself.`
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
 // person through the inbox, keep the session's title current, and open pages

@@ -511,27 +511,31 @@ func serve(args []string) error {
 		return fmt.Errorf("extract mod: %w", err)
 	}
 	piCommand := strings.Fields(*piCmd)
+	piSub := ""
 	piExt, err := plugin.ExtractPi(filepath.Join(*dataDir, "pi-extension"))
 	if err != nil {
 		// Pi is optional: without its extension Pi is simply not offered.
 		log.Printf("extract the Pi extension: %v (Pi sessions are unavailable)", err)
 		piCommand, piExt = nil, ""
+	} else {
+		piSub = plugin.PiSubagentPath(piExt)
 	}
 
 	cfg := server.Config{
-		Addr:           *addr,
-		DataDir:        *dataDir,
-		ClaudeCommand:  strings.Fields(*claudeCmd),
-		PiCommand:      piCommand,
-		PiExtension:    piExt,
-		PiHelperModel:  os.Getenv("MINBOX_PI_HELPER_MODEL"),
-		SuggestCommand: strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
-		PickModel:      os.Getenv("MINBOX_PICK_MODEL"),
-		PluginDir:      pluginDir,
-		ServerFile:     filepath.Join(*dataDir, "server.json"),
-		ScratchDir:     filepath.Join(*dataDir, "scratch"),
-		HostURL:        "unix://" + socketPath(*dataDir),
-		ListenAny:      listenAny,
+		Addr:                *addr,
+		DataDir:             *dataDir,
+		ClaudeCommand:       strings.Fields(*claudeCmd),
+		PiCommand:           piCommand,
+		PiExtension:         piExt,
+		PiSubagentExtension: piSub,
+		PiHelperModel:       os.Getenv("MINBOX_PI_HELPER_MODEL"),
+		SuggestCommand:      strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
+		PickModel:           os.Getenv("MINBOX_PICK_MODEL"),
+		PluginDir:           pluginDir,
+		ServerFile:          filepath.Join(*dataDir, "server.json"),
+		ScratchDir:          filepath.Join(*dataDir, "scratch"),
+		HostURL:             "unix://" + socketPath(*dataDir),
+		ListenAny:           listenAny,
 	}
 	if *tsServe {
 		if *tsLogin == "" {

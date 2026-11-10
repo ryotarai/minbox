@@ -84,21 +84,42 @@ func Extract(root string) (string, error) {
 //go:embed all:pi
 var piFiles embed.FS
 
-// piSources are the files of the Pi extension, relative to the embedded roots: the extension
-// itself, and the text helpers it shares with the Claude Code mod (it imports ../minbox/hooks/text.ts,
-// so the extracted folder keeps that layout).
-var piSources = []struct {
+// piSource is one file of the Pi extension, relative to the embedded roots.
+type piSource struct {
 	fs   *embed.FS
 	path string
-}{
-	{&piFiles, "pi/minbox.ts"},
-	{&files, "minbox/hooks/text.ts"},
 }
 
-// ExtractPi writes the Pi extension under root/<content hash>/ (as pi/minbox.ts next to
-// minbox/hooks/text.ts) and returns the path of minbox.ts, the file for `pi -e`. Like Extract, each
-// version gets its own folder.
+// piSources are the files of the Pi extensions: everything under pi/ (minbox.ts, subagent.ts, the
+// busy marker they share, the role definitions in agents/) except tests, and the text helpers the
+// extension shares with the Claude Code mod (it imports ../minbox/hooks/text.ts, so the extracted
+// folder keeps that layout).
+func piSources() ([]piSource, error) {
+	var out []piSource
+	err := fs.WalkDir(piFiles, "pi", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.HasSuffix(path, ".test.ts") {
+			return err
+		}
+		out = append(out, piSource{&piFiles, path})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return append(out, piSource{&files, "minbox/hooks/text.ts"}), nil
+}
+
+// PiSubagentPath is the subagent extension (for a second `pi -e`) next to the entry ExtractPi returned.
+func PiSubagentPath(entry string) string { return filepath.Join(filepath.Dir(entry), "subagent.ts") }
+
+// ExtractPi writes the Pi extensions under root/<content hash>/ (as pi/minbox.ts, pi/subagent.ts ...
+// next to minbox/hooks/text.ts) and returns the path of minbox.ts, the file for `pi -e`; the
+// subagent extension is PiSubagentPath of it. Like Extract, each version gets its own folder.
 func ExtractPi(root string) (string, error) {
+	piSources, err := piSources()
+	if err != nil {
+		return "", err
+	}
 	h := sha256.New()
 	contents := make([][]byte, len(piSources))
 	for i, src := range piSources {

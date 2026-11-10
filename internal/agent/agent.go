@@ -55,6 +55,9 @@ type ArgvReq struct {
 	// Extension is the minbox integration to load: the folder of the Claude Code mod
 	// (--plugin-dir), or the path of the Pi extension file (-e). On a remote host it is a placeholder.
 	Extension string
+	// ExtraExtensions are further extension files for Pi (each loaded with its own -e), such as
+	// the subagent extension. Claude Code ignores them.
+	ExtraExtensions []string
 	// ConversationID is the agent's conversation id ("" lets the agent choose).
 	ConversationID string
 	// Resume: the conversation exists and is to be continued.

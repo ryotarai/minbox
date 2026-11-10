@@ -12,6 +12,8 @@
  *   claimed (so one instance delivers it), started as a user turn with pi.sendUserMessage, then
  *   acknowledged as delivered. An urgent one (Send now, or one that waited long) is delivered into
  *   a running turn too, as a steering message. A failed delivery releases the claim.
+ * - A long minbox_subagent run (plugin/pi/subagent.ts) keeps the status working: its partial results
+ *   are tool_execution_update events, and busy.ts is a marker the two extensions share.
  * - Refuses Bash commands that would open a page on the host machine.
  * - Reports the conversation id and file in a hello at every session start (also after /new or
  *   /resume, which restart the extension), so minbox resumes the right conversation later.
@@ -54,6 +56,7 @@ import {
   type Pending,
   type Thread,
 } from '../minbox/hooks/text.ts'
+import { busySeq } from './busy.ts'
 
 export const EXT_VERSION = '0.1.0'
 /** Pi's names for the minbox tools (the server writes the instructions with the same prefix). */
@@ -116,6 +119,8 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   let ctx: any = null
   let busy = false
   let busyAt = 0
+  /** busySeq() as last seen: a change means another extension (subagent.ts) saw something alive. */
+  let seenBusySeq = busySeq()
   let idleSince = deps.now()
   /** The person typed: their turn goes first. */
   let typedAt = 0
@@ -295,6 +300,8 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   }
   pi.on('turn_start', alive)
   pi.on('tool_execution_start', alive)
+  // A long tool (minbox_subagent) streams partial results as tool_execution_update.
+  pi.on('tool_execution_update', alive)
   pi.on('input', async (e: any) => {
     if (e?.source === 'interactive') typedAt = deps.now()
     return { action: 'continue' }
@@ -340,6 +347,11 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   }
 
   async function deliverOnce(): Promise<boolean> {
+    const seq = busySeq()
+    if (seq !== seenBusySeq) {
+      seenBusySeq = seq
+      if (busy) busyAt = deps.now()
+    }
     if (busy && deps.now() - busyAt > BUSY_STALE_MS) {
       // No event for a long while: an agent_settled was missed. Treat Pi as idle again.
       setBusy(false)

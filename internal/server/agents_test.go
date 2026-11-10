@@ -29,6 +29,8 @@ func withPi(e *env, script string) string {
 	e.srv.sessions.cfg.PiCommand = []string{bin}
 	e.srv.cfg.PiExtension = "/ext/pi/minbox.ts"
 	e.srv.sessions.cfg.PiExtension = "/ext/pi/minbox.ts"
+	e.srv.cfg.PiSubagentExtension = "/ext/pi/subagent.ts"
+	e.srv.sessions.cfg.PiSubagentExtension = "/ext/pi/subagent.ts"
 	return bin
 }
 
@@ -65,12 +67,19 @@ func TestPiSessionSpawnsPiWithTheExtension(t *testing.T) {
 		t.Fatalf("session = %v / %+v", obj, sess)
 	}
 	req := e.host.spawned[0]
-	want := []string{bin, "--model", "anthropic/sonnet", "-e", "/ext/pi/minbox.ts", "--session-id", sess.ClaudeSessionID, "--append-system-prompt"}
+	want := []string{bin, "--model", "anthropic/sonnet", "-e", "/ext/pi/minbox.ts", "-e", "/ext/pi/subagent.ts", "--session-id", sess.ClaudeSessionID, "--append-system-prompt"}
 	if len(req.Argv) != len(want)+1 || strings.Join(req.Argv[:len(want)], "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("argv = %q", req.Argv)
 	}
 	p := lastPrompt(req.Argv)
 	// One instruction text, Pi's tool names, no orchestrator (Pi has no subagents).
+	if !strings.Contains(p, "# minbox: subagents") || !strings.Contains(p, "minbox_subagent") || !strings.Contains(p, "write: true") {
+		t.Fatalf("no subagent section in the Pi prompt: %q", p)
+	}
+	// Claude's text is exactly what it was: no Pi section.
+	if c := buildInstructionsFor(agent.Must(agent.Claude), true, ""); c != AgentSystemPrompt+"\n\n"+OrchestratorPrompt || strings.Contains(c, "subagent.ts") {
+		t.Fatal("Claude's instructions changed")
+	}
 	if !strings.Contains(p, "minbox_send_message") || strings.Contains(p, "mcp__minbox__") || strings.Contains(p, "# minbox: orchestration") {
 		t.Fatalf("prompt = %q", p)
 	}

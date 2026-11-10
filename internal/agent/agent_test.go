@@ -75,6 +75,14 @@ func TestPiArgv(t *testing.T) {
 			t.Fatalf("%s in %q", bad, got)
 		}
 	}
+	// A second extension (the subagent one) is another -e; Claude ignores it.
+	got = a.Argv(ArgvReq{Command: []string{"pi"}, Extension: "/e/pi/minbox.ts", ExtraExtensions: []string{"/e/pi/subagent.ts"}, ConversationID: "u", Instructions: "T"})
+	if want := []string{"pi", "-e", "/e/pi/minbox.ts", "-e", "/e/pi/subagent.ts", "--session-id", "u", "--append-system-prompt", "T"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv with two extensions = %q", got)
+	}
+	if got := Must(Claude).Argv(ArgvReq{Command: []string{"claude"}, Extension: "/p", ExtraExtensions: []string{"/x.ts"}, Instructions: "T"}); hasArg(got, "/x.ts") {
+		t.Fatalf("claude got the Pi extension: %q", got)
+	}
 	if c := a.Caps(); c.Subagents || !c.PreassignedID || c.RemoteHosts {
 		t.Fatalf("caps = %+v", c)
 	}

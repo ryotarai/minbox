@@ -22,7 +22,7 @@ test-mod:
 	cd plugin/minbox && claude plugin test .
 
 test-pi:
-	node --test plugin/pi/minbox.test.ts
+	node --test plugin/pi/*.test.ts
 
 test-e2e: build
 	cd web && npx playwright test

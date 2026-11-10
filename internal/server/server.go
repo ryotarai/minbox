@@ -35,6 +35,8 @@ type Config struct {
 	PiCommand []string
 	// PiExtension is the extracted minbox extension for Pi (plugin/pi/minbox.ts), passed with -e.
 	PiExtension string
+	// PiSubagentExtension is the extracted subagent extension (plugin/pi/subagent.ts), a second -e.
+	PiSubagentExtension string
 	// PiHelperModel is the model Pi uses for one-shot helper runs (MINBOX_PI_HELPER_MODEL); empty: Pi's own default.
 	PiHelperModel string
 	// SuggestCommand starts the reply-suggestions generator (MINBOX_SUGGEST_COMMAND); empty: the first word of ClaudeCommand.

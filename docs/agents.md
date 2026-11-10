@@ -88,9 +88,63 @@ one alone is enough**: minbox starts, shows its UI and runs sessions on a machin
   the open-threads reminder after a compaction, mod-silent parity, remote hosts, completions.
 * **Instructions** reach Pi once, on the command line, because Pi keeps its system prompt through
   compactions. The Claude mod's periodic re-injection is not used.
-* **Tests**: `node --test plugin/pi/minbox.test.ts` (mock ExtensionAPI and a scripted server; `make test-pi`),
+* **Subagents**: see "Pi subagents" below (`plugin/pi/subagent.ts`, second `-e`).
+* **Tests**: `node --test plugin/pi/*.test.ts` (mock ExtensionAPI and a scripted server; `make test-pi`),
   `internal/agent` and `internal/server/agents_test.go` (argv, env, resume, relocation, helpers, no-`claude` PATH),
   `web/e2e/pi.spec.ts` with `web/e2e/fake-pi.py`.
+
+## Pi subagents (`minbox_subagent`)
+
+Pi has no Task tool, so minbox ships one as a second extension, `plugin/pi/subagent.ts`, loaded next to `minbox.ts`
+(`pi -e …/pi/minbox.ts -e …/pi/subagent.ts`; `agent.ArgvReq.ExtraExtensions`). It is based on Pi's bundled example
+(`examples/extensions/subagent`). The Pi instructions get a short `# minbox: subagents` section
+(`server.PiSubagentPrompt`, built in `buildInstructionsFor`; Claude's text is unchanged).
+
+**How it works.** `minbox_subagent({tasks: [{task, role?, model?, thinking?, tools?, cwd?, write?, context?}], max_concurrency?})`
+starts one child process per task: `pi --mode json -p --no-session -ne -nc --offline --tools <list> [--model] [--thinking]
+[--append-system-prompt <role file>] "Task: …"` (same Pi binary as the parent: `process.execPath` + `process.argv[1]`).
+The parent reads the child's JSON lines (`message_end`, `tool_result_end`) for the answer and the usage; the result
+text has one section per task, `details` has per-child status, output, usage, model, tools, cwd and worktree, and the
+summed usage. Children inherit the parent's model and thinking level unless the role or task sets them.
+
+* **Roles** are markdown files with `name`, `description`, `tools`, `model` frontmatter: `scout`, `planner`,
+  `reviewer` (read-only) and `worker` ship in `plugin/pi/agents/`; `~/.pi/agent/agents/*.md` and the nearest
+  `.pi/agents/*.md` of the folder add or replace roles (project over user over shipped). A project role is a prompt from the
+  repository: it changes what the child is told, never what it is allowed to do (the tool filter below applies to it too).
+* **Isolation of the child**: `-ne` (no extension, so no `minbox_*` tools and no recursion), `-nc` (no `AGENTS.md` /
+  `CLAUDE.md`; `context: true` loads them), `--offline` (startup network operations only; the helper runs already use it
+  with inference working), and an environment without `MINBOX_*` (token, server file, …) and `PI_SESSION_*`.
+* **Limits**: 8 tasks per call, 4 at a time (`max_concurrency` lowers it), 10 minutes per child
+  (`MINBOX_SUBAGENT_TIMEOUT_MS`), 40 KB of output per child (cut on a character boundary, with a note). Abort (the tool's
+  signal), timeout, and Pi shutting down send SIGTERM, then SIGKILL after 5 s; the parent's exit kills any child left.
+* **Working / idle**: a long run must not look like an idle Pi to `minbox.ts` (it gives up on a busy turn after 120 s
+  with no event). `subagent.ts` sends a partial result on every child event and every 15 s (Pi emits
+  `tool_execution_update`, which `minbox.ts` counts as life) and bumps a shared counter (`plugin/pi/busy.ts`, on `globalThis`
+  under `Symbol.for('minbox.pi.busy')`) that `minbox.ts` also checks.
+
+**Writing children and worktrees.** Without `write: true` a child gets `read,grep,find,ls`; `edit`, `write` and `bash` are
+dropped from any list (the task's or the role's) and the result says so. With `write: true` it gets `read,grep,find,ls,edit,write,bash`
+(or the role's/task's list) **only inside a git worktree**:
+
+1. `git rev-parse --show-toplevel` in the task's folder; outside a repository (or in one with no commit) the task fails with a
+   clear error and nothing runs. The user's checkout is only read, never written, and the child never runs in it.
+2. `git worktree add -b minbox-sub/<id> <root>/<repo>-<id> <HEAD of the task folder>`; `<root>` is `$MINBOX_SUBAGENT_DIR`, else
+   `<tmp>/minbox-subagents`. Uncommitted changes of the main checkout are therefore NOT in the child's copy. The child's cwd is the
+   same sub-folder inside the worktree.
+3. When the child ends (done, failed, timeout, abort): if it changed anything, **the changes are committed on the branch**
+   (`git add -A`; `git commit --no-verify`, author `minbox-subagent`; commits the child made itself count too) and the worktree is
+   kept. The result gives branch, path, commit, base and diffstat. If nothing changed, the worktree and the branch are removed.
+4. The main agent reviews and merges: `git diff <base>..minbox-sub/<id>`, `git merge minbox-sub/<id>` (or cherry-pick), then
+   `git worktree remove <path> && git branch -d minbox-sub/<id>`. Kept worktrees are never removed by minbox; list leftovers with
+   `git worktree list` / `git branch --list 'minbox-sub/*'`, and `git worktree prune` after deleting a folder by hand. If Pi itself is
+   killed hard (SIGKILL) a running child is not tracked any more and its worktree stays uncommitted: look in `<root>`.
+
+**Safety, honestly.** Pi has no permission prompts. A child with `write: true` has `bash` and runs as the user: the worktree keeps its
+file edits away from your checkout, but nothing stops a command that deliberately goes elsewhere (`cd /`, `git -C <main> …`, network,
+`~`). Read-only children cannot change anything through tools, but can read any file the user can. Treat `write: true` like giving a
+colleague a shell; there is no sandbox. Risks to know: cost (8 children at once, each with its own context, billed separately; the
+result shows summed tokens and cost), merge conflicts between parallel writers (the main agent resolves them when merging), and
+prompt injection through what a child reads, which the main agent passes on.
 
 ## Verified against a real Pi 1.4.0 (offline, no model)
 
@@ -116,6 +170,21 @@ one alone is enough**: minbox starts, shows its UI and runs sessions on a machin
    helper fail, which turns the feature off for that call).
 5. `--session <path>` across folders (see above), and Pi 1.5+ (tested with 1.4.0; the proposal's notes were for 1.5.1).
 6. Pi on a remote host: refused with a clear message. Not designed yet (needs Pi, Node 22.19+ and the extension path on that host).
+
+## Subagents: verified and not
+
+Verified with Pi 1.4.0, offline, without a model: both extensions load together (`[Extensions]` lists `minbox.ts` and
+`subagent.ts`, no load error); `minbox_subagent` is in `pi.getAllTools()` and active, with the JSON schema accepted;
+`import.meta.url` (shipped roles folder) and `process.argv[1]` (`piInvocation`) resolve inside Pi's jiti; the child command line is accepted
+by the real `pi` (it starts, prints the "No API key" error on stderr and exits 1, which the tool reports as an error); `node --test
+plugin/pi/subagent.test.ts` drives the real tool code against a fake `pi` and a temp repository (argv, scrubbed env, truncation, worktree
+create/commit/remove, refusal outside a repository, 8 tasks at 4 at a time, abort and timeout with SIGTERM then SIGKILL, busy marker).
+
+**Not verified** (needs a real Pi with credentials): a real model run of a child and of the parent calling the tool (does the model
+write good briefs and follow the instructions section, and does Pi's schema coercion/rendering of `details` look fine); parallel
+and abort behaviour with real children (the fake only simulates SIGTERM handling; whether Pi's own `bash` grandchildren die with a
+killed child); the whole worktree merge flow with a real worker; that a long real run keeps minbox's status "working" in the UI
+(the 120 s rule is unit-tested with a fake clock only); `--offline` for a child that needs a model catalog refresh.
 
 ## How to add an agent
 

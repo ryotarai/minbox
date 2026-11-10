@@ -944,7 +944,7 @@ See docs/agents.md for the model. API surface:
   conversation id; either key moves the session's stored id, which is how `/clear` in Claude Code and `/new` in Pi are followed), `agent`
   (`"claude"|"pi"`, informational), `session_file` and `ext_version` (logged). It answers with an `agent` field (the session's agent) next to
   `session_id`, `name`, `instructions`, `prompt_extra`, `orchestrator`. `instructions` uses the agent's tool names (`mcp__minbox__*` for
-  Claude Code, `minbox_*` for Pi) and `orchestrator` is `""` for an agent without subagents (Pi).
+  Claude Code, `minbox_*` for Pi) and `orchestrator` is `""` for an agent without subagents (Pi). For Pi, `instructions` ends with a short `# minbox: subagents` section about `minbox_subagent` (docs/agents.md, "Pi subagents").
 - The text "Asked <agent label> to ask the N open questions again." uses the session's agent.
 - Pi's folder-change note (the `instructions` of a session that moved) names the old Pi session file under
   `<agent dir>/sessions/--<path>--/<timestamp>_<id>.jsonl`; Claude's names `~/.claude/projects/…`.

@@ -35,7 +35,8 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
 minbox runs **Claude Code** or **Pi** ([`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 1.x)
 in each session; either one alone is enough (a machine with only Pi, and no `claude`, works). It talks to the agent through
 a Claude Code mod (a hooks module) or a Pi extension, not by typing into the terminal. How agents are modelled, Pi's
-specifics and what is not verified yet: [docs/agents.md](docs/agents.md). Background and design goals:
+specifics and what is not verified yet: [docs/agents.md](docs/agents.md). Pi gets a `minbox_subagent` tool (parallel read-only children, and
+writing children in their own git worktrees on `minbox-sub/*` branches that the main agent merges): see "Pi subagents" there. Background and design goals:
 [WHAT.md](WHAT.md) (Japanese).
 
 ## The screen
