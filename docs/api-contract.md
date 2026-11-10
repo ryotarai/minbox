@@ -134,6 +134,8 @@ Settings (one JSON object; PUT merges top-level keys):
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
   reply_suggestions: bool,     (default true; see "Reply suggestions")
+  default_agent: ""|"claude"|"pi",  (default ""; the agent of a new session when neither the request nor the project says;
+                                "" = Claude Code if installed, else the installed one; see "Coding agents")
   orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
                                 block to --append-system-prompt; read per spawn, running sessions keep theirs)
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
@@ -143,18 +145,20 @@ Defaults: system, 13, true, true, true, true, false, false, "", {true,false,fals
 
 ## Reply suggestions
 
-`GET /api/threads/{id}/suggestions` -> `{suggestions: string[0..3], reason?: "disabled"|"not_needed", error?: string}`.
+`GET /api/threads/{id}/suggestions` -> `{suggestions: string[0..3], reason?: "disabled"|"not_needed"|"no_agent", error?: string}`.
 Always 200 for generation problems (error = short reason, suggestions empty); 404 for an unknown thread.
 
 - `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent.
+  `no_agent`: no coding agent (claude or pi) is installed to run the helper (feature off, not an error).
 - Otherwise the request blocks (up to 50 s) for one claude run and returns it. Results are cached in memory per
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
   (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
   Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
 - The UI (ThreadView) requests it when a thread opens or its last message changes and the reply box is empty and no
   question is open; it shows up to 3 chips (`reply-suggestions` / `reply-suggestion`). Click sends, the pencil edits.
-- Generator (always on the minbox server machine, also for remote hosts): the executable is `MINBOX_SUGGEST_COMMAND`
-  (split on spaces; tests) or else the first word of `--claude` only, so the person's own flags (--model...) are not
+- Generator (always on the minbox server machine, also for remote hosts): the agent is chosen as in "Coding agents" >
+  "Helper runs" (Pi: `pi --print …`, see docs/agents.md; the rest of this bullet describes Claude's). The executable is `MINBOX_SUGGEST_COMMAND`
+  (a Claude-format helper; split on spaces; tests) or else the first word of `--claude` only, so the person's own flags (--model...) are not
   used. Run in a fresh empty temp directory, prompt on stdin:
   `claude -p --model haiku --effort low --system-prompt "<one line>" --tools "" --no-session-persistence
   --setting-sources "" --strict-mcp-config --disable-slash-commands --output-format json --json-schema '<schema>'`.
@@ -919,3 +923,30 @@ blocks in all, a longer body ends with `…` (and "open the thread" when there i
 when `public_url` is set. `&`, `<`, `>` are escaped (`&amp;` `&lt;` `&gt;`). Conversion: `**x**`/`__x__` -> `*x*`, `*x*` -> `_x_`,
 `~~x~~` -> `~x~`, `[t](u)` -> `<u|t>`, headings -> bold lines, `-`/`*` lists -> `•`, rules -> a line, tables -> a code block, code
 and fences kept. With `include_body` off only the header, context and button are sent.
+
+
+## Coding agents (Claude Code and Pi)
+
+See docs/agents.md for the model. API surface:
+
+- `GET /api/agents` -> `{agents: [{kind: "claude"|"pi", label, installed, command, path, caps: {subagents, preassigned_id, remote_hosts, completions}}], default: "claude"|"pi"}`.
+  `installed` is whether the first word of the configured command (`--claude`, `--pi`) is on the server's `PATH`; no agent is run. `default` is
+  the effective agent of a new session with nothing else said (setting `default_agent` if installed, else Claude Code if installed, else the
+  installed one, else `claude`). `GET /api/about` adds `pi_command` and the same `agents` list.
+- `Session.agent` (`"claude"` | `"pi"`; existing rows `claude`). `Session.kind` stays `claude` (has the inbox) | `shell`. `claude_session_id`,
+  `prev_claude_session_id` and `prev_chain[].claude_session_id` hold the agent's conversation id for either agent.
+- `POST /api/sessions` takes `agent?: "claude"|"pi"`. Omitted: the project's `default_agent`, else the `default_agent` setting, else the
+  installed agent. 400: unknown agent; Pi not installed (`Pi is not installed (looked for "pi" on PATH)`); Pi on a host other than the
+  built-in one (`Pi sessions run on the server's own machine only for now …`). Claude Code that is not installed fails when the terminal
+  host starts it, as before.
+- `Project.default_agent` (`""` | `"claude"` | `"pi"`); `PATCH /api/projects/{id}` takes `default_agent` (400 for another value).
+- `POST /api/agent/hello` (the integration's first call) takes, besides the old `claude_session_id`, `agent_session_id` (the agent's current
+  conversation id; either key moves the session's stored id, which is how `/clear` in Claude Code and `/new` in Pi are followed), `agent`
+  (`"claude"|"pi"`, informational), `session_file` and `ext_version` (logged). It answers with an `agent` field (the session's agent) next to
+  `session_id`, `name`, `instructions`, `prompt_extra`, `orchestrator`. `instructions` uses the agent's tool names (`mcp__minbox__*` for
+  Claude Code, `minbox_*` for Pi) and `orchestrator` is `""` for an agent without subagents (Pi).
+- The text "Asked <agent label> to ask the N open questions again." uses the session's agent.
+- Pi's folder-change note (the `instructions` of a session that moved) names the old Pi session file under
+  `<agent dir>/sessions/--<path>--/<timestamp>_<id>.jsonl`; Claude's names `~/.claude/projects/…`.
+- Environment of both agents' processes: `MINBOX_SESSION_ID`, `MINBOX_TOKEN`, `MINBOX_SERVER_FILE`. Settings: `MINBOX_PI` (command),
+  `MINBOX_PI_HELPER_MODEL` (Pi's model for helper runs; default Pi's own).

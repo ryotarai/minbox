@@ -32,9 +32,11 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
 - **Anywhere**. Serve minbox on your tailnet and pair your phone, get Slack notifications, and run
   sessions on other machines (remote hosts).
 
-minbox works with Claude Code only. It talks to Claude through a Claude Code mod (a hooks
-module), not by typing into the terminal. Background and design goals: [WHAT.md](WHAT.md)
-(Japanese).
+minbox runs **Claude Code** or **Pi** ([`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 1.x)
+in each session; either one alone is enough (a machine with only Pi, and no `claude`, works). It talks to the agent through
+a Claude Code mod (a hooks module) or a Pi extension, not by typing into the terminal. How agents are modelled, Pi's
+specifics and what is not verified yet: [docs/agents.md](docs/agents.md). Background and design goals:
+[WHAT.md](WHAT.md) (Japanese).
 
 ## The screen
 
@@ -57,7 +59,8 @@ running Claude and resumes the conversation in one step; a running turn is inter
 
 ## Quick start
 
-Requirements: Go 1.26+, Node.js (to build the web UI), and Claude Code with mod support.
+Requirements: Go 1.26+, Node.js (to build the web UI), and a coding agent: Claude Code with mod support, or Pi 1.x
+(Node 22.19+), or both. With both installed the New session dialog lets you pick; with one it just uses that one.
 
 ```sh
 make build                 # builds web/dist and embeds it in bin/minbox
@@ -88,6 +91,7 @@ up the list and shows the question.
 | `--listen` | | Listen on another address instead, e.g. `0.0.0.0:4848`. Browsers on other machines must be paired. |
 | `--data-dir` | `~/.minbox` (`MINBOX_DATA_DIR`) | Database, mod, uploads, logs |
 | `--claude` | `claude` (`MINBOX_CLAUDE`) | Command that starts Claude Code, e.g. `"claude --model sonnet"` |
+| `--pi` | `pi` (`MINBOX_PI`) | Command that starts Pi, e.g. `"pi --model anthropic/sonnet:high"`. Pi is offered only if this is on `PATH`. The model/provider are Pi's own configuration |
 | `--tailscale` | | Also serve minbox on your tailnet over HTTPS (`tailscale serve`) |
 | `--tailscale-service NAME` | | Serve it as the Tailscale Service `svc:NAME` instead (`https://NAME.<tailnet>.ts.net`) |
 | `--tailscale-port` | `3125` | The tailnet HTTPS port |
@@ -188,9 +192,9 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   the earlier conversation, goes to Haiku again, and the minbox thread is created then, in the
   project it names (later replies in the Slack thread go to it). Still unsure: it asks again, up
   to 3 questions, then uses the *Fallback project* if one is set, otherwise tells you in Slack that
-  it dropped the message. If Haiku itself fails (for example `claude` is missing), or *Let Claude
+  it dropped the message. If the model run itself fails (for example no coding agent is installed), or *Let Claude
   Haiku pick* is off, the *Fallback project* is used straight away; with none, the DM is ignored. Only allowed members' DMs ever reach the model. The
-  model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions. Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
+  model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions; on a machine without `claude` the same pick runs through Pi (its own default model, or `MINBOX_PI_HELPER_MODEL`). Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
   delivered messages get a ✅. **Images and files you send** in Slack (a DM, or a reply in a
   notification's thread) are downloaded with the bot token (scope `files:read`) and attached to
   the minbox message exactly like a file you attach in the web UI, so Claude gets their paths:
@@ -312,15 +316,22 @@ browser notifications, **Prompts** (orchestrator prompt, extra instructions for 
 suggestions), **Notifications**, **Hosts**, **Devices**, optional parts (Board, Decision mode),
 archived sessions and threads, storage and About.
 
-**Reply suggestions** (on by default): when the last message of a thread is Claude's, minbox asks
+**Reply suggestions** (on by default): when the last message of a thread is the agent's, minbox asks
 Haiku through `claude -p` for up to three short replies and shows them as chips. The recent text
-of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**.
+of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**. Without `claude`
+the default agent runs it instead (Pi: `pi --print`, its own default model, or `MINBOX_PI_HELPER_MODEL`); with no
+coding agent installed the feature is simply off.
+
+**Coding agents** (Settings → Capabilities): which of Claude Code and Pi are installed, and the default for new
+sessions (projects can set their own in their edit dialog). Pi has no permission prompts, no subagents (the
+orchestrator prompt does not apply) and runs on this machine only for now.
 
 ## Development
 
 ```sh
 make test-go        # Go unit tests
 make test-mod       # the mod's tests (claude plugin test plugin/minbox)
+make test-pi        # the Pi extension's tests (node --test plugin/pi/minbox.test.ts, Node 22.18+)
 make test-e2e       # builds, then Playwright (cd web && npx playwright test) against a fake claude (no model calls)
 cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # a real Claude Code (Haiku)
 cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts   # regenerate docs/img/readme/
@@ -344,6 +355,8 @@ internal/server/    HTTP API, SSE, agent API, sessions, hosts, pairing
 internal/termhost/  the terminal host (PTYs, attach protocol)
 internal/store/     SQLite store
 plugin/minbox/      the Claude Code mod (hooks module)
+plugin/pi/          the Pi extension (minbox.ts)
+internal/agent/     the Agent interface: Claude Code and Pi adapters (docs/agents.md)
 web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
 docs/               API contract, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
 ```
