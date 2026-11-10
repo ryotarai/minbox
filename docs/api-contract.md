@@ -645,9 +645,19 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
 PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
                                         main_session_id must be a Claude Code session of the project (400)
                                         dir is resolved/checked as in POST (400; another live project has it -> 409) and may change at any
-                                        time. Sessions already created keep their own `cwd` (resume is cwd-dependent: Claude Code looks a
-                                        conversation up by the folder it ran in), so they and their threads are untouched; new sessions
-                                        (POST /api/sessions with project_id) start in the new dir. The old folder is not touched on disk.
+                                        time. New sessions (POST /api/sessions with project_id) start in the new dir. Existing Claude Code
+                                        sessions whose cwd is the old dir get `relocate_to` = new dir (Session field, omitted when empty);
+                                        their cwd is NOT changed yet and a running session is not touched. At its next start (restart,
+                                        resume of an ended session, server-restart reconcile) the session runs in the new dir: because
+                                        `claude --resume` finds a conversation by its folder, a session whose old conversation has a
+                                        transcript starts a FRESH conversation (new claude_session_id, `--session-id`, no `--resume`) and
+                                        records `prev_dir` + `prev_claude_session_id`; the instructions text (argv --append-system-prompt and
+                                        the hello `instructions`) then ends with a section naming the old dir, the old id and the transcript
+                                        path ~/.claude/projects/<cwd with non-alphanumerics as '-'>/<id>.jsonl. Without an old transcript only
+                                        the cwd moves. It happens once (relocate_to is cleared; later resumes are normal in the new dir). If
+                                        the new dir is gone at that time the session starts in its old dir, the move still pending. Sessions
+                                        with a cwd of their own (not the old dir) and the threads/messages are untouched. The old folder is
+                                        not touched on disk.
                                         host_id changes only while the project has no sessions (else 409)
 PUT    /api/projects/{id}/icon        sets the icon → Project (SSE projects). Body: JSON {emoji} (1-3 grapheme-ish characters,
                                         at most 16 bytes, no control chars, no letters/URLs; 400 otherwise), or an image: raw body

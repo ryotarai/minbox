@@ -47,6 +47,9 @@ export type Session = {
   cwd: string
   status: SessionStatus
   claude_session_id: string
+  relocate_to?: string // the project folder changed: starts there next time
+  prev_dir?: string
+  prev_claude_session_id?: string
   exit_code: number | null
   created_at: string
   updated_at: string

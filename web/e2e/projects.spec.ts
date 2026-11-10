@@ -172,7 +172,7 @@ test('rename; the folder changes (existing sessions keep theirs), the host only 
   // The folder can change while it has sessions: they keep theirs, a new session uses the new one.
   await expect(page.getByTestId('project-edit')).toBeEnabled()
   await page.getByTestId('project-edit').click()
-  await expect(page.getByTestId('project-edit-note')).toContainText('keep their current folder')
+  await expect(page.getByTestId('project-edit-note')).toContainText('starts in the new folder the next time')
   const moved = folder(minbox, 'docs-moved')
   await page.getByTestId('new-session-cwd').fill(moved)
   await page.getByTestId('new-session-start').click()

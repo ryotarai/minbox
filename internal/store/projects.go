@@ -382,6 +382,15 @@ func (s *Store) UpdateProject(ctx context.Context, id string, patch ProjectPatch
 			if o, err := findProject(ctx, tx, host, dir); err == nil && o.ID != id && o.ArchivedAt == nil {
 				return nil, ErrProjectExists
 			}
+			if dir != p.Dir {
+				// Claude sessions that run in the old folder start in the new one next time
+				// (a session already pending a move follows the project again); a session
+				// in a folder of its own choosing stays where it is.
+				if _, err := tx.ExecContext(ctx, `UPDATE sessions SET relocate_to=CASE WHEN cwd=? THEN '' ELSE ? END WHERE project_id=? AND kind=? AND COALESCE(NULLIF(relocate_to,''),cwd)=?`,
+					dir, dir, id, KindClaude, p.Dir); err != nil {
+					return nil, err
+				}
+			}
 			p.Dir, p.HostID = dir, host
 		}
 	}

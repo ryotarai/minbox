@@ -612,7 +612,7 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if s.sessions.orchestratorPrompt(ctx) {
 		orch = OrchestratorPrompt
 	}
-	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "instructions": s.sessions.instructions(ctx), "prompt_extra": extra, "orchestrator": orch})
+	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch})
 }
 
 func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store.Session) {

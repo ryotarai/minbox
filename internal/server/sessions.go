@@ -256,7 +256,7 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	} else if sess.ClaudeSessionID != "" {
 		argv = append(argv, "--session-id", sess.ClaudeSessionID)
 	}
-	argv = append(argv, "--append-system-prompt", m.instructions(ctx))
+	argv = append(argv, "--append-system-prompt", m.instructions(ctx, sess))
 	return argv
 }
 
@@ -265,12 +265,68 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 // setting is on, and the person's prompt_extra setting. The command line
 // (--append-system-prompt) and the hello endpoint (which the mod re-injects
 // into prompts) both use it, so there is a single source.
-func (m *sessionManager) instructions(ctx context.Context) string {
+func (m *sessionManager) instructions(ctx context.Context, sess *store.Session) string {
 	stored, err := m.store.Settings(ctx)
 	if err != nil {
 		stored = nil
 	}
-	return buildInstructions(settingOn(stored, "orchestrator_prompt", true), settingString(stored, "prompt_extra"))
+	text := buildInstructions(settingOn(stored, "orchestrator_prompt", true), settingString(stored, "prompt_extra"))
+	if note := relocationNote(sess); note != "" {
+		text += "\n\n" + note
+	}
+	return text
+}
+
+// relocationNote tells the agent of a session whose project folder changed that its earlier
+// conversation ran in the old folder: where the transcript is, so it can look things up. It is part
+// of the instructions text, so every way the text reaches the agent carries it.
+func relocationNote(sess *store.Session) string {
+	if sess == nil || sess.PrevDir == "" || sess.PrevClaudeSessionID == "" {
+		return ""
+	}
+	return fmt.Sprintf(`# minbox: this thread moved to a new folder
+The project's folder changed, so this session now runs in %s. It was worked on before in %s, as Claude Code session %s. That earlier conversation cannot be resumed from here, but its transcript can be read (it is JSON lines) at ~/.claude/projects/%s/%s.jsonl (under $CLAUDE_CONFIG_DIR instead of ~/.claude when that is set). If it is not there, look for ~/.claude/projects/*/%s.jsonl. Read it only when you need what was said or done before, for example when the person refers to earlier work; the files themselves are now where the project's folder points.`,
+		sess.Cwd, sess.PrevDir, sess.PrevClaudeSessionID, projectDirName(sess.PrevDir), sess.PrevClaudeSessionID, sess.PrevClaudeSessionID)
+}
+
+// relocate applies a pending folder change (the project's folder changed while the session had
+// its own cwd) before the session starts: it runs in the project's new folder. Claude Code keys a
+// conversation by its folder, so `--resume` would not find the old one there: when the old
+// conversation has a transcript, the session starts a fresh conversation (new claude_session_id)
+// and remembers the old folder and id for relocationNote. This runs once: the store clears the
+// pending move. If the new folder is gone the session starts in its old folder, the move pending.
+func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
+	if sess.Kind == store.KindShell || sess.RelocateTo == "" {
+		return
+	}
+	if sess.RelocateTo == sess.Cwd {
+		_ = m.store.RelocateSession(ctx, sess.ID, sess.Cwd, "", "", "")
+		sess.RelocateTo = ""
+		return
+	}
+	f, err := m.fsOf(sess.HostID)
+	if err != nil {
+		log.Printf("session %s (%s): folder change postponed: %v", sess.ID, sess.Name, err)
+		return
+	}
+	dir, err := resolveDirOn(ctx, f, sess.RelocateTo)
+	if err != nil {
+		log.Printf("session %s (%s): folder change postponed: %v", sess.ID, sess.Name, err)
+		return
+	}
+	prevDir, prevID, newID := "", "", sess.ClaudeSessionID
+	if sess.ClaudeSessionID != "" && f.TranscriptExists(ctx, sess.Cwd, sess.ClaudeSessionID) {
+		prevDir, prevID, newID = sess.Cwd, sess.ClaudeSessionID, newUUID()
+	}
+	if err := m.store.RelocateSession(ctx, sess.ID, dir, newID, prevDir, prevID); err != nil {
+		log.Printf("session %s (%s): folder change: %v", sess.ID, sess.Name, err)
+		return
+	}
+	log.Printf("session %s (%s): moved from %s to %s (previous conversation %q)", sess.ID, sess.Name, sess.Cwd, dir, prevID)
+	sess.Cwd, sess.RelocateTo, sess.ClaudeSessionID = dir, "", newID
+	if prevDir != "" {
+		sess.PrevDir, sess.PrevClaudeSessionID = prevDir, prevID
+	}
 }
 
 // buildInstructions assembles the instructions text from its parts.
@@ -385,6 +441,7 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 		return err
 	}
 	_ = host.Remove(ctx, sess.ID) // forget an exited terminal of the same id
+	m.relocate(ctx, sess)
 	_, err = host.Spawn(ctx, termhost.SpawnRequest{
 		ID:         sess.ID,
 		Argv:       m.argv(ctx, sess, resume),

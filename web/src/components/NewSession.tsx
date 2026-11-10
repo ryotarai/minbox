@@ -410,12 +410,14 @@ export function NewSessionDialog({
     </label>
   )
 
-  // Existing sessions keep the folder they started in; only new ones use the new folder.
+  // Existing sessions move to the new folder at their next start (a fresh conversation there, told of the old one).
   const editNote =
     mode === 'project-edit' && editing && editing.session_count > 0 ? (
       <p data-testid="project-edit-note" className="m-0 text-[12.5px] leading-snug text-subtle">
-        This project has {editing.session_count} session{editing.session_count === 1 ? '' : 's'}. They keep their current folder (their conversations
-        belong to it); new sessions start in the folder chosen here. The host cannot change.
+        This project has {editing.session_count} session{editing.session_count === 1 ? '' : 's'}. Each one starts in the new folder the next time it
+        starts (a restart, or after the server restarts); a running session is not interrupted. Claude Code ties a conversation to its folder, so the
+        session begins a fresh conversation there and is told the old folder and its Claude session id, to read the earlier transcript if it needs to.
+        The host cannot change.
       </p>
     ) : null
 

@@ -12,7 +12,8 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
 - **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one; each
   project has a main session that new threads go to by default. Give a project an icon (an emoji
   or an uploaded image); it replaces the initials on the narrow rail's tiles. Change a project's
-  folder from its menu: existing sessions keep the folder they started in, new ones use the new one.
+  folder from its menu: new sessions use the new one, and existing sessions move to it at their next start (a fresh
+  Claude conversation there, told the old folder and session id so it can read the earlier transcript).
 - **Thread**: Claude's messages with question cards (single, multiple and free-text choice),
   action items, attachments you can annotate, and guided reviews of its changes. Your reply
   reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is
