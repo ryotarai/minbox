@@ -119,6 +119,31 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const scrollRef = useRef<HTMLDivElement>(null)
   const replyRef = useRef<HTMLTextAreaElement>(null)
   const [expanded, setExpanded] = useState(false)
+  // Expanding the folded history puts the older messages ABOVE what the person is reading. Keep that
+  // content where it is on screen: remember where the first open message sits before the change and,
+  // after the render, scroll by however far it moved. (The scroll height alone would not do: it is
+  // floored at the viewport height when the folded thread was short.) Browser scroll anchoring is
+  // switched off for that frame so the two do not both correct; it comes back after, so late-loading
+  // images above are held.
+  const keep = useRef<{ node: Element; top: number } | null>(null)
+  const expandEarlier = () => {
+    const el = scrollRef.current
+    const node = el?.querySelector('[data-testid="message"]:not(button)')
+    if (el && node) {
+      keep.current = { node, top: node.getBoundingClientRect().top }
+      pinned.current = nearBottom(el) // re-read: a stale 'at the bottom' would drag the view down after the render
+      el.style.overflowAnchor = 'none'
+    }
+    setExpanded(true)
+  }
+  useLayoutEffect(() => {
+    const k = keep.current
+    const el = scrollRef.current
+    if (!k || !el || !expanded) return
+    keep.current = null
+    if (k.node.isConnected) el.scrollTop += k.node.getBoundingClientRect().top - k.top
+    requestAnimationFrame(() => requestAnimationFrame(() => (el.style.overflowAnchor = '')))
+  }, [expanded])
   const [foldAll, setFoldAll] = useState(false)
   const [firstNew, setFirstNew] = useState<string | null | undefined>(undefined)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
@@ -477,7 +502,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           <button
             type="button"
             data-testid="earlier"
-            onClick={() => setExpanded(true)}
+            onClick={expandEarlier}
             className="flex items-center gap-2.5 rounded-[9px] border border-line bg-carddim px-3 py-[9px] text-left text-[12.5px] text-muted hover:border-line2"
           >
             <span className="font-semibold text-fg2">{plural(folded.length, 'earlier message')}</span>
@@ -485,7 +510,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
             <span>{foldedSummary(folded)}</span>
           </button>
         )}
-        {!showArtifacts && compactOne && <CompactMessage m={compactOne} onClick={() => setExpanded(true)} />}
+        {!showArtifacts && compactOne && <CompactMessage m={compactOne} onClick={expandEarlier} />}
 
         {!showArtifacts && shown.map((m) => (
           <div key={m.id} className="contents">
