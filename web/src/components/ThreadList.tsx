@@ -3,6 +3,7 @@ import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '..
 import { useApp } from '../lib/app'
 import { initials, oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
+import { projectHueStyle } from '../lib/projectColor'
 import { IconPin } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
 import { useSelectedProject } from '../lib/projects'
@@ -56,13 +57,6 @@ export function useAllThreads(): Thread[] | null {
 }
 
 
-/** A stable hue (0-359) from a project id; the colours themselves live in .proj-badge (index.css). */
-export function projectHue(id: string): number {
-  let h = 0
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return h % 360
-}
-
 /** Which project a thread belongs to: its icon, or a 2-character box with a per-project colour. Shown only while the list spans all projects. */
 export function ThreadProjectBadge({ projectId, projectName }: { projectId?: string; projectName?: string }) {
   const { projects } = useApp()
@@ -74,14 +68,14 @@ export function ThreadProjectBadge({ projectId, projectName }: { projectId?: str
   const common = { 'data-testid': 'thread-project-badge', 'data-project-id': projectId ?? '', title: label, role: 'img', 'aria-label': label } as const
   if (icon?.kind === 'image') {
     return (
-      <div {...common} data-kind="image" className={cx(base, 'border border-line')}>
+      <div {...common} data-kind="image" style={projectHueStyle(projectId ?? name)} className={cx(base, 'proj-tint border border-line')}>
         <img src={icon.url} alt="" draggable={false} className="h-full w-full object-cover" />
       </div>
     )
   }
   if (icon?.kind === 'emoji') {
     return (
-      <div {...common} data-kind="emoji" className={cx(base, 'bg-chip text-[14px] leading-none')}>
+      <div {...common} data-kind="emoji" style={projectHueStyle(projectId ?? name)} className={cx(base, 'proj-tint text-[14px] leading-none')}>
         {icon.emoji}
       </div>
     )
@@ -94,7 +88,7 @@ export function ThreadProjectBadge({ projectId, projectName }: { projectId?: str
     )
   }
   return (
-    <div {...common} data-kind="initials" style={{ '--h': projectHue(projectId ?? name) } as React.CSSProperties} className={cx(base, 'proj-badge text-[10.5px] font-bold leading-none tracking-[0.02em]')}>
+    <div {...common} data-kind="initials" style={projectHueStyle(projectId ?? name)} className={cx(base, 'proj-badge text-[10.5px] font-bold leading-none tracking-[0.02em]')}>
       {initials(name)}
     </div>
   )

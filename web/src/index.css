@@ -380,3 +380,13 @@ kbd {
   background: hsl(var(--h) 45% 50% / 0.16);
   color: hsl(var(--h) 55% 28%);
 }
+
+/* Icon'd projects (emoji / image): a faint wash and ring in the same project hue as .proj-badge. */
+.proj-tint {
+  background: hsl(var(--h) 35% 50% / 0.14);
+  box-shadow: 0 0 0 1.5px hsl(var(--h) 50% 60% / 0.5);
+}
+[data-theme='light'] .proj-tint {
+  background: hsl(var(--h) 45% 50% / 0.1);
+  box-shadow: 0 0 0 1.5px hsl(var(--h) 45% 40% / 0.45);
+}
