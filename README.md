@@ -258,7 +258,9 @@ limits and what is unverified against the real Linear: [docs/linear.md](docs/lin
 **Create Linear issue** (thread header, next to *Link Linear issue*): a dialog pre-filled from the thread by
 your local coding agent (Claude Code or Pi) and Linear's own teams, states, labels and projects. It opens at
 once, the guess fills in only what you have not typed, and nothing is sent to Linear until you press Create;
-the thread is then linked to the new issue.
+the thread is then linked to the new issue. **Settings → Integrations → Linear → "Auto-fill: extra prompt"**
+takes your own instructions for that guess (for example "Write titles in English. Always add label 'agent'.
+Keep descriptions under 15 lines."); they never change the output format or the rule that ids must exist in Linear.
 
 ## Search and quick actions
 

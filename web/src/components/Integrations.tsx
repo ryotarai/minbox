@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type LinearStatus } from '../api'
 import { useApp } from '../lib/app'
+import { LinearExtraPrompt } from './LinearExtraPrompt'
 import { Button, Segmented, Switch } from './ui'
 
 // Settings › Integrations › Linear. minbox is an MCP client of Linear's remote MCP server; the
@@ -155,6 +156,7 @@ function LinearSection() {
       <Row label="Link to the thread in drafted issues" desc="Create Linear issue from a thread: end the description with a link to the minbox thread. Needs the public URL (Settings); off by default.">
         <Switch on={lin.thread_link} onChange={(v) => save({ thread_link: v })} label="Link to the thread" />
       </Row>
+      <LinearExtraPrompt value={lin.draft_extra_prompt ?? ''} onSave={(v) => save({ draft_extra_prompt: v })} />
       <p className="m-0 text-[12px] text-subtle">
         minbox registers itself with Linear for this address: <span className="mono">{st?.redirect_uri ?? '…'}</span>. A different address (another hostname) needs its own login.
       </p>
