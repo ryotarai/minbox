@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { FakeLinear } from './fake-linear'
+import { FakeSlackUser } from './fake-slack-user'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -77,6 +78,8 @@ export class Minbox {
   slackApi = new FakeSlackApi()
   /** A fake Linear (OAuth + MCP) on loopback; the server is pointed at it with MINBOX_LINEAR_MCP_URL. */
   linear = new FakeLinear()
+  /** A fake Slack for the personal (user token) integration; the server is pointed at it with MINBOX_SLACK_API_URL. */
+  slackUser = new FakeSlackUser()
   log = ''
   constructor(
     public dataDir: string,
@@ -99,9 +102,10 @@ export class Minbox {
   async start() {
     if (!this.slackApi.url) await this.slackApi.start()
     if (!this.linear.url) await this.linear.start()
+    if (!this.slackUser.url) await this.slackUser.start()
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', FAKE_LINEAR_DRAFT_HOLD: this.draftHold },
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
@@ -147,6 +151,7 @@ export class Minbox {
     await this.stop()
     await this.slackApi.close()
     await this.linear.close()
+    await this.slackUser.close()
     this.killHost()
     // Fake claude processes left behind by a killed host.
     try {

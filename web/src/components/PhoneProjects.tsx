@@ -2,8 +2,9 @@ import { useState } from 'react'
 import type { Project } from '../api'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir, useProjectStats, useSelectedProject } from '../lib/projects'
-import { IconClose, IconLinear, IconMore, IconPlus } from './icons'
+import { IconClose, IconLinear, IconMore, IconPlus, IconSlack } from './icons'
 import { useLinearStatus } from '../lib/issues'
+import { useSlackStatus } from '../lib/slack'
 import { projectHueStyle } from '../lib/projectColor'
 import { ProjectBadges, ProjectDot, ProjectIcon, ProjectMenu, RenameProject } from './ProjectRail'
 import { HostTag, cx } from './ui'
@@ -46,6 +47,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
   const { id: selected } = useSelectedProject()
   const stats = useProjectStats()
   const linear = useLinearStatus()
+  const slack = useSlackStatus()
   const [menu, setMenu] = useState<{ project: Project; anchor: HTMLElement } | null>(null)
   const [renaming, setRenaming] = useState<Project | null>(null)
   const pick = (id: string) => {
@@ -70,6 +72,18 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
         </button>
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+        {slack.available && (
+          <button
+            type="button"
+            data-testid="slack-entry"
+            aria-label="Slack"
+            onClick={() => (onClose(), navigate({ view: 'slack' }, { push: true }))}
+            className="mx-3 mb-1 mt-1 flex min-h-12 items-center gap-2 rounded-lg border-0 bg-raised px-3 text-left text-[15px] font-[650] text-fg"
+          >
+            <IconSlack size={17} className="shrink-0" />
+            <span className="flex-1">Slack</span>
+          </button>
+        )}
         {linear.available && (
           <button
             type="button"
