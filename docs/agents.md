@@ -100,6 +100,10 @@ Pi has no Task tool, so minbox ships one as a second extension, `plugin/pi/subag
 (`pi -e …/pi/minbox.ts -e …/pi/subagent.ts`; `agent.ArgvReq.ExtraExtensions`). It is based on Pi's bundled example
 (`examples/extensions/subagent`). The Pi instructions get a short `# minbox: subagents` section
 (`server.PiSubagentPrompt`, built in `buildInstructionsFor`; Claude's text is unchanged).
+It also tells Pi that a session may receive messages from several minbox threads: independent work of different
+threads goes to one `minbox_subagent` task per thread, run in parallel, each task naming its thread id. The main agent stays
+the coordinator and reports each result with `minbox_send_message` in the matching thread; `write: true` only for a thread
+that needs edits.
 
 **How it works.** `minbox_subagent({tasks: [{task, role?, model?, thinking?, tools?, cwd?, write?, context?}], max_concurrency?})`
 starts one child process per task: `pi --mode json -p --no-session -ne -nc --offline --tools <list> [--model] [--thinking]

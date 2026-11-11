@@ -76,8 +76,11 @@ func TestPiSessionSpawnsPiWithTheExtension(t *testing.T) {
 	if !strings.Contains(p, "# minbox: subagents") || !strings.Contains(p, "minbox_subagent") || !strings.Contains(p, "write: true") {
 		t.Fatalf("no subagent section in the Pi prompt: %q", p)
 	}
+	if !strings.Contains(p, "Several minbox threads") || !strings.Contains(p, "its own minbox_subagent task") || !strings.Contains(p, "matching thread") {
+		t.Fatalf("no multi-thread guidance in the Pi prompt: %q", p)
+	}
 	// Claude's text is exactly what it was: no Pi section.
-	if c := buildInstructionsFor(agent.Must(agent.Claude), true, ""); c != AgentSystemPrompt+"\n\n"+OrchestratorPrompt || strings.Contains(c, "subagent.ts") {
+	if c := buildInstructionsFor(agent.Must(agent.Claude), true, ""); c != AgentSystemPrompt+"\n\n"+OrchestratorPrompt || strings.Contains(c, "subagent.ts") || strings.Contains(c, "Several minbox threads") {
 		t.Fatal("Claude's instructions changed")
 	}
 	if !strings.Contains(p, "minbox_send_message") || strings.Contains(p, "mcp__minbox__") || strings.Contains(p, "# minbox: orchestration") {
