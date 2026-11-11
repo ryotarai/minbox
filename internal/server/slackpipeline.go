@@ -542,7 +542,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 		list = list[:l.maxCandidates]
 	}
 	// Read the threads (cache first).
-	var fresh []*slackThreadData
+	var fresh, retry []*slackThreadData
 	paused := false
 	for i, c := range list {
 		l.setStage("Reading threads", i, len(list))
@@ -551,7 +551,11 @@ func (l *slackSvc) run(ctx context.Context) error {
 		cached := l.threads[k]
 		l.mu.Unlock()
 		if cached != nil && tsCmp(c.HitTS, cached.LatestTS) <= 0 && l.now().Sub(cached.FetchedAt) < l.threadTTL {
-			continue // unchanged and recent: neither read nor judged again
+			// Unchanged and recent: not read again, and not judged again, unless the last judgement failed.
+			if it, ok := l.s.store.SlackItem(ctx, cached.Channel, cached.ThreadTS); !ok || it.Judgement == "" || it.JudgedLatestTS != cached.LatestTS {
+				retry = append(retry, cached)
+			}
+			continue
 		}
 		if paused {
 			continue
@@ -579,6 +583,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 		fresh = append(fresh, td)
 	}
 	l.trimCache()
+	fresh = append(fresh, retry...) // cached threads whose judgement failed earlier are judged again
 	if len(fresh) == 0 {
 		return nil
 	}

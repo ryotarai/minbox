@@ -271,6 +271,15 @@ gets the issue as clearly marked untrusted context in front of your request. **N
 language (Japanese or English): *Generate* drafts title, description and guesses with your local coding agent; you edit
 everything and press Create. Details: [docs/linear.md](docs/linear.md#my-issues).
 
+**Slack** (project rail, above *My issues*, and the phone's project sheet; only while your personal Slack token is
+connected): the Slack threads and DMs that **need your reply**, found with your own Slack **user token** (you create
+an internal Slack app and paste its `xoxp-…` token in *Settings → Integrations → Slack (personal)*; read-only scopes,
+never posts). A helper agent on this machine reads each candidate thread and sorts it into *Needs reply* / *Maybe*;
+rows show the last message, the reason, urgency and an unread dot for DMs. **Dismiss** (it returns when a new message
+arrives), **Snooze**, or **Start minbox thread**: the project is picked for you, the session defaults to its main
+session, and the agent gets the Slack thread as clearly marked untrusted context. Setup, scopes, the manifest, rate
+limits, privacy and what is unverified: [docs/slack-personal.md](docs/slack-personal.md).
+
 ## Search and quick actions
 
 <p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>

@@ -1041,3 +1041,37 @@ project_id, updated_at}]}`.
   the assignee defaulting to you; `regenerate` skips the kept answer. `POST /api/linear/issues/team/{teamId}/lists` = the team lists endpoint of the thread flow.
 - `POST /api/linear/issues` body `Draft` + `{submission_id?}` -> `{issue: IssueView}`; the create path of `POST /api/threads/{id}/linear/create` without a thread (same validation and errors except
   `already_linked`), idempotent per `submission_id`.
+
+## Slack (personal)
+
+The person's own Slack **user token** and the screen of threads that need their reply (design: [slack-personal.md](slack-personal.md)). The token is stored server-side and
+never returned (only `token_masked`); every error text is scrubbed of it. `MINBOX_SLACK_API_URL` (loopback http only) points the server at a fake Slack. All `/api/slack/*` calls answer 409
+`code: "not_connected"` without a token, and 502 with Slack's (scrubbed) message when nothing could be read.
+
+- `GET /api/integrations/slack-user` -> `SlackStatus`: `{connected, token_masked?, user_id?, user?, team_id?, team?, team_url?, connected_at?, search_backend: "auto"|"rts"|"legacy",
+  search_backend_used?, search_backend_note?, scopes, scopes_known, missing_scopes, optional_scopes, optional_missing, last_test?, last_test_ok, last_test_at?, diagnostics: {calls, by_method,
+  errors, rate_limited, last_error, last_error_method?, last_error_at, last_call_at, rate_limited_until, blocked?: {method: seconds}}, days, max_candidates, unverified: [string],
+  refresh: {running, stage?, done, total, started_at?, finished_at?, calls, partial, wait_until?, error?}}`.
+- `PUT /api/integrations/slack-user` body `{token?: "xoxp-…", search_backend?: "auto"|"rts"|"legacy"}` -> `{result?: {ok, message, error?, code?, missing_scopes?, search?}, status}`. A token is checked
+  with `auth.test` first (and one search call); one that fails is **not** stored (`result.ok` false, `result.error` says what to do). 400: not a user token (a bot `xoxb-`, app `xapp-` or rotation
+  `xoxe.` token is refused with its own message, before any call).
+- `POST /api/integrations/slack-user/test` -> `{result, status}` (re-checks the token, scopes and the search; Auto reports a fallback to the legacy search). `POST .../disconnect` -> `SlackStatus`
+  (deletes the token and every stored judgement, snippet, dismissal and link). `POST .../clear-cache` -> `SlackStatus` (deletes judgements and snippets).
+- `GET /api/slack/threads[?refresh=1][&cached=1]` -> `{items: SlackItem[], counts: {needs_reply, maybe, dismissed}, hidden, notes: [string], fetched_at, refresh, user: {id, name}, team,
+  backend: "rts"|"legacy", backend_note}`. A plain GET refreshes unless one ran in the last 15 s; `refresh=1` forces one; `cached=1` never calls Slack. A refresh blocks until the pipeline ends
+  (search → read threads → names → helper judgement) and publishes SSE `{type: "slack"}` at each stage so a client can re-read `cached=1` for partial results; a rate limit ends it early with
+  `refresh.partial` and `refresh.wait_until`. `SlackItem` = `{id: "<channel>:<thread_ts>" ("D…:dm" for a DM conversation), channel, thread_ts, group: "needs_reply"|"maybe"|"dismissed",
+  state: "active"|"dismissed"|"snoozed"|"muted", snooze_until?, reappeared?, kind: "channel"|"dm"|"group", label, people, last_ts, last_at, last_author, last_is_me, snippet, messages, unread (DMs
+  only), permalink, judgement: {needs_reply: "yes"|"maybe"|"no", reason, urgency: "high"|"normal"|"low", summary, suggested_next_step?, source: "llm"|"rule", latest_ts}|null, unjudged, stale?,
+  minbox_thread: {thread_id, session_id, subject, status, project_id, updated_at}|null}`. Threads judged "no" are counted in `hidden`, not listed. A dismissed item returns (`reappeared`) when
+  a message from someone else newer than the one it was dismissed at arrives, unless muted; a snooze ends at its time.
+- `GET /api/slack/threads/{id}[?refresh=1]` -> `{id, channel, thread_ts, kind, label, permalink, messages: [{ts, at, user_id, name, is_me, is_bot, html, files: [{name, url?}], attachments: [{name, url?}]}],
+  earlier, note, fetched_at, team, me, judgement?, judgement_stale?, state?, snooze_until?, minbox_thread?}`. `html` is Slack mrkdwn rendered to safe HTML (everything escaped; only b, i, s, code, pre,
+  blockquote, a (http/https/mailto), br and span.mention are produced; mentions resolved; emoji codes left as text). Messages are cached 2 min in memory.
+- `POST /api/slack/threads/{id}/state` body `{action: "dismiss"|"mute"|"snooze"|"restore", until?}` (snooze: a future time, at most 90 days) -> `{ok: true}`.
+- `POST /api/slack/threads/{id}/project-suggestion` -> `{project_id, source: "linked"|"name"|"only"|"llm"|"none", reason}` (a minbox thread already started from it; a project named like the channel; the
+  only project; else the helper, with only existing project ids accepted).
+- `POST /api/slack/threads/{id}/thread/preview` and `POST /api/slack/threads/{id}/thread` take the body of the My issues equivalents (`{target, subject?, instruction?}`) and answer like them
+  (`{handoff, message, text, bytes, subject, agent, project, warnings}` / 201 `{thread, session, link_error?}`). The handoff `<slack_thread_handoff source="untrusted-external" thread="…">` is composed
+  by the server once, stored in `thread_handoffs` (kind `slack_thread`) and prepended to the first message by `GET /api/agent/pending` exactly once; the item records `minbox_thread_id`.
+

@@ -434,9 +434,12 @@ func TestSlackJudgeFailureDegradesToUnjudged(t *testing.T) {
 	}
 	// the next refresh tries again (nothing was stored as judged) and the helper now works
 	e.judgeFn = nil
-	e.advance(30 * time.Second)
-	e.advance(10 * time.Minute) // the thread cache expires so the unjudged threads are looked at again
+	e.advance(30 * time.Second) // still within the thread cache: the unjudged threads are judged again without being read again
+	repliesBefore := e.f.count("conversations.replies")
 	_, obj = e.list("refresh=1")
+	if e.f.count("conversations.replies") != repliesBefore {
+		t.Errorf("threads were read again")
+	}
 	if len(idsOf(obj, "needs_reply")) != 1 {
 		t.Errorf("after the retry: %v", obj["items"])
 	}
