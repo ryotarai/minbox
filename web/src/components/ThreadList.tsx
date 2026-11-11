@@ -56,8 +56,8 @@ export function useAllThreads(): Thread[] | null {
 
 export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean }) {
   const { settings } = useApp()
-  const attention = ['stopped', 'holding', 'waiting'].includes(t.section)
-  const strong = (attention || t.unread > 0) && settings.list.highlight_subject
+  // Unread is shown by a bold subject only; no row background or border tint.
+  const strong = t.unread > 0 && settings.list.highlight_subject
   return (
     <div
       role="button"
@@ -71,13 +71,12 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         'flex w-full flex-col gap-1 rounded-[9px] border px-3 text-left',
         phone ? 'min-h-16 py-3' : 'py-2.5',
         focused ? 'border-line2 bg-raised' : 'border-transparent hover:bg-raised/60',
-        attention && 'bg-wait/5',
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
         {t.unread > 0 && <span aria-label="Unread" className="h-[7px] w-[7px] shrink-0 rounded-full bg-wait" />}
         {t.pinned_at && <IconPin size={12} className="shrink-0 text-muted" />}
-        <span title={t.subject} className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'text-fg2')}>{t.subject}</span>
+        <span title={t.subject} className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'font-normal text-fg2')}>{t.subject}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
         {t.name && <span className="mono shrink-0 rounded-[5px] border border-linestrong px-1.5 text-[11px] leading-[18px] text-fg2">{t.name}</span>}

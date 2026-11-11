@@ -76,7 +76,7 @@ Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through S
 
 **Row** (two lines): line 1 is the subject only (full width; an unread dot and a pin may precede it). Line 2 is the
 session name chip, `You:`, the preview (truncating, takes the remaining width), then on the right the Stopped /
-Holds-up / `?n` badges, the status badge and the time. No attachment count in the row. Waiting rows keep the amber tint. Rows carry no session or project chip
+Holds-up / `?n` badges, the status badge and the time. No attachment count in the row. Unread is shown by a bold subject (plus the small dot) and nothing else: no row background, border or accent tint; read rows are normal weight. Only the selected/focused and hover rows change background; the Needs action / `?n` badges keep their own colours. Rows carry no session or project chip
 (the session lives in the thread header and the terminal; group-by-session keeps its group headers).
 
 **Width bands** (`lib/app.tsx`; purely width-based, so touch tablets, foldables and small desktop windows alike;
