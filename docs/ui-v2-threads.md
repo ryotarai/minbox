@@ -283,3 +283,16 @@ thread and reply). It opens a modal (90vw x 90vh, full screen on a phone) with a
   `<name>-annotated.png` at the image's natural resolution. The background stays in the scene, so Edit keeps working.
   Images only known from a reloaded draft (no local copy) have no Annotate.
 - Tests: `web/e2e/sketch.spec.ts`.
+
+## Markdown rendering rules (message bodies)
+
+`renderMarkdown` (`web/src/lib/markdown.ts`: marked with GFM, then DOMPurify) takes `{ breaks }`, chosen by author kind:
+
+- User messages (`message.author === 'user'`): `breaks: true`. A single newline is a `<br>`, as in a GitHub comment;
+  a blank line is still a paragraph break (no double `<br>`), CRLF is normalised, and code (fenced or inline) is
+  untouched. Breaks apply inside list items and blockquotes too.
+- Agent messages: CommonMark-strict (a single newline is a soft break, i.e. a space), so hard-wrapped prose stays one
+  paragraph. Attachments and the question-card prose use the same strict mode.
+- GFM as in marked: fenced code with a language, tables, task lists (checkboxes rendered disabled), `~~strike~~`,
+  bare-URL autolinks, nested lists, blockquotes, rules, two-trailing-space / backslash hard breaks. Raw HTML is
+  sanitised as before. Not supported: emoji shortcodes, footnotes, alerts (`> [!NOTE]`), `@mention`/`#issue` links.

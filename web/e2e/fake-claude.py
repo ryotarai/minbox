@@ -218,7 +218,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
     elif line.startswith("say "):
-        body = {"body": line[4:]}
+        body = {"body": line[4:].replace("\\n", "\n")}  # a literal \n types a line break
         if last_thread:
             body["thread_id"] = last_thread
         else:

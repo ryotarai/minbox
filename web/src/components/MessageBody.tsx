@@ -95,7 +95,7 @@ function MarkdownPart({
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const html = useMemo(() => renderMarkdown(text), [text])
+  const html = useMemo(() => renderMarkdown(text, { breaks: message.author === 'user' }), [text, message.author])
   const files = message.attachments ?? []
   const inline = message.inline_images ?? []
   useLayoutEffect(() => {

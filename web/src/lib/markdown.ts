@@ -3,9 +3,13 @@ import DOMPurify from 'dompurify'
 
 marked.setOptions({ gfm: true, breaks: false })
 
-/** Renders Markdown to sanitized HTML. */
-export function renderMarkdown(src: string): string {
-  const html = marked.parse(src, { async: false }) as string
+/**
+ * Renders Markdown to sanitized HTML. With `breaks` a single newline becomes a
+ * <br> (GitHub-comment behaviour; code blocks are untouched). Used for text a
+ * person typed; agent prose stays CommonMark-strict.
+ */
+export function renderMarkdown(src: string, opts: { breaks?: boolean } = {}): string {
+  const html = marked.parse(src.replace(/\r\n?/g, '\n'), { async: false, breaks: !!opts.breaks }) as string
   return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] })
 }
 
