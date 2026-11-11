@@ -99,6 +99,8 @@ type Server struct {
 
 	// lin is the Linear integration (see linear.go).
 	lin *linearSvc
+	// slack is the personal Slack integration (slackpersonal.go).
+	slack *slackSvc
 }
 
 // New builds a server. web holds the built frontend (index.html at its root).
@@ -128,6 +130,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		},
 	}
 	s.lin = newLinearSvc(s)
+	s.slack = newSlackSvc(s)
 	s.poller = notify.NewPoller(st, slackInbound{s})
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runSuggest)
@@ -225,6 +228,17 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/integrations/linear/callback", s.linearCallback)
 	mux.HandleFunc("POST /api/integrations/linear/disconnect", s.linearDisconnect)
 	mux.HandleFunc("POST /api/integrations/linear/test", s.linearTest)
+	mux.HandleFunc("GET /api/integrations/slack-user", s.slackUserStatus)
+	mux.HandleFunc("PUT /api/integrations/slack-user", s.slackUserPut)
+	mux.HandleFunc("POST /api/integrations/slack-user/test", s.slackUserTest)
+	mux.HandleFunc("POST /api/integrations/slack-user/disconnect", s.slackUserDisconnect)
+	mux.HandleFunc("POST /api/integrations/slack-user/clear-cache", s.slackUserClearCache)
+	mux.HandleFunc("GET /api/slack/threads", s.slackThreadsList)
+	mux.HandleFunc("GET /api/slack/threads/{id}", s.slackThreadGet)
+	mux.HandleFunc("POST /api/slack/threads/{id}/state", s.slackThreadState)
+	mux.HandleFunc("POST /api/slack/threads/{id}/project-suggestion", s.slackProjectSuggestion)
+	mux.HandleFunc("POST /api/slack/threads/{id}/thread/preview", s.slackThreadPreview)
+	mux.HandleFunc("POST /api/slack/threads/{id}/thread", s.slackThreadStart)
 	mux.HandleFunc("POST /api/threads/{id}/read", s.markRead)
 	mux.HandleFunc("POST /api/threads/{id}/unread", s.markUnread)
 	mux.HandleFunc("POST /api/threads/{id}/reply", s.reply)

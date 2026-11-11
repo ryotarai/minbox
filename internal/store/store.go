@@ -494,6 +494,9 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(handoffSchema); err != nil {
 		return err
 	}
+	if _, err := db.Exec(slackPersonalSchema); err != nil {
+		return err
+	}
 	for _, c := range addedColumns {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
 		if err != nil {
