@@ -3,7 +3,7 @@ import { api, type LinearEvent, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
 import { LinearCreateDialog } from './LinearCreate'
-import { IconPlus, IconSparkle } from './icons'
+import { IconLinear } from './icons'
 import { Button, cx } from './ui'
 
 // The Linear issue linked to a thread: a chip in the thread header (identifier, title, state,
@@ -67,8 +67,8 @@ export function LinearBar({ thread, compact = false }: { thread: Thread; compact
     return (
       <div className={cx('flex items-center gap-2 text-[12px]', compact ? 'min-w-0' : 'flex-wrap')} data-testid={`linear-bar${sx}`}>
         {!open ? (
-          <button type="button" data-testid={`linear-link-open${sx}`} onClick={() => setOpen(true)} className={actionCls}>
-            <IconPlus size={13} />
+          <button type="button" data-testid={`linear-link-open${sx}`} onClick={() => setOpen(true)} className={actionCls} title="Link Linear issue">
+            <IconLinear size={14} />
             {compact ? 'Link' : 'Link Linear issue'}
           </button>
         ) : (
@@ -94,8 +94,8 @@ export function LinearBar({ thread, compact = false }: { thread: Thread; compact
           </>
         )}
         {!open && connected && (
-          <button type="button" data-testid={`linear-create-open${sx}`} onClick={() => setCreating(true)} className={actionCls}>
-            <IconSparkle size={13} />
+          <button type="button" data-testid={`linear-create-open${sx}`} onClick={() => setCreating(true)} className={actionCls} title="Create Linear issue">
+            <IconLinear size={14} />
             {compact ? 'Create' : 'Create Linear issue'}
           </button>
         )}
@@ -116,8 +116,9 @@ export function LinearBar({ thread, compact = false }: { thread: Thread; compact
         target="_blank"
         rel="noreferrer"
         className="flex max-w-full items-center gap-1.5 rounded-full border border-line2 bg-raised px-2.5 py-0.5 text-fg2 no-underline hover:border-linestrong"
-        title={link.title}
+        title={`Linear: ${link.identifier} ${link.title}`}
       >
+        <IconLinear size={13} className="shrink-0 text-subtle" />
         <span className="font-semibold">{link.identifier}</span>
         <span className={cx('truncate', compact && 'hidden sm:inline')}>{link.title}</span>
         {link.state && (

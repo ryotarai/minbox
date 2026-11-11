@@ -1,5 +1,5 @@
 // Line icons on a 16×16 grid, stroked with currentColor.
-import type { SVGProps } from 'react'
+import { useId, type SVGProps } from 'react'
 
 type P = SVGProps<SVGSVGElement> & { size?: number }
 
@@ -219,3 +219,22 @@ export const IconLink = (p: P) => (
     <path d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1" />
   </Svg>
 )
+
+/** A simple geometric take on Linear's mark: a solid disc cut by diagonal stripes (not the official artwork). */
+export function IconLinear(p: P) {
+  const mid = 'linear-mask-' + useId().replace(/:/g, '')
+  return (
+    <Svg fill="currentColor" stroke="none" {...p}>
+      <mask id={mid} maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+        <rect width="16" height="16" fill="white" />
+        <g stroke="black" strokeWidth="1.1" strokeLinecap="butt">
+          <path d="M-1 6 10 17" />
+          <path d="M-1 2.5 13.5 17" />
+          <path d="M2.5 -1 17 13.5" />
+          <path d="M6 -1 17 10" />
+        </g>
+      </mask>
+      <circle cx="8" cy="8" r="7.2" mask={`url(#${mid})`} />
+    </Svg>
+  )
+}

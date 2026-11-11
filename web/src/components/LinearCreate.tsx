@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { IconLinear } from './icons'
 import { api, type LinearDraft, type LinearMeta, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { Button, Modal, cx } from './ui'
@@ -129,7 +130,10 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
   return (
     <Modal label="Create Linear issue" onClose={onClose} className="flex max-h-[90vh] w-[min(620px,100%)] flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
-        <b className="text-[15px] font-[650]">Create Linear issue</b>
+        <b className="inline-flex items-center gap-1.5 text-[15px] font-[650]">
+          <IconLinear size={16} />
+          Create Linear issue
+        </b>
         {drafting && (
           <span data-testid="linear-create-drafting" className="text-[12px] text-subtle">
             Drafting…

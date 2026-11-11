@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type LinearStatus } from '../api'
+import { IconLinear } from './icons'
 import { useApp } from '../lib/app'
 import { Button, Segmented, Switch } from './ui'
 
@@ -80,7 +81,10 @@ function LinearSection() {
   const who = st?.user ? st.user.name || st.user.email : ''
   return (
     <section className="flex flex-col gap-3" data-testid="linear-section">
-      <h2 className="m-0 text-[14px] font-[650] text-muted">Linear</h2>
+      <h2 className="m-0 flex items-center gap-1.5 text-[14px] font-[650] text-muted">
+        <IconLinear size={15} />
+        Linear
+      </h2>
       <p className="m-0 text-[12.5px] text-subtle">
         Link a thread to a Linear issue (type ENG-123 or paste its URL in the thread header). minbox moves the issue to In Progress when work starts, keeps one progress comment up to date, and
         passes new comments on the issue to the agent with your next message. Issues of the workspace you log in to can be linked.
