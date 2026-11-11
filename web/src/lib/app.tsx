@@ -15,7 +15,7 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox'
+export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox' | 'issues'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -30,6 +30,8 @@ export type Route = {
   tab: 'inbox' | 'terminal'
   /** Settings section. */
   ss: string
+  /** My issues: the selected issue's identifier (ENG-123). */
+  issue: string | null
 }
 
 function readRoute(): Route {
@@ -39,10 +41,11 @@ function readRoute(): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'board', 'review', 'inbox'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'board', 'review', 'inbox', 'issues'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
+    issue: p.get('issue'),
   }
 }
 
@@ -55,6 +58,7 @@ function routeHash(r: Route): string {
   if (r.r) p.set('r', r.r)
   if (r.tab !== 'inbox') p.set('tab', r.tab)
   if (r.view === 'settings' && r.ss !== 'general') p.set('ss', r.ss)
+  if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
 }

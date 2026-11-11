@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconLinear } from './icons'
-import { api, type LinearDraft, type LinearListInfo, type LinearMeta, type LinearTeam, type LinearTeamLists, type Thread } from '../api'
+import { api, type IssueSummary, type LinearDraft, type LinearListInfo, type LinearMeta, type LinearTeam, type LinearTeamLists, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { Button, Modal, cx } from './ui'
 
@@ -22,8 +22,20 @@ function newSubmissionId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
+/**
+ * With a thread: "Create Linear issue" from it (prefill and draft come from the thread, Create links it).
+ * Without one (the My issues screen): "New issue", written in plain language: a description box and a
+ * Generate button ask the helper agent for the title, description and guesses; Create makes the issue
+ * and hands it to onCreated. Both share the lists, the team lazy loading and the never-overwrite-touched rule.
+ */
+export function LinearCreateDialog({ thread, onClose, onCreated }: { thread?: Thread; onClose: () => void; onCreated?: (issue: IssueSummary) => void }) {
   const { toast, navigate } = useApp()
+  const nl = !thread
+  const threadId = thread?.id ?? ''
+  const [plain, setPlain] = useState('')
+  const plainRef = useRef(plain)
+  plainRef.current = plain
+  const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null)
   const [form, setForm] = useState<LinearDraft>(EMPTY)
   const formRef = useRef(form)
   formRef.current = form
@@ -87,7 +99,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
       if (!refresh && (cur?.status === 'loading' || cur?.status === 'done')) return
       setTeamInfo(id, { status: 'loading', warnings: [], lists: [], team: cur?.team })
       try {
-        const r = await api.linearTeamLists(thread.id, id, refresh)
+        const r = await (nl ? api.issueTeamLists(id, refresh) : api.linearTeamLists(threadId, id, refresh))
         if (closed.current) return
         setTeamInfo(id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
         // The team's default state, unless the person (or the draft) already chose one.
@@ -102,7 +114,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
         setTeamInfo(id, { status: 'error', warnings: [], lists: [], error: e instanceof Error ? e.message : String(e) })
       }
     },
-    [thread.id, setTeamInfo],
+    [threadId, nl, setTeamInfo],
   )
   const gotTeamLists = (r: LinearTeamLists) => setTeamInfo(r.team.id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
 
@@ -111,11 +123,17 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     let fallback: LinearDraft | undefined
     let helper = false
     try {
-      const r = await api.linearDraft(thread.id, 'meta')
+      const r = await (nl ? api.issueDraft({ stage: 'meta' }) : api.linearDraft(threadId, 'meta'))
       if (closed.current) return
       metaRef.current = r.meta ?? null
       setMeta(r.meta ?? null)
       fallback = r.fallback
+      if (nl) {
+        // Plain-language mode: only the certain defaults (me, a lone team); the draft comes when asked for.
+        setLlmAvailable(r.llm_available === true)
+        if (fallback) apply({ team_id: fallback.team_id, assignee_id: fallback.assignee_id, state_id: fallback.state_id })
+        return
+      }
       // With a helper agent the helper-derived fields stay empty ("Drafting…") until its draft
       // arrives, so nothing flashes; only the certain defaults (team, assignee, state) go in now.
       helper = r.llm_available === true
@@ -133,7 +151,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     try {
       // A team already selected (by the person, or the project-named guess): the draft is made for it, in one step.
       const chosen = formRef.current.team_id
-      const r = await api.linearDraft(thread.id, 'llm', false, chosen)
+      const r = await api.linearDraft(threadId, 'llm', false, chosen)
       if (closed.current) return
       if (r.team_lists) gotTeamLists(r.team_lists) // the drafted team's lists came with the draft
       if (r.draft) apply(r.draft)
@@ -147,10 +165,31 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
       setNote('Could not draft with the helper agent (' + (e instanceof Error ? e.message : String(e)) + '): a basic draft is shown.')
     }
     if (!closed.current) setDrafting(false)
-  }, [thread.id, apply])
+  }, [threadId, nl, apply])
   useEffect(() => {
     void load()
   }, [load])
+
+  // Plain-language mode: Generate asks the helper for a draft of what was written. It fills only the
+  // fields the person has not touched, so regenerating never overwrites their edits.
+  const generate = async () => {
+    const text = plainRef.current.trim()
+    if (!text || drafting || !meta) return
+    setDrafting(true)
+    setNote('')
+    try {
+      const chosen = touched.current.has('team_id') ? formRef.current.team_id : ''
+      const r = await api.issueDraft({ stage: 'llm', text, team_id: chosen || undefined, regenerate: true })
+      if (closed.current) return
+      if (r.team_lists) gotTeamLists(r.team_lists)
+      if (r.draft) apply(r.draft)
+      else setNote(r.note ?? 'Could not draft this: fill in the fields yourself.')
+    } catch (e) {
+      if (!closed.current) setNote('Could not draft with the helper agent (' + (e instanceof Error ? e.message : String(e)) + ').')
+    } finally {
+      if (!closed.current) setDrafting(false)
+    }
+  }
   // Whatever team is selected (by the person, the basic prefill or the draft) gets its lists. A
   // team only guessed while the draft is pending waits for the draft (which usually decides it).
   useEffect(() => {
@@ -165,7 +204,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
   const reloadLists = async () => {
     setReloading(true)
     try {
-      const r = await api.linearDraft(thread.id, 'meta', true)
+      const r = await (nl ? api.issueDraft({ stage: 'meta', refresh: true }) : api.linearDraft(threadId, 'meta', true))
       if (closed.current) return
       metaRef.current = r.meta ?? null
       setMeta(r.meta ?? null)
@@ -216,8 +255,15 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     setBusy(true)
     setErr('')
     try {
-      const link = await api.createLinearIssue(thread.id, { ...form, title: form.title.trim(), submission_id: submission.current })
-      toast(`Created ${link.identifier}`)
+      const body = { ...form, title: form.title.trim(), submission_id: submission.current }
+      if (nl) {
+        const r = await api.createIssue(body)
+        toast(`Created ${r.issue.identifier}`)
+        onCreated?.(r.issue)
+      } else {
+        const link = await api.createLinearIssue(threadId, body)
+        toast(`Created ${link.identifier}`)
+      }
       onClose()
     } catch (e) {
       const status = (e as { status?: number }).status
@@ -229,11 +275,11 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
 
   const label = 'flex flex-col gap-1 text-[12px] text-subtle'
   return (
-    <Modal label="Create Linear issue" onClose={onClose} className="flex max-h-[90vh] w-[min(620px,100%)] flex-col gap-3 overflow-y-auto p-4">
+    <Modal label={nl ? 'New Linear issue' : 'Create Linear issue'} onClose={onClose} className="flex max-h-[90vh] w-[min(620px,100%)] flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
         <b className="inline-flex items-center gap-1.5 text-[15px] font-[650]">
           <IconLinear size={16} />
-          Create Linear issue
+          {nl ? 'New Linear issue' : 'Create Linear issue'}
         </b>
         {drafting && (
           <span data-testid="linear-create-drafting" className="text-[12px] text-subtle">
@@ -258,6 +304,36 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
             <span data-testid="linear-create-loading" className="text-[12px] text-subtle">
               Loading Linear's teams and labels…
             </span>
+          )}
+          {nl && (
+            <div className="flex flex-col gap-1.5">
+              <label className={label}>
+                Describe the issue in plain language
+                <textarea
+                  data-testid="linear-create-plain"
+                  autoFocus
+                  value={plain}
+                  rows={5}
+                  placeholder="e.g. Safariでログインすると500エラーになる。再現手順と原因調査をしたい / Login returns a 500 on Safari; find out why"
+                  onChange={(e) => setPlain(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault()
+                      void generate()
+                    }
+                  }}
+                  className="rounded-md border border-linestrong bg-sunken p-2.5 text-[13px] text-fg outline-none focus:border-accent"
+                />
+              </label>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="primary" data-testid="linear-create-generate" disabled={!plain.trim() || drafting || !meta || llmAvailable === false} onClick={() => void generate()}>
+                  {drafting ? 'Drafting…' : 'Generate'}
+                </Button>
+                <span className="text-[11.5px] text-subtle">
+                  {llmAvailable === false ? 'No coding agent is installed to draft this: fill in the fields yourself.' : '⌘/Ctrl+Enter generates a title, description and guesses; you can edit everything.'}
+                </span>
+              </div>
+            </div>
           )}
           {note && (
             <span data-testid="linear-create-note" className="text-[12px] text-subtle">

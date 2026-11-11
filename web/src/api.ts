@@ -488,6 +488,58 @@ export type ThreadLink = {
   syncing: boolean
 }
 
+/** A thread linked to a Linear issue (the My issues screen shows them on the issue). */
+export type IssueThreadRef = { thread_id: string; session_id: string; subject: string; status: string; project_id: string; updated_at: string }
+
+/** A Linear issue as the My issues screen shows it (the detail adds the description). */
+export type IssueSummary = {
+  id: string
+  identifier: string
+  title: string
+  url: string
+  state: string
+  /** backlog | unstarted | started | completed | canceled | triage */
+  state_type: string
+  /** 0 none, 1 urgent, 2 high, 3 medium, 4 low */
+  priority: number
+  priority_name: string
+  team_id: string
+  team_key: string
+  team_name: string
+  project: string
+  labels: string[]
+  assignee: string
+  estimate?: string
+  due_date?: string
+  created_at: string | null
+  updated_at: string | null
+  description?: string
+  threads: IssueThreadRef[]
+}
+
+export type IssueListResult = {
+  /** null: nothing cached (cached=1 only). */
+  issues: IssueSummary[] | null
+  user?: { id: string; name: string; email: string }
+  fetched_at?: string
+  cached?: boolean
+  stale?: boolean
+  closed_count?: number
+  warnings?: string[]
+}
+
+export type IssueComment = { id: string; author: string; body: string; url: string; created_at: string | null }
+export type IssueDetailResult = { issue: IssueSummary; comments: IssueComment[]; comments_total: number; comments_error?: string; fetched_at: string }
+
+export type IssueThreadRequest = {
+  target: { kind: 'session' | 'new_session'; session_id?: string; project_id?: string; agent?: string; name?: string }
+  subject?: string
+  instruction?: string
+}
+export type IssueThreadPreview = { handoff: string; message: string; text: string; bytes: number; subject: string; agent: string; project: string; warnings: string[] }
+/** Which minbox project to start the thread in (source: linked | name | only | llm | none). */
+export type ProjectSuggestion = { project_id: string; source: 'linked' | 'name' | 'only' | 'llm' | 'none'; reason: string }
+
 /** Something that happened on the linked issue: a comment, or a compact change (state, title, assignee). */
 export type LinearEvent = {
   id: string
@@ -787,6 +839,17 @@ export const api = {
   linearTeamLists: (threadId: string, teamId: string, refresh = false) =>
     call<LinearTeamLists>('POST', `/api/threads/${threadId}/linear/team/${encodeURIComponent(teamId)}/lists`, refresh ? { refresh: true } : {}),
   createLinearIssue: (threadId: string, body: LinearDraft & { submission_id: string }) => call<ThreadLink>('POST', `/api/threads/${threadId}/linear/create`, body),
+  issuesList: (opts: { closed?: boolean; refresh?: boolean; cached?: boolean } = {}) =>
+    call<IssueListResult>('GET', `/api/linear/issues?assignee=me${opts.closed ? '&closed=1' : ''}${opts.refresh ? '&refresh=1' : ''}${opts.cached ? '&cached=1' : ''}`),
+  issueGet: (ident: string, refresh = false) => call<IssueDetailResult>('GET', `/api/linear/issues/${encodeURIComponent(ident)}${refresh ? '?refresh=1' : ''}`),
+  issueThreadPreview: (ident: string, req: IssueThreadRequest) => call<IssueThreadPreview>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/thread/preview`, req),
+  issueStartThread: (ident: string, req: IssueThreadRequest) =>
+    call<{ thread: Thread; session: Session; link_error?: string }>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/thread`, req),
+  issueProjectSuggestion: (ident: string) => call<ProjectSuggestion>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/project-suggestion`),
+  issueDraft: (body: { stage: 'meta' | 'llm'; text?: string; team_id?: string; refresh?: boolean; regenerate?: boolean }) =>
+    call<LinearDraftResult>('POST', '/api/linear/issues/draft', body),
+  issueTeamLists: (teamId: string, refresh = false) => call<LinearTeamLists>('POST', `/api/linear/issues/team/${encodeURIComponent(teamId)}/lists`, refresh ? { refresh: true } : {}),
+  createIssue: (body: LinearDraft & { submission_id: string }) => call<{ issue: IssueSummary }>('POST', '/api/linear/issues', body),
   unlinkLinear: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/linear`),
   refreshLinear: (threadId: string, force = false) =>
     call<{ started: boolean; skipped?: string }>('POST', `/api/threads/${threadId}/linear/refresh${force ? '?force=1' : ''}`),

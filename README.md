@@ -262,6 +262,15 @@ the thread is then linked to the new issue. **Settings → Integrations → Line
 takes your own instructions for that guess (for example "Write titles in English. Always add label 'agent'.
 Keep descriptions under 15 lines."); they never change the output format or the rule that ids must exist in Linear.
 
+**My issues** (project rail, above *All projects*, and the phone's project sheet; only while Linear is connected):
+the Linear issues **assigned to you**, grouped by workflow state, with search, *Show closed* and Refresh. Pick one to
+read it (description as Markdown, comments, the minbox threads already linked) and press **Start thread**: the project
+is picked for you (a thread already linked to the issue, a project named like the Linear project or team, else the helper
+agent), the session defaults to that project's main session, and the new thread is linked to the issue at once. The agent
+gets the issue as clearly marked untrusted context in front of your request. **New issue** writes an issue from plain
+language (Japanese or English): *Generate* drafts title, description and guesses with your local coding agent; you edit
+everything and press Create. Details: [docs/linear.md](docs/linear.md#my-issues).
+
 ## Search and quick actions
 
 <p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>
