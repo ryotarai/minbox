@@ -285,6 +285,9 @@ export type Thread = {
   message_count?: number
   attachment_count?: number
   last_agent_at?: string | null
+  /** The linked Linear issue (GET /api/threads/{id} only). */
+  linear?: ThreadLink
+  linear_events?: LinearEvent[]
 }
 
 export type Card = {
@@ -333,7 +336,60 @@ export type Settings = {
   public_url: string
   /** The agent a new session gets when nothing else says ('' : the installed one, Claude Code if both). */
   default_agent: AgentKind | ''
+  linear: LinearSettings
   list: ListOptions
+}
+
+/** Settings › Integrations › Linear. Comments of everybody reach the agent unless an allow-list is set. */
+export type LinearSettings = {
+  author_filter: 'everyone' | 'allow_list'
+  /** Linear names, emails or ids; comma or line separated. Only used with 'allow_list'. */
+  allowed_authors: string
+  /** Put the latest agent message in the progress comment (off: only subject and status). */
+  include_body: boolean
+}
+
+export type LinearStatus = {
+  mcp_url: string
+  connected: boolean
+  needs_login: boolean
+  user?: { id: string; name: string; email: string }
+  connected_at?: string
+  last_error?: string
+  /** What Connect registers with Linear from the address this browser uses. */
+  redirect_uri: string
+  rate_limited_for?: number
+}
+
+/** A thread's link to one Linear issue. */
+export type ThreadLink = {
+  thread_id: string
+  issue_id: string
+  identifier: string
+  url: string
+  title: string
+  state: string
+  state_type: string
+  assignee: string
+  last_synced_at: string | null
+  last_error: string
+  last_error_at: string | null
+  include_body: boolean | null
+  has_progress_comment: boolean
+  syncing: boolean
+}
+
+/** Something that happened on the linked issue: a comment, or a compact change (state, title, assignee). */
+export type LinearEvent = {
+  id: string
+  kind: 'comment' | 'state' | 'title' | 'assignee'
+  author: string
+  body: string
+  url: string
+  /** Not passed to the agent (the author filter). */
+  filtered: boolean
+  delivered: boolean
+  created_at: string
 }
 
 /** Drafted replies for a thread (the server caches them per last message). */
@@ -354,6 +410,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reply_suggestions: true,
   public_url: '',
   default_agent: '',
+  linear: { author_filter: 'everyone', allowed_authors: '', include_body: false },
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
 
@@ -438,7 +495,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -609,6 +666,14 @@ export const api = {
   storage: () => call<Storage>('GET', '/api/storage'),
   clearScratch: () => call<{ removed: number }>('POST', '/api/storage/clear-scratch'),
   about: () => call<About>('GET', '/api/about'),
+  linearStatus: () => call<LinearStatus>('GET', '/api/integrations/linear'),
+  linearLogin: () => call<{ url: string; redirect_uri: string }>('POST', '/api/integrations/linear/login'),
+  linearDisconnect: () => call<LinearStatus>('POST', '/api/integrations/linear/disconnect'),
+  linearTest: () => call<{ ok: boolean; error?: string; user?: { name: string; email: string }; tools?: string[] }>('POST', '/api/integrations/linear/test'),
+  linkLinear: (threadId: string, issue: string) => call<ThreadLink>('PUT', `/api/threads/${threadId}/linear`, { issue }),
+  unlinkLinear: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/linear`),
+  refreshLinear: (threadId: string, force = false) =>
+    call<{ started: boolean; skipped?: string }>('POST', `/api/threads/${threadId}/linear/refresh${force ? '?force=1' : ''}`),
 }
 
 /** Uploads a pasted image to the session's scratch area; answers its path. */

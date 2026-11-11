@@ -245,6 +245,16 @@ Secrets stay on the server and are shown masked. Browser notifications, a sound 
 count are separate settings under **Settings → General**. Format and retry rules:
 [docs/api-contract.md](docs/api-contract.md) ("Notifications").
 
+## Linear
+
+Link a thread to a Linear issue (`ENG-123` or an issue URL, in the thread header). Log in once under
+**Settings → Integrations → Linear → Connect** (OAuth through Linear's remote MCP server; the minbox server
+does the login and keeps the tokens, the agent gets no Linear tools). When the thread starts working,
+minbox moves a backlog/todo issue to In Progress and keeps one progress comment up to date; thread status is
+not mirrored. New comments on the issue are fetched when you open the thread, shown in it, and handed to the
+agent in front of your next message (marked as untrusted external content; filterable by author). Details,
+limits and what is unverified against the real Linear: [docs/linear.md](docs/linear.md).
+
 ## Search and quick actions
 
 <p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>
@@ -363,7 +373,7 @@ plugin/minbox/      the Claude Code mod (hooks module)
 plugin/pi/          the Pi extension (minbox.ts)
 internal/agent/     the Agent interface: Claude Code and Pi adapters (docs/agents.md)
 web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
-docs/               API contract, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
+docs/               API contract, linear.md, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
 ```
 
 ## Acknowledgements

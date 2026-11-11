@@ -3,6 +3,7 @@ import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_pro
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
+import { FakeLinear } from './fake-linear'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +75,8 @@ export class FakeSlackApi {
 export class Minbox {
   proc: ChildProcess | null = null
   slackApi = new FakeSlackApi()
+  /** A fake Linear (OAuth + MCP) on loopback; the server is pointed at it with MINBOX_LINEAR_MCP_URL. */
+  linear = new FakeLinear()
   log = ''
   constructor(
     public dataDir: string,
@@ -90,9 +93,10 @@ export class Minbox {
 
   async start() {
     if (!this.slackApi.url) await this.slackApi.start()
+    if (!this.linear.url) await this.linear.start()
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url },
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp' },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
@@ -137,6 +141,7 @@ export class Minbox {
   async cleanup() {
     await this.stop()
     await this.slackApi.close()
+    await this.linear.close()
     this.killHost()
     // Fake claude processes left behind by a killed host.
     try {

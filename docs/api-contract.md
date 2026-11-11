@@ -968,3 +968,26 @@ See docs/agents.md for the model. API surface:
   `<agent dir>/sessions/--<path>--/<timestamp>_<id>.jsonl`; Claude's names `~/.claude/projects/…`.
 - Environment of both agents' processes: `MINBOX_SESSION_ID`, `MINBOX_TOKEN`, `MINBOX_SERVER_FILE`. Settings: `MINBOX_PI` (command),
   `MINBOX_PI_HELPER_MODEL` (Pi's model for helper runs; default Pi's own).
+
+## Linear integration
+
+Design, limits and privacy: [linear.md](linear.md).
+
+- Setting `linear` (in `GET/PUT /api/settings`): `{author_filter: "everyone"|"allow_list", allowed_authors: string, include_body: bool}`
+  (defaults `everyone`, `""`, `false`; 400 on an unknown key or value). There is no workspace setting.
+- `GET /api/integrations/linear` -> `{mcp_url, connected, needs_login, user?: {id,name,email}, connected_at?, last_error?, redirect_uri, rate_limited_for?}`.
+  Never any token.
+- `POST /api/integrations/linear/login` -> `{url, redirect_uri}`: discovers the authorization server, registers a client for the redirect URI
+  (`<scheme>://<request host>/api/integrations/linear/callback`) once, stores a single-use state (10 min) and returns Linear's authorize URL.
+  502 with the reason when discovery or registration fails.
+- `GET /api/integrations/linear/callback?code&state` (Linear's redirect; the one cross-site `/api/` navigation the guard allows, without the device
+  cookie; authorised by the state, which must have been made for the same Host). Answers an HTML page and, on success, sends the browser to Settings.
+- `POST /api/integrations/linear/disconnect` -> status. `POST /api/integrations/linear/test` -> `{ok, user?, tools?: [name]}` or `{ok: false, error}`.
+- `GET /api/threads/{id}/linear` -> `{link: ThreadLink|null}`; `PUT` `{issue: "ENG-123"|URL, include_body?: bool}` resolves the issue with `get_issue` and links
+  (400 not an issue reference; 409 `code: "linear_login"` not connected / login expired; 429 `linear_rate_limited`; 502 Linear's error);
+  `DELETE` unlinks (and deletes the recorded events). `POST /api/threads/{id}/linear/refresh[?force=1]` -> 202 `{started: true}` when a background sync
+  started, 200 `{started: false, skipped}` when one is running or ran within 45 s. SSE: `thread` events while it runs and when it ends, `linear` when the login changes.
+- `ThreadLink`: `{thread_id, issue_id, identifier, url, title, state, state_type, assignee, last_synced_at, last_error, last_error_at, include_body, has_progress_comment, syncing, created_at}`.
+- `GET /api/threads/{id}` adds `linear?: ThreadLink` and `linear_events?: [{id, kind: "comment"|"state"|"title"|"assignee", author, body, url, filtered, delivered, created_at}]`.
+- Delivery: `GET /api/agent/pending` prepends a `<linear_updates source="untrusted" ...>` block to the `body` of the first pending message of a linked thread
+  (updates not yet delivered; tied to that message; marked delivered by `.../delivered`). `MINBOX_LINEAR_MCP_URL` (loopback http only) points the server at a fake.

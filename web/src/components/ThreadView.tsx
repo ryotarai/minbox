@@ -27,6 +27,7 @@ import {
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
+import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
 type Props = {
@@ -342,6 +343,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const folded = messages.slice(0, Math.max(0, anchor - 1))
   const compactOne = anchor >= 1 ? messages[anchor - 1] : null
   const shown = messages.slice(anchor)
+  const linearEv = groupLinearEvents(shown, thread.linear_events)
   const lastUser = [...messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note')
   const newCount = newIdx >= 0 ? messages.slice(newIdx).filter((m) => m.author === 'agent').length : 0
 
@@ -425,6 +427,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           </div>
         )}
         {phone && <span data-testid="thread-subject" className="sr-only">{thread.subject}</span>}
+        <LinearBar thread={thread} />
 
         <ThreadNotices thread={thread} target={target} />
 
@@ -455,6 +458,9 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
 
         {!showArtifacts && shown.map((m) => (
           <div key={m.id} className="contents">
+            {(linearEv.before.get(m.id) ?? []).map((ev) => (
+              <LinearEventItem key={ev.id} ev={ev} identifier={thread.linear?.identifier ?? ''} />
+            ))}
             {m.id === firstNew && !foldAll && (
               <div data-new-divider className="flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-wait">
                 <span>New</span>
@@ -491,6 +497,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
             {m === lastUser && <DeliveryLine m={m} session={session} />}
           </div>
         ))}
+        {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={ev.id} ev={ev} identifier={thread.linear?.identifier ?? ''} />)}
         {!showArtifacts && thread.status === 'working' && (
           <div data-testid="thread-working" role="status" className="flex items-center gap-2 px-1 text-[12.5px] text-subtle">
             <span className="working-dots" aria-hidden="true"><i /><i /><i /></span>

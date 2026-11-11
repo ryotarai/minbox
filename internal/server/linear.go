@@ -338,7 +338,7 @@ func callbackPage(w http.ResponseWriter, status int, ok bool, msg string) {
 	refresh := ""
 	if ok {
 		title = "Connected to Linear"
-		refresh = `<meta http-equiv="refresh" content="1;url=/?linear=connected">`
+		refresh = `<meta http-equiv="refresh" content="1;url=/#v=settings&amp;ss=integrations">`
 	}
 	fmt.Fprintf(w, `<!doctype html><meta charset="utf-8">%s<title>%s</title><body style="font:14px system-ui;margin:3em"><h3>%s</h3><p>%s</p><p><a href="/">Back to minbox</a></p>`,
 		refresh, title, title, html.EscapeString(linear.Truncate(msg, 300)))

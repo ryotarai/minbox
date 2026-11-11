@@ -10,10 +10,12 @@ import { Button, Segmented, Switch, cx } from './ui'
 import { HostsSection } from './Hosts'
 import { DevicesSection } from './Devices'
 import { NotificationsSection } from './Notifications'
+import { IntegrationsSection } from './Integrations'
 
 const NAV: { id: string; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'integrations', label: 'Integrations' },
   { id: 'hosts', label: 'Hosts' },
   { id: 'devices', label: 'Devices' },
   { id: 'prompts', label: 'Prompts' },
@@ -68,6 +70,7 @@ export function SettingsPage() {
         <SectionBoundary key={section}>
         {section === 'general' && <General />}
         {section === 'notifications' && <NotificationsSection />}
+        {section === 'integrations' && <IntegrationsSection />}
         {section === 'hosts' && <HostsSection />}
         {section === 'devices' && <DevicesSection />}
         {section === 'prompts' && <Prompts />}
