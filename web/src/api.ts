@@ -347,6 +347,40 @@ export type LinearSettings = {
   allowed_authors: string
   /** Put the latest agent message in the progress comment (off: only subject and status). */
   include_body: boolean
+  /** End a drafted issue's description with a link to the minbox thread (needs the public URL). */
+  thread_link: boolean
+}
+
+/** Linear's own lists, for the Create-issue dialog. */
+export type LinearMeta = {
+  user?: { id: string; name: string; email: string }
+  teams: { id: string; name: string; key: string; states: { id: string; name: string; type: string }[]; labels: { id: string; name: string; color?: string }[]; default_state_id: string; started_state_id: string }[]
+  projects: { id: string; name: string; team_ids?: string[] }[]
+  warnings?: string[]
+}
+
+/** The fields of the Create-issue dialog (priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low). */
+export type LinearDraft = {
+  team_id: string
+  title: string
+  description: string
+  priority: number
+  label_ids: string[]
+  project_id: string
+  assignee_id: string
+  state_id: string
+}
+
+export type LinearDraftResult = {
+  meta?: LinearMeta
+  /** Basic prefill without the helper agent. */
+  fallback?: LinearDraft
+  link_in_description?: boolean
+  /** The helper agent's guess (ids already checked against the lists). */
+  draft?: LinearDraft
+  source?: 'llm'
+  reason?: 'no_agent' | 'error'
+  note?: string
 }
 
 export type LinearStatus = {
@@ -411,7 +445,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reply_suggestions: true,
   public_url: '',
   default_agent: '',
-  linear: { author_filter: 'everyone', allowed_authors: '', include_body: false },
+  linear: { author_filter: 'everyone', allowed_authors: '', include_body: false, thread_link: false },
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
 
@@ -672,6 +706,8 @@ export const api = {
   linearDisconnect: () => call<LinearStatus>('POST', '/api/integrations/linear/disconnect'),
   linearTest: () => call<{ ok: boolean; error?: string; user?: { name: string; email: string }; tools?: string[] }>('POST', '/api/integrations/linear/test'),
   linkLinear: (threadId: string, issue: string) => call<ThreadLink>('PUT', `/api/threads/${threadId}/linear`, { issue }),
+  linearDraft: (threadId: string, stage: 'meta' | 'llm') => call<LinearDraftResult>('POST', `/api/threads/${threadId}/linear/draft`, { stage }),
+  createLinearIssue: (threadId: string, body: LinearDraft & { submission_id: string }) => call<ThreadLink>('POST', `/api/threads/${threadId}/linear/create`, body),
   unlinkLinear: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/linear`),
   refreshLinear: (threadId: string, force = false) =>
     call<{ started: boolean; skipped?: string }>('POST', `/api/threads/${threadId}/linear/refresh${force ? '?force=1' : ''}`),

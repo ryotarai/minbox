@@ -47,6 +47,13 @@ type fakeLinear struct {
 	failUpdate bool
 	failBody   string // when set, get_issue answers 500 with this body
 	nextID     int
+	// create-issue support
+	created     []map[string]any // issues made by save_issue/create_issue, in order
+	failCreate  string           // when set, the create tool answers a tool error with this text
+	createNoID  bool             // the create tool answers something without an identifier
+	failTeams   bool
+	failLabels  bool
+	createDelay time.Duration
 }
 
 type fakeCode struct {
@@ -216,14 +223,20 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 		tools := []map[string]any{
 			{"name": "get_user", "inputSchema": obj("query")}, {"name": "get_issue", "inputSchema": obj("id")},
 			{"name": "list_comments", "inputSchema": obj("issueId")}, {"name": "list_issue_statuses", "inputSchema": obj("team")},
+			{"name": "list_teams", "inputSchema": obj("query")}, {"name": "list_issue_labels", "inputSchema": obj("team", "limit")},
+			{"name": "list_projects", "inputSchema": obj("limit")},
 		}
+		createProps := obj("title", "description", "team", "state", "assignee", "project")
+		createProps["properties"].(map[string]any)["priority"] = map[string]any{"type": "number"}
+		createProps["properties"].(map[string]any)["labels"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		if f.variant == "save" {
 			tools = append(tools, map[string]any{"name": "save_comment", "inputSchema": obj("issueId", "body", "id")},
-				map[string]any{"name": "save_issue", "inputSchema": obj("id", "state")})
+				map[string]any{"name": "save_issue", "inputSchema": mergeProps(obj("id", "state"), createProps)})
 		} else {
 			tools = append(tools, map[string]any{"name": "create_comment", "inputSchema": obj("issueId", "body")},
 				map[string]any{"name": "update_comment", "inputSchema": obj("id", "body")},
-				map[string]any{"name": "update_issue", "inputSchema": obj("id", "state")})
+				map[string]any{"name": "update_issue", "inputSchema": obj("id", "state")},
+				map[string]any{"name": "create_issue", "inputSchema": createProps})
 		}
 		reply(map[string]any{"tools": tools})
 		return
@@ -253,6 +266,12 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, f.failBody)
 			return
 		}
+		for _, c := range f.created {
+			if id := s("id"); id == c["identifier"] || id == c["id"] {
+				text(c)
+				return
+			}
+		}
 		if id := s("id"); id != "ENG-123" && id != "iss-uuid-1" {
 			toolErr("Entity not found: Issue - " + id)
 			return
@@ -262,7 +281,52 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 		text(map[string]any{"comments": f.comments})
 	case "list_issue_statuses":
 		text(map[string]any{"statuses": f.statuses})
-	case "save_issue", "update_issue":
+	case "list_teams":
+		if f.failTeams {
+			toolErr("teams unavailable")
+			return
+		}
+		text(map[string]any{"teams": []map[string]any{{"id": "team-1", "name": "Engineering", "key": "ENG"}, {"id": "team-2", "name": "Design", "key": "DES"}}})
+	case "list_issue_labels":
+		if f.failLabels {
+			toolErr("labels unavailable")
+			return
+		}
+		text(map[string]any{"labels": []map[string]any{{"id": "lab-1", "name": "Bug", "color": "#f00"}, {"id": "lab-2", "name": "Feature"}, {"id": "lab-3", "name": "Design only", "team": map[string]any{"id": "team-2"}}}})
+	case "list_projects":
+		text(map[string]any{"projects": []map[string]any{{"id": "proj-1", "name": "Website"}, {"id": "proj-2", "name": "Design system", "teams": []map[string]any{{"id": "team-2"}}}}})
+	case "save_issue", "create_issue":
+		if call.Name == "create_issue" || s("id") == "" {
+			if f.failCreate != "" {
+				toolErr(f.failCreate)
+				return
+			}
+			if f.createDelay > 0 {
+				f.mu.Unlock()
+				time.Sleep(f.createDelay)
+				f.mu.Lock()
+			}
+			n := len(f.created) + 1
+			iss := map[string]any{"id": fmt.Sprintf("iss-new-%d", n), "identifier": fmt.Sprintf("ENG-%d", 100+n), "title": s("title"),
+				"url": fmt.Sprintf("https://linear.app/some-other-workspace/issue/ENG-%d/new", 100+n), "description": s("description"),
+				"state": map[string]any{"name": "Todo", "type": "unstarted"}, "team": map[string]any{"id": s("team"), "name": "Engineering"}}
+			if st := s("state"); st != "" {
+				for _, x := range f.statuses {
+					if x["id"] == st {
+						iss["state"] = map[string]any{"name": x["name"], "type": x["type"]}
+					}
+				}
+			}
+			f.created = append(f.created, iss)
+			if f.createNoID {
+				text(map[string]any{"ok": true})
+				return
+			}
+			text(iss)
+			return
+		}
+		fallthrough
+	case "update_issue":
 		name := s("state")
 		for _, st := range f.statuses {
 			if st["name"] == name {
@@ -293,6 +357,13 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 	default:
 		toolErr("unknown tool " + call.Name)
 	}
+}
+
+func mergeProps(a, b map[string]any) map[string]any {
+	for k, v := range b["properties"].(map[string]any) {
+		a["properties"].(map[string]any)[k] = v
+	}
+	return a
 }
 
 // helpers for tests

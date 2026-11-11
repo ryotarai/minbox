@@ -973,7 +973,7 @@ See docs/agents.md for the model. API surface:
 
 Design, limits and privacy: [linear.md](linear.md).
 
-- Setting `linear` (in `GET/PUT /api/settings`): `{author_filter: "everyone"|"allow_list", allowed_authors: string, include_body: bool}`
+- Setting `linear` (in `GET/PUT /api/settings`): `{author_filter: "everyone"|"allow_list", allowed_authors: string, include_body: bool, thread_link: bool}`
   (defaults `everyone`, `""`, `false`; 400 on an unknown key or value). There is no workspace setting.
 - `GET /api/integrations/linear` -> `{mcp_url, connected, needs_login, user?: {id,name,email}, connected_at?, last_error?, redirect_uri, rate_limited_for?}`.
   Never any token.
@@ -988,6 +988,17 @@ Design, limits and privacy: [linear.md](linear.md).
   `DELETE` unlinks (and deletes the recorded events). `POST /api/threads/{id}/linear/refresh[?force=1]` -> 202 `{started: true}` when a background sync
   started, 200 `{started: false, skipped}` when one is running or ran within 45 s. SSE: `thread` events while it runs and when it ends, `linear` when the login changes.
 - `ThreadLink`: `{thread_id, issue_id, identifier, url, title, state, state_type, assignee, last_synced_at, last_error, last_error_at, include_body, has_progress_comment, syncing, created_at}`.
+- Create from a thread. `POST /api/threads/{id}/linear/draft` body `{stage?: "meta"|"llm"}` (default both). Stage `meta` ->
+  `{meta: {user?, teams: [{id,name,key,states:[{id,name,type}],labels:[{id,name,color?}],default_state_id,started_state_id}], projects: [{id,name,team_ids?}], warnings?},
+  fallback: Draft, link_in_description: bool}` (Linear's lists and the basic prefill; reads Linear only). Stage `llm` -> `{draft: Draft, source: "llm"}` (every id checked
+  against the lists, unknown ones dropped; helper run via the agent-aware helper, limited and cached per thread and last message) or
+  `{reason: "no_agent"|"error", note}` with no draft (still 200). `Draft` = `{team_id, title, description, priority 0-4 (0 none, 1 urgent, 2 high, 3 medium, 4 low), label_ids, project_id, assignee_id, state_id}`.
+  Errors as the link endpoint (409 `linear_login`, 429 `linear_rate_limited`, 502 with Linear's message). Thread content goes only to the helper agent; the prompt is delimited,
+  size-capped and stripped of credential-shaped strings.
+- `POST /api/threads/{id}/linear/create` body `Draft` + `{submission_id?}` -> the `ThreadLink` (the thread is linked as by `PUT`). Requires `team_id` and `title` (400); ids must be in Linear's lists
+  (400 `unknown_team|state|label|project|assignee`); title <= 256, description <= 50000; 409 `already_linked`; 422 `linear_refused` (Linear's tool error, text in `error`); 502 `unreadable_result`
+  (Linear answered, the issue could not be read: it may exist). Idempotent per `submission_id` (kept 10 min; a failure is not kept): repeats get the first answer. Setting `linear.thread_link`
+  (default false) appends a link to the minbox thread to drafted descriptions (needs `public_url`).
 - `GET /api/threads/{id}` adds `linear?: ThreadLink` and `linear_events?: [{id, kind: "comment"|"state"|"title"|"assignee", author, body, url, filtered, delivered, created_at}]`.
 - Delivery: `GET /api/agent/pending` prepends a `<linear_updates source="untrusted" ...>` block to the `body` of the first pending message of a linked thread
   (updates not yet delivered; tied to that message; marked delivered by `.../delivered`). `MINBOX_LINEAR_MCP_URL` (loopback http only) points the server at a fake.

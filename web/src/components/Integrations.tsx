@@ -152,6 +152,9 @@ function LinearSection() {
       <Row label="Show the agent's latest message in the progress comment" desc="Off: the comment has only the subject, the status and the time. The message may be private.">
         <Switch on={lin.include_body} onChange={(v) => save({ include_body: v })} label="Include message" />
       </Row>
+      <Row label="Link to the thread in drafted issues" desc="Create Linear issue from a thread: end the description with a link to the minbox thread. Needs the public URL (Settings); off by default.">
+        <Switch on={lin.thread_link} onChange={(v) => save({ thread_link: v })} label="Link to the thread" />
+      </Row>
       <p className="m-0 text-[12px] text-subtle">
         minbox registers itself with Linear for this address: <span className="mono">{st?.redirect_uri ?? '…'}</span>. A different address (another hostname) needs its own login.
       </p>

@@ -17,6 +17,50 @@ There is no workspace restriction: the workspace is whatever the login is author
 slug in a pasted URL is used only to read the identifier. An issue the login cannot see fails with the
 error Linear's `get_issue` gives.
 
+## Create an issue from a thread
+
+A thread that is not linked (with Linear connected) has **Create Linear issue** next to **+ Link Linear
+issue**. The dialog opens at once and fills in three steps; **nothing is written to Linear until you press
+Create**.
+
+1. **Linear's lists** (through the MCP client, adapting to `tools/list`): teams, each team's workflow states
+   and labels, projects, and who you are. Cached for 90 seconds. The dialog gets a **basic prefill** from the
+   thread: title = the thread subject (else the first line of your first message), description = the latest
+   agent message (else your first message), the assignee = you, the state = the team's unstarted state, and a
+   team or project named like the minbox project (or the only team).
+2. **The helper agent's guess** ("Drafting..." shows while it runs; it never blocks the dialog). It goes through
+   the same one-shot helper as reply suggestions and the Slack project pick: Claude Code `claude -p` or Pi,
+   whichever is installed (the default agent first), tool-less and in an empty folder. The prompt holds the
+   thread subject, minbox project and thread name, folder, git branch (local sessions only), the session's
+   agent, the last 10 messages (1200 characters each, 12000 in all) and Linear's lists. The conversation and
+   the lists are delimited as untrusted data (a delimiter inside them is removed) and the helper is told to
+   ignore instructions in them; strings shaped like credentials (bearer tokens, `sk-`/`ghp_`/`xox`/`AKIA`
+   keys, private keys, `password=...`) and the stored Linear tokens are blanked before the prompt is built.
+   The prompt never leaves this machine except through the helper agent you already run. The answer is read
+   leniently (a code fence or prose around the JSON is fine) and **every id it names (team, state, labels,
+   project, assignee) must exist in the fetched lists**, else it is dropped (a label must belong to the team,
+   a project to the team when it says so; the assignee can only be you). Runs are limited to two at a time,
+   one per thread and last message, and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
+   not ask again.
+3. **Your edits win.** The guess fills only the fields you have not touched; if you chose another team, the
+   guess's team-bound fields (labels, state, project) are skipped. If no agent is installed, or the helper
+   fails or times out (40 s), the basic prefill stays and a small note says why.
+
+Fields: Team (required), Title (required), Description (Markdown), Priority, Labels, Project, Assignee
+(Me / Unassigned), State (the team's states; the default is its unstarted one). **Create** is disabled until
+the team and title are set. The description contains the model's short summary, not the conversation. It
+ends with a link to the minbox thread only if **Settings -> Integrations -> Linear -> "Link to the thread in
+drafted issues"** is on (default off) and the public URL is set; you can edit it away in the dialog anyway.
+
+Create calls `save_issue` (without `id`) or `create_issue`, picking argument names from the tool's schema
+(`title`, `description`, `team`, `state`, `assignee`, `priority`, `labels`, `project`; ids are passed as
+ids), then links the thread exactly as the link flow does (stores identifier, URL, title, state, records the
+existing comments as seen, starts the first sync). A **submission id** makes it idempotent: a double click or
+a retried request gets the first one's answer; without one, simultaneous requests for a thread are coalesced
+and a thread that is already linked is refused (409). Linear's refusal is shown in the dialog (HTTP 422, code
+`linear_refused`) and nothing is linked; a retry is possible. If Linear answers but the new issue cannot be
+read from the answer, the dialog says it may have been created (look for it, then use Link Linear issue).
+
 ## What happens
 
 **minbox to Linear** (never mirrors the thread's status; threads flip between working and finished far
@@ -120,6 +164,12 @@ against a fake OAuth + MCP server.
   how `get_issue` shows the state type). The parsers are tolerant, and a missing state type is looked up
   from `list_issue_statuses`, but this is guesswork until a real run.
 - Whether `save_comment` edits a comment when given `id`, and that `save_issue` accepts the state by name.
+- Create issue from a thread: the names and result shapes of `list_teams`, `list_issue_labels` (and its `team`
+  argument), `list_projects` (nested `teams`), `list_issue_statuses` (`team` as an id); that `save_issue`
+  without `id` creates an issue and takes `title`, `description`, `team`, `state`, `assignee`, `priority`,
+  `labels` (an array) and `project` as ids (the docs say "name or ID"); that its answer carries `id`,
+  `identifier` and `url`; and that the default list sizes (`limit` 100 is passed when the tool declares it)
+  cover a workspace. Failing per-team lists are shown as a warning and the dialog still works.
 - Whether dynamic registration accepts the redirect URI (see above), and the scopes (`read write`).
 - Whether Linear keeps the HTML-comment marker in comment bodies (if it does not, the stored comment id is
   what identifies minbox's own comment; if that is lost too, the comment is found again by the marker only

@@ -7,8 +7,34 @@ first carries the number of PERSON messages in the prompt, so tests can tell wha
 import json
 import os
 import sys
+import time
 
 prompt = sys.stdin.read()
+
+if prompt.startswith("Draft a Linear issue"):
+    # The Create-Linear-issue dialog's guess. FAKE_LINEAR_DRAFT_HOLD: while that file exists the
+    # answer is held back (tests use it to type while the draft is still "coming").
+    hold = os.environ.get("FAKE_LINEAR_DRAFT_HOLD")
+    for _ in range(400):
+        if not (hold and os.path.exists(hold)):
+            break
+        time.sleep(0.05)
+    subject = ""
+    for line in prompt.splitlines():
+        if line.startswith("Subject: "):
+            subject = line[len("Subject: "):]
+    draft = {
+        "team_id": "team-1",
+        "title": "Drafted: " + subject,
+        "description": "## Summary\nDrafted from the thread.\n",
+        "priority": 2,
+        "label_ids": ["lab-1"],
+        "project_id": "proj-1",
+        "assignee_id": "u1",
+        "state_id": "st-3",
+    }
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": draft}))
+    sys.exit(0)
 n = prompt.count("[PERSON]")
 out = {
     "type": "result",
