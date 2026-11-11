@@ -96,6 +96,9 @@ type Server struct {
 
 	// notifier sends the notifications of new agent messages.
 	notifier *notify.Dispatcher
+
+	// lin is the Linear integration (see linear.go).
+	lin *linearSvc
 }
 
 // New builds a server. web holds the built frontend (index.html at its root).
@@ -124,6 +127,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 			}},
 		},
 	}
+	s.lin = newLinearSvc(s)
 	s.poller = notify.NewPoller(st, slackInbound{s})
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runSuggest)
@@ -197,6 +201,15 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)
 	mux.HandleFunc("GET /api/threads/{id}/suggestions", s.threadSuggestions)
+	mux.HandleFunc("GET /api/threads/{id}/linear", s.getThreadLinear)
+	mux.HandleFunc("PUT /api/threads/{id}/linear", s.putThreadLinear)
+	mux.HandleFunc("DELETE /api/threads/{id}/linear", s.deleteThreadLinear)
+	mux.HandleFunc("POST /api/threads/{id}/linear/refresh", s.refreshThreadLinear)
+	mux.HandleFunc("GET /api/integrations/linear", s.linearStatus)
+	mux.HandleFunc("POST /api/integrations/linear/login", s.linearLogin)
+	mux.HandleFunc("GET /api/integrations/linear/callback", s.linearCallback)
+	mux.HandleFunc("POST /api/integrations/linear/disconnect", s.linearDisconnect)
+	mux.HandleFunc("POST /api/integrations/linear/test", s.linearTest)
 	mux.HandleFunc("POST /api/threads/{id}/read", s.markRead)
 	mux.HandleFunc("POST /api/threads/{id}/unread", s.markUnread)
 	mux.HandleFunc("POST /api/threads/{id}/reply", s.reply)
@@ -282,7 +295,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/agent/projects/{id}", s.agent(s.agentGetProject))
 	mux.HandleFunc("GET /api/agent/sessions", s.agent(s.agentListSessions))
 	mux.HandleFunc("GET /api/agent/search", s.agent(s.agentSearch))
-	mux.HandleFunc("GET /api/agent/pending",s.agent(s.agentPending))
+	mux.HandleFunc("GET /api/agent/pending", s.agent(s.agentPending))
 	mux.HandleFunc("POST /api/agent/pending/{id}/claim", s.agent(s.agentClaim))
 	mux.HandleFunc("POST /api/agent/pending/{id}/release", s.agent(s.agentRelease))
 	mux.HandleFunc("POST /api/agent/pending/{id}/delivered", s.agent(s.agentDelivered))

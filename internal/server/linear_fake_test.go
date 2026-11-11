@@ -1,0 +1,334 @@
+package server
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+// fakeLinear is a fake Linear: an MCP server (JSON or SSE responses, both tool-name catalogs) and
+// an OAuth server with dynamic client registration. No real Linear is ever contacted.
+type fakeLinear struct {
+	t  *testing.T
+	ts *httptest.Server
+
+	mu sync.Mutex
+	// OAuth
+	clients         map[string]string // client_id -> redirect uri
+	codes           map[string]fakeCode
+	access          string // the access token the MCP endpoint accepts
+	refresh         string
+	expiresIn       int
+	invalidGrant    bool
+	registrations   int
+	tokenCalls      int
+	refreshCalls    int
+	lastRegRedirect string
+	// MCP
+	variant    string // "save" (save_comment, save_issue) or "create" (create_comment, update_comment, update_issue)
+	sse        bool
+	issue      map[string]any
+	issueURL   string
+	comments   []map[string]any
+	statuses   []map[string]any
+	calls      []fakeCall
+	rateLimit  bool
+	failUpdate bool
+	failBody   string // when set, get_issue answers 500 with this body
+	nextID     int
+}
+
+type fakeCode struct {
+	challenge, redirect string
+}
+
+type fakeCall struct {
+	Tool string
+	Args map[string]any
+}
+
+func randHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func newFakeLinear(t *testing.T) *fakeLinear {
+	f := &fakeLinear{t: t, clients: map[string]string{}, codes: map[string]fakeCode{}, variant: "save", expiresIn: 3600}
+	f.issueURL = "https://linear.app/some-other-workspace/issue/ENG-123/fix-the-thing"
+	f.issue = map[string]any{"id": "iss-uuid-1", "identifier": "ENG-123", "title": "Fix the thing",
+		"state": map[string]any{"name": "Todo", "type": "unstarted"}, "team": map[string]any{"id": "team-1", "name": "Engineering"},
+		"assignee": "Alice", "url": f.issueURL}
+	f.statuses = []map[string]any{
+		{"id": "st-1", "name": "Backlog", "type": "backlog"}, {"id": "st-2", "name": "Todo", "type": "unstarted"},
+		{"id": "st-3", "name": "In Progress", "type": "started"}, {"id": "st-4", "name": "Done", "type": "completed"},
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"resource": f.ts.URL, "authorization_servers": []string{f.ts.URL}, "scopes_supported": []string{"read", "write"}})
+	})
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"issuer": f.ts.URL, "authorization_endpoint": f.ts.URL + "/authorize", "token_endpoint": f.ts.URL + "/token",
+			"registration_endpoint": f.ts.URL + "/register", "scopes_supported": []string{"read", "write", "openid"}, "code_challenge_methods_supported": []string{"S256"}})
+	})
+	mux.HandleFunc("POST /register", f.register)
+	mux.HandleFunc("GET /authorize", f.authorize)
+	mux.HandleFunc("POST /token", f.token)
+	mux.HandleFunc("POST /mcp", f.mcp)
+	f.ts = httptest.NewServer(mux)
+	t.Cleanup(f.ts.Close)
+	return f
+}
+
+func (f *fakeLinear) register(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RedirectURIs []string `json:"redirect_uris"`
+		Method       string   `json:"token_endpoint_auth_method"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(req.RedirectURIs) != 1 {
+		writeJSON(w, 400, map[string]string{"error": "invalid_redirect_uri"})
+		return
+	}
+	f.registrations++
+	f.lastRegRedirect = req.RedirectURIs[0]
+	id := "client-" + randHex(4)
+	f.clients[id] = req.RedirectURIs[0]
+	writeJSON(w, 201, map[string]any{"client_id": id, "token_endpoint_auth_method": "none"})
+}
+
+func (f *fakeLinear) authorize(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	redirect, ok := f.clients[q.Get("client_id")]
+	if !ok || redirect != q.Get("redirect_uri") || q.Get("code_challenge_method") != "S256" || q.Get("state") == "" || q.Get("response_type") != "code" {
+		http.Error(w, "bad authorize request", 400)
+		return
+	}
+	if q.Get("resource") == "" || q.Get("scope") != "read write" {
+		http.Error(w, "resource/scope missing: "+q.Get("scope"), 400)
+		return
+	}
+	code := "code-" + randHex(6)
+	f.codes[code] = fakeCode{challenge: q.Get("code_challenge"), redirect: redirect}
+	u, _ := url.Parse(redirect)
+	rq := u.Query()
+	rq.Set("code", code)
+	rq.Set("state", q.Get("state"))
+	rq.Set("iss", f.ts.URL)
+	u.RawQuery = rq.Encode()
+	http.Redirect(w, r, u.String(), 302)
+}
+
+func (f *fakeLinear) newTokens() (string, string) {
+	return "at_" + randHex(12), "rt_" + randHex(12)
+}
+
+func (f *fakeLinear) token(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tokenCalls++
+	switch r.Form.Get("grant_type") {
+	case "authorization_code":
+		c, ok := f.codes[r.Form.Get("code")]
+		delete(f.codes, r.Form.Get("code"))
+		sum := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
+		if !ok || c.redirect != r.Form.Get("redirect_uri") || base64.RawURLEncoding.EncodeToString(sum[:]) != c.challenge {
+			writeJSON(w, 400, map[string]string{"error": "invalid_grant"})
+			return
+		}
+	case "refresh_token":
+		f.refreshCalls++
+		if f.invalidGrant || r.Form.Get("refresh_token") != f.refresh {
+			writeJSON(w, 400, map[string]string{"error": "invalid_grant", "error_description": "refresh token revoked"})
+			return
+		}
+	default:
+		writeJSON(w, 400, map[string]string{"error": "unsupported_grant_type"})
+		return
+	}
+	f.access, f.refresh = f.newTokens()
+	writeJSON(w, 200, map[string]any{"access_token": f.access, "refresh_token": f.refresh, "token_type": "Bearer", "expires_in": f.expiresIn, "scope": "read write"})
+}
+
+func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r.Header.Get("Authorization") != "Bearer "+f.access || f.access == "" {
+		w.WriteHeader(401)
+		return
+	}
+	var req struct {
+		ID     any             `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Method == "notifications/initialized" {
+		w.WriteHeader(202)
+		return
+	}
+	reply := func(result any) {
+		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+		if f.sse {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", b)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}
+	text := func(v any) {
+		b, _ := json.Marshal(v)
+		reply(map[string]any{"content": []map[string]any{{"type": "text", "text": string(b)}}})
+	}
+	toolErr := func(msg string) {
+		reply(map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": msg}}})
+	}
+	switch req.Method {
+	case "initialize":
+		w.Header().Set("Mcp-Session-Id", "sess-"+randHex(3))
+		reply(map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "fake-linear"}})
+		return
+	case "tools/list":
+		obj := func(props ...string) map[string]any {
+			p := map[string]any{}
+			for _, k := range props {
+				p[k] = map[string]any{"type": "string"}
+			}
+			return map[string]any{"type": "object", "properties": p}
+		}
+		tools := []map[string]any{
+			{"name": "get_user", "inputSchema": obj("query")}, {"name": "get_issue", "inputSchema": obj("id")},
+			{"name": "list_comments", "inputSchema": obj("issueId")}, {"name": "list_issue_statuses", "inputSchema": obj("team")},
+		}
+		if f.variant == "save" {
+			tools = append(tools, map[string]any{"name": "save_comment", "inputSchema": obj("issueId", "body", "id")},
+				map[string]any{"name": "save_issue", "inputSchema": obj("id", "state")})
+		} else {
+			tools = append(tools, map[string]any{"name": "create_comment", "inputSchema": obj("issueId", "body")},
+				map[string]any{"name": "update_comment", "inputSchema": obj("id", "body")},
+				map[string]any{"name": "update_issue", "inputSchema": obj("id", "state")})
+		}
+		reply(map[string]any{"tools": tools})
+		return
+	case "tools/call":
+	default:
+		reply(map[string]any{})
+		return
+	}
+	var call struct {
+		Name string         `json:"name"`
+		Args map[string]any `json:"arguments"`
+	}
+	_ = json.Unmarshal(req.Params, &call)
+	f.calls = append(f.calls, fakeCall{call.Name, call.Args})
+	if f.rateLimit {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(429)
+		return
+	}
+	s := func(k string) string { v, _ := call.Args[k].(string); return v }
+	switch call.Name {
+	case "get_user":
+		text(map[string]any{"id": "user-1", "name": "Ryota", "email": "ryota@example.com"})
+	case "get_issue":
+		if f.failBody != "" {
+			w.WriteHeader(500)
+			_, _ = io.WriteString(w, f.failBody)
+			return
+		}
+		if id := s("id"); id != "ENG-123" && id != "iss-uuid-1" {
+			toolErr("Entity not found: Issue - " + id)
+			return
+		}
+		text(f.issue)
+	case "list_comments":
+		text(map[string]any{"comments": f.comments})
+	case "list_issue_statuses":
+		text(map[string]any{"statuses": f.statuses})
+	case "save_issue", "update_issue":
+		name := s("state")
+		for _, st := range f.statuses {
+			if st["name"] == name {
+				f.issue["state"] = map[string]any{"name": name, "type": st["type"]}
+			}
+		}
+		text(f.issue)
+	case "save_comment", "create_comment", "update_comment":
+		if id := s("id"); id != "" {
+			if f.failUpdate {
+				toolErr("Comment not found")
+				return
+			}
+			for _, c := range f.comments {
+				if c["id"] == id {
+					c["body"] = s("body")
+					text(c)
+					return
+				}
+			}
+			toolErr("Comment not found")
+			return
+		}
+		f.nextID++
+		c := map[string]any{"id": fmt.Sprintf("cmt-%d", f.nextID), "body": s("body"), "createdAt": time.Now().UTC().Format(time.RFC3339), "user": map[string]any{"name": "Ryota"}}
+		f.comments = append(f.comments, c)
+		text(c)
+	default:
+		toolErr("unknown tool " + call.Name)
+	}
+}
+
+// helpers for tests
+
+func (f *fakeLinear) callsOf(tool string) []fakeCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []fakeCall
+	for _, c := range f.calls {
+		if c.Tool == tool {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (f *fakeLinear) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+func (f *fakeLinear) addComment(id, author, body string, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.comments = append(f.comments, map[string]any{"id": id, "body": body, "createdAt": at.UTC().Format(time.RFC3339), "user": map[string]any{"name": author, "email": strings.ToLower(author) + "@example.com"}})
+}
+
+func (f *fakeLinear) setState(name, typ string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.issue["state"] = map[string]any{"name": name, "type": typ}
+}
+
+func (f *fakeLinear) stateName() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.issue["state"].(map[string]any)["name"].(string)
+}

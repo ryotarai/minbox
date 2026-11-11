@@ -416,7 +416,8 @@ func defaultSettings() map[string]any {
 	return map[string]any{
 		"theme": "system", "text_size": 13, "notifications": true, "sound": true, "tab_count": true, "single_key": true,
 		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
-		"list": map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
+		"linear": defaultLinearSettings(),
+		"list":   map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
 	}
 }
 
@@ -474,6 +475,14 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 				httpError(w, 400, "default_agent must be empty, claude or pi")
 				return
 			}
+		}
+		if k == "linear" {
+			n, err := normalizeLinearSettings(v)
+			if err != nil {
+				httpError(w, 400, err.Error())
+				return
+			}
+			req[k] = n
 		}
 		if k == "public_url" {
 			var u string

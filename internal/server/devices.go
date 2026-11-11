@@ -135,6 +135,10 @@ func openRoute(r *http.Request) bool {
 		p == "/api/devices/auth" && r.Method == http.MethodPost,
 		p == "/api/devices/me" && r.Method == http.MethodGet:
 		return true
+	case oauthCallback(r):
+		// Linear's redirect back: a cross-site navigation, so a Strict device cookie is not sent.
+		// The single-use state is what authorizes it.
+		return true
 	}
 	return false
 }
@@ -257,7 +261,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !launchNavigation(r) {
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !launchNavigation(r) && !oauthCallback(r) {
 			httpError(w, http.StatusForbidden, "cross-site request refused")
 			return
 		}

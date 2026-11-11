@@ -207,7 +207,10 @@ type Thread struct {
 	LastBody        string     `json:"last_body"`
 	LastAuthor      string     `json:"last_author"`
 	LastDelivery    string     `json:"last_delivery,omitempty"` // when the person wrote last
-	undelivered     int
+	// The linked Linear issue and what happened on it (GetThread only; see linear.go).
+	Linear       *ThreadLink   `json:"linear,omitempty"`
+	LinearEvents []LinearEvent `json:"linear_events,omitempty"`
+	undelivered  int
 }
 
 type Message struct {
@@ -475,6 +478,9 @@ var addedColumns = []struct{ table, column, def string }{
 
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(linearSchema); err != nil {
 		return err
 	}
 	for _, c := range addedColumns {
@@ -1244,7 +1250,14 @@ func (s *Store) GetThread(ctx context.Context, id string) (*Thread, error) {
 	if len(threads) == 0 {
 		return nil, ErrNotFound
 	}
-	return &threads[0], nil
+	th := &threads[0]
+	if l, err := s.GetThreadLink(ctx, id); err == nil {
+		th.Linear = l
+		if evs, err := s.ListLinearEvents(ctx, id); err == nil && len(evs) > 0 {
+			th.LinearEvents = evs
+		}
+	}
+	return th, nil
 }
 
 // GetMessage returns one message.
@@ -1467,6 +1480,11 @@ func (s *Store) MarkDelivered(ctx context.Context, sessionID, messageID string) 
 		return false, err
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		if err := s.markLinearDelivered(ctx, messageID); err != nil {
+			return true, err
+		}
+	}
 	return n > 0, nil
 }
 

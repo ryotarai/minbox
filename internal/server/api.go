@@ -352,6 +352,9 @@ func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
+	if th.Linear != nil {
+		s.lin.view(th.Linear)
+	}
 	writeJSON(w, 200, th)
 }
 
@@ -568,6 +571,9 @@ func (s *Server) publishThread(sessionID, threadID string) {
 	s.hub.publish(Event{Type: "thread", SessionID: sessionID, ThreadID: threadID})
 	s.hub.publish(Event{Type: "threads", SessionID: sessionID})
 	s.hub.publish(Event{Type: "sessions"})
+	if s.lin != nil && s.store.HasThreadLink(context.Background(), threadID) {
+		go s.lin.threadChanged(threadID)
+	}
 }
 
 // ---- the mod's API ----
@@ -883,6 +889,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 		}
 		if len(pending) > 0 || wait == 0 {
 			s.withAttachedLines(r, pending)
+			s.linearInject(r.Context(), pending)
 			writeJSON(w, 200, pending)
 			return
 		}
@@ -890,6 +897,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 		case <-ch:
 		case <-deadline:
 			s.withAttachedLines(r, pending)
+			s.linearInject(r.Context(), pending)
 			writeJSON(w, 200, pending)
 			return
 		case <-s.closing:
