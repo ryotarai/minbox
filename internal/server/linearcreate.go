@@ -892,7 +892,7 @@ func (s *Server) linearCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cp := *c.link // view fills fields: each request its own copy
-	writeJSON(w, 200, l.view(&cp))
+		writeJSON(w, 200, l.view(&cp))
 		return
 	}
 	// This request does the work, whatever happens to its client: a created issue must be linked.
