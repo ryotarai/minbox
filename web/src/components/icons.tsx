@@ -246,3 +246,19 @@ export function IconLinear(p: P) {
     </Svg>
   )
 }
+
+/** A simple geometric take on Slack's mark: four rounded bars, each with a dot, as a pinwheel (not the official artwork). */
+export function IconSlack(p: P) {
+  return (
+    <Svg fill="currentColor" stroke="none" {...p}>
+      <rect x="1.4" y="6.6" width="5.6" height="2" rx="1" />
+      <circle cx="3.2" cy="4.6" r="1.05" />
+      <rect x="7.4" y="1.4" width="2" height="5.6" rx="1" />
+      <circle cx="11.4" cy="3.2" r="1.05" />
+      <rect x="9" y="7.4" width="5.6" height="2" rx="1" />
+      <circle cx="12.8" cy="11.4" r="1.05" />
+      <rect x="6.6" y="9" width="2" height="5.6" rx="1" />
+      <circle cx="4.6" cy="12.8" r="1.05" />
+    </Svg>
+  )
+}

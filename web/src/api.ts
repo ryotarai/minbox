@@ -540,6 +540,110 @@ export type IssueThreadRequest = {
 }
 export type IssueThreadPreview = { handoff: string; message: string; text: string; bytes: number; subject: string; agent: string; project: string; warnings: string[] }
 /** Which minbox project to start the thread in (source: linked | name | only | llm | none). */
+
+// ---- Slack (personal): the user token, and the threads that need my reply ----
+
+export type SlackBackend = 'auto' | 'rts' | 'legacy'
+export type SlackDiag = {
+  calls: number
+  by_method: Record<string, number>
+  errors: number
+  rate_limited: number
+  last_error: string
+  last_error_method?: string
+  last_error_at: string | null
+  last_call_at: string | null
+  rate_limited_until: string | null
+  blocked?: Record<string, number>
+}
+export type SlackProgress = { running: boolean; stage?: string; done: number; total: number; started_at?: string; finished_at?: string; calls: number; partial: boolean; wait_until?: string; error?: string }
+export type SlackStatus = {
+  connected: boolean
+  token_masked?: string
+  user_id?: string
+  user?: string
+  team_id?: string
+  team?: string
+  team_url?: string
+  connected_at?: string
+  search_backend: SlackBackend
+  search_backend_used?: 'rts' | 'legacy'
+  search_backend_note?: string
+  scopes: string[]
+  scopes_known: boolean
+  missing_scopes: string[]
+  optional_scopes: string[]
+  optional_missing: string[]
+  last_test?: string
+  last_test_ok: boolean
+  last_test_at?: string
+  diagnostics: SlackDiag
+  days: number
+  max_candidates: number
+  unverified: string[]
+  refresh: SlackProgress
+}
+export type SlackTestResult = { ok: boolean; message: string; error?: string; code?: string; missing_scopes?: string[]; search?: string }
+export type SlackJudgement = { needs_reply: 'yes' | 'maybe' | 'no'; reason: string; urgency: 'high' | 'normal' | 'low'; summary: string; suggested_next_step?: string; source: 'llm' | 'rule'; latest_ts: string }
+export type SlackGroup = 'needs_reply' | 'maybe' | 'dismissed'
+export type SlackItem = {
+  id: string
+  channel: string
+  thread_ts: string
+  group: SlackGroup
+  state: 'active' | 'dismissed' | 'snoozed' | 'muted'
+  snooze_until?: string
+  reappeared?: boolean
+  kind: 'channel' | 'dm' | 'group'
+  label: string
+  people: string[]
+  last_ts: string
+  last_at: string | null
+  last_author: string
+  last_is_me: boolean
+  snippet: string
+  messages: number
+  unread: boolean
+  permalink: string
+  judgement: SlackJudgement | null
+  unjudged: boolean
+  stale?: boolean
+  minbox_thread: IssueThreadRef | null
+}
+export type SlackListResult = {
+  items: SlackItem[]
+  counts: Partial<Record<SlackGroup, number>>
+  hidden: number
+  notes: string[]
+  fetched_at: string | null
+  refresh: SlackProgress
+  user: { id: string; name: string }
+  team: string
+  backend: 'rts' | 'legacy'
+  backend_note: string
+}
+export type SlackLink = { name: string; url?: string }
+export type SlackMessage = { ts: string; at: string; user_id: string; name: string; is_me: boolean; is_bot: boolean; html: string; files: SlackLink[]; attachments: SlackLink[] }
+export type SlackThreadDetail = {
+  id: string
+  channel: string
+  thread_ts: string
+  kind: 'channel' | 'dm' | 'group'
+  label: string
+  permalink: string
+  messages: SlackMessage[]
+  earlier: number
+  note: string
+  fetched_at: string
+  team: string
+  me: string
+  judgement?: SlackJudgement
+  judgement_stale?: boolean
+  state?: string
+  snooze_until?: string
+  minbox_thread?: IssueThreadRef
+}
+
 export type ProjectSuggestion = { project_id: string; source: 'linked' | 'name' | 'only' | 'llm' | 'none'; reason: string }
 
 /** Something that happened on the linked issue: a comment, or a compact change (state, title, assignee). */
@@ -658,7 +762,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'slack' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -847,6 +951,19 @@ export const api = {
   issueThreadPreview: (ident: string, req: IssueThreadRequest) => call<IssueThreadPreview>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/thread/preview`, req),
   issueStartThread: (ident: string, req: IssueThreadRequest) =>
     call<{ thread: Thread; session: Session; link_error?: string }>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/thread`, req),
+  slackStatus: () => call<SlackStatus>('GET', '/api/integrations/slack-user'),
+  slackConnect: (token: string) => call<{ result: SlackTestResult; status: SlackStatus }>('PUT', '/api/integrations/slack-user', { token }),
+  slackSetBackend: (search_backend: SlackBackend) => call<{ status: SlackStatus }>('PUT', '/api/integrations/slack-user', { search_backend }),
+  slackTest: () => call<{ result: SlackTestResult; status: SlackStatus }>('POST', '/api/integrations/slack-user/test'),
+  slackDisconnect: () => call<SlackStatus>('POST', '/api/integrations/slack-user/disconnect'),
+  slackClearCache: () => call<SlackStatus>('POST', '/api/integrations/slack-user/clear-cache'),
+  slackThreads: (opts: { refresh?: boolean; cached?: boolean } = {}) => call<SlackListResult>('GET', `/api/slack/threads?${opts.cached ? 'cached=1' : opts.refresh ? 'refresh=1' : 'x=1'}`),
+  slackThread: (id: string, refresh = false) => call<SlackThreadDetail>('GET', `/api/slack/threads/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
+  slackState: (id: string, action: 'dismiss' | 'mute' | 'snooze' | 'restore', until?: Date) =>
+    call<Ok>('POST', `/api/slack/threads/${encodeURIComponent(id)}/state`, { action, ...(until ? { until: until.toISOString() } : {}) }),
+  slackProjectSuggestion: (id: string) => call<ProjectSuggestion>('POST', `/api/slack/threads/${encodeURIComponent(id)}/project-suggestion`),
+  slackThreadPreview: (id: string, req: IssueThreadRequest) => call<IssueThreadPreview>('POST', `/api/slack/threads/${encodeURIComponent(id)}/thread/preview`, req),
+  slackStartThread: (id: string, req: IssueThreadRequest) => call<{ thread: Thread; session: Session; link_error?: string }>('POST', `/api/slack/threads/${encodeURIComponent(id)}/thread`, req),
   issueProjectSuggestion: (ident: string) => call<ProjectSuggestion>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/project-suggestion`),
   issueDraft: (body: { stage: 'meta' | 'llm'; text?: string; team_id?: string; refresh?: boolean; regenerate?: boolean }) =>
     call<LinearDraftResult>('POST', '/api/linear/issues/draft', body),

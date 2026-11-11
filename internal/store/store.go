@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -494,6 +495,9 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(handoffSchema); err != nil {
 		return err
 	}
+	if _, err := db.Exec(slackPersonalSchema); err != nil {
+		return err
+	}
 	for _, c := range addedColumns {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
 		if err != nil {
@@ -541,6 +545,10 @@ func Open(path string) (*Store, error) {
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	// The database holds tokens (Linear, Slack): keep it to the owner, besides the 0700 data directory.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		_ = os.Chmod(path+suffix, 0o600)
 	}
 	return &Store{db: db, now: time.Now}, nil
 }

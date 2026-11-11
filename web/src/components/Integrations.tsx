@@ -3,6 +3,7 @@ import { api, type LinearStatus } from '../api'
 import { IconLinear } from './icons'
 import { useApp } from '../lib/app'
 import { LinearExtraPrompt } from './LinearExtraPrompt'
+import { SlackSection } from './SlackSettings'
 import { Button, Segmented, Switch } from './ui'
 
 // Settings › Integrations › Linear. minbox is an MCP client of Linear's remote MCP server; the
@@ -24,6 +25,7 @@ export function IntegrationsSection() {
   return (
     <div className="flex max-w-[720px] flex-col gap-7" data-testid="integrations">
       <LinearSection />
+      <SlackSection />
     </div>
   )
 }

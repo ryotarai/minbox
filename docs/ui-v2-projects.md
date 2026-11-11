@@ -49,6 +49,7 @@ expired), is **My issues** (Linear icon, `data-testid="my-issues"`, label/aria-l
 it opens `#v=issues` (`&issue=ENG-123` for the selected issue), a screen of its own [project rail | issue list | issue detail]
 (phone: list, then detail with a back button and a sticky Start thread bar). While it is open no project is highlighted; picking
 a project or All projects goes back to the threads. The phone project sheet has the same entry above All projects. Below the list: `+` (new project).
+Above **My issues** (and above All projects when Linear is not connected), only while the personal Slack user token is connected, is **Slack** (inline Slack mark, `data-testid="slack-entry"`, label/aria-label "Slack"; icon only in the tiles): it opens `#v=slack` (`&thread=<channel>:<ts>` for the selected thread), the same three-column layout as My issues [rail | thread list grouped Needs reply / Maybe / collapsed Dismissed | thread detail with the helper's judgement, Dismiss, Snooze, Start minbox thread]; on a phone list, then detail with a back button and a sticky action bar. The phone project sheet has the same entry. See [slack-personal.md](slack-personal.md).
 Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), Pin, Archive, Delete.
 Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, count badge only, no status dot,
 name and status in the tooltip).

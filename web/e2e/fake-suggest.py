@@ -16,7 +16,26 @@ if prompt.startswith("Choose the workflow state"):
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"state_id": "st-3", "label_ids": ["lab-1"]}}))
     sys.exit(0)
 
-if prompt.startswith("Choose which project the Linear issue"):
+if prompt.startswith("Judge which of the Slack threads"):
+    # The Slack screen's judgement: one entry per <slack_thread id=...> block, decided by what it says.
+    import re
+    fail = os.environ.get("FAKE_JUDGE_FAIL")
+    if fail and os.path.exists(fail):
+        print("judge failed on purpose", file=sys.stderr)
+        sys.exit(1)
+    out = []
+    for m in re.finditer(r'<slack_thread id="([^"]+)"[^>]*>\n(.*?)</slack_thread>', prompt, re.S):
+        tid, body = m.group(1), m.group(2)
+        if "review" in body:
+            out.append({"id": tid, "needs_reply": "yes", "reason": "Alice asks you to review PR 12 before noon", "urgency": "high", "summary": "Review request on the auth flow", "suggested_next_step": "Review the PR and answer Alice"})
+        elif "quick call" in body:
+            out.append({"id": tid, "needs_reply": "maybe", "reason": "Alice asks if you are free for a call", "urgency": "normal", "summary": "Call request"})
+        else:
+            out.append({"id": tid, "needs_reply": "no", "reason": "Only thanks", "urgency": "low", "summary": "Nothing to do"})
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"judgements": out}}))
+    sys.exit(0)
+
+if prompt.startswith("Choose which project the Linear issue") or prompt.startswith("Choose which project the Slack thread"):
     # The project pick of a thread started from an issue: the project named in FAKE_PICK_NAME, else the first.
     want = os.environ.get("FAKE_PICK_NAME", "")
     ids = []

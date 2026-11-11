@@ -4,6 +4,7 @@ import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
 import { BoardPage } from './components/Board'
 import { IssuesScreen } from './components/Issues'
+import { SlackScreen } from './components/Slack'
 import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
 import { ThreadPane } from './components/ThreadPane'
@@ -43,7 +44,7 @@ function Root() {
     const switched = lastProject.current !== projectId
     lastProject.current = projectId
     // My issues has no session of its own: leave the route alone.
-    if (route.view === 'issues') return
+    if (route.view === 'issues' || route.view === 'slack') return
     const cur = sessions.find((s) => s.id === route.s)
     if (isPhone) {
       if (route.s && !cur) navigate({ s: null, t: null }, { push: false })
@@ -98,6 +99,8 @@ function Root() {
         <BoardPage />
       ) : route.view === 'issues' ? (
         <IssuesScreen />
+      ) : route.view === 'slack' ? (
+        <SlackScreen />
       ) : isPhone ? (
         <PhoneApp />
       ) : isTablet ? (

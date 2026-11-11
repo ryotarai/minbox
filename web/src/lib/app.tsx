@@ -15,7 +15,7 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox' | 'issues'
+export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox' | 'issues' | 'slack'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -32,6 +32,8 @@ export type Route = {
   ss: string
   /** My issues: the selected issue's identifier (ENG-123). */
   issue: string | null
+  /** Slack (personal): the selected thread, `<channel>:<ts>`. */
+  slack: string | null
 }
 
 function readRoute(): Route {
@@ -41,11 +43,12 @@ function readRoute(): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'board', 'review', 'inbox', 'issues'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'board', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
     issue: p.get('issue'),
+    slack: p.get('thread'),
   }
 }
 
@@ -59,6 +62,7 @@ function routeHash(r: Route): string {
   if (r.tab !== 'inbox') p.set('tab', r.tab)
   if (r.view === 'settings' && r.ss !== 'general') p.set('ss', r.ss)
   if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
+  if (r.view === 'slack' && r.slack) p.set('thread', r.slack)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
 }
@@ -332,6 +336,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (ev.type === 'hosts') reloadHosts()
         if (ev.type === 'notifications') window.dispatchEvent(new Event('minbox:notifications'))
         if (ev.type === 'linear') window.dispatchEvent(new Event('minbox:linear'))
+        if (ev.type === 'slack') window.dispatchEvent(new Event('minbox:slack'))
         if (ev.type === 'devices') setDevicesVersion((v) => v + 1)
         if (ev.type === 'open' && ev.url) openForClaude.current(ev.url, ev.session_id)
       },
