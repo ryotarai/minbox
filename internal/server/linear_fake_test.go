@@ -74,6 +74,7 @@ type fakeLinear struct {
 	ignoreAssignee bool
 	noAssigneeArg  bool // the tool's schema has no assignee property
 	failList       bool
+	listBlocks     []string // list_issues answers these text blocks as they are
 }
 
 type fakeCode struct {
@@ -301,6 +302,14 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 	case "list_issues":
 		if f.failList {
 			toolErr("issues unavailable")
+			return
+		}
+		if f.listBlocks != nil {
+			var blocks []map[string]any
+			for _, b := range f.listBlocks {
+				blocks = append(blocks, map[string]any{"type": "text", "text": b})
+			}
+			reply(map[string]any{"content": blocks})
 			return
 		}
 		f.listIssues(call.Args, text)

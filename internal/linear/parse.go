@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -89,7 +90,7 @@ func asMap(v any) map[string]any { m, _ := v.(map[string]any); return m }
 // first returns the first non-empty string under keys of m.
 func first(m map[string]any, keys ...string) string {
 	for _, k := range keys {
-		if s := str(m[k]); s != "" {
+		if s := str(field(m, k)); s != "" {
 			return s
 		}
 	}
@@ -138,16 +139,22 @@ func unwrap(v any, keys ...string) map[string]any {
 
 // ParseIssue reads a get_issue / save_issue result.
 func ParseIssue(v any) (*Issue, error) {
-	m := unwrap(v, "issue", "data")
+	if t, ok := v.(string); ok {
+		return parseIssueText(t)
+	}
+	m := unwrap(v, "issue", "data", "node", "item", "result")
 	if m == nil {
 		return nil, errors.New("linear: unreadable issue")
 	}
-	is := &Issue{ID: first(m, "id", "uuid"), Identifier: first(m, "identifier", "key"), URL: first(m, "url"), Title: first(m, "title", "name")}
+	is := &Issue{ID: first(m, "id", "uuid"), Identifier: deriveIdentifier(m), URL: first(m, "url", "link"), Title: first(m, "title", "name")}
+	if is.Identifier == "" {
+		is.Identifier = first(m, "identifier", "key")
+	}
 	if is.Identifier == "" && is.ID == "" {
 		return nil, errors.New("linear: unreadable issue (no id)")
 	}
-	for _, k := range []string{"state", "status", "workflowState"} {
-		if n, _, _, t, _ := objOrName(m[k]); n != "" {
+	for _, k := range []string{"state", "status", "workflowState", "stateName", "statusName"} {
+		if n, _, _, t, _ := objOrName(field(m, k)); n != "" {
 			is.State, is.StateType = n, t
 			break
 		}
@@ -157,7 +164,7 @@ func ParseIssue(v any) (*Issue, error) {
 	}
 	is.StateType = strings.ToLower(is.StateType)
 	for _, k := range []string{"assignee", "assigneeName"} {
-		if n, _, e, _, _ := objOrName(m[k]); n != "" || e != "" {
+		if n, _, e, _, _ := objOrName(field(m, k)); n != "" || e != "" {
 			is.Assignee = n
 			if n == "" {
 				is.Assignee = e
@@ -165,14 +172,14 @@ func ParseIssue(v any) (*Issue, error) {
 			break
 		}
 	}
-	if n, id, _, _, key := objOrName(m["team"]); n != "" || id != "" {
+	if n, id, _, _, key := objOrName(field(m, "team")); n != "" || id != "" {
 		is.TeamName, is.TeamID = n, id
 		if is.TeamName == "" {
 			is.TeamName = key
 		}
 	}
 	if is.TeamID == "" {
-		is.TeamID = first(m, "teamId")
+		is.TeamID = first(m, "teamId", "team_id")
 	}
 	if is.TeamName == "" {
 		is.TeamName = first(m, "teamName")
@@ -203,9 +210,30 @@ func list(v any, keys ...string) []any {
 				}
 			}
 		}
-		for _, k := range []string{"nodes", "items", "results", "data", "edges"} {
+		for _, k := range []string{"nodes", "items", "results", "data", "edges", "result", "response", "content"} {
 			if inner, ok := x[k]; ok {
 				if l := list(inner, keys...); l != nil {
+					return l
+				}
+			}
+		}
+		// Any other key that holds a non-empty array of objects or strings (or such a wrapper).
+		names := make([]string, 0, len(x))
+		for k := range x {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			switch inner := x[k].(type) {
+			case []any:
+				if len(inner) > 0 {
+					switch inner[0].(type) {
+					case map[string]any, string:
+						return inner
+					}
+				}
+			case map[string]any:
+				if l := list(inner, keys...); len(l) > 0 {
 					return l
 				}
 			}
@@ -287,6 +315,9 @@ func ParseStatuses(v any) []Status {
 
 // ParseUser reads a get_user result.
 func ParseUser(v any) *User {
+	if t, ok := v.(string); ok {
+		return parseUserText(t)
+	}
 	m := unwrap(v, "user", "viewer", "data")
 	if m == nil {
 		return nil

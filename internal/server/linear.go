@@ -242,7 +242,11 @@ func (l *linearSvc) cl() *linear.Client {
 
 // errText is an error as stored or shown: scrubbed and short.
 func (l *linearSvc) errText(err error) string {
-	return linear.Truncate(l.scrub(context.Background(), err.Error()), 300)
+	n := 300
+	if strings.Contains(err.Error(), "\ntool: ") {
+		n = 1800 // carries a structure summary of an unreadable result
+	}
+	return linear.Truncate(l.scrub(context.Background(), err.Error()), n)
 }
 
 // ---- status ----
@@ -657,41 +661,62 @@ var linearTools = map[string][]string{
 }
 
 func (l *linearSvc) call(ctx context.Context, op string, build func(t linear.Tool) (map[string]any, error)) (any, error) {
-	t, err := l.cl().FindTool(ctx, linearTools[op]...)
-	if err != nil {
-		return nil, err
-	}
-	args, err := build(t)
-	if err != nil {
-		return nil, err
-	}
-	res, err := l.cl().Call(ctx, t.Name, args)
+	res, _, err := l.callRaw(ctx, op, build)
 	if err != nil {
 		return nil, err
 	}
 	return res.Value(), nil
 }
 
+// callRaw is call that returns the whole result and the tool's name (for a diagnosis).
+func (l *linearSvc) callRaw(ctx context.Context, op string, build func(t linear.Tool) (map[string]any, error)) (*linear.Result, string, error) {
+	t, err := l.cl().FindTool(ctx, linearTools[op]...)
+	if err != nil {
+		return nil, "", err
+	}
+	args, err := build(t)
+	if err != nil {
+		return nil, t.Name, err
+	}
+	res, err := l.cl().Call(ctx, t.Name, args)
+	if err != nil {
+		return nil, t.Name, err
+	}
+	return res, t.Name, nil
+}
+
+// unreadable is the error for a result no parser could read: what failed plus the structure of the
+// raw answer (no values), which the person can paste back.
+func unreadable(what, tool string, res *linear.Result, items []any) error {
+	return fmt.Errorf("%s\n%s", what, strings.TrimRight(linear.Diagnose(tool, res, items, true), "\n"))
+}
+
 func (l *linearSvc) getUser(ctx context.Context) (*linear.User, error) {
-	v, err := l.call(ctx, "get_user", func(t linear.Tool) (map[string]any, error) {
+	res, tool, err := l.callRaw(ctx, "get_user", func(t linear.Tool) (map[string]any, error) {
 		return map[string]any{t.Pick("query", "id", "userId"): "me"}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return linear.ParseUser(v), nil
+	u := linear.ParseUser(res.Value())
+	if u == nil || u.ID == "" {
+		log.Printf("linear: get_user unreadable: %s", linear.OneLine(linear.Diagnose(tool, res, nil, false)))
+		return nil, unreadable("Linear did not say who you are", tool, res, nil)
+	}
+	return u, nil
 }
 
 func (l *linearSvc) getIssue(ctx context.Context, ref string) (*linear.Issue, error) {
-	v, err := l.call(ctx, "get_issue", func(t linear.Tool) (map[string]any, error) {
+	res, tool, err := l.callRaw(ctx, "get_issue", func(t linear.Tool) (map[string]any, error) {
 		return map[string]any{t.Pick("id", "issueId", "identifier"): ref}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	is, err := linear.ParseIssue(v)
+	is, err := linear.ParseIssue(res.Value())
 	if err != nil {
-		return nil, err
+		log.Printf("linear: get_issue unreadable: %s", linear.OneLine(linear.Diagnose(tool, res, nil, false)))
+		return nil, unreadable(err.Error(), tool, res, nil)
 	}
 	if is.Identifier == "" {
 		is.Identifier = ref
@@ -707,13 +732,20 @@ func issueRef(l *store.ThreadLink) string {
 }
 
 func (l *linearSvc) listComments(ctx context.Context, lk *store.ThreadLink) ([]linear.Comment, error) {
-	v, err := l.call(ctx, "list_comments", func(t linear.Tool) (map[string]any, error) {
+	res, tool, err := l.callRaw(ctx, "list_comments", func(t linear.Tool) (map[string]any, error) {
 		return map[string]any{t.Pick("issueId", "issue", "issue_id"): issueRef(lk)}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return linear.ParseComments(v)
+	v := res.Value()
+	cs, err := linear.ParseComments(v)
+	if err != nil {
+		items := linear.Items(v, "comments")
+		log.Printf("linear: list_comments unreadable: %s", linear.OneLine(linear.Diagnose(tool, res, items, false)))
+		return nil, unreadable(err.Error(), tool, res, items)
+	}
+	return cs, nil
 }
 
 // ---- the thread's link ----

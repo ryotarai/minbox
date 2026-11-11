@@ -279,6 +279,21 @@ against a fake OAuth + MCP server.
 
 ## Troubleshooting
 
+- **My issues: "Linear returned N items but none could be shown as your issue", "N of M items ... could not be read", or an empty
+  list although you have issues.** The screen shows a **Details** block (open by itself) with a structure summary of Linear's raw
+  answer and a **Copy diagnostics** button; paste it into the bug report. It holds the tool name, the content blocks (count, types,
+  sizes), the shape of the value, and for the first two items the key names with value types
+  (`item[0]: object{identifier:string, priority:object{name:string, value:number}, ...}`) and the form of the identifier
+  (`ENG-###`). It never holds values; a text answer that is not JSON shows its first 200 characters with digits, uuids and long
+  tokens masked. The server log has one `linear: my issues: ...` line with the same structure (no titles).
+  What the reader accepts: JSON in any content block (a pagination note in another block is ignored; `structuredContent` too), JSON
+  after a preface line, arrays under `issues` / `nodes` / `edges` / `items` / `data` or any key, items wrapped as `{issue}` /
+  `{node}`, camelCase or snake_case keys, `status` or `state` as a name or `{name,type}`, priority as number / string / `{value,name}`,
+  labels as names / objects / `{nodes}` / a comma string, assignee as string / object / null, an identifier taken from `identifier`, an
+  `id` that looks like `ENG-12`, the URL, or team key + `number` (an item with only a uuid and a title is shown with the uuid as its
+  identifier), and a plain-text or markdown list or table (`- ENG-1: Title (In Progress)`, `| ID | Title | Status |`). The assignee name is not
+  checked against yours (the list call already filters by `me`); an `assigneeId` that differs from yours does hide the issue.
+  The same Details appear under the error when `get_user` / `get_issue` / `list_comments` answers something unreadable.
 - **Create dialog: teams are missing, or "Some of Linear's lists could not be loaded."** Open the dialog's
   **Details** (open by itself when something failed) and read it:
   - The header says "N teams loaded, M projects". Every team the tool returned is offered, even when its

@@ -182,6 +182,45 @@ func TestIssuesListErrors(t *testing.T) {
 	}
 }
 
+func TestIssuesListOddShapesAndDiagnostics(t *testing.T) {
+	e := newLinEnv(t)
+	e.connect()
+	// Two content blocks (the JSON and a pagination note), id holding the identifier: read.
+	e.f.listBlocks = []string{`{"issues":[{"id":"ENG-7","title":"Seven","state":{"name":"Todo"}},{"id":"ENG-8","title":"Eight","state":{"name":"Done","type":"completed"}}]}`, "Next page: none"}
+	code, obj := e.issues("&closed=1")
+	if code != 200 || len(identsOf(obj)) != 2 || obj["diagnostics"] != nil {
+		t.Fatalf("two blocks: %d %v", code, obj)
+	}
+	// A markdown table.
+	e.srv.lin.forgetLists()
+	e.f.listBlocks = []string{"| ID | Title | Status |\n|---|---|---|\n| ENG-9 | Nine | In Progress |"}
+	if code, obj = e.issues(""); code != 200 || fmt.Sprint(identsOf(obj)) != "[ENG-9]" {
+		t.Fatalf("table: %d %v", code, obj)
+	}
+	// Unreadable: a warning plus a structure summary without the values.
+	e.srv.lin.forgetLists()
+	e.f.listBlocks = []string{`{"issues":[{"summary":"SecretSummaryText","n":5},{"summary":"Other","n":6}]}`}
+	code, obj = e.issues("")
+	if code != 200 || len(identsOf(obj)) != 0 {
+		t.Fatalf("unreadable: %d %v", code, obj)
+	}
+	w := fmt.Sprint(obj["warnings"])
+	d, _ := obj["diagnostics"].(string)
+	if !strings.Contains(w, "2 items") || !strings.Contains(d, "tool: list_issues") || !strings.Contains(d, "item[0]: object{n:number, summary:string}") || !strings.Contains(d, "content blocks: 1 [text]") {
+		t.Fatalf("warnings %q diagnostics %q", w, d)
+	}
+	if strings.Contains(d, "SecretSummaryText") || strings.Contains(w, "SecretSummaryText") {
+		t.Fatalf("values leaked: %q", d)
+	}
+	// A text that is not a list at all: masked start shown.
+	e.srv.lin.forgetLists()
+	e.f.listBlocks = []string{"Sorry, something odd 12345 happened"}
+	_, obj = e.issues("")
+	if d, _ = obj["diagnostics"].(string); !strings.Contains(d, "text start (masked): Sorry, something odd # happened") {
+		t.Fatalf("diagnostics %q", d)
+	}
+}
+
 func TestIssueDetailTolerantShapes(t *testing.T) {
 	e := newLinEnv(t)
 	e.connect()

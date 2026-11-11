@@ -175,6 +175,9 @@ type listResult struct {
 	info  metaList
 	// notes: problems that did not stop the list (a later page failed, the list may be cut off).
 	notes []string
+	// raw: the first page's result and tool, kept for a diagnosis when the items cannot be read.
+	raw     *linear.Result
+	rawTool string
 }
 
 // callListAll calls a listing tool and follows its pages (the cursor argument the tool's schema
@@ -194,7 +197,7 @@ func (l *linearSvc) callListAllWith(ctx context.Context, op, team string, extra 
 	for page := 0; page < maxPages; page++ {
 		var limit int
 		var cursorArg string
-		v, err := l.call(ctx, op, func(t linear.Tool) (map[string]any, error) {
+		rr, rtool, err := l.callRaw(ctx, op, func(t linear.Tool) (map[string]any, error) {
 			res.info.Tool = t.Name
 			args := map[string]any{}
 			if team != "" {
@@ -238,7 +241,14 @@ func (l *linearSvc) callListAllWith(ctx context.Context, op, team string, extra 
 			break
 		}
 		res.info.Pages++
+		v := rr.Value()
+		if page == 0 {
+			res.raw, res.rawTool = rr, rtool
+		}
 		items := linear.Items(v, listKeys[op]...)
+		if op == "list_issues" {
+			items = linear.IssueItems(v) // JSON, or a text list / table ("- ENG-1: Title (In Progress)")
+		}
 		fresh := 0
 		for _, it := range items {
 			if id := linear.ItemID(it); id != "" {

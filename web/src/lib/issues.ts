@@ -38,7 +38,7 @@ export function useLinearStatus(): { status: LinearStatus | null; known: boolean
 
 // ---- the list ----
 
-let memory: { issues: IssueSummary[]; fetchedAt: string | null; user?: string; warnings: string[] } | null = null
+let memory: { issues: IssueSummary[]; fetchedAt: string | null; user?: string; warnings: string[]; diagnostics: string } | null = null
 
 export type IssuesState = {
   issues: IssueSummary[] | null
@@ -46,6 +46,7 @@ export type IssuesState = {
   syncing: boolean
   error: { message: string; code?: string; status?: number } | null
   warnings: string[]
+  diagnostics: string
   fetchedAt: string | null
   refresh: () => void
   /** Put a just-created issue in the list (it is assigned to me) without waiting for Linear. */
@@ -57,6 +58,7 @@ export function useMyIssues(): IssuesState {
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<IssuesState['error']>(null)
   const [warnings, setWarnings] = useState<string[]>(memory?.warnings ?? [])
+  const [diagnostics, setDiagnostics] = useState<string>(memory?.diagnostics ?? '')
   const [fetchedAt, setFetchedAt] = useState<string | null>(memory?.fetchedAt ?? null)
   const live = useRef(true)
   const seq = useRef(0)
@@ -67,7 +69,8 @@ export function useMyIssues(): IssuesState {
 
   const apply = useCallback((r: IssueListResult) => {
     if (!r.issues) return
-    memory = { issues: r.issues, fetchedAt: r.fetched_at ?? null, warnings: r.warnings ?? [] }
+    memory = { issues: r.issues, fetchedAt: r.fetched_at ?? null, warnings: r.warnings ?? [], diagnostics: r.diagnostics ?? '' }
+    setDiagnostics(r.diagnostics ?? '')
     setIssues(r.issues)
     setWarnings(r.warnings ?? [])
     setFetchedAt(r.fetched_at ?? null)
@@ -113,7 +116,7 @@ export function useMyIssues(): IssuesState {
       return next
     })
   }, [])
-  return { issues, syncing, error, warnings, fetchedAt, refresh, add }
+  return { issues, syncing, error, warnings, diagnostics, fetchedAt, refresh, add }
 }
 
 // ---- grouping ----

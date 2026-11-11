@@ -126,23 +126,62 @@ func (t Tool) Pick(cands ...string) string {
 	return ""
 }
 
+// Block is one content block of a tool result.
+type Block struct{ Type, Text string }
+
 // Result is a tool's result.
 type Result struct {
 	Text       string // the text content joined
 	Structured any    // structuredContent, if any
+	Blocks     []Block
+}
+
+func decodeText(t string) (any, bool) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return nil, false
+	}
+	var v any
+	if json.Unmarshal([]byte(t), &v) == nil {
+		switch v.(type) {
+		case map[string]any, []any:
+			return v, true
+		}
+		return nil, false
+	}
+	return EmbeddedJSON(t)
 }
 
 // Value is the result as data: structuredContent, else the text parsed as JSON, else the text.
+// Of several content blocks the one that holds a list (a JSON object with an array, or an array) is
+// preferred, so a pagination note in another block does not hide it.
 func (r *Result) Value() any {
+	cands := []any{}
 	if r.Structured != nil {
-		return r.Structured
+		cands = append(cands, r.Structured)
 	}
-	var v any
-	if json.Unmarshal([]byte(strings.TrimSpace(r.Text)), &v) == nil {
-		return v
+	for _, b := range r.Blocks {
+		if v, ok := decodeText(b.Text); ok {
+			cands = append(cands, v)
+		}
 	}
-	if v, ok := EmbeddedJSON(r.Text); ok {
-		return v
+	if len(r.Blocks) > 1 {
+		if v, ok := decodeText(r.Text); ok {
+			cands = append(cands, v)
+		}
+	}
+	if len(r.Blocks) == 0 {
+		if v, ok := decodeText(r.Text); ok {
+			cands = append(cands, v)
+		}
+	}
+	for _, c := range cands {
+		if list(c) != nil {
+			return c
+		}
+	}
+	if len(cands) > 0 {
+		return cands[0]
 	}
 	return r.Text
 }
@@ -489,12 +528,14 @@ func (c *Client) Call(ctx context.Context, name string, args map[string]any) (*R
 		return nil, errors.New("linear: unreadable tool result")
 	}
 	var texts []string
+	var blocks []Block
 	for _, p := range res.Content {
+		blocks = append(blocks, Block{Type: p.Type, Text: p.Text})
 		if p.Type == "text" || p.Type == "" {
 			texts = append(texts, p.Text)
 		}
 	}
-	out := &Result{Text: strings.Join(texts, "\n"), Structured: res.Structured}
+	out := &Result{Text: strings.Join(texts, "\n"), Structured: res.Structured, Blocks: blocks}
 	if res.IsError {
 		return nil, &ToolError{Text: c.scrub(out.Text)}
 	}

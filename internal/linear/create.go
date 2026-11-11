@@ -17,8 +17,10 @@ type Project struct {
 
 func nodeOf(e any) map[string]any {
 	m := asMap(e)
-	if node := asMap(m["node"]); node != nil {
-		return node
+	for _, k := range []string{"node", "issue", "item"} {
+		if node := asMap(m[k]); node != nil {
+			return node
+		}
 	}
 	return m
 }

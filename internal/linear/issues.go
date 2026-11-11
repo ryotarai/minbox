@@ -2,6 +2,7 @@ package linear
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -29,20 +30,28 @@ func PriorityLabel(p int) string {
 // parseIssueExtras reads the fields only the My issues screen needs: description, priority,
 // labels, project, estimate, due date, times, the team key and the assignee's id.
 func parseIssueExtras(m map[string]any, is *Issue) {
-	if d, ok := m["description"].(string); ok {
+	if d, ok := field(m, "description", "body").(string); ok {
 		is.Description = strings.TrimSpace(d)
 	}
-	switch p := m["priority"].(type) {
+	pv := field(m, "priority")
+	if pv == nil {
+		pv = field(m, "priorityLabel", "priorityName")
+	}
+	switch p := pv.(type) {
 	case float64:
 		is.Priority = int(p)
 	case string:
 		is.PriorityName = strings.TrimSpace(p)
 		if v, ok := priorityNames[strings.ToLower(is.PriorityName)]; ok {
 			is.Priority = v
+		} else if n, err := strconv.Atoi(is.PriorityName); err == nil {
+			is.Priority, is.PriorityName = n, ""
 		}
 	case map[string]any:
-		if v, ok := p["value"].(float64); ok {
+		if v, ok := field(p, "value", "priority", "number").(float64); ok {
 			is.Priority = int(v)
+		} else if v, err := strconv.Atoi(first(p, "value")); err == nil {
+			is.Priority = v
 		}
 		is.PriorityName = first(p, "name", "label")
 		if v, ok := priorityNames[strings.ToLower(is.PriorityName)]; ok && is.Priority == 0 {
@@ -55,19 +64,28 @@ func parseIssueExtras(m map[string]any, is *Issue) {
 	if is.PriorityName == "" {
 		is.PriorityName = PriorityLabel(is.Priority)
 	}
-	for _, e := range list(m["labels"], "labels") {
-		if n, _, _, _, _ := objOrName(nodeOf(e)); n != "" {
-			is.Labels = append(is.Labels, n)
-		} else if s := str(e); s != "" {
-			is.Labels = append(is.Labels, s)
+	switch lv := field(m, "labels", "labelNames", "issueLabels").(type) {
+	case string:
+		for _, p := range strings.Split(lv, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				is.Labels = append(is.Labels, p)
+			}
+		}
+	default:
+		for _, e := range list(lv, "labels") {
+			if n, _, _, _, _ := objOrName(nodeOf(e)); n != "" {
+				is.Labels = append(is.Labels, n)
+			} else if s := str(e); s != "" {
+				is.Labels = append(is.Labels, s)
+			}
 		}
 	}
-	if n, _, _, _, _ := objOrName(m["project"]); n != "" {
+	if n, _, _, _, _ := objOrName(field(m, "project")); n != "" {
 		is.Project = n
 	} else {
 		is.Project = first(m, "projectName")
 	}
-	switch e := m["estimate"].(type) {
+	switch e := field(m, "estimate").(type) {
 	case float64:
 		is.Estimate = fmt.Sprintf("%g", e)
 	case string:
@@ -82,12 +100,12 @@ func parseIssueExtras(m map[string]any, is *Issue) {
 	is.DueDate = first(m, "dueDate", "due_date")
 	is.CreatedAt = parseTime(first(m, "createdAt", "created_at"))
 	is.UpdatedAt = parseTime(first(m, "updatedAt", "updated_at"))
-	if _, id, _, _, _ := objOrName(m["assignee"]); id != "" {
+	if _, id, _, _, _ := objOrName(field(m, "assignee")); id != "" {
 		is.AssigneeID = id
 	} else {
 		is.AssigneeID = first(m, "assigneeId", "assignee_id")
 	}
-	if tm := asMap(m["team"]); tm != nil {
+	if tm := asMap(field(m, "team")); tm != nil {
 		is.TeamKey = first(tm, "key", "identifier")
 	}
 	if is.TeamKey == "" {
@@ -100,17 +118,51 @@ func parseIssueExtras(m map[string]any, is *Issue) {
 	}
 }
 
-// ParseIssues reads a list_issues result: the issues it holds (an item that cannot be read is skipped).
+// ParseIssues reads a list_issues result: the issues it holds (an item that cannot be read is
+// skipped). An item needs a usable identifier (its own, or derived from the URL / team key and
+// number), or an id and a title; a text result (markdown list or table) is read line by line.
 func ParseIssues(v any) []Issue {
 	var out []Issue
+	if s, ok := v.(string); ok {
+		v = TextIssueItems(s)
+	}
 	for _, e := range list(v, "issues") {
-		is, err := ParseIssue(nodeOf(e))
-		if err != nil || is == nil {
-			continue
-		}
-		out = append(out, *is)
+		out = append(out, parseListItem(e, 0)...)
 	}
 	return out
+}
+
+func parseListItem(e any, depth int) []Issue {
+	if s, ok := e.(string); ok {
+		var out []Issue
+		for _, it := range TextIssueItems(s) {
+			out = append(out, parseListItem(it, depth+1)...)
+		}
+		return out
+	}
+	m := nodeOf(e)
+	if m == nil {
+		return nil
+	}
+	is, err := ParseIssue(m)
+	if err == nil && is != nil && (is.Identifier != "" || is.ID != "") {
+		if is.Identifier == "" {
+			if is.Title == "" {
+				return nil
+			}
+			is.Identifier = is.ID // the tool shows no identifier: the id still opens the issue
+		}
+		return []Issue{*is}
+	}
+	// A group ({"state": "...", "issues": [...]}): read the issues inside.
+	if depth < 2 {
+		var out []Issue
+		for _, e2 := range list(field(m, "issues", "items", "nodes"), "issues") {
+			out = append(out, parseListItem(e2, depth+1)...)
+		}
+		return out
+	}
+	return nil
 }
 
 // TypeByName guesses a workflow state type from its name, for a tool that shows only the name.

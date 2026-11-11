@@ -53,7 +53,7 @@ func NextCursor(v any) string {
 // EmbeddedJSON finds a JSON object or array inside prose (a text result such as "Found 3
 // teams:\n[{...}]"), returning it decoded.
 func EmbeddedJSON(text string) (any, bool) {
-	for i := 0; i < len(text) && i < 4000; i++ {
+	for i := 0; i < len(text) && i < 20000; i++ {
 		if text[i] != '{' && text[i] != '[' {
 			continue
 		}

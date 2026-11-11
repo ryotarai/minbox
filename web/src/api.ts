@@ -526,6 +526,8 @@ export type IssueListResult = {
   stale?: boolean
   closed_count?: number
   warnings?: string[]
+  /** A structure summary (no values) of Linear's raw answer, present when something could not be read. */
+  diagnostics?: string
 }
 
 export type IssueComment = { id: string; author: string; body: string; url: string; created_at: string | null }

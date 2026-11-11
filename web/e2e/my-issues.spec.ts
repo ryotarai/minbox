@@ -198,6 +198,32 @@ test('desktop: with several projects the helper picks one; the main session is t
   await expect(page.getByTestId('issue-thread-preview')).toContainText('linear_issue_handoff')
 })
 
+test('an unreadable list answer shows a Details block with a structure summary and a copy button, never the values', async ({ page, minbox, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const lin = minbox.linear
+  lin.listRaw = [JSON.stringify({ issues: [{ summary: 'SecretSummaryText', n: 5 }, { summary: 'Other', n: 6 }] }), 'cursor note']
+  await connect(page, minbox)
+  await page.goto(`${minbox.url}/#v=issues`)
+  await expect(page.getByTestId('issues-screen')).toBeVisible()
+  await expect(page.getByTestId('issues-warning').first()).toContainText('2 items')
+  const diag = page.getByTestId('issues-diagnostics')
+  await expect(diag).toBeVisible()
+  const text = page.getByTestId('issues-diagnostics-text')
+  await expect(text).toContainText('tool: list_issues')
+  await expect(text).toContainText('content blocks: 2 [text,text]')
+  await expect(text).toContainText('item[0]: object{n:number, summary:string}')
+  await expect(text).not.toContainText('SecretSummaryText')
+  await page.getByTestId('issues-diagnostics-copy').click()
+  await expect(page.getByTestId('issues-diagnostics-copy')).toHaveText('Copied')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('item[0]: object{n:number, summary:string}')
+  // An odd but readable shape (text table in the second block) simply works.
+  lin.listRaw = ['Your issues:', '| ID | Title | Status |\n|---|---|---|\n| ENG-9 | Nine | In Progress |']
+  await page.waitForTimeout(5_500)
+  await page.getByTestId('issues-refresh').click()
+  await expect(page.getByTestId('issue-row')).toHaveCount(1)
+  await expect(page.getByTestId('issues-diagnostics')).toHaveCount(0)
+})
+
 test('logged out: no entry, and the screen asks to connect', async ({ page, minbox }) => {
   await page.goto(`${minbox.url}/#v=issues`)
   await expect(page.getByTestId('issues-screen')).toBeVisible()

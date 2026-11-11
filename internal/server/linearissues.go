@@ -40,6 +40,7 @@ type issuesEntry struct {
 	user   *linear.User
 	issues []linear.Issue
 	notes  []string
+	diag   string // structure summary of the raw answer when something could not be read
 }
 
 type issuesFlight struct {
@@ -204,11 +205,22 @@ func mine(is linear.Issue, u *linear.User) bool {
 	if is.AssigneeID != "" {
 		return is.AssigneeID == u.ID
 	}
-	if is.Assignee == "" {
+	// Only an id can say "not me" for sure: a name may be a display name, a first name or an email.
+	return true
+}
+
+// emptyListResult: the tool's answer is recognizably an empty list ({"issues": []}, [], or a text
+// saying there are none), as opposed to something minbox cannot read.
+func emptyListResult(res *listResult) bool {
+	if res.raw == nil {
 		return true
 	}
-	a := strings.ToLower(is.Assignee)
-	return a == "me" || a == strings.ToLower(u.Name) || a == strings.ToLower(u.Email) || a == u.ID
+	v := res.raw.Value()
+	if s, ok := v.(string); ok {
+		t := strings.ToLower(strings.TrimSpace(s))
+		return t == "" || strings.Contains(t, "no issues") || strings.Contains(t, "0 issues") || strings.Contains(t, "no results") || strings.Contains(t, "not found")
+	}
+	return len(linear.Items(v, "issues")) == 0 && linear.Items(v, "issues") != nil
 }
 
 func (l *linearSvc) fetchAssigned(ctx context.Context, u *linear.User) (*issuesEntry, error) {
@@ -228,16 +240,34 @@ func (l *linearSvc) fetchAssigned(ctx context.Context, u *linear.User) (*issuesE
 	}
 	e := &issuesEntry{at: l.now(), user: u, notes: res.notes}
 	seen := map[string]bool{}
-	for _, is := range linear.ParseIssues(res.items) {
-		if is.Identifier == "" || seen[is.Identifier] || !mine(is, u) {
+	parsed := linear.ParseIssues(res.items)
+	notMine, dups := 0, 0
+	for _, is := range parsed {
+		switch {
+		case is.Identifier == "" || seen[is.Identifier]:
+			dups++
+			continue
+		case !mine(is, u):
+			notMine++
 			continue
 		}
 		seen[is.Identifier] = true
 		l.resolveType(ctx, &is)
 		e.issues = append(e.issues, is)
 	}
-	if len(res.items) > 0 && len(e.issues) == 0 {
-		e.notes = append(e.notes, fmt.Sprintf("Linear returned %d items but none could be read as an issue", len(res.items)))
+	unread := len(res.items) - len(parsed)
+	switch {
+	case len(res.items) > 0 && len(e.issues) == 0:
+		e.notes = append(e.notes, fmt.Sprintf("Linear returned %d items but none could be shown as your issue (%d read as issues, %d of them not assigned to you or duplicates, %d could not be read)", len(res.items), len(parsed), notMine+dups, max(unread, 0)))
+	case unread > 0:
+		e.notes = append(e.notes, fmt.Sprintf("%d of %d items from Linear could not be read as an issue and are not shown", unread, len(res.items)))
+	case len(res.items) == 0 && !emptyListResult(res):
+		e.notes = append(e.notes, "Linear answered, but minbox could not find a list of issues in the answer")
+	}
+	if len(e.notes) > len(res.notes) {
+		e.diag = strings.TrimRight(linear.Diagnose(res.rawTool, res.raw, res.items, true), "\n")
+		e.diag += fmt.Sprintf("\nitems: %d, read as issues: %d, not assigned to you / duplicate: %d", len(res.items), len(parsed), notMine+dups)
+		log.Printf("linear: my issues: %s", linear.OneLine(linear.Diagnose(res.rawTool, res.raw, res.items, false)))
 	}
 	return e, nil
 }
@@ -363,8 +393,12 @@ func (s *Server) linearIssuesList(w http.ResponseWriter, r *http.Request) {
 	for i := range notes {
 		notes[i] = l.scrub(ctx, notes[i])
 	}
-	writeJSON(w, 200, map[string]any{"issues": views, "user": e.user, "fetched_at": e.at, "cached": cachedHit,
-		"stale": l.now().Sub(e.at) > issuesTTL, "closed_count": closedN, "warnings": notes})
+	out := map[string]any{"issues": views, "user": e.user, "fetched_at": e.at, "cached": cachedHit,
+		"stale": l.now().Sub(e.at) > issuesTTL, "closed_count": closedN, "warnings": notes}
+	if e.diag != "" {
+		out["diagnostics"] = l.scrub(ctx, e.diag)
+	}
+	writeJSON(w, 200, out)
 }
 
 // ---- the detail ----

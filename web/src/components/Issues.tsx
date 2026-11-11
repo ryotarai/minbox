@@ -157,6 +157,30 @@ function Markdown({ text, testid }: { text: string; testid?: string }) {
 
 // ---- the list ----
 
+/** What Linear answered, as a structure summary (key names and types, no values): open by itself, with a button to copy it for a bug report. */
+function Diagnostics({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <details data-testid="issues-diagnostics" open className={cx('rounded-md border border-line2 px-2.5 py-1.5 text-[12px] text-subtle', className)}>
+      <summary className="cursor-pointer">Details</summary>
+      <pre data-testid="issues-diagnostics-text" className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap select-text font-mono text-[11px]">
+        {text}
+      </pre>
+      <Button
+        size="sm"
+        data-testid="issues-diagnostics-copy"
+        onClick={() => {
+          void navigator.clipboard?.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+        }}
+      >
+        {copied ? 'Copied' : 'Copy diagnostics'}
+      </Button>
+    </details>
+  )
+}
+
 function IssueList({
   state,
   selected,
@@ -175,7 +199,11 @@ function IssueList({
   const { navigate } = useApp()
   const [q, setQ] = useState('')
   const [closed, setClosed] = useState(false)
-  const { issues, syncing, error, warnings, fetchedAt, refresh } = state
+  const { issues, syncing, error, warnings, diagnostics, fetchedAt, refresh } = state
+  // An error may carry a structure summary of Linear's raw answer after its first line(s).
+  const errCut = error ? error.message.indexOf('\ntool: ') : -1
+  const errText = error ? (errCut >= 0 ? error.message.slice(0, errCut) : error.message) : ''
+  const errDiag = error && errCut >= 0 ? error.message.slice(errCut + 1) : ''
   const visible = useMemo(() => (issues ?? []).filter((i) => (closed || !isClosed(i.state_type)) && matchesIssue(i, q)), [issues, closed, q])
   const groups = useMemo(() => groupIssues(visible), [visible])
   const closedCount = useMemo(() => (issues ?? []).filter((i) => isClosed(i.state_type)).length, [issues])
@@ -225,7 +253,8 @@ function IssueList({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {error && (
           <div role="alert" data-testid="issues-error" className="m-3 flex flex-col gap-2 rounded-lg border border-danger/40 bg-dangerstrong/10 px-3 py-2 text-[12.5px] text-dangerfg">
-            <span>{loginNeeded ? 'Connect Linear first (or log in again): ' : ''}{error.message}</span>
+            <span>{loginNeeded ? 'Connect Linear first (or log in again): ' : ''}{errText}</span>
+            {errDiag && <Diagnostics text={errDiag} />}
             <span className="flex gap-2">
               {loginNeeded && (
                 <Button size="sm" data-testid="issues-connect" onClick={() => navigate({ view: 'settings', ss: 'integrations' }, { push: true })}>
@@ -243,6 +272,7 @@ function IssueList({
             {w}
           </div>
         ))}
+        {diagnostics && <Diagnostics text={diagnostics} className="mx-3 mt-2" />}
         {issues === null && !error && (
           <div data-testid="issues-loading" className="px-4 py-6 text-[13px] text-subtle">
             Loading your issues…

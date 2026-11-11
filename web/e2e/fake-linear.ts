@@ -55,6 +55,8 @@ export class FakeLinear {
   }
   /** list_issues answers a tool error. */
   failList = false
+  /** list_issues answers these text content blocks as they are (an odd shape). */
+  listRaw: string[] | null = null
   /** Issues made by save_issue without an id (the Create-issue dialog). */
   created: any[] = []
   calls: { tool: string; args: any }[] = []
@@ -207,6 +209,7 @@ export class FakeLinear {
             return text({ projects: [{ id: 'proj-1', name: 'Website' }] })
           case 'list_issues': {
             if (this.failList) return sse({ isError: true, content: [{ type: 'text', text: 'issues are down' }] })
+            if (this.listRaw) return sse({ content: this.listRaw.map((t) => ({ type: 'text', text: t })) })
             return text({ issues: a.assignee === 'me' ? this.assigned : [], hasNextPage: false })
           }
           case 'get_issue': {
