@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '../api'
 import { useApp } from '../lib/app'
-import { oneLine, shortTime } from '../lib/format'
+import { initials, oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
 import { IconPin } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
+import { useSelectedProject } from '../lib/projects'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
   queued: { icon: '◷', label: 'Queued', color: 'text-muted' },
@@ -54,8 +55,54 @@ export function useAllThreads(): Thread[] | null {
   return threads
 }
 
+
+/** A stable hue (0-359) from a project id; the colours themselves live in .proj-badge (index.css). */
+export function projectHue(id: string): number {
+  let h = 0
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return h % 360
+}
+
+/** Which project a thread belongs to: its icon, or a 2-character box with a per-project colour. Shown only while the list spans all projects. */
+export function ThreadProjectBadge({ projectId, projectName }: { projectId?: string; projectName?: string }) {
+  const { projects } = useApp()
+  const project = projects?.find((p) => p.id === projectId)
+  const name = project?.name ?? projectName ?? ''
+  const icon = project?.icon
+  const label = name ? `Project: ${name}` : 'No project'
+  const base = 'flex h-[22px] w-[22px] shrink-0 items-center justify-center overflow-hidden rounded-[6px]'
+  const common = { 'data-testid': 'thread-project-badge', 'data-project-id': projectId ?? '', title: label, role: 'img', 'aria-label': label } as const
+  if (icon?.kind === 'image') {
+    return (
+      <div {...common} data-kind="image" className={cx(base, 'border border-line')}>
+        <img src={icon.url} alt="" draggable={false} className="h-full w-full object-cover" />
+      </div>
+    )
+  }
+  if (icon?.kind === 'emoji') {
+    return (
+      <div {...common} data-kind="emoji" className={cx(base, 'bg-chip text-[14px] leading-none')}>
+        {icon.emoji}
+      </div>
+    )
+  }
+  if (!name) {
+    return (
+      <div {...common} data-kind="none" className={cx(base, 'bg-chip text-[12px] text-subtle')}>
+        –
+      </div>
+    )
+  }
+  return (
+    <div {...common} data-kind="initials" style={{ '--h': projectHue(projectId ?? name) } as React.CSSProperties} className={cx(base, 'proj-badge text-[10.5px] font-bold leading-none tracking-[0.02em]')}>
+      {initials(name)}
+    </div>
+  )
+}
+
 export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: boolean; onOpen: () => void; phone?: boolean }) {
   const { settings } = useApp()
+  const { id: scopedProject } = useSelectedProject()
   // Unread is shown by a bold subject only; no row background or border tint.
   const strong = t.unread > 0 && settings.list.highlight_subject
   return (
@@ -74,6 +121,7 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
+        {!scopedProject && <ThreadProjectBadge projectId={t.project_id} projectName={t.project_name} />}
         {t.unread > 0 && <span aria-label="Unread" className="h-[7px] w-[7px] shrink-0 rounded-full bg-wait" />}
         {t.pinned_at && <IconPin size={12} className="shrink-0 text-muted" />}
         <span title={t.subject} className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'font-normal text-fg2')}>{t.subject}</span>

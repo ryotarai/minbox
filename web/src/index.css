@@ -370,3 +370,13 @@ kbd {
 .working-dots i:nth-child(3) { animation-delay: 0.4s; }
 @keyframes working-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .working-dots i { animation: none; } }
+
+/* Project badge (thread rows while All projects is selected): muted, hue from the project id. */
+.proj-badge {
+  background: hsl(var(--h) 35% 50% / 0.22);
+  color: hsl(var(--h) 60% 76%);
+}
+[data-theme='light'] .proj-badge {
+  background: hsl(var(--h) 45% 50% / 0.16);
+  color: hsl(var(--h) 55% 28%);
+}

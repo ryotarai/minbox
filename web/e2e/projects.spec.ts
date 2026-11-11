@@ -61,7 +61,7 @@ test('All projects shows every thread with its project; a project scopes the lis
 
   await selectProject(page, 'All projects')
   await expect(rows(page)).toHaveCount(2)
-  await expect(page.getByTestId('thread-project')).toHaveCount(0)
+  await expect(page.getByTestId('thread-project-badge')).toHaveCount(2)
   // The waiting question is the amber badge of api; docs has one unread thread.
   await expect(item(page, 'api').getByTestId('project-waiting')).toHaveText('1')
   await expect(item(page, 'docs').getByTestId('project-unread')).toHaveText('1')
@@ -530,4 +530,29 @@ test('phone: switching project keeps the list', async ({ page, minbox }) => {
   await expect(rows(page)).toHaveCount(1)
   await page.waitForTimeout(500)
   await expect(page.getByTestId('phone-home')).toBeVisible()
+})
+
+test('All projects marks each thread with its project (icon or 2-char box); a single project hides the badges', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const projects = await (await fetch(minbox.url + '/api/projects')).json()
+  const docs = projects.find((p: { name: string }) => p.name === 'docs')
+  const put = await fetch(`${minbox.url}/api/projects/${docs.id}/icon`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emoji: '📚' }) })
+  expect(put.ok).toBe(true)
+  await page.reload()
+
+  await selectProject(page, 'All projects')
+  await expect(rows(page)).toHaveCount(2)
+  const api = rows(page).filter({ has: page.locator('[data-testid="thread-project-badge"][data-kind="initials"]') })
+  await expect(api).toHaveCount(1)
+  await expect(api.getByTestId('thread-project-badge')).toHaveText('AP')
+  await expect(api.getByTestId('thread-project-badge')).toHaveAttribute('aria-label', 'Project: api')
+  await expect(api.getByTestId('thread-project-badge')).toHaveAttribute('title', 'Project: api')
+  const withIcon = rows(page).filter({ has: page.locator('[data-testid="thread-project-badge"][data-kind="emoji"]') })
+  await expect(withIcon.getByTestId('thread-project-badge')).toHaveText('📚')
+  await expect(withIcon.getByTestId('thread-project-badge')).toHaveAttribute('aria-label', 'Project: docs')
+
+  await selectProject(page, 'api')
+  await expect(rows(page)).toHaveCount(1)
+  await expect(page.getByTestId('thread-project-badge')).toHaveCount(0)
 })

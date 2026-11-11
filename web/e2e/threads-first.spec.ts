@@ -96,7 +96,7 @@ test('rows carry no session chip; the thread view shows the session and its term
   await seed(page, minbox.dataDir)
   await expect(page.getByTestId('thread-row')).toHaveCount(3)
   await expect(page.getByTestId('thread-session')).toHaveCount(0)
-  await expect(page.getByTestId('thread-project')).toHaveCount(0)
+  await expect(page.getByTestId('thread-project-badge')).toHaveCount(3)
   await row(page, 'Beta note').click()
   await expect(page.getByTestId('thread-back')).toContainText('beta')
   await expect(page.getByTestId('terminal-session-name')).toHaveText('beta')
@@ -241,7 +241,7 @@ test('phone: the thread list is home; a thread flips to its terminal; the compos
   await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'home')
   await expect(page.getByTestId('thread-row')).toHaveCount(3)
   await expect(page.getByTestId('thread-session')).toHaveCount(0)
-  await expect(page.getByTestId('thread-project')).toHaveCount(0)
+  await expect(page.getByTestId('thread-project-badge')).toHaveCount(3)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
   // Filters work on the phone, and the session sheet filters by session.

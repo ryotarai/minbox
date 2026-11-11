@@ -53,6 +53,7 @@ Icon: the project menu's `Set icon…` opens a dialog with an emoji field, a gri
 (PNG/JPEG/GIF, cropped square by the server, previewed in the dialog), `Remove icon`, Save and Cancel. A tile shows the emoji
 (large) or the image (rounded, object-cover, thin border) instead of the two letters; projects without an icon keep the letters.
 The wide rail row and the phone project list and header show a 20-24 px icon before the name.
+Thread rows show the same icon (or a coloured 2-character initials box) as a small leading badge while All projects is selected; see ui-v2-threads.md.
 
 Selecting a project scopes the threads list, the session filter, the composer targets and the session
 chips to it. List rows carry no project or session chip, also in `All projects`.
