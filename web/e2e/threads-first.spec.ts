@@ -157,6 +157,24 @@ test('composer: + New session… creates a session and sends the typed message i
   await expect(page.getByTestId('quick-body')).toHaveValue('')
 })
 
+test('unread is bold only: no row background tint, read rows are normal weight', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox.dataDir)
+  const subject = (text: string) => row(page, text).locator('span[title]').first()
+  const weight = (text: string) => subject(text).evaluate((e) => Number(getComputedStyle(e).fontWeight))
+  const bg = (text: string) => row(page, text).evaluate((e) => getComputedStyle(e).backgroundColor)
+  const clear = (c: string) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
+  await expect(row(page, 'Beta note').locator('[aria-label="Unread"]')).toBeVisible()
+  expect(await weight('Beta note')).toBeGreaterThanOrEqual(600)
+  expect(clear(await bg('Beta note'))).toBe(true)
+  // The waiting row is not tinted either.
+  expect(clear(await bg('Pick a database'))).toBe(true)
+  await row(page, 'Beta note').click()
+  await page.getByTestId('thread-row').first().hover() // move off, so hover does not tint
+  await expect(row(page, 'Beta note').locator('[aria-label="Unread"]')).toHaveCount(0)
+  expect(await weight('Beta note')).toBeLessThanOrEqual(400)
+})
+
 test('filters: Waiting, Unread, a session, and grouping', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox.dataDir)
