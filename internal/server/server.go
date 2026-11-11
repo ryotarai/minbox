@@ -210,6 +210,16 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/threads/{id}/linear/draft", s.linearDraft)
 	mux.HandleFunc("POST /api/threads/{id}/linear/team/{teamId}/lists", s.linearTeamLists)
 	mux.HandleFunc("POST /api/threads/{id}/linear/create", s.linearCreate)
+	// My issues: the issues assigned to the person, one issue, a thread started from it, and creating
+	// an issue from plain language (no thread).
+	mux.HandleFunc("GET /api/linear/issues", s.linearIssuesList)
+	mux.HandleFunc("POST /api/linear/issues", s.linearIssueCreate)
+	mux.HandleFunc("POST /api/linear/issues/draft", s.linearIssueDraft)
+	mux.HandleFunc("POST /api/linear/issues/team/{teamId}/lists", s.linearIssueTeamLists)
+	mux.HandleFunc("GET /api/linear/issues/{id}", s.linearIssueGet)
+	mux.HandleFunc("POST /api/linear/issues/{id}/thread", s.linearIssueStartThread)
+	mux.HandleFunc("POST /api/linear/issues/{id}/thread/preview", s.linearIssueThreadPreview)
+	mux.HandleFunc("POST /api/linear/issues/{id}/project-suggestion", s.linearIssueProjectSuggestion)
 	mux.HandleFunc("GET /api/integrations/linear", s.linearStatus)
 	mux.HandleFunc("POST /api/integrations/linear/login", s.linearLogin)
 	mux.HandleFunc("GET /api/integrations/linear/callback", s.linearCallback)

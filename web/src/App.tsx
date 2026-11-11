@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
 import { BoardPage } from './components/Board'
+import { IssuesScreen } from './components/Issues'
 import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
 import { ThreadPane } from './components/ThreadPane'
@@ -41,6 +42,8 @@ function Root() {
     if (!sessions) return
     const switched = lastProject.current !== projectId
     lastProject.current = projectId
+    // My issues has no session of its own: leave the route alone.
+    if (route.view === 'issues') return
     const cur = sessions.find((s) => s.id === route.s)
     if (isPhone) {
       if (route.s && !cur) navigate({ s: null, t: null }, { push: false })
@@ -57,7 +60,7 @@ function Root() {
     const first = main ?? groupSessions(live)[0]?.rows[0] ?? (projectId ? undefined : sessions[0])
     if (!first && !route.s) return
     navigate({ s: first?.id ?? null, t: null, f: null })
-  }, [sessions, route.s, isPhone, navigate, projectId])
+  }, [sessions, route.s, route.view, isPhone, navigate, projectId])
   // The terminal view (tab=terminal) is a phone and tablet state; three columns always show the terminal.
   useEffect(() => {
     if (!isPhone && !isTablet && route.tab === 'terminal') navigate({ tab: 'inbox' }, { push: false })
@@ -93,6 +96,8 @@ function Root() {
         <SettingsPage />
       ) : route.view === 'board' ? (
         <BoardPage />
+      ) : route.view === 'issues' ? (
+        <IssuesScreen />
       ) : isPhone ? (
         <PhoneApp />
       ) : isTablet ? (

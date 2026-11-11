@@ -1014,3 +1014,30 @@ Design, limits and privacy: [linear.md](linear.md).
 - `GET /api/threads/{id}` adds `linear?: ThreadLink` and `linear_events?: [{id, kind: "comment"|"state"|"title"|"assignee", author, body, url, filtered, delivered, created_at}]`.
 - Delivery: `GET /api/agent/pending` prepends a `<linear_updates source="untrusted" ...>` block to the `body` of the first pending message of a linked thread
   (updates not yet delivered; tied to that message; marked delivered by `.../delivered`). `MINBOX_LINEAR_MCP_URL` (loopback http only) points the server at a fake.
+
+My issues (design: [linear.md](linear.md#my-issues)). All need the Linear login: 409 `code: "linear_login"` when not connected / expired, 429 `linear_rate_limited`, 502 with
+Linear's message. `IssueView` = `{id, identifier, title, url, state, state_type: backlog|unstarted|started|completed|canceled|triage, priority: 0..4, priority_name, team_id,
+team_key, team_name, project, labels: [name], assignee, estimate?, due_date?, created_at, updated_at, description? (detail only), threads: [{thread_id, session_id, subject, status,
+project_id, updated_at}]}`.
+- `GET /api/linear/issues?assignee=me[&closed=1][&refresh=1][&cached=1]` -> `{issues: IssueView[]|null, user, fetched_at, cached, stale, closed_count, warnings: [string]}`. Only
+  `assignee=me` is accepted (400 otherwise); the server passes `assignee: "me"` to the MCP `list_issues` tool and refuses (502) when the tool has no assignee argument. Closed
+  (completed / canceled) issues are omitted unless `closed=1`; `closed_count` counts them either way. Sorted urgent first, then most recently updated. The result is cached per user for 45 s
+  (a plain GET inside that time makes no Linear call); `refresh=1` fetches again but is answered from the cache within 5 s of the last fetch; `cached=1` never calls Linear
+  (`{issues: null, cached: true}` when there is nothing cached; `stale: true` when older than 45 s). Pages (up to 6 x 100) are followed. `threads` lists the minbox threads linked to each issue.
+- `GET /api/linear/issues/{identifier}[?refresh=1]` -> `{issue: IssueView (with description), comments: [{id, author, body, url, created_at}] (oldest first, the latest 50, minbox's own progress
+  comment left out), comments_total, comments_error?, fetched_at}` (cached 30 s). 400 not an identifier.
+- `POST /api/linear/issues/{identifier}/thread` body `{target: {kind: "session", session_id} | {kind: "new_session", project_id, agent?, name?}, subject?, instruction?}` -> 201
+  `{thread, session, link_error?}`. Creates a thread whose first message is `instruction` (default "Work on Linear issue ENG-123: ..."), links it to the issue as `PUT /api/threads/{id}/linear` does
+  (baseline of the existing comments; the In Progress rule applies when it starts working), and stores a **handoff** (table `thread_handoffs`) that `GET /api/agent/pending` puts in front of that
+  first message exactly once (like a fork's): `<linear_issue_handoff source="untrusted-external" issue="ENG-123">` with identifier, title, url, state, priority, team, project, labels, assignee, a
+  note that the thread is linked and Linear updates arrive as `<linear_updates>`, then `<issue_description>` and `<issue_comments>` (the latest 10). Text is redacted for credentials, our tags
+  inside it are neutralised, the description is cut at 6000 bytes, a comment at 1500, the block at about 16 KB. Same errors as forks (400 for a bad/archived/ended target).
+- `POST /api/linear/issues/{identifier}/thread/preview` same body -> `{handoff, message, text, bytes, subject, agent, project, warnings}`: the text the agent gets first.
+- `POST /api/linear/issues/{identifier}/project-suggestion` -> `{project_id, source: "linked"|"name"|"only"|"llm"|"none", reason}`: which minbox project to start in. Hints first (a thread already
+  linked to the issue; a project named like the issue's Linear project, team name or key; the only project), else the Slack project-pick helper with the issue as untrusted data and only
+  existing project ids accepted; `none` = undecided (the UI falls back to the last used project).
+- `POST /api/linear/issues/draft` body `{stage: "meta"|"llm", text?, team_id?, refresh?, regenerate?}` = the thread draft without a thread. `meta` -> `{meta, fallback, llm_available}`; `llm` -> `{draft,
+  team_lists, source: "llm"}` or `{reason: "no_agent"|"error", note}` from the plain-language `text` (required, 400 when empty), ids validated against Linear's lists, the extra-prompt setting honoured,
+  the assignee defaulting to you; `regenerate` skips the kept answer. `POST /api/linear/issues/team/{teamId}/lists` = the team lists endpoint of the thread flow.
+- `POST /api/linear/issues` body `Draft` + `{submission_id?}` -> `{issue: IssueView}`; the create path of `POST /api/threads/{id}/linear/create` without a thread (same validation and errors except
+  `already_linked`), idempotent per `submission_id`.

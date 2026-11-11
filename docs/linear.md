@@ -111,6 +111,54 @@ and a thread that is already linked is refused (409). Linear's refusal is shown 
 `linear_refused`) and nothing is linked; a retry is possible. If Linear answers but the new issue cannot be
 read from the answer, the dialog says it may have been created (look for it, then use Link Linear issue).
 
+## My issues
+
+The **My issues** entry (Linear icon) sits above *All projects* in the project rail and in the phone's project sheet. It shows while
+Linear is connected (or its login has expired, so the screen can ask to log in again) and opens `#v=issues[&issue=ENG-123]`: back/forward
+work and the selection survives a reload. Left: your issues; right: the selected one. Phone: the list, then the detail with a back button.
+
+- **The list** is what Linear's `list_issues` returns for `assignee: "me"`, paged (up to 6 pages of 100, the tool's cursor argument), most recently
+  updated first and then ordered urgent first. Only your own issues are listed: the call is refused when the tool has no assignee argument, and an
+  item whose assignee the result names as somebody else is dropped. Open issues show by default (*Show closed* adds completed and canceled), grouped
+  by workflow state (started, unstarted, triage, backlog, ...) with counts. When the tool shows only a state's name, its type comes from the team's
+  `list_issue_statuses` (cached 10 minutes), else it is guessed from the name (Done, Canceled, Backlog, ...). Search is client-side (identifier, title,
+  state, team, project, labels). Each row: priority icon, identifier, title, state, team key, labels, update time, and `⛓ n` when `n` minbox threads are
+  linked to the issue.
+- **Fresh without polling.** Nothing runs in the background: the list is fetched when the screen opens and when you press Refresh. The browser keeps the
+  last list in memory and asks the server for its cache first (`cached=1`, never calls Linear), so the screen is full at once with a "Syncing..." hint
+  while it revalidates. The server caches the list per user for 45 s, answers a refresh from the cache within 5 s of the last fetch, shares one fetch among
+  simultaneous requests and obeys the rate-limit back-off. Errors (login needed, rate limited, Linear's message) show above the list with Retry and, for a
+  login, a link to Settings; the last list stays.
+- **The detail** (`get_issue`, `list_comments`, cached 30 s, Reload bypasses): title, link to Linear, state, priority, team, project, assignee, estimate,
+  due date, labels, the minbox threads linked to it (click to open), the description as sanitised Markdown (the same renderer as messages; **remote images
+  are not fetched**) and the latest 50 comments, newest last (minbox's own progress comment is left out). A failing comment list is shown as a note, the
+  issue still shows.
+- **Start thread** opens a dialog like the fork dialog. It asks the server for the minbox project in the background ("Picking project..." never blocks
+  the dialog; **Auto-selected: reason** names the source, and anything you choose by hand wins): a thread already linked to the issue; else a project named
+  like the issue's Linear project, its team or team key (a unique exact match, else a unique partial one); else your only project; else, when that is
+  ambiguous, the same helper as the Slack project pick (Claude Haiku by default or Pi), with the issue (identifier, title, team, Linear project, labels, the start of the
+  description) and the projects (name, folder, recent thread titles) between untrusted delimiters, and only an id of an existing project accepted. When nothing
+  decides, your last used project stays. The **session defaults to the project's main session** (marked "Main session"; a project without a usable one defaults to
+  *New session*); other live sessions of the project and *New session* (agent picker when both agents are installed, optional name) are in the same list, and
+  changing the project resets the session to that project's main session. You may add a request and change the title; the right side previews exactly what the
+  agent gets first. **Create and open** creates the thread, **links it to the issue at once** (as *Link Linear issue* does: the comments that exist are the baseline, a
+  progress comment follows, the In Progress rule applies when work starts) and opens it.
+- **The handoff** (`linear_issue_handoff`) is composed once at creation and stored (`thread_handoffs`): like a fork's, it is put in front of that thread's first
+  message when the message is delivered, repeated if the delivery is retried, marked delivered with it and never part of the stored message. It carries the issue
+  identifier, title, URL, state, priority, team, project, labels, assignee, a note that the thread is linked and that Linear updates arrive automatically as
+  `<linear_updates>` (the agent has no Linear tools), the description (6000 bytes) and the latest 10 comments (1500 bytes each) between `<issue_description>` and
+  `<issue_comments>`. All of it is **untrusted external content**: credential-looking strings are redacted, our tags inside it are neutralised (`<\/linear_issue_handoff`),
+  the whole block stays under about 16 KB, and the only instruction is your request after it. The preview is the same composition (if the issue changed within the
+  30 s detail cache the stored one is the fresh one).
+- **New issue** (button in the list header) opens the Create dialog without a thread: **"Describe the issue in plain language"** (Japanese or English) and **Generate**
+  (also Cmd/Ctrl+Enter). The helper (same runner, untrusted delimiting `<issue_request>`, the extra-prompt setting and the two-step team lists as above) drafts the title,
+  a structured Markdown description (background, goal, acceptance criteria) and guesses of team, priority, project, labels and state, **every id validated against Linear's
+  lists**; fields you touched are never overwritten, Generate can be pressed again, and without a helper you fill the fields yourself. The assignee defaults to you. Create
+  uses the same path as the thread-based dialog (idempotent per submission), the new issue appears in the list and is selected, and Start thread is available at once.
+  Nothing is written to Linear before Create; the only other writes of the feature are the usual In Progress move and progress comment of a linked thread.
+
+Endpoints: [api-contract.md](api-contract.md). Not done: linking an existing thread from the issue (use *Link Linear issue* in the thread), a server-side text query, background refresh.
+
 ## What happens
 
 **minbox to Linear** (never mirrors the thread's status; threads flip between working and finished far
@@ -220,6 +268,10 @@ against a fake OAuth + MCP server.
   `labels` (an array) and `project` as ids (the docs say "name or ID"); that its answer carries `id`,
   `identifier` and `url`; and that the default list sizes (`limit` 100 is passed when the tool declares it)
   cover a workspace. Failing per-team lists are shown as a warning and the dialog still works.
+- My issues: that `list_issues` exists under that name and takes `assignee` (`"me"`), `orderBy`, `limit` and a cursor; the result shape (`issues` with `status` as a name,
+  `priority` as `{value, name}`, `labels` as names, `team`/`project` as names, `assigneeId`, `updatedAt`; `hasNextPage` + `cursor`); that no state filter is needed (closed issues are fetched and
+  dropped client-side, so a person with a very long history may hit the 600-issue page cap, which is shown as a warning); and that `get_issue` returns the description and `list_comments`
+  works with the issue id or identifier. The fake Linear (Go and Playwright) is built on these guesses.
 - Whether dynamic registration accepts the redirect URI (see above), and the scopes (`read write`).
 - Whether Linear keeps the HTML-comment marker in comment bodies (if it does not, the stored comment id is
   what identifies minbox's own comment; if that is lost too, the comment is found again by the marker only

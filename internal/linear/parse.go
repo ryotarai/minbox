@@ -43,6 +43,18 @@ type Issue struct {
 	State, StateType           string
 	Assignee                   string
 	TeamID, TeamName           string
+	// Read by the My issues screen (the list and the detail); empty when the tool does not say.
+	Description  string
+	Priority     int // 0 none, 1 urgent, 2 high, 3 medium, 4 low
+	PriorityName string
+	TeamKey      string
+	Project      string
+	Labels       []string
+	Estimate     string
+	DueDate      string
+	AssigneeID   string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Comment is a Linear comment.
@@ -165,6 +177,7 @@ func ParseIssue(v any) (*Issue, error) {
 	if is.TeamName == "" {
 		is.TeamName = first(m, "teamName")
 	}
+	parseIssueExtras(m, is)
 	return is, nil
 }
 

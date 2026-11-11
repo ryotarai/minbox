@@ -67,6 +67,13 @@ type fakeLinear struct {
 	failProjects   bool
 	failLabelsTeam string // list_issue_labels for this team id is a tool error
 	createDelay    time.Duration
+	// list_issues: the issues assigned to "me" (the filter is honoured only when ignoreAssignee is
+	// false), paged by issuePage with the cursor argument.
+	assigned       []map[string]any
+	issuePage      int
+	ignoreAssignee bool
+	noAssigneeArg  bool // the tool's schema has no assignee property
+	failList       bool
 }
 
 type fakeCode struct {
@@ -238,6 +245,7 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 			{"name": "list_comments", "inputSchema": obj("issueId")}, {"name": "list_issue_statuses", "inputSchema": obj("team")},
 			{"name": "list_teams", "inputSchema": f.teamsSchema(obj)}, {"name": "list_issue_labels", "inputSchema": obj("team", "limit")},
 			{"name": "list_projects", "inputSchema": obj("limit")},
+			{"name": "list_issues", "inputSchema": f.issuesSchema(obj)},
 		}
 		createProps := obj("title", "description", "team", "state", "assignee", "project")
 		createProps["properties"].(map[string]any)["priority"] = map[string]any{"type": "number"}
@@ -290,6 +298,12 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		text(f.issue)
+	case "list_issues":
+		if f.failList {
+			toolErr("issues unavailable")
+			return
+		}
+		f.listIssues(call.Args, text)
 	case "list_comments":
 		text(map[string]any{"comments": f.comments})
 	case "list_issue_statuses":
@@ -435,6 +449,36 @@ func (f *fakeLinear) listTeams(args map[string]any, text func(any), toolErr func
 		b, _ := json.Marshal(out)
 		prose("Found teams:\n" + string(b) + "\n(end)")
 		return
+	}
+	text(out)
+}
+
+func (f *fakeLinear) issuesSchema(obj func(...string) map[string]any) map[string]any {
+	props := []string{"query", "limit", "cursor", "orderBy", "state"}
+	if !f.noAssigneeArg {
+		props = append(props, "assignee")
+	}
+	return obj(props...)
+}
+
+// listIssues answers list_issues (the caller holds f.mu): the assigned issues in pages, in the
+// shape the real tool is believed to use (state as a name, priority as {value,name}, labels as names).
+func (f *fakeLinear) listIssues(args map[string]any, text func(any)) {
+	items := f.assigned
+	if f.ignoreAssignee {
+		items = append(append([]map[string]any{}, items...), map[string]any{"id": "iss-other", "identifier": "ENG-999", "title": "Someone else's", "status": "Todo", "assignee": "Bob", "assigneeId": "user-2", "team": "Engineering"})
+	}
+	start := 0
+	if c, _ := args["cursor"].(string); c != "" {
+		_, _ = fmt.Sscanf(c, "c%d", &start)
+	}
+	end := len(items)
+	if f.issuePage > 0 {
+		end = min(start+f.issuePage, len(items))
+	}
+	out := map[string]any{"issues": items[start:end], "hasNextPage": end < len(items)}
+	if end < len(items) {
+		out["cursor"] = fmt.Sprintf("c%d", end)
 	}
 	text(out)
 }

@@ -16,6 +16,18 @@ if prompt.startswith("Choose the workflow state"):
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"state_id": "st-3", "label_ids": ["lab-1"]}}))
     sys.exit(0)
 
+if prompt.startswith("Choose which project the Linear issue"):
+    # The project pick of a thread started from an issue: the project named in FAKE_PICK_NAME, else the first.
+    want = os.environ.get("FAKE_PICK_NAME", "")
+    ids = []
+    for line in prompt.splitlines():
+        if line.startswith("- id: "):
+            pid = line[len("- id: "):].split(" |", 1)[0]
+            ids.append((pid, line))
+    chosen = next((pid for pid, line in ids if want and ("name: " + want) in line), ids[0][0] if ids else None)
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"project_id": chosen}}))
+    sys.exit(0)
+
 if prompt.startswith("Draft a Linear issue"):
     # The Create-Linear-issue dialog's guess. FAKE_LINEAR_DRAFT_HOLD: while that file exists the
     # answer is held back (tests use it to type while the draft is still "coming").
@@ -25,13 +37,17 @@ if prompt.startswith("Draft a Linear issue"):
             break
         time.sleep(0.05)
     subject = ""
+    if "<issue_request>" in prompt:
+        # The plain-language draft (My issues > New issue): the title echoes the first line of the request.
+        req = prompt.split("<issue_request>\n", 1)[1].split("\n</issue_request>", 1)[0].strip()
+        subject = req.splitlines()[0] if req else ""
     for line in prompt.splitlines():
         if line.startswith("Subject: "):
             subject = line[len("Subject: "):]
     draft = {
         "team_id": "team-1",
         "title": "Drafted: " + subject,
-        "description": "## Summary\nDrafted from the thread.\n",
+        "description": ("## Background\nDrafted from the request.\n" if "<issue_request>" in prompt else "## Summary\nDrafted from the thread.\n"),
         "priority": 2,
         "label_ids": ["lab-1"],
         "project_id": "proj-1",

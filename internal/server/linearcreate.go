@@ -182,10 +182,16 @@ type listResult struct {
 // the tool's team argument. A failure of the first page is the returned error; a failure of a later
 // page keeps what was read and adds a note.
 func (l *linearSvc) callListAll(ctx context.Context, op, team string) (*listResult, error) {
+	return l.callListAllWith(ctx, op, team, nil, metaMaxPages)
+}
+
+// callListAllWith is callListAll with more arguments (extra may return an error to refuse the call,
+// e.g. when the tool has no filter the caller needs) and a page cap.
+func (l *linearSvc) callListAllWith(ctx context.Context, op, team string, extra func(t linear.Tool) (map[string]any, error), maxPages int) (*listResult, error) {
 	res := &listResult{info: metaList{List: op}}
 	cursor := ""
 	seen := map[string]bool{}
-	for page := 0; page < metaMaxPages; page++ {
+	for page := 0; page < maxPages; page++ {
 		var limit int
 		var cursorArg string
 		v, err := l.call(ctx, op, func(t linear.Tool) (map[string]any, error) {
@@ -209,6 +215,15 @@ func (l *linearSvc) callListAll(ctx context.Context, op, team string) (*listResu
 				cursorArg = t.Pick("cursor", "after", "endCursor")
 				if cursor != "" && cursorArg != "" {
 					args[cursorArg] = cursor
+				}
+			}
+			if extra != nil {
+				more, err := extra(t)
+				if err != nil {
+					return nil, err
+				}
+				for k, v := range more {
+					args[k] = v
 				}
 			}
 			return args, nil
@@ -250,8 +265,8 @@ func (l *linearSvc) callListAll(ctx context.Context, op, team string) (*listResu
 			break // the server ignores the cursor, or the page is empty
 		}
 		cursor = next
-		if page == metaMaxPages-1 {
-			res.notes = append(res.notes, fmt.Sprintf("stopped after %d pages: the list may be cut off", metaMaxPages))
+		if page == maxPages-1 {
+			res.notes = append(res.notes, fmt.Sprintf("stopped after %d pages: the list may be cut off", maxPages))
 		}
 	}
 	res.info.Items = len(res.items)
@@ -260,6 +275,7 @@ func (l *linearSvc) callListAll(ctx context.Context, op, team string) (*listResu
 
 var listKeys = map[string][]string{
 	"list_teams":    {"teams"},
+	"list_issues":   {"issues"},
 	"list_statuses": {"statuses", "states", "issueStatuses", "workflowStates"},
 	"list_labels":   {"labels", "issueLabels"},
 	"list_projects": {"projects"},
@@ -791,7 +807,7 @@ func redactSecrets(s string) string {
 	return s
 }
 
-var draftFenceRe = regexp.MustCompile(`(?i)</?\s*(?:thread_content|linear_lists)[^>]*>`)
+var draftFenceRe = regexp.MustCompile(`(?i)</?\s*(?:thread_content|linear_lists|issue_request)[^>]*>`)
 
 // untrusted makes text safe to put between the prompt's delimiters: no tag of ours inside it,
 // one line per field.
@@ -1128,12 +1144,19 @@ type draftEntry struct {
 // all. The state and labels are not checked here (the endpoint validates them against the lists).
 func (l *linearSvc) llmDraft(ctx context.Context, f threadFacts, m *linearMeta, extra, teamID string) (linearDraft, error) {
 	th := f.Thread
-	if m.team(teamID) == nil {
-		teamID = ""
-	}
 	key := th.ID
 	if n := len(th.Messages); n > 0 {
 		key += fmt.Sprintf(":%d:%s", n, th.Messages[n-1].ID)
+	}
+	return l.runDraft(ctx, key, false, m, extra, teamID, func(team *metaTeam) string { return buildLinearDraftPrompt(f, m, extra, team) })
+}
+
+// runDraft is llmDraft's machinery, shared with the plain-language draft of the My issues screen:
+// key identifies the input (a thread state, or a hash of the person's text), mk builds the first
+// prompt (with the team's lists when the team is known), force drops a kept answer first.
+func (l *linearSvc) runDraft(ctx context.Context, key string, force bool, m *linearMeta, extra, teamID string, mk func(team *metaTeam) string) (linearDraft, error) {
+	if m.team(teamID) == nil {
+		teamID = ""
 	}
 	extra = cleanDraftExtra(extra)
 	if extra != "" {
@@ -1144,6 +1167,9 @@ func (l *linearSvc) llmDraft(ctx context.Context, f threadFacts, m *linearMeta, 
 		key += ":t" + teamID
 	}
 	l.draftMu.Lock()
+	if force {
+		delete(l.draftCache, key)
+	}
 	if e, ok := l.draftCache[key]; ok && l.now().Before(e.expires) {
 		l.draftMu.Unlock()
 		return e.d, e.err
@@ -1153,7 +1179,7 @@ func (l *linearSvc) llmDraft(ctx context.Context, f threadFacts, m *linearMeta, 
 		c = &draftCall{done: make(chan struct{})}
 		l.draftInflight[key] = c
 		go func() {
-			c.d, c.err = l.draftSteps(f, m, extra, teamID)
+			c.d, c.err = l.draftSteps(mk, m, extra, teamID)
 			l.draftMu.Lock()
 			ttl := draftCacheTTL
 			if c.err != nil {
@@ -1194,7 +1220,7 @@ func (l *linearSvc) helperStep(prompt, schema string) ([]byte, error) {
 	}
 }
 
-func (l *linearSvc) draftSteps(f threadFacts, m *linearMeta, extra, teamID string) (linearDraft, error) {
+func (l *linearSvc) draftSteps(mk func(team *metaTeam) string, m *linearMeta, extra, teamID string) (linearDraft, error) {
 	lctx, cancel := context.WithTimeout(context.Background(), draftTimeout)
 	defer cancel()
 	if teamID != "" {
@@ -1205,7 +1231,7 @@ func (l *linearSvc) draftSteps(f threadFacts, m *linearMeta, extra, teamID strin
 		} else {
 			tm = m.team(teamID)
 		}
-		out, err := l.helperStep(buildLinearDraftPrompt(f, m, extra, tm), draftSchema)
+		out, err := l.helperStep(mk(tm), draftSchema)
 		if err != nil {
 			return linearDraft{}, err
 		}
@@ -1213,7 +1239,7 @@ func (l *linearSvc) draftSteps(f threadFacts, m *linearMeta, extra, teamID strin
 		d.TeamID = teamID
 		return d, err
 	}
-	out, err := l.helperStep(buildLinearDraftPrompt(f, m, extra, nil), draftSchema1)
+	out, err := l.helperStep(mk(nil), draftSchema1)
 	if err != nil {
 		return linearDraft{}, err
 	}
@@ -1369,6 +1395,7 @@ type createReq struct {
 
 type createCall struct {
 	done    chan struct{}
+	issue   *linear.Issue // the thread-less create
 	link    *store.ThreadLink
 	err     error
 	expires time.Time
@@ -1429,6 +1456,27 @@ func buildCreateArgs(t linear.Tool, req createReq) (map[string]any, error) {
 	return args, nil
 }
 
+// cleanCreateReq tidies the fields and returns what is wrong with them ("" when it is fine).
+func cleanCreateReq(req *createReq) string {
+	req.Title = flattenWS(req.Title)
+	req.Description = strings.TrimSpace(req.Description)
+	switch {
+	case req.TeamID == "":
+		return "choose a team"
+	case req.Title == "":
+		return "the title is empty"
+	case len([]rune(req.Title)) > createMaxTitle:
+		return fmt.Sprintf("the title is longer than %d characters", createMaxTitle)
+	case len(req.Description) > createMaxDesc:
+		return fmt.Sprintf("the description is longer than %d characters", createMaxDesc)
+	case req.Priority < 0 || req.Priority > 4:
+		return "priority must be 0 (none) to 4 (low)"
+	case len(req.LabelIDs) > createMaxLabels:
+		return "too many labels"
+	}
+	return ""
+}
+
 func createError(w http.ResponseWriter, err error) {
 	var te *linear.ToolError
 	if errors.As(err, &te) {
@@ -1456,26 +1504,8 @@ func (s *Server) linearCreate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	req.Title = flattenWS(req.Title)
-	req.Description = strings.TrimSpace(req.Description)
-	switch {
-	case req.TeamID == "":
-		httpError(w, 400, "choose a team")
-		return
-	case req.Title == "":
-		httpError(w, 400, "the title is empty")
-		return
-	case len([]rune(req.Title)) > createMaxTitle:
-		httpError(w, 400, fmt.Sprintf("the title is longer than %d characters", createMaxTitle))
-		return
-	case len(req.Description) > createMaxDesc:
-		httpError(w, 400, fmt.Sprintf("the description is longer than %d characters", createMaxDesc))
-		return
-	case req.Priority < 0 || req.Priority > 4:
-		httpError(w, 400, "priority must be 0 (none) to 4 (low)")
-		return
-	case len(req.LabelIDs) > createMaxLabels:
-		httpError(w, 400, "too many labels")
+	if msg := cleanCreateReq(&req); msg != "" {
+		httpError(w, 400, msg)
 		return
 	}
 	// One creation at a time per submission (or, without an id, per thread): a double click, or a
@@ -1535,6 +1565,16 @@ func (l *linearSvc) createIssue(ctx context.Context, th *store.Thread, req creat
 	if k, err := s.store.GetThreadLink(ctx, th.ID); err == nil {
 		return nil, &wrapErr{msg: "this thread is already linked to " + k.Identifier, status: 409, code: "already_linked"}
 	}
+	is, err := l.createIssueRaw(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return l.linkIssue(ctx, th, is, nil)
+}
+
+// createIssueRaw validates the request against Linear's lists, creates the issue and reads it
+// back: no thread involved.
+func (l *linearSvc) createIssueRaw(ctx context.Context, req createReq) (*linear.Issue, error) {
 	m, err := l.meta(ctx, false)
 	if err != nil {
 		return nil, err
@@ -1599,5 +1639,5 @@ func (l *linearSvc) createIssue(ctx context.Context, th *store.Thread, req creat
 	if is.TeamID == "" {
 		is.TeamID, is.TeamName = t.ID, t.Name
 	}
-	return l.linkIssue(ctx, th, is, nil)
+	return is, nil
 }

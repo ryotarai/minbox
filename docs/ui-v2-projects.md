@@ -44,7 +44,11 @@ resources under a project. The project is the top-level scope of the UI, left of
 
 Rail entry = **name**, dir shortened to `~/...` (second line, mono),
 host badge for a remote host, and an aggregate badge: amber number = threads waiting on the person, grey
-number = unread. `All projects` is the first entry (sum of both). Below the list: `+` (new project).
+number = unread. `All projects` is the first entry (sum of both). Above it, only while Linear is connected (or its login has
+expired), is **My issues** (Linear icon, `data-testid="my-issues"`, label/aria-label "My issues"; icon only in the 56 px tiles):
+it opens `#v=issues` (`&issue=ENG-123` for the selected issue), a screen of its own [project rail | issue list | issue detail]
+(phone: list, then detail with a back button and a sticky Start thread bar). While it is open no project is highlighted; picking
+a project or All projects goes back to the threads. The phone project sheet has the same entry above All projects. Below the list: `+` (new project).
 Right-click or the `...` on hover: Rename, Edit folder/host (only when empty), Pin, Archive, Delete.
 Below 1400 px (or by the collapse button) the project column shrinks to 56 px tiles (two letters, count badge only, no status dot,
 name and status in the tooltip).

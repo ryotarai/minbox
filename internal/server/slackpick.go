@@ -32,6 +32,7 @@ const pickSchema = `{"type":"object","properties":{"project_id":{"type":["string
 type pickCandidate struct {
 	id, name string
 	titles   []string
+	dir      string // set by the Linear issue pick only
 }
 
 func (s *Server) pickModel() string {

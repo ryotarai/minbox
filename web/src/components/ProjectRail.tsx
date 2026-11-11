@@ -3,8 +3,9 @@ import { api, type Project } from '../api'
 import { useApp } from '../lib/app'
 import { initials } from '../lib/format'
 import { projectHueStyle } from '../lib/projectColor'
-import { selectProject, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
-import { IconArchive, IconChevronRight, IconInbox, IconMore, IconPin, IconPlus } from './icons'
+import { useLinearStatus } from '../lib/issues'
+import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
+import { IconArchive, IconChevronRight, IconInbox, IconLinear, IconMore, IconPin, IconPlus } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
 
 /** The dot of a project: its busiest session. */
@@ -276,8 +277,16 @@ export function RenameProject({ project, onClose }: { project: Project; onClose:
 
 /** The far-left column: All projects, then the projects. 176 px with names, 56 px as tiles. */
 export function ProjectRail({ narrow }: { narrow: boolean }) {
-  const { projects, setOverlay, setLayout } = useApp()
-  const { id: selected } = useSelectedProject()
+  const { projects, setOverlay, setLayout, route, navigate } = useApp()
+  const { id: selectedProject } = useSelectedProject()
+  const linear = useLinearStatus()
+  const onIssues = route.view === 'issues'
+  // On the My issues screen no project is the current one: picking one goes back to the threads.
+  const selected = onIssues ? null : selectedProject
+  const selectProject = (id: string) => {
+    if (onIssues) navigate({ view: 'main' }, { push: true })
+    selectProjectRaw(id)
+  }
   const stats = useProjectStats()
   const [menu, setMenu] = useState<{ project: Project; anchor: HTMLElement } | null>(null)
   const [renaming, setRenaming] = useState<Project | null>(null)
@@ -287,6 +296,24 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
   return (
     <nav data-testid="project-rail" data-mode={tiles ? 'tiles' : 'names'} aria-label="Projects" className="flex h-full min-w-0 flex-col bg-sunken">
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+        {linear.available && (
+          <button
+            type="button"
+            data-testid="my-issues"
+            aria-label="My issues"
+            aria-pressed={onIssues}
+            title="My issues (Linear)"
+            onClick={() => navigate({ view: 'issues' }, { push: true })}
+            className={cx(
+              'flex shrink-0 items-center gap-2 rounded-lg border-0 text-left',
+              tiles ? 'h-11 justify-center px-0' : 'h-11 px-2.5',
+              onIssues ? 'bg-sel text-fg' : 'bg-transparent text-fg2 hover:bg-raised',
+            )}
+          >
+            <IconLinear size={tiles ? 18 : 16} className="shrink-0" />
+            {!tiles && <span className="min-w-0 flex-1 truncate text-[13px] font-[650]">My issues</span>}
+          </button>
+        )}
         <button
           type="button"
           data-testid="project-all"
