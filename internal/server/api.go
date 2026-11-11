@@ -304,7 +304,12 @@ func (s *Server) createUserThread(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	body := strings.TrimSpace(req.Body)
+	kind, rest := splitBang(req.Body)
+	if kind == "command" {
+		httpError(w, 422, "a message that starts with ! runs as a command inside an existing thread; start with \\! to send the text")
+		return
+	}
+	body := strings.TrimSpace(rest)
 	if body == "" && len(ups) == 0 {
 		httpError(w, 400, "body is required")
 		return
@@ -414,6 +419,17 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
+	// "!cmd" runs as a command; "\!text" is the text "!text" (docs/thread-commands.md).
+	kind, rest := splitBang(req.Words)
+	if kind == "command" {
+		if req.AnswersFor != "" || len(req.Answers) > 0 || len(req.Annotations) > 0 || len(req.Uploads) > 0 || req.ForwardTo != "" {
+			httpError(w, 422, "a message that starts with ! runs as a command; send it without answers, files or markups (start with \\! to send the text)")
+			return
+		}
+		s.replyCommand(w, r, th, rest)
+		return
+	}
+	req.Words = rest
 	words := strings.TrimSpace(req.Words)
 	var questions []question.Question
 	var answers []question.Answer
@@ -891,6 +907,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.withAttachedLines(r, pending)
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
+			s.commandInject(r.Context(), pending)
 			writeJSON(w, 200, pending)
 			return
 		}
@@ -900,6 +917,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.withAttachedLines(r, pending)
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
+			s.commandInject(r.Context(), pending)
 			writeJSON(w, 200, pending)
 			return
 		case <-s.closing:

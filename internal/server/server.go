@@ -101,6 +101,8 @@ type Server struct {
 	lin *linearSvc
 	// slack is the personal Slack integration (slackpersonal.go).
 	slack *slackSvc
+	// commandTimeout overrides the 60 s limit of "!" commands (tests).
+	commandTimeout time.Duration
 }
 
 // New builds a server. web holds the built frontend (index.html at its root).
@@ -158,6 +160,9 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.notifier = notify.NewDispatcher(st)
 	s.notifier.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.watchStartup()
+	if err := st.FailRunningCommands(context.Background()); err != nil {
+		log.Printf("commands: %v", err)
+	}
 	s.handler = s.routes()
 	return s
 }

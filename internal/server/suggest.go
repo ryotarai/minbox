@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -198,9 +199,51 @@ func buildSuggestPrompt(th *store.Thread) string {
 		"Each under 200 characters, in the person's voice, no explanations or labels. " +
 		"If the agent asked a question with options, propose the sensible answers. " +
 		"If the agent reports completion, propose short follow-ups that move the work forward (a concrete next step, a request for detail or a check). " +
+		"If the agent's last message says a command it wanted to run was denied or rejected and quotes that command, make one suggestion exactly '!' followed by that command (the person can then run it themselves; a message starting with '!' runs as a shell command). " +
 		"Never propose thanks, praise, greetings, acknowledgements or other replies that add no instruction or information (no 'thank you', 'great', 'OK', 'got it'); " +
 		"if nothing useful can be proposed, return fewer suggestions.\n")
 	return b.String()
+}
+
+// ---- denied commands ----
+
+var deniedRe = regexp.MustCompile(`(?i)\b(denied|deny|denies|rejected|reject|declined|refused|not allowed|not approved|disallowed)\b|拒否|許可されな|承認されな|却下`)
+var fencedRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\\n(.*?)\\n?```")
+var inlineCodeRe = regexp.MustCompile("`([^`\\n]{2,})`")
+
+// deniedCommandSuggestion: the command the agent's message says was denied, as "!command" for the
+// composer, or "". It needs a denial word and one quoted command (the first one-line code block, else
+// the first inline code span); a command that does not fit in a suggestion is not offered cut.
+func deniedCommandSuggestion(body string) string {
+	if !deniedRe.MatchString(body) {
+		return ""
+	}
+	cmd := ""
+	if m := fencedRe.FindStringSubmatch(body); m != nil {
+		cmd = strings.TrimSpace(m[1])
+		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+	} else if m := inlineCodeRe.FindStringSubmatch(body); m != nil {
+		cmd = strings.TrimSpace(m[1])
+		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+	}
+	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || utf8.RuneCountInString(cmd)+1 > suggestMaxLen {
+		return ""
+	}
+	return "!" + cmd
+}
+
+// withDeniedCommand puts the denied command first, drops duplicates and keeps at most suggestMax.
+func withDeniedCommand(denied string, rest []string) []string {
+	out := []string{denied}
+	for _, s := range rest {
+		if strings.EqualFold(strings.TrimSpace(s), denied) {
+			continue
+		}
+		if len(out) < suggestMax {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ---- result parsing ----
@@ -392,6 +435,14 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), suggestWait)
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
+	// A command the person denied the agent: offered as "!command" without asking the helper.
+	denied := deniedCommandSuggestion(th.Messages[n-1].Body)
+	if denied != "" {
+		if err != nil {
+			res, err = nil, nil
+		}
+		res = withDeniedCommand(denied, res)
+	}
 	if err != nil {
 		if errors.Is(err, agent.ErrNoneInstalled) {
 			// No coding agent on this machine: the feature is off, not broken.

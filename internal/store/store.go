@@ -98,6 +98,8 @@ func sectionRank(s string) int {
 const (
 	KindMessage = "message"
 	KindNote    = "note" // a person's note (re-ask, thumbs up): not a reply
+	// KindCommand: the person's "!" message, run as a shell command (docs/thread-commands.md): not a reply.
+	KindCommand = "command"
 )
 
 // Reasons an open question was closed unanswered.
@@ -248,6 +250,8 @@ type Message struct {
 	InlineImages []Attachment `json:"inline_images"`
 	// Closed: open questions of this agent message closed unanswered, by key.
 	Closed map[string]string `json:"closed,omitempty"`
+	// Command: the run of a "!" message (kind "command").
+	Command *Command `json:"command,omitempty"`
 
 	claimOwner string
 }
@@ -496,6 +500,9 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(slackPersonalSchema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(commandSchema); err != nil {
 		return err
 	}
 	for _, c := range addedColumns {
@@ -859,6 +866,8 @@ type NewMessage struct {
 	Annotations []Annotation
 	// Status: the thread's new status (canonical); empty keeps it (see statusAfter).
 	Status string
+	// Delivered stores the message as delivered already (a command is not sent to the agent).
+	Delivered bool
 }
 
 // statusAfter is the thread's status after message m: the message's own
@@ -868,7 +877,7 @@ func statusAfter(cur string, m NewMessage) string {
 	switch {
 	case m.Status != "":
 		return m.Status
-	case m.Author == AuthorUser && m.Kind != KindNote:
+	case m.Author == AuthorUser && m.Kind != KindNote && m.Kind != KindCommand:
 		return ThreadWorking
 	case m.Author == AuthorAgent && len(m.Questions) > 0:
 		return ThreadNeedAction
@@ -929,6 +938,12 @@ func insertMessage(ctx context.Context, tx *sql.Tx, threadID string, m NewMessag
 	if _, err := tx.ExecContext(ctx, `INSERT INTO messages(id,thread_id,author,body,words,questions,answers,answers_for,created_at,kind,urgent,annotations) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 		msg.ID, threadID, m.Author, m.Body, m.Words, jsonOf(m.Questions), jsonOf(m.Answers), m.AnswersFor, ms(now), m.Kind, m.Urgent, jsonOf(m.Annotations)); err != nil {
 		return nil, err
+	}
+	if m.Delivered {
+		if _, err := tx.ExecContext(ctx, `UPDATE messages SET delivered_at=? WHERE id=?`, ms(now), msg.ID); err != nil {
+			return nil, err
+		}
+		msg.DeliveredAt = &now
 	}
 	var cur sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM threads WHERE id=?`, threadID).Scan(&cur); err != nil {
@@ -1061,6 +1076,11 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 			}
 		}
 		threads[i].AttachmentCount = count
+		if cmds, err := s.commandsOfThread(ctx, threads[i].ID); err == nil && len(cmds) > 0 {
+			for j := range threads[i].Messages {
+				threads[i].Messages[j].Command = cmds[threads[i].Messages[j].ID]
+			}
+		}
 		derive(&threads[i], status[threads[i].ID], s.now())
 	}
 	if threads == nil {
@@ -1519,6 +1539,9 @@ func (s *Store) MarkDelivered(ctx context.Context, sessionID, messageID string) 
 			return true, err
 		}
 		if err := s.markHandoffDelivered(ctx, messageID); err != nil {
+			return true, err
+		}
+		if err := s.markCommandsDelivered(ctx, messageID); err != nil {
 			return true, err
 		}
 	}
