@@ -210,6 +210,11 @@ type Thread struct {
 	// The linked Linear issue and what happened on it (GetThread only; see linear.go).
 	Linear       *ThreadLink   `json:"linear,omitempty"`
 	LinearEvents []LinearEvent `json:"linear_events,omitempty"`
+	// Forks (see forks.go). IsFork / ForkCount are in every list; ForkedFrom and Forks in GetThread only.
+	IsFork     bool        `json:"is_fork,omitempty"`
+	ForkCount  int         `json:"fork_count,omitempty"`
+	ForkedFrom *ForkedFrom `json:"forked_from,omitempty"`
+	Forks      []ForkChild `json:"forks,omitempty"`
 	undelivered  int
 }
 
@@ -481,6 +486,9 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(linearSchema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(forkSchema); err != nil {
 		return err
 	}
 	for _, c := range addedColumns {
@@ -1047,6 +1055,12 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 	if threads == nil {
 		threads = []Thread{}
 	}
+	if len(threads) > 0 {
+		isFork, count := s.forkIndex(ctx)
+		for i := range threads {
+			threads[i].IsFork, threads[i].ForkCount = isFork[threads[i].ID], count[threads[i].ID]
+		}
+	}
 	return threads, nil
 }
 
@@ -1251,6 +1265,12 @@ func (s *Store) GetThread(ctx context.Context, id string) (*Thread, error) {
 		return nil, ErrNotFound
 	}
 	th := &threads[0]
+	if f, err := s.ForkedFromOf(ctx, id); err == nil {
+		th.ForkedFrom = f
+	}
+	if fs, err := s.ForksOf(ctx, id); err == nil && len(fs) > 0 {
+		th.Forks = fs
+	}
 	if l, err := s.GetThreadLink(ctx, id); err == nil {
 		th.Linear = l
 		if evs, err := s.ListLinearEvents(ctx, id); err == nil && len(evs) > 0 {
@@ -1482,6 +1502,9 @@ func (s *Store) MarkDelivered(ctx context.Context, sessionID, messageID string) 
 	n, _ := res.RowsAffected()
 	if n > 0 {
 		if err := s.markLinearDelivered(ctx, messageID); err != nil {
+			return true, err
+		}
+		if err := s.markForkDelivered(ctx, messageID); err != nil {
 			return true, err
 		}
 	}

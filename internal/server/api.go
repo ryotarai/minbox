@@ -890,6 +890,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 		if len(pending) > 0 || wait == 0 {
 			s.withAttachedLines(r, pending)
 			s.linearInject(r.Context(), pending)
+			s.forkInject(r.Context(), sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
 		}
@@ -898,6 +899,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 		case <-deadline:
 			s.withAttachedLines(r, pending)
 			s.linearInject(r.Context(), pending)
+			s.forkInject(r.Context(), sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
 		case <-s.closing:
