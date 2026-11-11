@@ -107,6 +107,22 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     void load()
   }, [load])
 
+  // Reload lists: refetch Linear's lists bypassing the server's cache; the form keeps what it holds.
+  const [reloading, setReloading] = useState(false)
+  const reloadLists = async () => {
+    setReloading(true)
+    try {
+      const r = await api.linearDraft(thread.id, 'meta', true)
+      if (closed.current) return
+      metaRef.current = r.meta ?? null
+      setMeta(r.meta ?? null)
+    } catch (e) {
+      if (!closed.current) toast('Could not reload the lists: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      if (!closed.current) setReloading(false)
+    }
+  }
+
   const team = useMemo(() => meta?.teams.find((t) => t.id === form.team_id), [meta, form.team_id])
   const projects = useMemo(() => (meta?.projects ?? []).filter((p) => !p.team_ids?.length || !form.team_id || p.team_ids.includes(form.team_id)), [meta, form.team_id])
 
@@ -179,11 +195,38 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
               {note}
             </span>
           )}
-          {meta?.warnings?.length ? (
-            <span className="text-[12px] text-subtle" title={meta.warnings.join('\n')}>
-              Some of Linear's lists could not be loaded.
-            </span>
-          ) : null}
+          {meta && (
+            <div data-testid="linear-create-lists" className="flex flex-col gap-1 text-[12px] text-subtle">
+              <div className="flex flex-wrap items-center gap-2">
+                <span data-testid="linear-create-counts">
+                  {meta.teams.length} {meta.teams.length === 1 ? 'team' : 'teams'} loaded, {meta.projects.length} {meta.projects.length === 1 ? 'project' : 'projects'}
+                </span>
+                {meta.warnings?.length ? <span>Some of Linear's lists could not be loaded.</span> : null}
+                <Button size="sm" data-testid="linear-create-reload" disabled={reloading} onClick={() => void reloadLists()}>
+                  {reloading ? 'Reloading…' : 'Reload lists'}
+                </Button>
+              </div>
+              {meta.warnings?.length || meta.lists?.length ? (
+                <details data-testid="linear-create-details" open={!!meta.warnings?.length}>
+                  <summary className="cursor-pointer">Details</summary>
+                  {meta.warnings?.length ? (
+                    <ul data-testid="linear-create-warnings" className="list-disc pl-4 select-text">
+                      {meta.warnings.map((w, i) => (
+                        <li key={i}>{w || 'unknown problem (no detail)'}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {meta.lists?.length ? (
+                    <pre data-testid="linear-create-lists-summary" className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap select-text font-mono text-[11px]">
+                      {meta.lists
+                        .map((l) => `${l.list} [${l.tool ?? '?'}]: ${l.pages} page(s), ${l.items} items, ${l.parsed} parsed, ${l.skipped} skipped${l.error ? ', error: ' + l.error : ''}`)
+                        .join('\n')}
+                    </pre>
+                  ) : null}
+                </details>
+              ) : null}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <label className={label}>
               Team (required)

@@ -28,6 +28,8 @@ export class FakeLinear {
   /** Issues made by save_issue without an id (the Create-issue dialog). */
   created: any[] = []
   calls: { tool: string; args: any }[] = []
+  /** list_issue_labels answers a tool error (the Create dialog then warns). */
+  failLabels = false
   private seq = 0
   statuses = [
     { id: 'st-2', name: 'Todo', type: 'unstarted' },
@@ -160,6 +162,7 @@ export class FakeLinear {
           case 'list_teams':
             return text({ teams: [{ id: 'team-1', name: 'Engineering', key: 'ENG' }, { id: 'team-2', name: 'Design', key: 'DES' }] })
           case 'list_issue_labels':
+            if (this.failLabels) return sse({ isError: true, content: [{ type: 'text', text: 'labels are down' }] })
             return text({ labels: [{ id: 'lab-1', name: 'Bug' }, { id: 'lab-2', name: 'Feature' }] })
           case 'list_projects':
             return text({ projects: [{ id: 'proj-1', name: 'Website' }] })

@@ -48,12 +48,23 @@ type fakeLinear struct {
 	failBody   string // when set, get_issue answers 500 with this body
 	nextID     int
 	// create-issue support
-	created     []map[string]any // issues made by save_issue/create_issue, in order
-	failCreate  string           // when set, the create tool answers a tool error with this text
-	createNoID  bool             // the create tool answers something without an identifier
-	failTeams   bool
-	failLabels  bool
-	createDelay time.Duration
+	created    []map[string]any // issues made by save_issue/create_issue, in order
+	failCreate string           // when set, the create tool answers a tool error with this text
+	createNoID bool             // the create tool answers something without an identifier
+	failTeams  bool
+	// list_teams pagination: teamList overrides the two default teams; teamPage > 0 pages it with
+	// the cursor argument named cursorKey ("cursor" by default) and the result shape pageShape
+	// ("" = nextCursor, "pageInfo", "text" = prose around the JSON); teamLimitMax is the schema's
+	// maximum for limit; failTeamsPage2 makes the second page a tool error.
+	teamList       []map[string]any
+	teamPage       int
+	cursorKey      string
+	pageShape      string
+	teamLimitMax   int
+	failTeamsPage2 bool
+	failStatusTeam string // list_issue_statuses for this team id is a tool error
+	failLabels     bool
+	createDelay    time.Duration
 }
 
 type fakeCode struct {
@@ -223,7 +234,7 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 		tools := []map[string]any{
 			{"name": "get_user", "inputSchema": obj("query")}, {"name": "get_issue", "inputSchema": obj("id")},
 			{"name": "list_comments", "inputSchema": obj("issueId")}, {"name": "list_issue_statuses", "inputSchema": obj("team")},
-			{"name": "list_teams", "inputSchema": obj("query")}, {"name": "list_issue_labels", "inputSchema": obj("team", "limit")},
+			{"name": "list_teams", "inputSchema": f.teamsSchema(obj)}, {"name": "list_issue_labels", "inputSchema": obj("team", "limit")},
 			{"name": "list_projects", "inputSchema": obj("limit")},
 		}
 		createProps := obj("title", "description", "team", "state", "assignee", "project")
@@ -280,13 +291,19 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 	case "list_comments":
 		text(map[string]any{"comments": f.comments})
 	case "list_issue_statuses":
+		if f.failStatusTeam != "" && s("team") == f.failStatusTeam {
+			toolErr("statuses unavailable for " + f.failStatusTeam)
+			return
+		}
 		text(map[string]any{"statuses": f.statuses})
 	case "list_teams":
 		if f.failTeams {
 			toolErr("teams unavailable")
 			return
 		}
-		text(map[string]any{"teams": []map[string]any{{"id": "team-1", "name": "Engineering", "key": "ENG"}, {"id": "team-2", "name": "Design", "key": "DES"}}})
+		f.listTeams(call.Args, text, toolErr, func(s string) {
+			reply(map[string]any{"content": []map[string]any{{"type": "text", "text": s}}})
+		})
 	case "list_issue_labels":
 		if f.failLabels {
 			toolErr("labels unavailable")
@@ -357,6 +374,63 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 	default:
 		toolErr("unknown tool " + call.Name)
 	}
+}
+
+func (f *fakeLinear) teamsSchema(obj func(...string) map[string]any) map[string]any {
+	key := f.cursorKey
+	if key == "" {
+		key = "cursor"
+	}
+	sc := obj("query", "limit", key)
+	if f.teamLimitMax > 0 {
+		sc["properties"].(map[string]any)["limit"] = map[string]any{"type": "number", "maximum": f.teamLimitMax}
+	}
+	return sc
+}
+
+// listTeams answers list_teams (the caller holds f.mu).
+func (f *fakeLinear) listTeams(args map[string]any, text func(any), toolErr func(string), prose func(string)) {
+	teams := f.teamList
+	if teams == nil {
+		teams = []map[string]any{{"id": "team-1", "name": "Engineering", "key": "ENG"}, {"id": "team-2", "name": "Design", "key": "DES"}}
+	}
+	if f.teamPage <= 0 {
+		text(map[string]any{"teams": teams})
+		return
+	}
+	key := f.cursorKey
+	if key == "" {
+		key = "cursor"
+	}
+	start := 0
+	if c, _ := args[key].(string); c != "" {
+		_, _ = fmt.Sscanf(c, "c%d", &start)
+		if f.failTeamsPage2 {
+			toolErr("rate limited on page 2")
+			return
+		}
+	}
+	size := f.teamPage
+	if lim, ok := args["limit"].(float64); ok && int(lim) < size {
+		size = int(lim)
+	}
+	end := min(start+size, len(teams))
+	out := map[string]any{"teams": teams[start:end]}
+	next := ""
+	if end < len(teams) {
+		next = fmt.Sprintf("c%d", end)
+	}
+	if f.pageShape == "pageInfo" {
+		out["pageInfo"] = map[string]any{"hasNextPage": next != "", "endCursor": next}
+	} else if next != "" {
+		out["nextCursor"] = next
+	}
+	if f.pageShape == "text" {
+		b, _ := json.Marshal(out)
+		prose("Found teams:\n" + string(b) + "\n(end)")
+		return
+	}
+	text(out)
 }
 
 func mergeProps(a, b map[string]any) map[string]any {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -39,8 +40,11 @@ const (
 	draftCacheTTL   = 10 * time.Minute
 	draftErrTTL     = 15 * time.Second
 	metaTTL         = 90 * time.Second
-	metaMaxTeams    = 8
-	metaMaxProjects = 100
+	metaMaxTeams    = 250 // teams offered (a workspace has rarely more than a few dozen)
+	metaPageSize    = 100 // the limit argument when the tool's schema declares no maximum
+	metaPageMax     = 250 // never ask for more than this per page
+	metaMaxPages    = 10  // pages followed per list
+	metaParallel    = 4   // per-team calls in flight at once
 	createMaxTitle  = 256
 	createMaxDesc   = 50000
 	createMaxLabels = 20
@@ -89,6 +93,19 @@ type linearMeta struct {
 	Teams    []metaTeam    `json:"teams"`
 	Projects []metaProject `json:"projects"`
 	Warnings []string      `json:"warnings,omitempty"`
+	// Lists: one entry per list fetched (tool used, pages, items read/parsed/skipped, error), for
+	// the dialog's Details block.
+	Lists []metaList `json:"lists,omitempty"`
+}
+
+type metaList struct {
+	List    string `json:"list"`
+	Tool    string `json:"tool,omitempty"`
+	Pages   int    `json:"pages"`
+	Items   int    `json:"items"`
+	Parsed  int    `json:"parsed"`
+	Skipped int    `json:"skipped"`
+	Error   string `json:"error,omitempty"`
 }
 
 func (m *linearMeta) team(id string) *metaTeam {
@@ -127,22 +144,100 @@ func (t *metaTeam) hasLabel(id string) bool {
 	return false
 }
 
-// callList calls a listing tool; team (when not "") goes into the tool's team argument.
-func (l *linearSvc) callList(ctx context.Context, op, team string) (any, error) {
-	return l.call(ctx, op, func(t linear.Tool) (map[string]any, error) {
-		args := map[string]any{}
-		if team != "" {
-			if p := t.Pick("team", "teamId", "team_id"); p != "" {
-				args[p] = team
+// listResult is what callListAll read of one list: the items of all pages and a summary.
+type listResult struct {
+	items []any
+	info  metaList
+	// notes: problems that did not stop the list (a later page failed, the list may be cut off).
+	notes []string
+}
+
+// callListAll calls a listing tool and follows its pages (the cursor argument the tool's schema
+// declares: cursor / after / endCursor; the largest limit it allows). team (when not "") goes into
+// the tool's team argument. A failure of the first page is the returned error; a failure of a later
+// page keeps what was read and adds a note.
+func (l *linearSvc) callListAll(ctx context.Context, op, team string) (*listResult, error) {
+	res := &listResult{info: metaList{List: op}}
+	cursor := ""
+	seen := map[string]bool{}
+	for page := 0; page < metaMaxPages; page++ {
+		var limit int
+		var cursorArg string
+		v, err := l.call(ctx, op, func(t linear.Tool) (map[string]any, error) {
+			res.info.Tool = t.Name
+			args := map[string]any{}
+			if team != "" {
+				if p := t.Pick("team", "teamId", "team_id"); p != "" {
+					args[p] = team
+				}
 			}
-		}
-		if op == "list_labels" || op == "list_projects" {
-			if p := t.Pick("limit"); p != "" && len(t.Props()) > 0 {
-				args[p] = metaMaxProjects
+			if len(t.Props()) > 0 {
+				if p := t.Pick("limit", "first", "pageSize", "page_size"); p != "" {
+					limit = metaPageSize
+					if mx := t.PropMax(p); mx > 0 && mx < limit {
+						limit = mx
+					} else if mx > limit {
+						limit = min(mx, metaPageMax)
+					}
+					args[p] = limit
+				}
+				cursorArg = t.Pick("cursor", "after", "endCursor")
+				if cursor != "" && cursorArg != "" {
+					args[cursorArg] = cursor
+				}
 			}
+			return args, nil
+		})
+		if err != nil {
+			if page == 0 {
+				res.info.Error = err.Error()
+				return res, err
+			}
+			res.notes = append(res.notes, fmt.Sprintf("page %d failed: %v", page+1, err))
+			res.info.Error = fmt.Sprintf("page %d failed: %v", page+1, err)
+			break
 		}
-		return args, nil
-	})
+		res.info.Pages++
+		items := linear.Items(v, listKeys[op]...)
+		fresh := 0
+		for _, it := range items {
+			if id := linear.ItemID(it); id != "" {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+			}
+			res.items = append(res.items, it)
+			fresh++
+		}
+		next := linear.NextCursor(v)
+		if next == "" {
+			if limit > 0 && len(items) >= limit && cursorArg != "" {
+				res.notes = append(res.notes, fmt.Sprintf("got %d items (the limit) and no next-page cursor: the list may be cut off", len(items)))
+			}
+			break
+		}
+		if cursorArg == "" {
+			res.notes = append(res.notes, "the tool offers more pages but declares no cursor argument: the list may be cut off")
+			break
+		}
+		if next == cursor || len(items) == 0 || fresh == 0 {
+			break // the server ignores the cursor, or the page is empty
+		}
+		cursor = next
+		if page == metaMaxPages-1 {
+			res.notes = append(res.notes, fmt.Sprintf("stopped after %d pages: the list may be cut off", metaMaxPages))
+		}
+	}
+	res.info.Items = len(res.items)
+	return res, nil
+}
+
+var listKeys = map[string][]string{
+	"list_teams":    {"teams"},
+	"list_statuses": {"statuses", "states", "issueStatuses", "workflowStates"},
+	"list_labels":   {"labels", "issueLabels"},
+	"list_projects": {"projects"},
 }
 
 func defaultStateOf(sts []metaState) string {
@@ -160,55 +255,105 @@ func defaultStateOf(sts []metaState) string {
 }
 
 // meta returns Linear's lists for the dialog, cached for a short while (the lists are the
-// workspace's, not the thread's).
-func (l *linearSvc) meta(ctx context.Context) (*linearMeta, error) {
+// workspace's, not the thread's). refresh bypasses the cache; a result with warnings is never cached.
+func (l *linearSvc) meta(ctx context.Context, refresh bool) (*linearMeta, error) {
 	l.metaMu.Lock()
 	defer l.metaMu.Unlock()
-	if l.metaCache != nil && l.now().Sub(l.metaAt) < metaTTL {
+	if !refresh && l.metaCache != nil && l.now().Sub(l.metaAt) < metaTTL {
 		return l.metaCache, nil
 	}
 	m, err := l.fetchMeta(ctx)
 	if err != nil {
+		l.metaCache = nil
 		return nil, err
 	}
-	l.metaCache, l.metaAt = m, l.now()
+	if len(m.Warnings) == 0 {
+		l.metaCache, l.metaAt = m, l.now()
+	} else {
+		l.metaCache = nil
+	}
 	return m, nil
 }
 
 func (l *linearSvc) fetchMeta(ctx context.Context) (*linearMeta, error) {
-	v, err := l.callList(ctx, "list_teams", "")
+	tr, err := l.callListAll(ctx, "list_teams", "")
 	if err != nil {
+		log.Printf("linear: meta: list_teams: %s", l.scrub(ctx, err.Error()))
 		return nil, err
 	}
-	teams := linear.ParseTeams(v)
+	teams := linear.ParseTeams(tr.items)
 	if len(teams) == 0 {
-		return nil, errors.New("Linear returned no teams for this login")
+		log.Printf("linear: meta: list_teams returned %d items, parsed 0", len(tr.items))
+		return nil, fmt.Errorf("Linear returned no teams for this login (list_teams: parsed 0 of %d items)", len(tr.items))
+	}
+	m := &linearMeta{Projects: []metaProject{}}
+	var wmu sync.Mutex
+	// warn records a problem: always a non-empty text that names the list.
+	warn := func(list, s string) {
+		s = strings.TrimSpace(l.scrub(ctx, s))
+		if s == "" {
+			s = "failed (no detail)"
+		}
+		s = linear.Truncate(list+": "+s, 300)
+		log.Printf("linear: meta: %s", s)
+		wmu.Lock()
+		m.Warnings = append(m.Warnings, s)
+		wmu.Unlock()
+	}
+	addInfo := func(in metaList, parsed int) {
+		in.Parsed = parsed
+		if in.Items > parsed {
+			in.Skipped = in.Items - parsed
+		}
+		in.Error = linear.Truncate(strings.TrimSpace(l.scrub(ctx, in.Error)), 300)
+		wmu.Lock()
+		m.Lists = append(m.Lists, in)
+		wmu.Unlock()
+	}
+	for _, n := range tr.notes {
+		warn("list_teams", n)
+	}
+	if skipped := len(tr.items) - len(teams); skipped > 0 {
+		warn("list_teams", fmt.Sprintf("parsed %d of %d items (%d without an id or name skipped)", len(teams), len(tr.items), skipped))
 	}
 	if len(teams) > metaMaxTeams {
+		warn("list_teams", fmt.Sprintf("%d teams: only the first %d are offered", len(teams), metaMaxTeams))
 		teams = teams[:metaMaxTeams]
 	}
-	m := &linearMeta{Teams: make([]metaTeam, len(teams)), Projects: []metaProject{}}
+	addInfo(tr.info, len(teams))
+	m.Teams = make([]metaTeam, len(teams))
 	if a := l.loadAuth(ctx); a != nil && a.User != nil {
 		m.User = a.User
 	} else if u, err := l.getUser(ctx); err == nil {
 		m.User = u
 	}
-	var wmu sync.Mutex
-	warn := func(s string) {
-		wmu.Lock()
-		m.Warnings = append(m.Warnings, linear.Truncate(l.scrub(ctx, s), 200))
-		wmu.Unlock()
-	}
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, metaParallel)
 	for i, t := range teams {
+		// A team is always offered, whatever happens to its secondary lists.
 		m.Teams[i] = metaTeam{ID: t.ID, Name: t.Name, Key: t.Key, States: []metaState{}, Labels: []metaLabel{}}
 		wg.Add(1)
 		go func(mt *metaTeam, id string) {
 			defer wg.Done()
-			if v, err := l.callList(ctx, "list_statuses", id); err != nil {
-				warn("states of " + mt.Name + ": " + err.Error())
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			sname := "list_issue_statuses of " + mt.Name
+			sr, err := l.callListAll(ctx, "list_statuses", id)
+			sr.info.List = sname
+			if err != nil {
+				warn(sname, err.Error())
+				addInfo(sr.info, 0)
 			} else {
-				sts := linear.ParseStatuses(v)
+				sts := linear.ParseStatuses(sr.items)
+				for _, n := range sr.notes {
+					warn(sname, n)
+				}
+				if len(sts) < len(sr.items) {
+					warn(sname, fmt.Sprintf("parsed %d of %d items", len(sts), len(sr.items)))
+				}
+				if len(sr.items) == 0 {
+					warn(sname, "returned no items")
+				}
 				for _, s := range sts {
 					if s.ID != "" {
 						mt.States = append(mt.States, metaState{ID: s.ID, Name: s.Name, Type: s.Type})
@@ -218,27 +363,51 @@ func (l *linearSvc) fetchMeta(ctx context.Context) (*linearMeta, error) {
 				if st := linear.PickStarted(sts); st != nil {
 					mt.StartedStateID = st.ID
 				}
+				addInfo(sr.info, len(mt.States))
 			}
-			if v, err := l.callList(ctx, "list_labels", id); err != nil {
-				warn("labels of " + mt.Name + ": " + err.Error())
+			lname := "list_issue_labels of " + mt.Name
+			lr, err := l.callListAll(ctx, "list_labels", id)
+			lr.info.List = lname
+			if err != nil {
+				warn(lname, err.Error())
+				addInfo(lr.info, 0)
 			} else {
-				for _, lb := range linear.ParseLabels(v) {
+				lbs := linear.ParseLabels(lr.items)
+				for _, n := range lr.notes {
+					warn(lname, n)
+				}
+				if len(lbs) < len(lr.items) {
+					warn(lname, fmt.Sprintf("parsed %d of %d items", len(lbs), len(lr.items)))
+				}
+				for _, lb := range lbs {
 					if lb.TeamID == "" || lb.TeamID == id {
 						mt.Labels = append(mt.Labels, metaLabel{ID: lb.ID, Name: lb.Name, Color: lb.Color})
 					}
 				}
+				addInfo(lr.info, len(mt.Labels))
 			}
 		}(&m.Teams[i], t.ID)
 	}
-	if v, err := l.callList(ctx, "list_projects", ""); err != nil {
-		warn("projects: " + err.Error())
+	if pr, err := l.callListAll(ctx, "list_projects", ""); err != nil {
+		warn("list_projects", err.Error())
+		addInfo(pr.info, 0)
 	} else {
-		for _, p := range linear.ParseProjects(v) {
+		ps := linear.ParseProjects(pr.items)
+		for _, n := range pr.notes {
+			warn("list_projects", n)
+		}
+		if len(ps) < len(pr.items) {
+			warn("list_projects", fmt.Sprintf("parsed %d of %d items", len(ps), len(pr.items)))
+		}
+		for _, p := range ps {
 			m.Projects = append(m.Projects, metaProject{ID: p.ID, Name: p.Name, TeamIDs: p.TeamIDs})
 		}
+		addInfo(pr.info, len(m.Projects))
 	}
 	wg.Wait()
 	sort.Strings(m.Warnings)
+	sort.Slice(m.Lists, func(i, j int) bool { return m.Lists[i].List < m.Lists[j].List })
+	log.Printf("linear: meta: %d teams, %d projects, %d warnings", len(m.Teams), len(m.Projects), len(m.Warnings))
 	return m, nil
 }
 
@@ -799,7 +968,8 @@ func (s *Server) runLinearDraft(ctx context.Context, prompt string) ([]byte, err
 // ---- endpoints ----
 
 type draftReq struct {
-	Stage string `json:"stage"` // "meta" | "llm" | "" (both, one after the other)
+	Stage   string `json:"stage"`   // "meta" | "llm" | "" (both, one after the other)
+	Refresh bool   `json:"refresh"` // refetch Linear's lists, bypassing the cache
 }
 
 // POST /api/threads/{id}/linear/draft: stage "meta" returns Linear's lists and the basic
@@ -817,7 +987,7 @@ func (s *Server) linearDraft(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decode(w, r, &req) {
 		return
 	}
-	m, err := l.meta(ctx)
+	m, err := l.meta(ctx, req.Refresh)
 	if err != nil {
 		linearError(w, &wrapErr{msg: l.errText(err), err: err})
 		return
@@ -1042,7 +1212,7 @@ func (l *linearSvc) createIssue(ctx context.Context, th *store.Thread, req creat
 	if k, err := s.store.GetThreadLink(ctx, th.ID); err == nil {
 		return nil, &wrapErr{msg: "this thread is already linked to " + k.Identifier, status: 409, code: "already_linked"}
 	}
-	m, err := l.meta(ctx)
+	m, err := l.meta(ctx, false)
 	if err != nil {
 		return nil, err
 	}

@@ -99,6 +99,18 @@ func (t Tool) Props() map[string]bool {
 	return out
 }
 
+// PropMax is the "maximum" the schema declares for a numeric argument, 0 when it declares none.
+func (t Tool) PropMax(name string) int {
+	if p, ok := t.InputSchema["properties"].(map[string]any); ok {
+		if d, ok := p[name].(map[string]any); ok {
+			if f, ok := d["maximum"].(float64); ok && f > 0 {
+				return int(f)
+			}
+		}
+	}
+	return 0
+}
+
 // Pick returns the first candidate that the tool declares; with no schema it returns the first
 // candidate, with a schema that has none of them, "".
 func (t Tool) Pick(cands ...string) string {
@@ -127,6 +139,9 @@ func (r *Result) Value() any {
 	}
 	var v any
 	if json.Unmarshal([]byte(strings.TrimSpace(r.Text)), &v) == nil {
+		return v
+	}
+	if v, ok := EmbeddedJSON(r.Text); ok {
 		return v
 	}
 	return r.Text
