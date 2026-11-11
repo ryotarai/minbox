@@ -264,6 +264,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/unarchive", s.unarchiveSession)
 	mux.HandleFunc("POST /api/sessions/{id}/files", s.uploadFile)
 	mux.HandleFunc("GET /api/sessions/{id}/completions", s.completions)
+	mux.HandleFunc("GET /api/sessions/{id}/files", s.listFiles)
 	mux.HandleFunc("GET /api/attachments/{id}", s.getAttachment)
 	mux.HandleFunc("GET /api/attachments/{id}/raw", s.rawAttachment)
 	mux.HandleFunc("GET /api/attachments/{id}/download", s.downloadAttachment)

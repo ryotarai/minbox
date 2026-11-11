@@ -31,6 +31,7 @@ import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { CommandMessage, commandOf } from './CommandMessage'
+import { useMentions } from './Mentions'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
 type Props = {
@@ -1544,15 +1545,23 @@ function ReplyBox({
     </span>
   ) : null
 
+  const mention = useMentions({
+    sessionId: session.id,
+    value: words,
+    onChange: (v) => updateReplyDraft(thread.id, (d) => ({ ...d, words: v })),
+    inputRef: replyRef,
+    agents: false,
+  })
   const textarea = (
     <textarea
       ref={replyRef}
       data-testid="reply-box"
       aria-label="Reply to the thread"
       value={words}
-      onChange={(e) => updateReplyDraft(thread.id, (d) => ({ ...d, words: e.target.value }))}
+      {...mention.handlers}
       onPaste={io.onPaste}
       onKeyDown={(e) => {
+        if (mention.onKeyDown(e)) return
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault()
           void send()
@@ -1626,7 +1635,10 @@ function ReplyBox({
         {fileTiles}
         <div className={cx('flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
           <div className={cx('flex flex-1 gap-1 rounded-xl border border-linestrong bg-sunken px-3 py-3 focus-within:border-accent', full ? 'items-stretch' : 'items-end')}>
-            <div className={cx('flex min-w-0 flex-1 flex-col', full && 'min-h-0')}>{textarea}</div>
+            <div className={cx('relative flex min-w-0 flex-1 flex-col', full && 'min-h-0')}>
+              {textarea}
+              {mention.popup(true)}
+            </div>
             <div className="flex flex-col items-center justify-end gap-1">
               {fullButton}
               {clip}
@@ -1653,7 +1665,10 @@ function ReplyBox({
     <div className={cx('flex flex-col gap-1.5 border-t border-line px-3.5 pb-3 pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {chips}
       {fileTiles}
-      {textarea}
+      <div className={cx('relative flex flex-col', full && 'min-h-0 flex-1')}>
+        {textarea}
+        {mention.popup(true)}
+      </div>
       {commandHint}
       {(picksCount > 0 || annos.length > 0 || counter) && (
         <div className="flex flex-wrap items-center gap-1.5">

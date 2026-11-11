@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api, type Completion, type Completions, type Session } from '../api'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { api, type Session } from '../api'
+import { useMentions } from './Mentions'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { useApp } from '../lib/app'
 import { deleteComposeDraft, getComposeDrafts, saveComposeDraft } from '../lib/drafts'
@@ -133,7 +134,7 @@ export function Compose({ sessionId, draftId, onClose }: { sessionId?: string; d
           onChange={setBody}
           onSubmit={() => void send()}
           {...io}
-          placeholder="Message to Claude Code. @ for agents, / for skills."
+          placeholder="Message to Claude Code. @ for files and agents, / for skills."
         />
         <ComposeFileTiles
           files={files}
@@ -206,11 +207,9 @@ type CompletingProps = {
   fill?: boolean
 }
 
-/** A textarea that completes @agents and /skills of the session's project. */
+/** A textarea that completes @files, @agents and /skills of the session's project. */
 export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, placeholder, className, testid = 'compose-body', dropUp, autoGrow, fill, onPaste, onDrop, onDragOver }: CompletingProps & { ref: React.RefObject<HTMLTextAreaElement | null> } & Partial<ReturnType<typeof fileInputHandlers>>) => {
-  const [comps, setComps] = useState<Completions | null>(null)
-  const [token, setToken] = useState<{ ch: '@' | '/'; start: number; q: string } | null>(null)
-  const [sel, setSel] = useState(0)
+  const mention = useMentions({ sessionId, value, onChange, inputRef: ref, agents: true })
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
@@ -224,39 +223,6 @@ export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, 
     el.style.height = `${h}px`
     el.style.overflowY = el.scrollHeight + 2 > autoGrow.max ? 'auto' : 'hidden'
   }, [value, autoGrow, fill, ref])
-  useEffect(() => {
-    if (!sessionId) return
-    api.completions(sessionId).then(setComps).catch(() => setComps(null))
-  }, [sessionId])
-  const items: (Completion & { insert: string })[] = useMemo(() => {
-    if (!token || !comps) return []
-    const pool =
-      token.ch === '@'
-        ? comps.agents.map((c) => ({ ...c, insert: `@${c.name}` }))
-        : [...comps.skills, ...comps.commands].map((c) => ({ ...c, insert: `/${c.name}` }))
-    return pool.filter((c) => c.name.toLowerCase().includes(token.q.toLowerCase())).slice(0, 8)
-  }, [token, comps])
-
-  const detect = (v: string, caret: number) => {
-    const before = v.slice(0, caret)
-    const m = /(^|\s)([@/])([\w:.-]*)$/.exec(before)
-    if (m) {
-      setToken({ ch: m[2] as '@' | '/', start: caret - m[3]!.length - 1, q: m[3]! })
-      setSel(0)
-    } else setToken(null)
-  }
-  const apply = (c: { insert: string }) => {
-    if (!token) return
-    const caret = token.start + 1 + token.q.length
-    const next = value.slice(0, token.start) + c.insert + ' ' + value.slice(caret)
-    onChange(next)
-    setToken(null)
-    requestAnimationFrame(() => {
-      const p = token.start + c.insert.length + 1
-      ref.current?.setSelectionRange(p, p)
-      ref.current?.focus()
-    })
-  }
   return (
     <div className={cx('relative', fill && 'min-h-0 flex-1')}>
       <textarea
@@ -265,36 +231,12 @@ export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, 
         aria-label="Body"
         value={value}
         placeholder={placeholder}
-        onChange={(e) => {
-          onChange(e.target.value)
-          detect(e.target.value, e.target.selectionStart)
-        }}
+        {...mention.handlers}
         onPaste={onPaste}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onKeyDown={(e) => {
-          if (items.length > 0 && token) {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setSel((s) => (s + 1) % items.length)
-              return
-            }
-            if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setSel((s) => (s - 1 + items.length) % items.length)
-              return
-            }
-            if (e.key === 'Enter' || e.key === 'Tab') {
-              e.preventDefault()
-              apply(items[sel]!)
-              return
-            }
-            if (e.key === 'Escape') {
-              e.stopPropagation()
-              setToken(null)
-              return
-            }
-          }
+          if (mention.onKeyDown(e)) return
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
             onSubmit()
@@ -302,26 +244,7 @@ export const CompletingTextarea = ({ ref, sessionId, value, onChange, onSubmit, 
         }}
         className={cx('w-full resize-none rounded-md border border-linestrong bg-sunken p-2.5 text-[13.5px] outline-none focus:border-accent', fill ? 'h-full' : (className ?? 'h-[120px]'))}
       />
-      {items.length > 0 && (
-        <div role="listbox" data-testid="completions" className={cx('absolute left-2 z-10 w-[320px] rounded-[10px] border border-linestrong bg-overlay p-1 shadow-pop', dropUp ? 'bottom-full mb-1' : 'top-full mt-1')}>
-          {items.map((c, i) => (
-            <button
-              key={c.insert}
-              type="button"
-              role="option"
-              aria-selected={i === sel}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                apply(c)
-              }}
-              className={cx('flex w-full flex-col rounded-[6px] border-0 px-2.5 py-1.5 text-left', i === sel ? 'bg-sel' : 'bg-transparent')}
-            >
-              <span className="mono text-[12.5px]">{c.insert}</span>
-              {c.description && <span className="truncate text-[11.5px] text-subtle">{c.description}</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      {mention.popup(dropUp)}
     </div>
   )
 }

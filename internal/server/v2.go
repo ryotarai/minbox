@@ -114,6 +114,29 @@ func (s *Server) completions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+// listFiles completes an @-mention: the files and folders the typed path
+// leads to, relative to the session's folder (or absolute, or ~/). Names only,
+// on the session's host, like the folder picker.
+func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.store.GetSession(r.Context(), r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	fsys, err := s.sessions.fsOf(sess.HostID)
+	if err != nil {
+		httpError(w, 503, err.Error())
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	out, err := fsys.ListFiles(r.Context(), sess.Cwd, r.URL.Query().Get("prefix"), limit)
+	if err != nil {
+		httpError(w, 502, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"entries": out})
+}
+
 // ---- threads ----
 
 func (s *Server) threadOp(op func(ctx context.Context, id string) error) http.HandlerFunc {

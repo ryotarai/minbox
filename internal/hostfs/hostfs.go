@@ -49,6 +49,13 @@ type Listing struct {
 	Entries []DirEntry `json:"entries"`
 }
 
+// FileEntry is a file or folder offered by an @-mention. Path is what gets
+// inserted: the typed folder part plus the name, with a trailing "/" on folders.
+type FileEntry struct {
+	Path string `json:"path"`
+	Dir  bool   `json:"dir"`
+}
+
 // Completion is an agent, skill or command a message can mention.
 type Completion struct {
 	Name        string `json:"name"`
@@ -81,6 +88,9 @@ type FS interface {
 	MkdirAll(ctx context.Context, path string) error
 	ListDirs(ctx context.Context, path string) (Listing, error)
 	Completions(ctx context.Context, cwd string) (map[string][]Completion, error)
+	// ListFiles lists the entries (names only) matching an @-mention query,
+	// relative to cwd (or absolute, or ~/...), at most limit.
+	ListFiles(ctx context.Context, cwd, query string, limit int) ([]FileEntry, error)
 	// GitDiff is path's diff in the repository (or worktree) that holds it:
 	// against HEAD, or with base against where HEAD left base (its merge
 	// base), so committed changes show too. An untracked file is diffed

@@ -20,6 +20,8 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
   safe. Haiku can draft up to three one-click replies.
 - **Commands**: a reply that starts with `!` runs as a shell command in the session's folder (60 s limit);
   the result shows in the thread and reaches Claude with your next message. See [docs/thread-commands.md](docs/thread-commands.md).
+- **File mentions**: type `@` at the start of a word in a reply or a new message for a popup of files and
+  folders of the session's folder (also `../`, `~/`, absolute paths); the text sent is `@path`.
 - **Diagrams**: the draw button right of the paperclip, in a new thread and in a reply, opens a
   drawing tool in a large modal: select/move, rectangle, ellipse, line, arrow, text (double-click
   to edit), pen and eraser; 7 colors (including white), 3 widths, fill, undo/redo. Drag a

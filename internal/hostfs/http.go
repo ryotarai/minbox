@@ -79,6 +79,15 @@ func Handler(l *Local) http.Handler {
 		v, _ := l.Completions(r.Context(), q(r, "cwd"))
 		writeJSON(w, 200, v)
 	})
+	mux.HandleFunc("GET /fs/files", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(q(r, "limit"))
+		v, err := l.ListFiles(r.Context(), q(r, "cwd"), q(r, "q"), limit)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, v)
+	})
 	mux.HandleFunc("GET /fs/gitdiff", func(w http.ResponseWriter, r *http.Request) {
 		d, err := l.GitDiff(r.Context(), q(r, "cwd"), q(r, "path"), q(r, "base"))
 		if err != nil {
@@ -216,6 +225,12 @@ func (c *Remote) ListDirs(ctx context.Context, path string) (Listing, error) {
 func (c *Remote) Completions(ctx context.Context, cwd string) (map[string][]Completion, error) {
 	var v map[string][]Completion
 	err := c.getJSON(ctx, "/fs/completions", url.Values{"cwd": {cwd}}, &v)
+	return v, err
+}
+
+func (c *Remote) ListFiles(ctx context.Context, cwd, query string, limit int) ([]FileEntry, error) {
+	var v []FileEntry
+	err := c.getJSON(ctx, "/fs/files", url.Values{"cwd": {cwd}, "q": {query}, "limit": {strconv.Itoa(limit)}}, &v)
 	return v, err
 }
 
