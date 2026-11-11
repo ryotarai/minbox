@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type Project } from '../api'
 import { useApp } from '../lib/app'
 import { initials } from '../lib/format'
+import { projectHueStyle } from '../lib/projectColor'
 import { selectProject, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconInbox, IconMore, IconPin, IconPlus } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
@@ -171,8 +172,12 @@ export function ProjectIconDialog({ project, onClose }: { project: Project; onCl
     <Modal label="Project icon" onClose={onClose} className="w-[min(440px,100%)] p-5">
       <h2 className="m-0 mb-3 text-[16px] font-[650]">Icon for {project.name}</h2>
       <div className="flex items-center gap-3">
-        <div data-testid="project-icon-preview" className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-chip text-[34px] leading-none">
-          {shown ? <img src={shown} alt="" className="h-full w-full object-cover" /> : emoji.trim() || <span className="text-[14px] font-bold text-fg2">{initials(project.name)}</span>}
+        <div
+          data-testid="project-icon-preview"
+          style={projectHueStyle(project.id)}
+          className={cx('flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-[34px] leading-none', shown || emoji.trim() ? 'proj-tint border border-line' : 'proj-badge')}
+        >
+          {shown ? <img src={shown} alt="" className="h-full w-full object-cover" /> : emoji.trim() || <span className="text-[14px] font-bold">{initials(project.name)}</span>}
         </div>
         <input
           autoFocus
@@ -314,7 +319,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                 e.preventDefault()
                 setMenu({ project: p, anchor: e.currentTarget })
               }}
-              className={cx('group relative flex shrink-0 items-stretch rounded-lg', on ? 'bg-sel' : 'hover:bg-raised')}
+              className={cx('group relative flex shrink-0 items-stretch rounded-lg', on ? 'bg-sel before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-fg' : 'hover:bg-raised')}
             >
               <button
                 type="button"
@@ -328,7 +333,12 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                 )}
               >
                 {tiles ? (
-                  <span className={cx('relative flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold text-fg2', p.icon?.kind === 'image' ? 'bg-transparent' : 'bg-chip')}>
+                  <span
+                    data-testid="project-tile"
+                    data-kind={p.icon ? p.icon.kind : 'initials'}
+                    style={projectHueStyle(p.id)}
+                    className={cx('relative flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold', p.icon ? 'proj-tint' : 'proj-badge')}
+                  >
                     {p.icon ? <ProjectIcon icon={p.icon} size={32} /> : initials(p.name)}
                     {stat && (stat.waiting > 0 || stat.unread > 0) && (
                       <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">{stat.waiting || stat.unread}</span>
@@ -342,7 +352,14 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
                     <span className="flex min-w-0 flex-1 flex-col gap-px">
                       <span className="flex min-w-0 items-center gap-1.5">
                         {p.pinned_at && <IconPin size={11} className="shrink-0 text-muted" />}
-                        {p.icon && <ProjectIcon icon={p.icon} size={20} />}
+                        <span
+                          data-testid="project-tile"
+                          data-kind={p.icon ? p.icon.kind : 'initials'}
+                          style={projectHueStyle(p.id)}
+                          className={cx('flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px]', p.icon ? 'proj-tint' : 'proj-badge text-[9.5px] font-bold leading-none')}
+                        >
+                          {p.icon ? <ProjectIcon icon={p.icon} size={20} /> : initials(p.name)}
+                        </span>
                         <span data-testid="project-name" className={cx('min-w-0 flex-1 truncate text-[13px]', on || (stat && stat.waiting > 0) ? 'font-[650] text-fg' : 'font-medium text-fg2')}>
                           {p.name}
                         </span>

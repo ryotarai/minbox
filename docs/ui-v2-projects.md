@@ -55,6 +55,12 @@ Icon: the project menu's `Set icon…` opens a dialog with an emoji field, a gri
 The wide rail row and the phone project list and header show a 20-24 px icon before the name.
 Thread rows show the same icon (or a coloured 2-character initials box) as a small leading badge while All projects is selected; see ui-v2-threads.md.
 
+Identity colour: every project has one hue (hash of its id, `web/src/lib/projectColor.ts`, set as `--h` on the element). The
+rail uses it exactly like the thread badge: projects without an icon show their initials in a `.proj-badge` box (tiles and the
+wide row, where it sits before the name); projects with an emoji/image icon get a faint wash plus a 1.5 px ring (`.proj-tint`),
+also on the thread badge, the phone project sheet/header and the icon dialog preview. `All projects` stays neutral. The selected
+project is marked independently of hue (`bg-sel` row, bold name, 3 px bar on the left, `aria-pressed`); waiting/unread badges are unchanged.
+
 Selecting a project scopes the threads list, the session filter, the composer targets and the session
 chips to it. List rows carry no project or session chip, also in `All projects`.
 

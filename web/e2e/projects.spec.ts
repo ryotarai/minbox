@@ -556,3 +556,22 @@ test('All projects marks each thread with its project (icon or 2-char box); a si
   await expect(rows(page)).toHaveCount(1)
   await expect(page.getByTestId('thread-project-badge')).toHaveCount(0)
 })
+
+test('a project has the same identity hue on its rail item and on its thread-row badge', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const projects: { id: string; name: string }[] = await (await fetch(minbox.url + '/api/projects')).json()
+  const apiProject = projects.find((p) => p.name === 'api')!
+  await selectProject(page, 'All projects')
+  const hue = (loc: import('@playwright/test').Locator) => loc.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--h'))
+  const tile = page.locator(`[data-testid="project-item"][data-project-id="${apiProject.id}"] [data-testid="project-tile"]`)
+  const badge = page.locator(`[data-testid="thread-project-badge"][data-project-id="${apiProject.id}"]`)
+  await expect(tile).toHaveAttribute('data-kind', 'initials')
+  const h = await hue(tile)
+  expect(h).toMatch(/^\d+$/)
+  expect(await hue(badge)).toBe(h)
+  // The colour is actually applied (not transparent).
+  expect(await tile.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+  // All projects stays neutral.
+  expect(await page.getByTestId('project-all').getAttribute('style')).toBeNull()
+})
