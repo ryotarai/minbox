@@ -124,6 +124,17 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [showArtifacts, setShowArtifacts] = useState(false)
   const [fullReply, setFullReply] = useState(false) // the reply box takes the pane's whole height
+  // The header block (title, status, Linear) scrolls away with the messages; once it is out of view
+  // a compact copy of it is pinned to the top of the scroll area (the thread-sticky bar below).
+  const [headEl, setHeadEl] = useState<HTMLElement | null>(null)
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!headEl || !root || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => setStuck(!!e && !e.isIntersecting), { root, threshold: 0 })
+    io.observe(headEl)
+    return () => io.disconnect()
+  }, [headEl])
 
   const messages = thread?.messages ?? []
 
@@ -409,8 +420,27 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           pinned.current = nearBottom(e.currentTarget)
           if (pinned.current && unseen > 0) setUnseen(0)
         }}
-        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto', phone ? 'px-3.5 pb-4 pt-3.5' : 'px-[18px] py-3.5')}
+        className={cx('flex min-h-0 flex-1 scroll-pt-14 flex-col gap-3 overflow-y-auto', phone ? 'px-3.5 pb-4 pt-3.5' : 'px-[18px] py-3.5')}
       >
+        {/* Zero-height anchor pinned to the top: the compact bar hangs off it, so showing or hiding the
+            bar never moves the messages. */}
+        <div data-testid="thread-sticky" data-stuck={stuck || undefined} className={cx('sticky -top-3.5 z-[3] -mb-3 h-0 shrink-0', phone ? '-mx-3.5' : '-mx-[18px]')}>
+          <div
+            aria-hidden={!stuck}
+            className={cx(
+              'absolute inset-x-0 top-0 flex items-center gap-2 border-b border-line bg-surface shadow-[0_6px_8px_-6px_rgba(0,0,0,0.35)] transition-opacity duration-100',
+              phone ? 'h-12 px-3.5' : 'h-11 px-[18px]',
+              !stuck && 'invisible opacity-0',
+            )}
+          >
+            {!phone && <ThreadStatusBadge status={thread.status} testid="thread-sticky-status" />}
+            <span data-testid="thread-sticky-subject" title={thread.subject} className="min-w-0 flex-1 truncate text-[14px] font-semibold">
+              {thread.subject}
+            </span>
+            <LinearBar thread={thread} compact />
+          </div>
+        </div>
+        <div ref={setHeadEl} className="flex flex-col gap-3">
         {!phone && (
           <div className="flex flex-col gap-1.5">
             <h2 data-testid="thread-subject" className="m-0 break-words text-[19px] font-[650] leading-[1.35]">
@@ -428,6 +458,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
         )}
         {phone && <span data-testid="thread-subject" className="sr-only">{thread.subject}</span>}
         <LinearBar thread={thread} />
+        </div>
 
         <ThreadNotices thread={thread} target={target} />
 

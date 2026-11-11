@@ -59,11 +59,11 @@ const THREAD_STATUS_STYLE: Record<ThreadStatus, { text: string; bg: string }> = 
 }
 
 /** A thread's status: pulsing dot while working, amber when it needs action, a muted check when finished. */
-export function ThreadStatusBadge({ status, className }: { status: ThreadStatus; className?: string }) {
+export function ThreadStatusBadge({ status, className, testid = 'thread-status' }: { status: ThreadStatus; className?: string; testid?: string }) {
   const st = THREAD_STATUS_STYLE[status] ?? THREAD_STATUS_STYLE.finished
   return (
     <span
-      data-testid="thread-status"
+      data-testid={testid}
       data-status={status}
       title={`Status: ${THREAD_STATUS_LABEL[status]}`}
       className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold', st.bg, st.text, className)}

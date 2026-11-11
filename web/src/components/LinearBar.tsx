@@ -15,7 +15,9 @@ const actionCls =
 
 const inputCls = 'h-8 w-56 rounded-md border border-linestrong bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent'
 
-export function LinearBar({ thread }: { thread: Thread }) {
+export function LinearBar({ thread, compact = false }: { thread: Thread; compact?: boolean }) {
+  // `compact` is the copy in the sticky bar: same actions, shorter labels, no sync of its own.
+  const sx = compact ? '-sticky' : ''
   const { error, toast, navigate } = useApp()
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
@@ -28,9 +30,9 @@ export function LinearBar({ thread }: { thread: Thread }) {
 
   // Open → sync (the server debounces: at most once in ~45 s per thread).
   useEffect(() => {
-    if (!linked) return
+    if (!linked || compact) return
     api.refreshLinear(thread.id).catch(() => {})
-  }, [thread.id, linked])
+  }, [thread.id, linked, compact])
 
   // Creating an issue needs a login: the button shows only while Linear is connected.
   useEffect(() => {
@@ -63,16 +65,16 @@ export function LinearBar({ thread }: { thread: Thread }) {
 
   if (!link) {
     return (
-      <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="linear-bar">
+      <div className={cx('flex items-center gap-2 text-[12px]', compact ? 'min-w-0' : 'flex-wrap')} data-testid={`linear-bar${sx}`}>
         {!open ? (
-          <button type="button" data-testid="linear-link-open" onClick={() => setOpen(true)} className={actionCls}>
+          <button type="button" data-testid={`linear-link-open${sx}`} onClick={() => setOpen(true)} className={actionCls}>
             <IconPlus size={13} />
-            Link Linear issue
+            {compact ? 'Link' : 'Link Linear issue'}
           </button>
         ) : (
           <>
             <input
-              data-testid="linear-link-input"
+              data-testid={`linear-link-input${sx}`}
               autoFocus
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -81,9 +83,9 @@ export function LinearBar({ thread }: { thread: Thread }) {
                 if (e.key === 'Escape') setOpen(false)
               }}
               placeholder="ENG-123 or issue URL"
-              className={inputCls}
+              className={cx(inputCls, compact && 'min-w-0 flex-1 sm:w-56 sm:flex-none')}
             />
-            <Button size="sm" variant="primary" data-testid="linear-link-submit" disabled={busy || !value.trim()} onClick={submit}>
+            <Button size="sm" variant="primary" data-testid={`linear-link-submit${sx}`} disabled={busy || !value.trim()} onClick={submit}>
               Link
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
@@ -92,14 +94,14 @@ export function LinearBar({ thread }: { thread: Thread }) {
           </>
         )}
         {!open && connected && (
-          <button type="button" data-testid="linear-create-open" onClick={() => setCreating(true)} className={actionCls}>
+          <button type="button" data-testid={`linear-create-open${sx}`} onClick={() => setCreating(true)} className={actionCls}>
             <IconSparkle size={13} />
-            Create Linear issue
+            {compact ? 'Create' : 'Create Linear issue'}
           </button>
         )}
         {creating && <LinearCreateDialog thread={thread} onClose={() => setCreating(false)} />}
         {err && (
-          <span data-testid="linear-link-error" className="text-danger">
+          <span data-testid={`linear-link-error${sx}`} className="text-danger">
             {err}
           </span>
         )}
@@ -107,9 +109,9 @@ export function LinearBar({ thread }: { thread: Thread }) {
     )
   }
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="linear-bar">
+    <div className={cx('flex items-center gap-2 text-[12px]', compact ? 'min-w-0' : 'flex-wrap')} data-testid={`linear-bar${sx}`}>
       <a
-        data-testid="linear-chip"
+        data-testid={`linear-chip${sx}`}
         href={link.url}
         target="_blank"
         rel="noreferrer"
@@ -117,23 +119,24 @@ export function LinearBar({ thread }: { thread: Thread }) {
         title={link.title}
       >
         <span className="font-semibold">{link.identifier}</span>
-        <span className="truncate">{link.title}</span>
+        <span className={cx('truncate', compact && 'hidden sm:inline')}>{link.title}</span>
         {link.state && (
-          <span data-testid="linear-state" className="rounded bg-sunken px-1.5 text-[11px] text-subtle">
+          <span data-testid={`linear-state${sx}`} className="rounded bg-sunken px-1.5 text-[11px] text-subtle">
             {link.state}
           </span>
         )}
       </a>
       {link.syncing && (
-        <span data-testid="linear-syncing" className="text-subtle">
+        <span data-testid={`linear-syncing${sx}`} className="text-subtle">
           syncing…
         </span>
       )}
-      {link.last_error && (
+      {link.last_error && !compact && (
         <span data-testid="linear-error" className="text-danger" title={link.last_error}>
           Linear: {link.last_error.length > 80 ? link.last_error.slice(0, 80) + '…' : link.last_error}
         </span>
       )}
+      {!compact && (<>
       <button
         type="button"
         data-testid="linear-sync"
@@ -146,6 +149,7 @@ export function LinearBar({ thread }: { thread: Thread }) {
       <button type="button" data-testid="linear-unlink" onClick={() => api.unlinkLinear(thread.id).catch(error)} className="rounded px-1.5 py-1.5 text-subtle hover:bg-raised hover:text-fg border-0 bg-transparent">
         Unlink
       </button>
+      </>)}
     </div>
   )
 }
