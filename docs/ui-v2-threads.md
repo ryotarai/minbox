@@ -247,6 +247,11 @@ the selected session) since the list is global.
   messages (no scroll jitter, "jump to latest", the unread divider and the bottom working indicator are unaffected).
   Opaque `bg-surface`, bottom border and a soft shadow; `z-[3]`, under the new-message pill's sibling popovers and
   the Linear dialog (a portal). E2E: `thread-sticky.spec.ts` (desktop and phone).
+- **Expanding folded history keeps your place.** Pressing "N earlier messages" (or the compact row) adds the older
+  messages above the open ones. `ThreadView` records the first open message's screen position, and after the render
+  (`useLayoutEffect`) scrolls by how far it moved, so the view no longer jumps to the top; browser `overflow-anchor`
+  is off for that frame and restored after. The bottom-pin flag is re-read first. If the thread is too short to hold
+  the position, the view clamps to the bottom. E2E: `thread-earlier.spec.ts` (desktop and phone).
 
 ## Diagrams and annotating images in the composer
 

@@ -206,6 +206,17 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         r = api("POST", "/api/agent/messages", body)
         last_thread = r["thread_id"]
         out(f"marked {r['thread_id']}")
+    elif line.startswith("burst "):
+        _, count, text = line.split(" ", 2)
+        for i in range(int(count)):
+            body = {"body": " ".join([f"{text} #{i}"] * 10)}  # ten repeats: tall messages
+            if last_thread:
+                body["thread_id"] = last_thread
+            else:
+                body["subject"] = "Burst"
+            r = api("POST", "/api/agent/messages", body)
+            last_thread = r["thread_id"]
+        out(f"sent in {r['thread_id']}")
     elif line.startswith("say "):
         body = {"body": line[4:]}
         if last_thread:
