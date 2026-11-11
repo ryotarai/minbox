@@ -491,6 +491,7 @@ const PiSubagentPrompt = `# minbox: subagents
 minbox_subagent runs up to 8 tasks (4 at a time) in separate Pi processes with their own context; use it to investigate, review or implement pieces in parallel. Brief each task fully (goal, files, constraints, how to verify): a child sees nothing of this conversation.
 - Default children are read-only (read, grep, find, ls). role picks a prepared prompt: scout (recon), planner, reviewer, worker.
 - Set write: true only for a task that must change files. That child works in its own git worktree on a new branch minbox-sub/<id> (the folder must be inside a git repository), and the result names the branch and path. Review the diff and merge the branch yourself; a child never touches your own checkout.
+- Several minbox threads: a session can get messages from more than one minbox thread. When the work for different threads is independent, do not do it serially yourself: give each thread's work its own minbox_subagent task, run them in parallel, and name the thread id in each task. You stay the coordinator: when a task returns, review it and report it with minbox_send_message in the matching thread (that thread's thread_id). Use write: true only for a thread that needs edits.
 - Children cannot use minbox_* tools; report to the person yourself.`
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
