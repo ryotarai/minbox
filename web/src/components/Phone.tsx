@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconBack, IconClose, IconTerminal, IconImage, IconMore } from './icons'
+import { IconBack, IconClose, IconTerminal, IconImage, IconMore, IconFork } from './icons'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
 import { Segmented, EndedTag, cx } from './ui'
 import { api } from '../api'
@@ -113,6 +113,15 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
               <span data-testid="phone-session-name" className="mono flex max-w-full items-center gap-1.5 text-[11.5px] leading-[18px] text-fg2">
                 <span className="truncate">{session.name}</span>
               </span>
+              {thread?.forked_from && (
+                <span data-testid="phone-fork-crumb" className="flex max-w-full items-center gap-1 text-[11px] leading-[16px] text-subtle">
+                  <IconFork size={11} className="shrink-0 text-accent" />
+                  <span className="truncate">
+                    Forked from {thread.forked_from.subject}
+                    {thread.forked_from.gone ? ' (deleted)' : ''} · #{thread.forked_from.seq}
+                  </span>
+                </span>
+              )}
             </div>
             <button
               type="button"

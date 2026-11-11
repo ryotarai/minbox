@@ -259,6 +259,18 @@ conversation ids. Text and schemas: `plugin/minbox/hooks/nav.ts` (shared by the 
   `{id, subject, session_id, session_name, project_id, project_name, status, section, updated_at, unread, open_questions, own, message_count, messages: [{id, author, body, truncated?, body_bytes?, created_at, questions?: [prompt], attachments?: [{id, name, kind, type, path, ref?}], inline_images?}], has_more, older, next_before?}`.
   Messages are the newest `limit` (default 30, at most 100), oldest first. `before` is a message id of the thread (an id not in it: 400): the page ends just before it. A body over 8,000 bytes is cut on a rune boundary and ends with `… [message cut: N more bytes]` (`truncated`, `body_bytes` = full size); the bodies of a page together are bounded at 60,000 bytes: the oldest messages of the page drop first (always at least the newest one stays). `has_more` / `older` count the messages before the page; `next_before` (the page's first message id) is the next `before`. Annotations, answers and delivery state are not part of the answer; the text of the tool says how many messages exist and how to page.
 
+## Thread fork (start a thread from a message)
+
+Design and behaviour: [thread-fork.md](thread-fork.md). Browser API (not the mod's):
+
+- `POST /api/threads/{id}/fork/preview` `{message_id, target, before_n?, subject?, instruction?}` -> `{handoff, message, text, bytes, subject, seq, agent, same_session, warnings[]}`.
+  `target` is `{kind: "session", session_id?}` (an existing session; omitted id or the source's own = same session) or `{kind: "new_session", project_id, agent?, name?}`.
+  `before_n` (0-10) also carries that many earlier messages. `text` is what the new agent receives first (`handoff` + blank line + `message`, the visible first message).
+  Nothing is created. 404 no such thread / message not in it; 400 note message, bad target, archived or ended target session, unknown project, agent not installed.
+- `POST /api/threads/{id}/fork` (same body) -> 201 `{thread, session}`: creates the thread (and the session for `new_session`, as `POST /api/sessions`) with the link, in one transaction. The first message is `instruction` (or a default line); the handoff is not stored in it but served in front of it by `GET /api/agent/pending`.
+- Thread JSON (`GET /api/threads/{id}`) adds `forked_from: {thread_id ('' when gone), subject, project_name, session_name, session_id, message_id, seq, gone, message_gone, same_session, carry_before, handoff, created_at}` on a fork and `forks: [{thread_id, subject, project_id, project_name, session_id, session_name, agent, status, from_message_id, seq, same_session, archived_at, created_at}]` on its source. Thread lists carry `is_fork` and `fork_count` only.
+- Mod: `GET /api/agent/pending` bodies carry the handoff block of a fork's first message, and a `<minbox_thread_forks>` block in front of the first pending message of the source's session (forks into other sessions only); delivered with the message. SSE: `thread` for both threads.
+
 ## Terminal attach
 
 After the replay, and after every resize, the host sends every attached client a

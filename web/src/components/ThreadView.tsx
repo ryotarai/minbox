@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { THREAD_STATUS_ORDER, api, type Annotation, type Answer, type Attachment, type Message, type Question, type Session, type Thread } from '../api'
+import { THREAD_STATUS_ORDER, api, type Annotation, type Answer, type Attachment, type ForkChild, type Message, type Question, type Session, type Thread } from '../api'
 import { ALL_THREADS, threadLink, useApp } from '../lib/app'
 import { clearReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
@@ -15,6 +15,7 @@ import {
   IconBack,
   IconCheck,
   IconClaude,
+  IconFork,
   IconExpand,
   IconFold,
   IconGrid,
@@ -27,6 +28,7 @@ import {
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
+import { ForkDialog } from './ForkDialog'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
@@ -145,6 +147,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     requestAnimationFrame(() => requestAnimationFrame(() => (el.style.overflowAnchor = '')))
   }, [expanded])
   const [foldAll, setFoldAll] = useState(false)
+  const [forkMsg, setForkMsg] = useState<Message | null>(null)
   const [firstNew, setFirstNew] = useState<string | null | undefined>(undefined)
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [showArtifacts, setShowArtifacts] = useState(false)
@@ -482,8 +485,10 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           </div>
         )}
         {phone && <span data-testid="thread-subject" className="sr-only">{thread.subject}</span>}
+        {thread.forked_from && <ForkBreadcrumb from={thread.forked_from} />}
         <LinearBar thread={thread} />
         </div>
+        {thread.forked_from?.handoff && !showArtifacts && <HandoffCard from={thread.forked_from} />}
 
         <ThreadNotices thread={thread} target={target} />
 
@@ -535,6 +540,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
                 annotations={draft.annotations}
                 onOpen={openAttachment}
                 onReply={() => replyRef.current?.focus()}
+                onFork={() => setForkMsg(m)}
                 phone={phone}
                 openId={route.f}
                 newestId={newestId}
@@ -546,11 +552,15 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
                 questionsOf={(id) => messages.find((x) => x.id === id)?.questions ?? []}
                 phone={phone}
                 onOpen={openAttachment}
+                onFork={() => setForkMsg(m)}
                 openId={route.f}
                 newestId={newestId}
               />
             )}
             {m === lastUser && <DeliveryLine m={m} session={session} />}
+            {(thread.forks ?? []).filter((f) => f.from_message_id === m.id).map((f) => (
+              <ForkMarker key={f.thread_id} f={f} />
+            ))}
           </div>
         ))}
         {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={ev.id} ev={ev} identifier={thread.linear?.identifier ?? ''} />)}
@@ -576,6 +586,8 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           ❝ Reply
         </button>
       )}
+
+      {forkMsg && <ForkDialog thread={thread} message={forkMsg} seq={messages.findIndex((x) => x.id === forkMsg.id) + 1} onClose={() => setForkMsg(null)} />}
 
       <ReplyBox
         session={session}
@@ -923,6 +935,7 @@ function AgentMessage({
   annotations,
   onOpen,
   onReply,
+  onFork,
   phone,
   openId,
   newestId,
@@ -939,6 +952,7 @@ function AgentMessage({
   annotations: Annotation[]
   onOpen: (a: Attachment) => void
   onReply: () => void
+  onFork: () => void
   phone?: boolean
 }) {
   const { toast, error } = useApp()
@@ -982,6 +996,7 @@ function AgentMessage({
         <button type="button" onClick={onReply} title="Reply (R)" className="border-0 bg-transparent text-[12px] text-subtle hover:text-fg">
           {hm(m.created_at)} ↩
         </button>
+        <MessageForkControls onFork={onFork} phone={phone} />
       </div>
       {segments.map((seg, i) => {
         if (seg.kind === 'md')
@@ -1028,6 +1043,7 @@ function UserMessage({
   questionsOf,
   phone,
   onOpen,
+  onFork,
   openId,
   newestId,
 }: {
@@ -1036,6 +1052,7 @@ function UserMessage({
   questionsOf: (id: string) => Question[]
   phone?: boolean
   onOpen: (a: Attachment) => void
+  onFork: () => void
   openId: string | null
   newestId: string | null
 }) {
@@ -1049,11 +1066,13 @@ function UserMessage({
   const qs = m.answers_for ? questionsOf(m.answers_for) : []
   const words = m.words ?? (m.answers?.length ? '' : m.body)
   return (
-    <article data-testid="message" data-author="human" data-message-id={m.id} className="flex flex-col gap-2 rounded-xl bg-[#1a1a1f] px-3.5 py-3 [[data-theme=light]_&]:bg-raised">
+    <article data-testid="message" data-author="human" data-message-id={m.id} className="group flex flex-col gap-2 rounded-xl bg-[#1a1a1f] px-3.5 py-3 [[data-theme=light]_&]:bg-raised">
       <div className="flex items-center gap-2">
         <span className="text-[13.5px] font-semibold">You</span>
         <span className="text-[12.5px] text-subtle">{hm(m.created_at)}</span>
         {m.urgent && <span className="text-[11px] font-semibold text-danger">Send now</span>}
+        <span className="flex-1" />
+        <MessageForkControls onFork={onFork} phone={phone} />
       </div>
       {words && <MessageBody text={words} message={m} baseDir={session.cwd} onOpen={onOpen} author="you" className={phone ? 'text-[15px]' : 'text-[13.5px]'} />}
       {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={onOpen} openId={openId} newestId={newestId} />}
@@ -1072,6 +1091,122 @@ function UserMessage({
       )}
       {(m.annotations?.length ?? 0) > 0 && <div className="text-[12.5px] text-muted">💬 {plural(m.annotations!.length, 'annotation')}</div>}
     </article>
+  )
+}
+
+/**
+ * The per-message actions that start a new thread from the message: a fork button that shows on
+ * hover or keyboard focus, and a "…" menu (always reachable: touch, no hover) with the same item.
+ */
+function MessageForkControls({ onFork, phone }: { onFork: () => void; phone?: boolean }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const quiet = 'h-6 rounded-md border-0 bg-transparent px-1 text-subtle hover:text-fg'
+  const hover = 'invisible focus-visible:visible group-hover:visible group-focus-within:visible'
+  return (
+    <>
+      {!phone && (
+        <button type="button" aria-label="Start new thread from here" title="Start new thread from here" data-testid="message-fork" onClick={onFork} className={cx(quiet, hover)}>
+          <IconFork size={14} />
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label="Message actions"
+        aria-haspopup="menu"
+        data-testid="message-more"
+        onClick={(e) => setAnchor(e.currentTarget)}
+        className={cx(quiet, phone ? 'h-8 w-8' : hover)}
+      >
+        <IconMore size={14} />
+      </button>
+      <Popover anchor={anchor} open={!!anchor} onClose={() => setAnchor(null)} className="w-[250px]">
+        <MenuItem
+          testid="message-fork-item"
+          onClick={() => {
+            setAnchor(null)
+            onFork()
+          }}
+        >
+          <span className="flex items-center gap-2">
+            <IconFork size={14} /> Start new thread from here
+          </span>
+        </MenuItem>
+      </Popover>
+    </>
+  )
+}
+
+/** Under the message a thread was started from: derived from the link, not a message of the thread. */
+function ForkMarker({ f }: { f: ForkChild }) {
+  const { navigate } = useApp()
+  const label = f.status === 'working' ? 'working' : f.status === 'need_action' ? 'needs you' : 'finished'
+  return (
+    <div data-testid="fork-marker" data-thread-id={f.thread_id} className="ml-9 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-r-md border-l-[3px] border-accent bg-accent/[0.07] px-2.5 py-1 text-[12px] text-muted">
+      <IconFork size={12} className="shrink-0 text-accent" />
+      <span>
+        Started thread{' '}
+        <button
+          type="button"
+          data-testid="fork-marker-link"
+          onClick={() => navigate({ s: f.session_id, t: f.thread_id, f: null })}
+          className="max-w-full cursor-pointer border-0 bg-transparent p-0 text-left font-semibold text-accent underline-offset-2 hover:underline"
+        >
+          “{f.subject}”
+        </button>{' '}
+        from here
+      </span>
+      <span className="text-subtle">
+        · {f.same_session ? 'same session' : `${f.project_name ? `${f.project_name} / ` : ''}${f.session_name}`} · {label}
+        {f.archived_at ? ' · archived' : ''}
+      </span>
+    </div>
+  )
+}
+
+/** The header of a forked thread: where it came from. */
+function ForkBreadcrumb({ from }: { from: NonNullable<Thread['forked_from']> }) {
+  const { navigate } = useApp()
+  return (
+    <div data-testid="fork-breadcrumb" className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-[8px] border border-line2 bg-raised px-2.5 py-1.5 text-[12px] text-muted">
+      <IconFork size={13} className="shrink-0 text-accent" />
+      <span>Forked from</span>
+      {from.thread_id ? (
+        <button
+          type="button"
+          data-testid="fork-breadcrumb-link"
+          onClick={() => navigate({ s: from.session_id, t: from.thread_id, f: null })}
+          className="min-w-0 max-w-full cursor-pointer truncate border-0 bg-transparent p-0 font-semibold text-accent hover:underline"
+        >
+          {from.subject}
+        </button>
+      ) : (
+        <span className="font-semibold text-fg2">
+          {from.subject} <span className="font-normal text-subtle">(deleted)</span>
+        </span>
+      )}
+      <span className="text-subtle">
+        · message #{from.seq}
+        {from.message_gone && !from.gone ? ' (removed)' : ''} · {from.project_name || 'no project'}
+      </span>
+    </div>
+  )
+}
+
+/** What the agent was given: collapsed by default, the same text the preview showed. */
+function HandoffCard({ from }: { from: NonNullable<Thread['forked_from']> }) {
+  return (
+    <details data-testid="handoff-card" className="rounded-[10px] border border-line2 bg-surface px-3 py-2 text-[12.5px] text-muted">
+      <summary className="cursor-pointer select-none font-semibold text-fg2">
+        Handoff context{' '}
+        <span className="font-normal text-subtle">
+          · what the agent received first (message #{from.seq}
+          {from.carry_before ? ` + ${from.carry_before} before` : ''})
+        </span>
+      </summary>
+      <pre data-testid="handoff-text" className="mono mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap break-words text-[11.5px] leading-[1.5] text-fg2">
+        {from.handoff}
+      </pre>
+    </details>
   )
 }
 

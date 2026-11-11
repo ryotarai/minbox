@@ -288,7 +288,56 @@ export type Thread = {
   /** The linked Linear issue (GET /api/threads/{id} only). */
   linear?: ThreadLink
   linear_events?: LinearEvent[]
+  /** A thread started from a message of another thread (see docs/thread-fork.md). */
+  is_fork?: boolean
+  fork_count?: number
+  forked_from?: ForkedFrom
+  forks?: ForkChild[]
 }
+
+export type ForkedFrom = {
+  /** '' when the source thread is gone. */
+  thread_id: string
+  subject: string
+  project_name: string
+  session_name: string
+  session_id: string
+  message_id: string
+  seq: number
+  gone: boolean
+  message_gone: boolean
+  same_session: boolean
+  carry_before: number
+  /** What the agent got in front of the first message. */
+  handoff: string
+  created_at: string
+}
+
+export type ForkChild = {
+  thread_id: string
+  subject: string
+  project_id: string
+  project_name: string
+  session_id: string
+  session_name: string
+  agent: string
+  status: ThreadStatus
+  from_message_id: string
+  seq: number
+  same_session: boolean
+  archived_at: string | null
+  created_at: string
+}
+
+export type ForkRequest = {
+  message_id: string
+  target: { kind: 'session' | 'new_session'; session_id?: string; project_id?: string; agent?: string; name?: string }
+  before_n?: number
+  subject?: string
+  instruction?: string
+}
+
+export type ForkPreview = { handoff: string; message: string; text: string; bytes: number; subject: string; seq: number; agent: string; same_session: boolean; warnings: string[] }
 
 export type Card = {
   id: string
@@ -654,6 +703,8 @@ export const api = {
   allThreads: () => call<Thread[]>('GET', '/api/threads'),
   threads: (sessionId: string) => call<Thread[]>('GET', `/api/sessions/${sessionId}/threads`),
   thread: (id: string) => call<Thread>('GET', `/api/threads/${id}`),
+  forkPreview: (threadId: string, req: ForkRequest) => call<ForkPreview>('POST', `/api/threads/${threadId}/fork/preview`, req),
+  fork: (threadId: string, req: ForkRequest) => call<{ thread: Thread; session: Session }>('POST', `/api/threads/${threadId}/fork`, req),
   createThread: (sessionId: string, subject: string, body: string, name?: string, uploads?: string[]) =>
     call<Thread>('POST', `/api/sessions/${sessionId}/threads`, { subject, body, name, uploads }),
   updateThread: (id: string, patch: { name?: string; subject?: string }) => call<Ok>('PATCH', `/api/threads/${id}`, patch),

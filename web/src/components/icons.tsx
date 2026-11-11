@@ -97,6 +97,14 @@ export const IconMore = ({ size = 16, ...p }: P) => (
     <circle cx="12.5" cy="8" r="1.2" />
   </svg>
 )
+export const IconFork = (p: P) => (
+  <Svg strokeWidth={1.4} {...p}>
+    <circle cx="4.5" cy="3.5" r="1.4" />
+    <circle cx="4.5" cy="12.5" r="1.4" />
+    <circle cx="11.5" cy="5.5" r="1.4" />
+    <path d="M4.5 4.9v6.2M11.5 6.9c0 2.2-2.2 2.6-7 3.3" />
+  </Svg>
+)
 export const IconMoreV = ({ size = 16, ...p }: P) => (
   <svg aria-hidden="true" width={size} height={size} viewBox="0 0 16 16" fill="currentColor" {...p}>
     <circle cx="8" cy="3.5" r="1.2" />

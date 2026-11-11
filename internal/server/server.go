@@ -201,6 +201,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)
 	mux.HandleFunc("GET /api/threads/{id}/suggestions", s.threadSuggestions)
+	mux.HandleFunc("POST /api/threads/{id}/fork/preview", s.forkPreview)
+	mux.HandleFunc("POST /api/threads/{id}/fork", s.forkThread)
 	mux.HandleFunc("GET /api/threads/{id}/linear", s.getThreadLinear)
 	mux.HandleFunc("PUT /api/threads/{id}/linear", s.putThreadLinear)
 	mux.HandleFunc("DELETE /api/threads/{id}/linear", s.deleteThreadLinear)
