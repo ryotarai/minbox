@@ -1083,7 +1083,7 @@ never returned (only `token_masked`); every error text is scrubbed of it. `MINBO
   with `auth.test` first (and one search call); one that fails is **not** stored (`result.ok` false, `result.error` says what to do). 400: not a user token (a bot `xoxb-`, app `xapp-` or rotation
   `xoxe.` token is refused with its own message, before any call).
 - `POST /api/integrations/slack-user/test` -> `{result, status}` (re-checks the token, scopes and the search; Auto reports a fallback to the legacy search). `POST .../disconnect` -> `SlackStatus`
-  (deletes the token and every stored judgement, snippet, dismissal and link). `POST .../clear-cache` -> `SlackStatus` (deletes judgements and snippets).
+  (deletes the token and every stored judgement, snippet, dismissal, link, fetched thread copy and user name). `POST .../clear-cache` -> `SlackStatus` (deletes judgements, snippets, fetched thread copies and user names). Fetched copies (`slack_threads`, `slack_users`) are written through and survive a restart.
 - `GET /api/slack/threads[?refresh=1][&cached=1]` -> `{items: SlackItem[], counts: {needs_reply, maybe, dismissed}, hidden, notes: [string], fetched_at, refresh, user: {id, name}, team,
   backend: "rts"|"legacy", backend_note}`. A plain GET refreshes unless one ran in the last 15 s; `refresh=1` forces one; `cached=1` never calls Slack. A refresh blocks until the pipeline ends
   (search → read threads → names → helper judgement) and publishes SSE `{type: "slack"}` at each stage so a client can re-read `cached=1` for partial results; a rate limit ends it early with

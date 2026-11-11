@@ -27,7 +27,7 @@ import (
 // A rate limit stops the reading (never retried in a loop): what is done is kept and shown, the
 // note says when Slack allows more. See docs/slack-personal.md.
 
-// slackThreadData is a thread's messages as last read (memory only: message text is not persisted).
+// slackThreadData is a thread's messages as last read (also stored in slack_threads, see slackpersist.go).
 type slackThreadData struct {
 	Channel     string
 	ThreadTS    string // the root ts; "dm" for a DM conversation
@@ -463,12 +463,15 @@ func (l *slackSvc) resolveUsers(ctx context.Context, ids []string, bud *slackBud
 			continue
 		}
 		l.mu.Lock()
-		l.users[id] = slackUserEntry{at: l.now(), name: u.Name, bot: u.IsBot}
+		ent := slackUserEntry{at: l.now(), name: u.Name, bot: u.IsBot}
+		l.users[id] = ent
 		l.mu.Unlock()
+		l.persistUser(ctx, id, ent)
 	}
 }
 
 func (l *slackSvc) userName(id string) string {
+	l.loadPersisted(context.Background())
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if e, ok := l.users[id]; ok && e.name != "" {
@@ -514,6 +517,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 	if a == nil {
 		return errSlackNotConnected
 	}
+	l.loadPersisted(ctx)
 	l.mu.Lock()
 	l.notes = nil
 	l.mu.Unlock()
@@ -543,6 +547,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 	}
 	// Read the threads (cache first).
 	var fresh, retry []*slackThreadData
+	var seen [][2]string
 	paused := false
 	for i, c := range list {
 		l.setStage("Reading threads", i, len(list))
@@ -552,6 +557,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 		l.mu.Unlock()
 		if cached != nil && tsCmp(c.HitTS, cached.LatestTS) <= 0 && l.now().Sub(cached.FetchedAt) < l.threadTTL {
 			// Unchanged and recent: not read again, and not judged again, unless the last judgement failed.
+			seen = append(seen, [2]string{cached.Channel, cached.ThreadTS})
 			if it, ok := l.s.store.SlackItem(ctx, cached.Channel, cached.ThreadTS); !ok || it.Judgement == "" || it.JudgedLatestTS != cached.LatestTS {
 				retry = append(retry, cached)
 			}
@@ -580,9 +586,12 @@ func (l *slackSvc) run(ctx context.Context) error {
 		l.mu.Lock()
 		l.threads[k] = td
 		l.mu.Unlock()
+		l.persistThread(ctx, td)
 		fresh = append(fresh, td)
 	}
 	l.trimCache()
+	_ = l.s.store.TouchSlackThreads(ctx, seen)
+	l.pruneFetched(ctx)
 	fresh = append(fresh, retry...) // cached threads whose judgement failed earlier are judged again
 	if len(fresh) == 0 {
 		return nil
@@ -608,6 +617,9 @@ func (l *slackSvc) run(ctx context.Context) error {
 	}
 	l.resolveUsers(ctx, ids, bud)
 	l.unreadDMs(ctx, a, fresh, bud)
+	for _, td := range fresh { // Peer and Unread were filled in after the read
+		l.persistThread(ctx, td)
+	}
 	// Judge what changed.
 	l.judgeAll(ctx, a, fresh)
 	return nil
