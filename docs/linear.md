@@ -32,7 +32,13 @@ Create**.
    the same one-shot helper as reply suggestions and the Slack project pick: Claude Code `claude -p` or Pi,
    whichever is installed (the default agent first), tool-less and in an empty folder. The prompt holds the
    thread subject, minbox project and thread name, folder, git branch (local sessions only), the session's
-   agent, the last 10 messages (1200 characters each, 12000 in all) and Linear's lists. The conversation and
+   agent, a message count and time span, the **whole thread** in a bounded view (the first request of the person in
+   full, the last 4 messages at length, every message in between condensed to 300 characters and, for a long
+   thread, sampled evenly; 26000 characters of messages in all) and Linear's lists. The helper is told to write the
+   title and description about the overall topic of the entire thread, not the latest message, and to end the
+   description with a bullet list of the work so far ("## Work so far", in the thread's language). Without a
+   helper, the basic prefill is the subject, the first message of the person and bullets from the first lines of
+   the last agent messages. The conversation and
    the lists are delimited as untrusted data (a delimiter inside them is removed) and the helper is told to
    ignore instructions in them; strings shaped like credentials (bearer tokens, `sk-`/`ghp_`/`xox`/`AKIA`
    keys, private keys, `password=...`) and the stored Linear tokens are blanked before the prompt is built.
@@ -40,7 +46,7 @@ Create**.
    leniently (a code fence or prose around the JSON is fine) and **every id it names (team, state, labels,
    project, assignee) must exist in the fetched lists**, else it is dropped (a label must belong to the team,
    a project to the team when it says so; the assignee can only be you). Runs are limited to two at a time,
-   one per thread and last message, and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
+   one per thread, message count and last message (so a growing thread refreshes), and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
    not ask again.
 3. **Your edits win.** The guess fills only the fields you have not touched; if you chose another team, the
    guess's team-bound fields (labels, state, project) are skipped. If no agent is installed, or the helper

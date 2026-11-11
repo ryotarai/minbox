@@ -87,7 +87,7 @@ func TestLinearDraftMetaAndFallback(t *testing.T) {
 	if n := len(meta["projects"].([]any)); n != 2 {
 		t.Errorf("projects %d", n)
 	}
-	// The fallback: subject as the title, the latest agent message as the description, you as the assignee.
+	// The fallback: subject as the title, the agent's work as bullets, you as the assignee.
 	fb := obj["fallback"].(map[string]any)
 	if fb["title"] != "My subject" || !strings.Contains(fb["description"].(string), "secret plan") || fb["assignee_id"] != "user-1" {
 		t.Errorf("fallback %v", fb)
@@ -237,11 +237,11 @@ func TestLinearDraftPromptDelimitsAndBoundsUntrustedContent(t *testing.T) {
 	if !strings.Contains(p, "untrusted data") || strings.Index(p, "untrusted data") > strings.Index(p, "<thread_content>") {
 		t.Error("no warning in front of the content")
 	}
-	if n := len([]rune(p)); n > 25000 {
+	if n := len([]rune(p)); n > 32000 {
 		t.Errorf("prompt is %d runes", n)
 	}
-	// only the last messages, each capped
-	if strings.Contains(p, "message 0 ") || !strings.Contains(p, "message 14 ") {
+	// the whole thread: early and late messages both, each capped
+	if !strings.Contains(p, "message 0 ") || !strings.Contains(p, "message 14 ") {
 		t.Error("message window wrong")
 	}
 	// Linear's tokens are never in it
@@ -443,4 +443,64 @@ func sessionOf(e *linEnv, id string) *store.Session {
 		e.t.Fatal(err)
 	}
 	return sess
+}
+
+func TestLinearDraftPromptCoversTheWholeThread(t *testing.T) {
+	e, h, id := newDraftEnv(t)
+	h.err = nil
+	h.out = draftEnvelope(map[string]any{"title": "T", "description": "D"})
+	th, _ := e.st.GetThread(context.Background(), id)
+	sess := sessionOf(e, th.SessionID)
+	e.send(sess, id, "", "FIRSTREQUEST please build the export feature "+strings.Repeat("a", 2000), "working")
+	for i := 0; i < 120; i++ {
+		e.send(sess, id, "", fmt.Sprintf("MID%03d %s", i, strings.Repeat("y", 2000)), "working")
+	}
+	e.send(sess, id, "", "LASTREPLY done", "working")
+	e.draft(id, "llm")
+	p := h.prompt
+	for _, want := range []string{"FIRSTREQUEST", "LASTREPLY", "messages omitted", "Messages in the thread: 123",
+		"OVERALL topic and goal of the ENTIRE thread", "NOT just the latest message", "END with a bullet list", "Work so far", "やっていること"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt lacks %q", want)
+		}
+	}
+	if !strings.Contains(p, "MID00") && !strings.Contains(p, "MID01") || !strings.Contains(p, "MID11") {
+		t.Error("middle sample misses the early or the late part")
+	}
+	if n := strings.Count(p, "MID"); n < 20 {
+		t.Errorf("only %d middle messages sampled", n)
+	}
+	if n := len([]rune(p)); n > 32000 {
+		t.Errorf("prompt is %d runes", n)
+	}
+}
+
+func TestLinearDraftFallbackUsesFirstUserMessageAndWorkBullets(t *testing.T) {
+	th := &store.Thread{Subject: "Export", Messages: []store.Message{
+		{Author: store.AuthorUser, Body: "Please add CSV export", Words: "Please add CSV export"},
+		{Author: store.AuthorAgent, Body: "Started the exporter\nmore"},
+		{Author: store.AuthorAgent, Body: "## Tests added\ndetails"},
+	}}
+	d := fallbackDraft(th, nil)
+	if d.Title != "Export" || !strings.HasPrefix(d.Description, "Please add CSV export") ||
+		!strings.Contains(d.Description, "## Work so far\n- Started the exporter\n- Tests added") {
+		t.Errorf("fallback %+v", d)
+	}
+}
+
+func TestLinearDraftCacheKeyFollowsTheThread(t *testing.T) {
+	e, h, id := newDraftEnv(t)
+	h.err = nil
+	h.out = draftEnvelope(map[string]any{"title": "T", "description": "D"})
+	e.draft(id, "llm")
+	e.draft(id, "llm")
+	if h.calls != 1 {
+		t.Fatalf("calls %d", h.calls)
+	}
+	th, _ := e.st.GetThread(context.Background(), id)
+	e.send(sessionOf(e, th.SessionID), id, "", "one more", "working")
+	e.draft(id, "llm")
+	if h.calls != 2 {
+		t.Errorf("a grown thread did not refresh the draft: %d calls", h.calls)
+	}
 }
