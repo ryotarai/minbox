@@ -791,6 +791,7 @@ export type SearchResult = { threads: SearchHit[]; messages: SearchHit[]; files:
 
 export type Completion = { name: string; description: string }
 export type Completions = { agents: Completion[]; skills: Completion[]; commands: Completion[] }
+export type FileEntry = { path: string; dir: boolean }
 
 export type Storage = {
   data_dir: string
@@ -922,6 +923,7 @@ export const api = {
   archiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/archive`),
   unarchiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/unarchive`),
   completions: (id: string) => call<Completions>('GET', `/api/sessions/${id}/completions`),
+  files: (id: string, prefix: string) => call<{ entries: FileEntry[] }>('GET', `/api/sessions/${id}/files?prefix=${encodeURIComponent(prefix)}`),
 
   allThreads: () => call<Thread[]>('GET', '/api/threads'),
   threads: (sessionId: string) => call<Thread[]>('GET', `/api/sessions/${sessionId}/threads`),

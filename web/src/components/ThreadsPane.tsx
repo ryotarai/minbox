@@ -658,7 +658,7 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
         onChange={setBody}
         onSubmit={() => void send()}
         {...io}
-        placeholder={'Start a new thread with Claude Code… (@ agents, / skills)'}
+        placeholder={'Start a new thread with Claude Code… (@ files and agents, / skills)'}
       />
       <div className="mt-1.5 flex items-center gap-2">
         <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileRef.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">

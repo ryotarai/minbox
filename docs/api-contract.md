@@ -204,6 +204,14 @@ POST  /api/sessions/{id}/threads            body adds name
 POST  /api/sessions/{id}/files              any file; header X-Filename; → {path}
 GET   /api/sessions/{id}/completions        → {agents:[{name,description}], skills:[...], commands:[...]}
                                               from ~/.claude and <cwd>/.claude (agents/*.md, skills/*/SKILL.md, commands/*.md)
+GET   /api/sessions/{id}/files?prefix=      → {entries:[{path, dir}]}  for @-mentions: names only, never contents
+                                              prefix is the path being typed, relative to the session's cwd ("", "src/ma"),
+                                              or "../x", "/abs/x", "~/x"; entries keep the typed folder part, folders end in "/".
+                                              Folders first, then prefix > substring > in-order-letters matches, at most 50.
+                                              Hidden names only when the typed name starts with "."; .git and node_modules only
+                                              when typed ("node…"); gitignored entries only once a name is typed.
+                                              Runs on the session's host (remote hosts: GET /fs/files on the host).
+                                              Like the folder picker (GET /api/fs/dirs) it is not confined to the cwd.
 
 PATCH /api/threads/{id}                     {name?, subject?}
 POST  /api/threads/{id}/read                (exists) the person looked: agent messages read

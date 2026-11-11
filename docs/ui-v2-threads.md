@@ -258,6 +258,16 @@ the selected session) since the list is global.
   shows a `fork-breadcrumb` (and `phone-fork-crumb` in the phone header) and a collapsed `handoff-card`; the source shows a derived `fork-marker` under the
   message; the list rows get a fork icon (`fork-icon`) and a count (`fork-count`). E2E: `fork.spec.ts` (desktop and phone).
 
+## @-mentions in the composer
+
+`Mentions.tsx` (`useMentions`) is shared by the reply box (`ThreadView`) and the new-thread boxes (`CompletingTextarea`). `@` at the start of a
+word (start of text or after white space; `a@b` is not one) opens a popup (`completions`, rows `completion-item` with `data-insert`) of files and
+folders of the session's folder, filtered as you type; `../`, `~/` and absolute paths work. Up/Down move, Enter or Tab take, Esc closes (the box
+keeps focus and its text), a click or tap takes too (rows are 40 px high). A folder is inserted with its `/` and completion goes on inside it; a
+file is inserted followed by a space. The text is `@path`, or `@"a path"` when the path has white space (what Claude Code reads); it is sent as
+plain text. The new-thread boxes also offer the project's `@agents` after the files, and `/skills`. Not active while an IME composes, in a `!`
+command, or for Cmd/Ctrl+Enter (still sends). Sessions on another host list that host's files. E2E: `mention-files.spec.ts` (desktop and phone).
+
 ## Diagrams and annotating images in the composer
 
 A pencil-on-shapes button (`compose-draw`, "Draw a diagram") sits right of the paperclip in both composers (new
