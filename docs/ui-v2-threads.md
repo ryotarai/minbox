@@ -238,6 +238,15 @@ the selected session) since the list is global.
   "Mark as ...". There is no Working filter chip (keeps the chip row short on phones).
   While a thread is `working`, the end of the message list shows a "Working…" indicator (pulsing dots, `thread-working`; static
   under reduced motion); a view at the bottom follows it, one scrolled up stays put.
+- Sticky thread header: the title / status / name / Linear block sits at the top of the message list and scrolls
+  away with it (so a short view is not eaten by a tall header). Once it is out of view (IntersectionObserver on it),
+  a compact bar (`thread-sticky`, `data-stuck`; 44 px desktop, 48 px phone) is pinned to the top of the scroll area:
+  status badge (desktop), the title on one line (full title in the tooltip) and a compact Linear bar (Link / Create
+  with short labels, or the linked chip with identifier and state; testids end in `-sticky`; the sync runs only from
+  the full bar). The bar hangs off a zero-height `position: sticky` anchor, so showing or hiding it never moves the
+  messages (no scroll jitter, "jump to latest", the unread divider and the bottom working indicator are unaffected).
+  Opaque `bg-surface`, bottom border and a soft shadow; `z-[3]`, under the new-message pill's sibling popovers and
+  the Linear dialog (a portal). E2E: `thread-sticky.spec.ts` (desktop and phone).
 
 ## Diagrams and annotating images in the composer
 
