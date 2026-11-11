@@ -41,3 +41,34 @@ test('Linear auto-fill extra prompt: edit, counter, reset, save, and its effect 
   await page.getByTestId('linear-create-open').click()
   await expect(page.getByTestId('linear-create-desc')).toHaveValue(/Extra prompt seen: Always add label agent\./, { timeout: 15_000 })
 })
+
+// The Create dialog says which of Linear's lists failed (visible Details, not a tooltip), counts the
+// teams it loaded, and Reload lists refetches them (bypassing the server cache). Fake Linear only.
+test('Create Linear issue: warning details are visible and Reload lists refetches', async ({ page, minbox }) => {
+  const lin = minbox.linear
+  await page.goto(`${minbox.url}/#v=settings&ss=integrations`)
+  await page.getByTestId('linear-connect').click()
+  await expect(page.getByTestId('linear-status')).toHaveText('Connected', { timeout: 15_000 })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'lin-warn')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Working on the login bug')
+  await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
+
+  lin.failLabels = true
+  await page.getByTestId('linear-create-open').click()
+  await expect(page.getByTestId('linear-create-counts')).toHaveText('2 teams loaded, 1 project', { timeout: 15_000 })
+  const warnings = page.getByTestId('linear-create-warnings')
+  await expect(warnings).toBeVisible() // open by default, no hover needed
+  await expect(warnings).toContainText('list_issue_labels of Engineering')
+  await expect(warnings).toContainText('labels are down')
+  await expect(page.getByTestId('linear-create-lists-summary')).toContainText('list_teams [list_teams]: 1 page(s), 2 items, 2 parsed')
+  await expect(page.getByTestId('linear-create-team').locator('option')).toHaveCount(3)
+
+  // Linear recovers; Reload lists refetches and the warning goes away.
+  lin.failLabels = false
+  const before = lin.calls.filter((c) => c.tool === 'list_teams').length
+  await page.getByTestId('linear-create-reload').click()
+  await expect(page.getByTestId('linear-create-warnings')).toHaveCount(0)
+  expect(lin.calls.filter((c) => c.tool === 'list_teams').length).toBeGreaterThan(before)
+})

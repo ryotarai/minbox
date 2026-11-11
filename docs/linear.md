@@ -197,6 +197,24 @@ against a fake OAuth + MCP server.
 
 ## Troubleshooting
 
+- **Create dialog: teams are missing, or "Some of Linear's lists could not be loaded."** Open the dialog's
+  **Details** (open by itself when something failed) and read it:
+  - The header says "N teams loaded, M projects". Every team the tool returned is offered, even when its
+    states or labels failed (it then has no states / labels and no default state).
+  - Each warning starts with the list: `list_teams: ...`, `list_issue_statuses of <team>: ...`,
+    `list_issue_labels of <team>: ...`, `list_projects: ...`. The text after it is the scrubbed error
+    (`linear: tool failed: ...`, `HTTP 429`, ...), or `page 2 failed: ...` (the pages before it are kept),
+    `parsed X of N items` (N items came back, X could be read; the others lack an id or name and are
+    skipped), `got N items (the limit) and no next-page cursor` (the list may be cut off), or
+    `returned no items`.
+  - The monospace block under it is the per-list summary (tool name used, pages fetched, items read /
+    parsed / skipped, error): paste it when reporting a problem. The server logs the same one line per
+    warning (`linear: meta: ...`) in `~/.minbox/minbox.log`.
+  - **Reload lists** refetches everything and bypasses the 90 s cache. A result with warnings is never
+    cached, so reopening the dialog retries anyway.
+  - Lists are read page by page (up to 10 pages) with the largest `limit` the tool's schema allows (100 when
+    it declares no maximum, never above 250), passing the cursor under the argument name the schema declares
+    (`cursor`, `after`, `endCursor`). Up to 250 teams are offered; per-team calls run 4 at a time.
 - "Linear login failed" on the callback page but Settings says Connected: the callback was requested twice
   (a prefetch, reload or second tab). The first one succeeded. minbox now shows the success page again for a
   state that just succeeded (kept 5 minutes, no second token exchange). The log shows both hits as
