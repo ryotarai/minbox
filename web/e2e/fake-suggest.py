@@ -33,6 +33,11 @@ if prompt.startswith("Draft a Linear issue"):
         "assignee_id": "u1",
         "state_id": "st-3",
     }
+    # The person's extra prompt (Settings): echo what the instruction section held, so tests see it arrive.
+    hdr = "Additional instructions from the person"
+    if hdr in prompt:
+        sect = prompt.split(hdr, 1)[1].split("<<<\n", 1)[1].split("\n>>>", 1)[0]
+        draft["description"] += "Extra prompt seen: " + sect.strip() + "\n"
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": draft}))
     sys.exit(0)
 n = prompt.count("[PERSON]")

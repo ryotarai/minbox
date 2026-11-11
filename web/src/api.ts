@@ -349,6 +349,8 @@ export type LinearSettings = {
   include_body: boolean
   /** End a drafted issue's description with a link to the minbox thread (needs the public URL). */
   thread_link: boolean
+  /** The person's extra instructions for the Create-issue auto-fill helper (at most 4000 characters). */
+  draft_extra_prompt: string
 }
 
 /** Linear's own lists, for the Create-issue dialog. */
@@ -448,7 +450,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reply_suggestions: true,
   public_url: '',
   default_agent: '',
-  linear: { author_filter: 'everyone', allowed_authors: '', include_body: false, thread_link: false },
+  linear: { author_filter: 'everyone', allowed_authors: '', include_body: false, thread_link: false, draft_extra_prompt: '' },
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
 

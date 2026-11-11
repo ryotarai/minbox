@@ -883,11 +883,12 @@ type linearSettings struct {
 	AuthorFilter string   // "everyone" | "allow_list"
 	Allowed      []string // names, emails or ids
 	IncludeBody  bool
-	ThreadLink   bool // the drafted issue description ends with a link to the minbox thread
+	ThreadLink   bool   // the drafted issue description ends with a link to the minbox thread
+	DraftExtra   string // the person's extra instructions for the Create-issue auto-fill (cleaned, capped)
 }
 
 func defaultLinearSettings() map[string]any {
-	return map[string]any{"author_filter": "everyone", "allowed_authors": "", "include_body": false, "thread_link": false}
+	return map[string]any{"author_filter": "everyone", "allowed_authors": "", "include_body": false, "thread_link": false, "draft_extra_prompt": ""}
 }
 
 // normalizeLinearSettings validates the "linear" setting (a JSON object) and returns it cleaned.
@@ -914,6 +915,12 @@ func normalizeLinearSettings(raw json.RawMessage) (json.RawMessage, error) {
 				return nil, errors.New("allowed_authors must be a string (names, emails or ids; comma or line separated)")
 			}
 			out[k] = s
+		case "draft_extra_prompt":
+			x, ok := v.(string)
+			if !ok || len([]rune(x)) > draftExtraMax {
+				return nil, fmt.Errorf("draft_extra_prompt must be a string of at most %d characters", draftExtraMax)
+			}
+			out[k] = cleanDraftExtra(x)
 		case "include_body", "thread_link":
 			b, ok := v.(bool)
 			if !ok {
@@ -945,6 +952,8 @@ func (s *Server) linearSettings(ctx context.Context) linearSettings {
 	}
 	ls.IncludeBody, _ = m["include_body"].(bool)
 	ls.ThreadLink, _ = m["thread_link"].(bool)
+	x, _ := m["draft_extra_prompt"].(string)
+	ls.DraftExtra = cleanDraftExtra(x)
 	return ls
 }
 

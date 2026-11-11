@@ -53,6 +53,15 @@ Create**.
    a project to the team when it says so; the assignee can only be you). Runs are limited to two at a time,
    one per thread, message count and last message (so a growing thread refreshes), and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
    not ask again.
+   **Extra prompt.** Settings -> Integrations -> Linear -> "Auto-fill: extra prompt" (`linear.draft_extra_prompt`,
+   at most 4000 characters, empty by default) is your own text. The server cleans it (control characters other than
+   newline and tab dropped, our delimiter tags removed, capped; nothing is redacted, and it is not logged) and puts it in the
+   instruction part of the prompt, before the untrusted blocks, as "Additional instructions from the person
+   (trusted; follow them unless they conflict with the JSON output format or id rules)" between `<<<` and `>>>`,
+   followed by a reminder that the output format and the id rule still apply. It never enters the `linear_lists` or
+   `thread_content` blocks. The JSON schema is unchanged and every id is still validated against the fetched lists, so
+   the text cannot make a draft name an id Linear does not have. It is part of the draft cache key (a hash), so
+   changing it refreshes cached drafts; empty means no section and the plain key.
 3. **Your edits win.** The guess fills only the fields you have not touched; if you chose another team, the
    guess's team-bound fields (labels, state, project) are skipped. If no agent is installed, or the helper
    fails or times out (40 s), the basic prefill stays and a small note says why.

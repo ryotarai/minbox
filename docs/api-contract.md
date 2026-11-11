@@ -973,8 +973,8 @@ See docs/agents.md for the model. API surface:
 
 Design, limits and privacy: [linear.md](linear.md).
 
-- Setting `linear` (in `GET/PUT /api/settings`): `{author_filter: "everyone"|"allow_list", allowed_authors: string, include_body: bool, thread_link: bool}`
-  (defaults `everyone`, `""`, `false`; 400 on an unknown key or value). There is no workspace setting.
+- Setting `linear` (in `GET/PUT /api/settings`): `{author_filter: "everyone"|"allow_list", allowed_authors: string, include_body: bool, thread_link: bool, draft_extra_prompt: string}`
+  (defaults `everyone`, `""`, `false`, `false`, `""`; `draft_extra_prompt` is the user's extra instructions for the Create-issue auto-fill, at most 4000 characters, control characters stripped, not a secret; 400 on an unknown key or value). There is no workspace setting.
 - `GET /api/integrations/linear` -> `{mcp_url, connected, needs_login, user?: {id,name,email}, connected_at?, last_error?, redirect_uri, rate_limited_for?}`.
   Never any token.
 - `POST /api/integrations/linear/login` -> `{url, redirect_uri}`: discovers the authorization server, registers a client for the redirect URI
