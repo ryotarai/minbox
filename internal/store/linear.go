@@ -15,6 +15,11 @@ CREATE TABLE IF NOT EXISTS linear_auth (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS linear_logins (
+  state_hash TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS thread_links (
   thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
   issue_id TEXT NOT NULL DEFAULT '',
@@ -80,6 +85,44 @@ func (s *Store) SetLinearAuth(ctx context.Context, data string) error {
 func (s *Store) DeleteLinearAuth(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM linear_auth`)
 	return err
+}
+
+// PutLinearLogin stores a pending login (data holds the PKCE verifier: a secret like the tokens)
+// under the hash of its state, and drops logins that expired more than an hour ago.
+func (s *Store) PutLinearLogin(ctx context.Context, stateHash, data string, expires, now time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM linear_logins WHERE expires_at < ?`, now.Add(-time.Hour).Unix()); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO linear_logins(state_hash,data,expires_at) VALUES(?,?,?) ON CONFLICT(state_hash) DO UPDATE SET data=excluded.data, expires_at=excluded.expires_at`,
+		stateHash, data, expires.Unix())
+	return err
+}
+
+// TakeLinearLogin removes and returns a pending login ("" when there is none; single use).
+func (s *Store) TakeLinearLogin(ctx context.Context, stateHash string) (data string, expires time.Time, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	defer tx.Rollback()
+	var exp int64
+	err = tx.QueryRowContext(ctx, `SELECT data, expires_at FROM linear_logins WHERE state_hash=?`, stateHash).Scan(&data, &exp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, nil
+	}
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM linear_logins WHERE state_hash=?`, stateHash); err != nil {
+		return "", time.Time{}, err
+	}
+	return data, time.Unix(exp, 0), tx.Commit()
+}
+
+// CountLinearLogins counts the pending logins that have not expired.
+func (s *Store) CountLinearLogins(ctx context.Context, now time.Time) (n int, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM linear_logins WHERE expires_at >= ?`, now.Unix()).Scan(&n)
+	return
 }
 
 // ThreadLink links a thread to one Linear issue.

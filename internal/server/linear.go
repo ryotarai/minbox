@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -44,14 +47,35 @@ type linearAuth struct {
 	ConnectedAt   time.Time                      `json:"connected_at"`
 	NeedsLogin    bool                           `json:"needs_login"`
 	LastError     string                         `json:"last_error,omitempty"`
+	// LoginError: why the last login attempt failed (shown in Settings; no secrets).
+	LoginError   string    `json:"login_error,omitempty"`
+	LoginErrorAt time.Time `json:"login_error_at,omitempty"`
 }
 
+// loginAttempt is a pending login. It is kept in the store (hashed state as key) so that it
+// survives a restart between Connect and the approval at Linear; the verifier is a secret like a token.
 type loginAttempt struct {
-	verifier string
-	host     string
-	reg      linear.Registration
-	disc     linear.Discovery
-	expires  time.Time
+	Verifier string              `json:"verifier"`
+	Host     string              `json:"host"`
+	Reg      linear.Registration `json:"reg"`
+	Disc     linear.Discovery    `json:"disc"`
+	Expires  time.Time           `json:"expires"`
+}
+
+// loginOutcome remembers how a callback for a state ended for a few minutes, so that a second hit
+// (browser prefetch, reload, second tab) shows the same page and never exchanges the code again.
+type loginOutcome struct {
+	done  chan struct{}
+	ok    bool
+	msg   string
+	until time.Time
+}
+
+const loginOutcomeKeep = 5 * time.Minute
+
+func stateHash(state string) string {
+	h := sha256.Sum256([]byte(state))
+	return hex.EncodeToString(h[:])
 }
 
 type linearSvc struct {
@@ -64,8 +88,8 @@ type linearSvc struct {
 	client *linear.Client
 	cliMu  sync.Mutex
 
-	loginMu sync.Mutex
-	logins  map[string]*loginAttempt
+	loginMu  sync.Mutex
+	outcomes map[string]*loginOutcome // by state hash
 
 	linkMu sync.Mutex // read-modify-write of a thread's link
 
@@ -85,9 +109,9 @@ type linearSvc struct {
 func newLinearSvc(s *Server) *linearSvc {
 	return &linearSvc{
 		s: s, mcpURL: linear.MCPURLFromEnv(os.Getenv("MINBOX_LINEAR_MCP_URL")),
-		hc:     &http.Client{Timeout: 30 * time.Second},
-		logins: map[string]*loginAttempt{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
-		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 10 * time.Minute, now: time.Now,
+		hc:       &http.Client{Timeout: 30 * time.Second},
+		outcomes: map[string]*loginOutcome{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
+		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 20 * time.Minute, now: time.Now,
 	}
 }
 
@@ -210,8 +234,10 @@ type linearStatus struct {
 	User        *linear.User `json:"user,omitempty"`
 	ConnectedAt *time.Time   `json:"connected_at,omitempty"`
 	LastError   string       `json:"last_error,omitempty"`
-	RedirectURI string       `json:"redirect_uri"` // what Connect would register from this browser
-	Blocked     int          `json:"rate_limited_for,omitempty"`
+	// LastLoginError: why the last Connect did not complete (also in the server log).
+	LastLoginError string `json:"last_login_error,omitempty"`
+	RedirectURI    string `json:"redirect_uri"` // what Connect would register from this browser
+	Blocked        int    `json:"rate_limited_for,omitempty"`
 }
 
 func (l *linearSvc) status(r *http.Request) linearStatus {
@@ -225,6 +251,9 @@ func (l *linearSvc) status(r *http.Request) linearStatus {
 			st.ConnectedAt = &t
 		}
 		st.LastError = l.scrub(r.Context(), a.LastError)
+		if !st.Connected {
+			st.LastLoginError = l.scrub(r.Context(), a.LoginError)
+		}
 	}
 	if d := l.cl().Blocked(); d > 0 {
 		st.Blocked = int(d.Seconds()) + 1
@@ -286,20 +315,17 @@ func (s *Server) linearLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	verifier, challenge := linear.NewPKCE()
 	state := linear.RandomState()
-	l.loginMu.Lock()
 	now := l.now()
-	for k, v := range l.logins { // expired attempts go
-		if now.After(v.expires) {
-			delete(l.logins, k)
-		}
-	}
-	if len(l.logins) >= 20 {
-		l.loginMu.Unlock()
+	if n, err := l.s.store.CountLinearLogins(ctx, now); err == nil && n >= 20 {
 		httpError(w, 429, "too many logins in progress")
 		return
 	}
-	l.logins[state] = &loginAttempt{verifier: verifier, host: strings.ToLower(host), reg: reg, disc: *disc, expires: now.Add(l.loginTTL)}
-	l.loginMu.Unlock()
+	at := loginAttempt{Verifier: verifier, Host: strings.ToLower(host), Reg: reg, Disc: *disc, Expires: now.Add(l.loginTTL)}
+	b, _ := json.Marshal(at)
+	if err := l.s.store.PutLinearLogin(ctx, stateHash(state), string(b), at.Expires, now); err != nil {
+		storeError(w, err)
+		return
+	}
 	scope := wantedScopes(disc.Scopes)
 	writeJSON(w, 200, map[string]string{"url": linear.AuthURL(disc, &reg, state, challenge, scope), "redirect_uri": redirect})
 }
@@ -325,8 +351,12 @@ func wantedScopes(offered []string) string {
 // the guard lets through for this one path). It is authorized by the state alone: an unguessable,
 // single-use value made by a login the person started here, bound to the host that started it.
 func oauthCallback(r *http.Request) bool {
+	// Browsers send Sec-Fetch-Mode/Dest; some webviews and redirect chains do not. A request that
+	// says it is something other than a document navigation is refused; one that says nothing is
+	// let through (the state is what authorizes it).
+	mode, dest := r.Header.Get("Sec-Fetch-Mode"), r.Header.Get("Sec-Fetch-Dest")
 	return r.Method == http.MethodGet && r.URL.Path == linearCallbackPath &&
-		r.Header.Get("Sec-Fetch-Mode") == "navigate" && r.Header.Get("Sec-Fetch-Dest") == "document"
+		(mode == "" || mode == "navigate") && (dest == "" || dest == "document")
 }
 
 func callbackPage(w http.ResponseWriter, status int, ok bool, msg string) {
@@ -344,52 +374,216 @@ func callbackPage(w http.ResponseWriter, status int, ok bool, msg string) {
 		refresh, title, title, html.EscapeString(linear.Truncate(msg, 300)))
 }
 
+// stateCandidates: the state as received, and the forms a redirect may have mangled it into
+// (repeated parameter, percent-encoded again, parameters or a fragment glued on, spaces).
+func stateCandidates(q url.Values, rawQuery string) []string {
+	var out []string
+	seen := map[string]bool{}
+	vals := append([]string(nil), q["state"]...)
+	for _, v := range q["state"] {
+		if k := strings.IndexAny(v, "?&#;"); k > 0 {
+			vals = append(vals, v[:k])
+		}
+		if u, err := url.QueryUnescape(v); err == nil {
+			vals = append(vals, u)
+		}
+	}
+	// the query parsed by hand, for a state that url.ParseQuery rejected (e.g. a bad escape)
+	for _, kv := range strings.FieldsFunc(rawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+		if strings.HasPrefix(kv, "state=") {
+			vals = append(vals, strings.TrimPrefix(kv, "state="))
+		}
+	}
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func sortedKeys(q url.Values) string {
+	var ks []string
+	for k := range q {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	return strings.Join(ks, ",")
+}
+
+func statePrefix(s string) string {
+	if len(s) > 6 {
+		return s[:6]
+	}
+	return s
+}
+
+// uaClass: a coarse class of the User-Agent (enough to tell a prefetcher or an in-app view from a
+// browser; the full string is not logged).
+func uaClass(ua string) string {
+	l := strings.ToLower(ua)
+	switch {
+	case ua == "":
+		return "none"
+	case strings.Contains(l, "bot"), strings.Contains(l, "preview"), strings.Contains(l, "prefetch"), strings.Contains(l, "slack"), strings.Contains(l, "curl"):
+		return "bot-or-tool"
+	case strings.Contains(l, "firefox"):
+		return "firefox"
+	case strings.Contains(l, "chrome"), strings.Contains(l, "chromium"), strings.Contains(l, "edg/"):
+		return "chromium"
+	case strings.Contains(l, "safari"):
+		return "safari"
+	}
+	return "other"
+}
+
+// logHit: one line for every callback hit (no secrets: never the code, a 6-character state prefix),
+// so a double hit and its source can be read from the log.
+func logHit(r *http.Request, state string) {
+	h := r.Header
+	log.Printf("linear: login callback hit: host=%s state_present=%t state_prefix=%q query_keys=[%s] sec_fetch=site:%q,mode:%q,dest:%q,user:%q purpose=%q ua=%s",
+		requestHost(r), state != "", statePrefix(state), sortedKeys(r.URL.Query()),
+		h.Get("Sec-Fetch-Site"), h.Get("Sec-Fetch-Mode"), h.Get("Sec-Fetch-Dest"), h.Get("Sec-Fetch-User"),
+		firstNonEmpty(h.Get("Sec-Purpose"), h.Get("Purpose"), h.Get("X-Moz")), uaClass(h.Get("User-Agent")))
+}
+
+// callbackFail logs the reason (no secrets) and keeps it for Settings, then shows the failure page.
+func (l *linearSvc) callbackFail(w http.ResponseWriter, r *http.Request, status int, state, reason, msg string) {
+	log.Printf("linear: login callback failed: reason=%s host=%s state_present=%t state_prefix=%q query_keys=[%s] shown=%q",
+		reason, requestHost(r), state != "", statePrefix(state), sortedKeys(r.URL.Query()), linear.Truncate(l.scrub(r.Context(), msg), 200))
+	l.noteLoginError(r.Context(), msg)
+	callbackPage(w, status, false, msg)
+}
+
+func (l *linearSvc) noteLoginError(ctx context.Context, msg string) {
+	msg = l.scrub(ctx, linear.Truncate(msg, 300))
+	l.updateAuth(ctx, func(a *linearAuth) { a.LoginError, a.LoginErrorAt = msg, l.now() })
+}
+
 func (s *Server) linearCallback(w http.ResponseWriter, r *http.Request) {
 	l := s.lin
+	ctx := r.Context()
 	q := r.URL.Query()
-	state := q.Get("state")
+	cands := stateCandidates(q, r.URL.RawQuery)
+	state := ""
+	if len(cands) > 0 {
+		state = cands[0]
+	}
+	logHit(r, state)
+	now := l.now()
+
+	// Find what we know about the state: a recent outcome (a replay) or a pending login.
+	var at *loginAttempt
+	var expiredAt time.Time
+	var mine *loginOutcome
 	l.loginMu.Lock()
-	at := l.logins[state]
-	delete(l.logins, state) // single use, whatever happens next
+	for k, o := range l.outcomes { // forget old outcomes
+		if !o.until.IsZero() && now.After(o.until) {
+			delete(l.outcomes, k)
+		}
+	}
+	for _, c := range cands {
+		h := stateHash(c)
+		if o := l.outcomes[h]; o != nil {
+			l.loginMu.Unlock()
+			select { // a concurrent hit waits for the first to finish
+			case <-o.done:
+			case <-time.After(30 * time.Second):
+			case <-ctx.Done():
+			}
+			// A replay changes nothing: no exchange, no stored error, no state consumed.
+			if o.ok {
+				log.Printf("linear: login callback replayed after success: state_prefix=%q (success page shown again)", statePrefix(c))
+				callbackPage(w, 200, true, "You can close this tab.")
+			} else {
+				log.Printf("linear: login callback replayed after a failure: state_prefix=%q", statePrefix(c))
+				callbackPage(w, 400, false, "This login link was already used and it did not succeed: "+o.msg)
+			}
+			return
+		}
+		data, exp, err := s.store.TakeLinearLogin(ctx, h) // single use, whatever happens next
+		if err != nil {
+			l.loginMu.Unlock()
+			l.callbackFail(w, r, 500, c, "store", "minbox could not read the pending login: "+err.Error())
+			return
+		}
+		if data == "" {
+			continue
+		}
+		var a loginAttempt
+		if json.Unmarshal([]byte(data), &a) != nil {
+			continue
+		}
+		state, at, expiredAt = c, &a, exp
+		mine = &loginOutcome{done: make(chan struct{})}
+		l.outcomes[h] = mine
+		break
+	}
 	l.loginMu.Unlock()
-	if state == "" || at == nil || l.now().After(at.expires) {
-		callbackPage(w, 400, false, "This login link is unknown, expired or already used. Start again from Settings.")
-		return
+
+	finish := func(ok bool, msg string) { // record the outcome for replays
+		l.loginMu.Lock()
+		mine.ok, mine.msg, mine.until = ok, msg, l.now().Add(loginOutcomeKeep)
+		l.loginMu.Unlock()
+		close(mine.done)
 	}
-	if !strings.EqualFold(requestHost(r), at.host) {
-		callbackPage(w, 400, false, "The login was started from another address ("+at.host+"). Open minbox there and start again.")
-		return
+	fail := func(status int, reason, msg string) {
+		if mine != nil {
+			finish(false, msg)
+		}
+		l.callbackFail(w, r, status, state, reason, msg)
 	}
+
+	// Linear's own error first: it is the real reason, with or without a known state.
 	if e := q.Get("error"); e != "" {
-		callbackPage(w, 400, false, "Linear answered: "+e+" "+q.Get("error_description"))
+		fail(400, "linear_error", "Linear answered: "+e+" "+q.Get("error_description"))
 		return
 	}
-	if iss := q.Get("iss"); iss != "" && at.disc.Issuer != "" && strings.TrimRight(iss, "/") != strings.TrimRight(at.disc.Issuer, "/") {
-		callbackPage(w, 400, false, "The answer came from an unexpected authorization server.")
+	if at == nil {
+		if state == "" {
+			fail(400, "no_state", "The answer from Linear carried no login state. Start again from Settings.")
+		} else {
+			fail(400, "unknown_state", "This login is unknown (maybe the server restarted or another minbox instance started it, or the link was altered). Start again from Settings.")
+		}
+		return
+	}
+	if now.After(at.Expires) || now.After(expiredAt) {
+		fail(400, "expired", "This login expired (it must be approved within "+l.loginTTL.String()+"). Start again from Settings.")
+		return
+	}
+	if !strings.EqualFold(requestHost(r), at.Host) {
+		fail(400, "host_mismatch", "The login was started from another address ("+at.Host+"). Open minbox there and start again.")
+		return
+	}
+	if iss := q.Get("iss"); iss != "" && at.Disc.Issuer != "" && strings.TrimRight(iss, "/") != strings.TrimRight(at.Disc.Issuer, "/") {
+		fail(400, "issuer", "The answer came from an unexpected authorization server.")
 		return
 	}
 	code := q.Get("code")
 	if code == "" {
-		callbackPage(w, 400, false, "No authorization code in the answer.")
+		fail(400, "no_code", "No authorization code in the answer.")
 		return
 	}
-	ctx := r.Context()
-	tok, err := linear.Exchange(ctx, l.hc, &at.disc, &at.reg, code, at.verifier, l.now())
+	tok, err := linear.Exchange(ctx, l.hc, &at.Disc, &at.Reg, code, at.Verifier, l.now())
 	if err != nil {
-		callbackPage(w, 502, false, l.errText(err))
+		fail(502, "exchange", l.errText(err))
 		return
 	}
-	disc := at.disc
+	disc := at.Disc
 	l.updateAuth(ctx, func(a *linearAuth) {
-		a.MCPURL, a.Disc, a.RedirectURI, a.Token = l.mcpURL, &disc, at.reg.RedirectURI, *tok
-		a.Registrations[at.reg.RedirectURI] = at.reg
+		a.MCPURL, a.Disc, a.RedirectURI, a.Token = l.mcpURL, &disc, at.Reg.RedirectURI, *tok
+		a.Registrations[at.Reg.RedirectURI] = at.Reg
 		a.NeedsLogin, a.LastError, a.ConnectedAt, a.User = false, "", l.now(), nil
+		a.LoginError, a.LoginErrorAt = "", time.Time{}
 	})
 	l.cl().Reset()
 	// Who is it? Best effort: the connection works without it.
 	if u, err := l.getUser(ctx); err == nil && u != nil {
 		l.updateAuth(ctx, func(a *linearAuth) { a.User = u })
 	}
+	finish(true, "")
 	s.hub.publish(Event{Type: "linear"})
 	callbackPage(w, 200, true, "You can close this tab.")
 }

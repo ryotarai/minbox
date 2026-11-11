@@ -118,6 +118,11 @@ function LinearSection() {
           {testResult.text}
         </div>
       )}
+      {st?.last_login_error && !st.connected && (
+        <div data-testid="linear-login-error" className="text-[12.5px] text-danger">
+          Last login attempt failed: {st.last_login_error}
+        </div>
+      )}
       {st?.last_error && !st.connected && <div className="text-[12.5px] text-danger">{st.last_error}</div>}
       {st?.rate_limited_for ? <div className="text-[12.5px] text-subtle">Linear asked minbox to slow down; it waits about {st.rate_limited_for} s.</div> : null}
       <Row label="Comments that reach the agent" desc="Comments by others are always shown in the thread; this decides which ones are passed to the agent. Default: everyone.">

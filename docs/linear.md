@@ -127,6 +127,17 @@ against a fake OAuth + MCP server.
 
 ## Troubleshooting
 
+- "Linear login failed" on the callback page but Settings says Connected: the callback was requested twice
+  (a prefetch, reload or second tab). The first one succeeded. minbox now shows the success page again for a
+  state that just succeeded (kept 5 minutes, no second token exchange). The log shows both hits as
+  `linear: login callback hit: ... sec_fetch=... ua=<class>` followed by `replayed after success`.
+- The callback page says the login is unknown / expired / already used / from another address, or shows
+  Linear's own error (`Linear answered: ...`, which is checked first): `~/.minbox/minbox.log` has a
+  `linear: login callback failed: reason=...` line (reasons: linear_error, no_state, unknown_state, expired,
+  host_mismatch, issuer, no_code, exchange). It holds the 6-character state prefix, the host and the query
+  parameter names, never the code or the whole state. Settings shows the last reason under the status.
+  Pending logins are stored (in `linear_logins`, removed when used, expired ones after an hour), so a restart
+  between Connect and the approval does not lose them; a login may take 20 minutes.
 - "Login needed" in Settings: press Connect again.
 - Connect fails with "client registration refused ... (redirect URI ...)": the address you used is not
   accepted; try the other address (127.0.0.1 vs the Tailscale name).

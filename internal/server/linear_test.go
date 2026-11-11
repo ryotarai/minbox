@@ -183,8 +183,9 @@ func TestLinearLoginFlowThroughTheCallbackRoute(t *testing.T) {
 	if code, body, _ := e.raw("GET", cb, "", navHeaders); code != 200 || !strings.Contains(body, "Connected") {
 		t.Fatalf("callback: %d %s", code, body)
 	}
-	if code, _, _ := e.raw("GET", cb, "", navHeaders); code != 400 {
-		t.Fatalf("replayed state: %d", code)
+	// a replay of a state that succeeded shows the success page again
+	if code, body, _ := e.raw("GET", cb, "", navHeaders); code != 200 || !strings.Contains(body, "Connected") {
+		t.Fatalf("replayed state: %d %s", code, body)
 	}
 	// the registration was reused for the second login (same redirect URI)
 	if e.f.registrations != 1 {

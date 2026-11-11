@@ -353,6 +353,7 @@ export type LinearStatus = {
   mcp_url: string
   connected: boolean
   needs_login: boolean
+  last_login_error?: string
   user?: { id: string; name: string; email: string }
   connected_at?: string
   last_error?: string
