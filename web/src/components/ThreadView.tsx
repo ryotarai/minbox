@@ -25,6 +25,8 @@ import {
   IconUnfold,
   IconTerminal,
   IconPaperclip,
+  IconPlus,
+  IconSketch,
 } from './icons'
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
@@ -1413,6 +1415,8 @@ function ReplyBox({
   const [sending, setSending] = useState(false)
   const [whereAnchor, setWhereAnchor] = useState<HTMLElement | null>(null)
   const sendRef = useRef<HTMLButtonElement>(null)
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const sketchOpen = useRef<(() => void) | null>(null)
   const words = draft.words
   const picksCount = answers.length
   const annos = draft.annotations
@@ -1444,10 +1448,10 @@ function ReplyBox({
   const fileTiles = <ComposeFileTiles files={files} onRemove={removeFile} onPutBack={putBack} />
   const clip = (
     <>
-      <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileInput.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
+      {!phone && <button type="button" aria-label="Attach files" title="Attach files" data-testid="attach-files" onClick={() => fileInput.current?.click()} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
         <IconPaperclip />
-      </button>
-      <SketchButton compose={compose} />
+      </button>}
+      <SketchButton compose={compose} openRef={phone ? sketchOpen : undefined} />
       <input
         ref={fileInput}
         type="file"
@@ -1578,7 +1582,7 @@ function ReplyBox({
       className={cx(
         'w-full resize-none text-fg outline-none placeholder:text-faint',
         phone ? 'border-0 bg-transparent p-0' : 'rounded-md border border-linestrong bg-sunken p-2.5 focus:border-accent',
-        phone ? 'min-h-[24px] text-[16px]' : 'min-h-16 text-[13.5px]',
+        phone ? 'min-h-[24px] text-[16px] leading-6' : 'min-h-16 text-[13.5px]',
         full && 'min-h-0 flex-1',
       )}
     />
@@ -1630,35 +1634,61 @@ function ReplyBox({
   )
 
   if (phone) {
+    const closeMenu = () => setMenuAnchor(null)
+    const item = 'flex h-11 w-full items-center gap-3 rounded-[6px] border-0 bg-transparent px-3 text-left text-[14px] hover:bg-sel'
     return (
       <div className={cx('flex flex-col gap-2 border-t border-line bg-surface px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
         {chips}
         {counter}
         {commandHint}
         {fileTiles}
-        <div className={cx('flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
-          <div className={cx('flex flex-1 gap-1 rounded-xl border border-linestrong bg-sunken px-3 py-3 focus-within:border-accent', full ? 'items-stretch' : 'items-end')}>
+        <div className={cx('relative flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
+          {mention.popup(true)}
+          <button
+            type="button"
+            aria-label="Reply actions"
+            aria-haspopup="menu"
+            aria-expanded={!!menuAnchor}
+            title="Full height, attach, draw"
+            data-testid="reply-actions"
+            onClick={(e) => setMenuAnchor(e.currentTarget)}
+            className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-linestrong bg-transparent p-0 text-muted active:bg-sel', full && 'self-end', (menuAnchor || full) && 'bg-sel text-fg')}
+          >
+            <IconPlus size={20} />
+          </button>
+          <div className={cx('flex min-h-11 flex-1 rounded-[22px] border border-linestrong bg-sunken px-3.5 py-[9px] focus-within:border-accent', full ? 'items-stretch' : 'items-end')}>
             <div className={cx('relative flex min-w-0 flex-1 flex-col', full && 'min-h-0')}>
               {textarea}
-              {mention.popup(true)}
-            </div>
-            <div className="flex flex-col items-center justify-end gap-1">
-              {fullButton}
-              {clip}
             </div>
           </div>
           <button
             ref={sendRef}
             type="button"
-            aria-label="Send"
+            aria-label={cmd ? 'Run' : 'Send'}
+            title={cmd ? 'Run as a command' : 'Send'}
             data-testid="reply-send"
             disabled={!canSend || sending}
             onClick={() => void send()}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-0 bg-accent p-0 text-onaccent disabled:opacity-45"
+            className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-accent p-0 text-onaccent disabled:bg-chip disabled:text-faint', full && 'self-end')}
           >
-            <IconSend size={20} />
+            {cmd ? <IconTerminal size={19} /> : <IconSend size={20} />}
           </button>
         </div>
+        <Popover anchor={menuAnchor} open={!!menuAnchor} onClose={closeMenu} side="top" align="start" className="w-[240px] p-1.5">
+          <button type="button" role="menuitem" data-testid="reply-full" aria-pressed={full} onClick={() => { closeMenu(); onToggleFull() }} className={item}>
+            <IconExpand size={18} />
+            {full ? 'Back to the thread' : 'Full height editor'}
+          </button>
+          <button type="button" role="menuitem" data-testid="attach-files" onClick={() => { closeMenu(); fileInput.current?.click() }} className={item}>
+            <IconPaperclip size={18} />
+            Attach files
+          </button>
+          <button type="button" role="menuitem" data-testid="compose-draw" onClick={() => { closeMenu(); sketchOpen.current?.() }} className={item}>
+            <IconSketch size={18} />
+            Draw a diagram
+          </button>
+        </Popover>
+        {clip}
         {where}
       </div>
     )

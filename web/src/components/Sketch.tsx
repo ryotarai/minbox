@@ -1,3 +1,4 @@
+import type { MutableRefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../lib/app'
@@ -658,7 +659,7 @@ function TextInput({ ed, ctm, host, onChange, onCommit, onCancel }: { ed: Editin
 type Compose = ReturnType<typeof useComposeFiles>
 
 /** The "Draw a diagram" button next to the paperclip, and the modal it opens. */
-export function SketchButton({ compose, size = 16 }: { compose: Compose; size?: number }) {
+export function SketchButton({ compose, size = 16, openRef }: { compose: Compose; size?: number; openRef?: MutableRefObject<(() => void) | null> }) {
   const [open, setOpen] = useState<{ scene: Scene | null; replace?: { key: string; name: string; annotate: boolean } } | null>(null)
   const filesRef = useRef(compose.files)
   filesRef.current = compose.files
@@ -696,11 +697,13 @@ export function SketchButton({ compose, size = 16 }: { compose: Compose; size?: 
     setOpen(null)
   }
 
+  // With openRef the button is not drawn: the owner opens the sketcher itself (the phone's actions menu).
+  if (openRef) openRef.current = () => setOpen({ scene: null })
   return (
     <>
-      <button type="button" aria-label="Draw a diagram" title="Draw a diagram" data-testid="compose-draw" onClick={() => setOpen({ scene: null })} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
+      {!openRef && <button type="button" aria-label="Draw a diagram" title="Draw a diagram" data-testid="compose-draw" onClick={() => setOpen({ scene: null })} className="border-0 bg-transparent p-1 text-muted hover:text-fg">
         <IconSketch size={size} />
-      </button>
+      </button>}
       {open && <SketchModal initial={open.scene} onDone={onDone} onClose={() => setOpen(null)} />}
     </>
   )

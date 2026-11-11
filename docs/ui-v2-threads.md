@@ -170,6 +170,10 @@ the session filter popover, Cmd+K > a session, the project's main session.
   and, if text was already typed, **sends it there right away** as the first thread (selecting it). Otherwise
   the terminal shows the new session and the box waits.
 - The thread view's reply box uses the same bottom row (clip, full height, hint such as `Draft saved`, Send at the right); it has no Cancel or New message button.
+- On the phone the reply box is one compact row (44 px when empty, growing with the text up to 160 px): a round `+`
+  button (`reply-actions`) on the left, the text box, and a round Send button on the right (disabled look when empty;
+  `!` commands switch its label to Run). The `+` opens a menu with Full height editor (`reply-full`), Attach files
+  (`attach-files`) and Draw a diagram (`compose-draw`). The @-mention popup opens above the whole row.
 - Sending creates a NEW thread in the target and opens it. Draft text and files are kept **per target**
   (switching the target swaps the draft). Replies to an open thread stay in the thread view's own box.
 
