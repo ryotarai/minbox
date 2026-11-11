@@ -36,7 +36,7 @@ Create**.
    90 seconds (a fetch with warnings is never cached), and simultaneous requests for one team share one fetch.
    Until they arrive the State field is disabled and "Loading states and labels..." shows next to Labels; what
    you typed is kept. Switching team clears the old team's labels and state (they belong to the old team), loads
-   the new team's lists and then sets its default (unstarted) state; going back to a team loaded before hits the
+   the new team's lists and then sets its In Progress state (see State below); going back to a team loaded before hits the
    cache. A team whose lists fail stays selectable (a warning names the team, Retry is offered). The Details
    block shows the global lists plus one `list_issue_statuses of <team>` / `list_issue_labels of <team>` entry
    per team loaded so far.
@@ -71,7 +71,7 @@ Create**.
    per-team loader (the same cache the dialog uses) and, when the team has states or labels, step 2 (a small
    prompt: the team's lists plus the drafted title and description, same untrusted delimiting, same trusted
    extra-prompt section) chooses `state_id` and `label_ids`, which are validated against the lists. A failing
-   step 2 keeps the draft (the team's default state, no labels). When a team is **already selected when the
+   step 2 keeps the draft (the team's In Progress state, no labels). When a team is **already selected when the
    draft starts** (you chose it, or the prefill named it), the dialog passes it (`team_id` in the `llm` stage):
    the lists are loaded first and a single call drafts for that team with its states and labels in the prompt,
    and the draft's team is forced to it. The lists of the drafted team come back with the draft (`team_lists`)
@@ -90,8 +90,14 @@ Create**.
    fails or times out (40 s), the basic prefill stays and a small note says why.
 
 Fields: Team (required), Title (required), Description (Markdown), Priority, Labels, Project, Assignee
-(Me / Unassigned), State (the team's states, loaded when the team is selected; the default is its unstarted
-one). **Create** is disabled until
+(Me / Unassigned), State (the team's states, loaded when the team is selected; the default is its **In Progress** state
+(the started state named "In Progress", else the first started one; a team without a started state falls back to
+its unstarted default). An issue made from a thread starts In Progress because the work is under way. The
+prefill (basic and helper agent) uses it; the helper is told to choose another state only when the thread clearly
+indicates otherwise (not started, a follow-up idea, already done), and an invalid or missing choice becomes In
+Progress. What you pick yourself is never overwritten. The policy is a parameter (`defaultState`
+`'started'|'team_default'` on the dialog, `defaultsForState` on the server): `team_default` keeps the unstarted
+default for a flow that is not bound to a thread's work). **Create** is disabled until
 the team and title are set. The description contains the model's short summary, not the conversation. It
 ends with a link to the minbox thread only if **Settings -> Integrations -> Linear -> "Link to the thread in
 drafted issues"** is on (default off) and the public URL is set; you can edit it away in the dialog anyway.

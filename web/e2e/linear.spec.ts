@@ -234,7 +234,7 @@ test("Linear create dialog: a team's states and labels load when it is selected,
   await expect(page.getByTestId('linear-create-team-loading')).toHaveCount(0, { timeout: 15_000 })
   await expect(page.getByTestId('linear-create-label-Pixels')).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('linear-create-state')).toBeEnabled()
-  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-d1') // the team's default
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-d2') // the team's In Progress (first started) state; Backlog is its default
   await expect(page.getByTestId('linear-create-state').locator('option')).toHaveText(['Team default', 'Backlog', 'In Review'])
   await expect(page.getByTestId('linear-create-title')).toHaveValue('Mine') // typed text kept
   // Both teams' lists are in the Details, with the team named.
@@ -246,7 +246,7 @@ test("Linear create dialog: a team's states and labels load when it is selected,
   lin.statusesDelay = 0
   await page.getByTestId('linear-create-team').selectOption('team-1')
   await expect(page.getByTestId('linear-create-label-Bug')).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-2')
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-3') // In Progress, not Todo
   expect(teamsOf('list_issue_statuses')).toEqual(['team-1', 'team-2'])
 })
 

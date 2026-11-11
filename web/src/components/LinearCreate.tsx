@@ -22,7 +22,15 @@ function newSubmissionId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClose: () => void }) {
+/** Which state a new issue starts in: the team's In Progress state (thread-bound issues) or the team's own default. */
+export type DefaultStatePolicy = 'started' | 'team_default'
+
+function preferredState(t: LinearTeam | undefined, policy: DefaultStatePolicy): string {
+  if (!t) return ''
+  return (policy === 'started' && t.started_state_id) || t.default_state_id || ''
+}
+
+export function LinearCreateDialog({ thread, onClose, defaultState = 'started' }: { thread: Thread; onClose: () => void; defaultState?: DefaultStatePolicy }) {
   const { toast, navigate } = useApp()
   const [form, setForm] = useState<LinearDraft>(EMPTY)
   const formRef = useRef(form)
@@ -71,13 +79,13 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     set('label_ids', d.label_ids, true)
     // A team the person never chose and a state that is not that team's: use the team's default.
     const t = teamInfoRef.current[next.team_id]?.team
-    if (t && !(t.states ?? []).some((s) => s.id === next.state_id)) next.state_id = t.default_state_id ?? ''
+    if (t && !(t.states ?? []).some((s) => s.id === next.state_id)) next.state_id = preferredState(t, defaultState)
     // The lists are not here yet (they load for the team): the state is set when they arrive.
     else if (!t && next.team_id !== cur.team_id) next.state_id = ''
 
     formRef.current = next
     setForm(next)
-  }, [])
+  }, [defaultState])
 
   // Fetch the lists that hang on a team (states, labels): once per team while the dialog is open
   // (the server caches them too); refresh bypasses both.
@@ -90,10 +98,10 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
         const r = await api.linearTeamLists(thread.id, id, refresh)
         if (closed.current) return
         setTeamInfo(id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
-        // The team's default state, unless the person (or the draft) already chose one.
+        // The team's In Progress state (per defaultState), unless the person (or the draft) already chose one.
         const f = formRef.current
-        if (f.team_id === id && !f.state_id && r.team.default_state_id) {
-          const next = { ...f, state_id: r.team.default_state_id }
+        if (f.team_id === id && !f.state_id && preferredState(r.team, defaultState)) {
+          const next = { ...f, state_id: preferredState(r.team, defaultState) }
           formRef.current = next
           setForm(next)
         }
@@ -102,7 +110,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
         setTeamInfo(id, { status: 'error', warnings: [], lists: [], error: e instanceof Error ? e.message : String(e) })
       }
     },
-    [thread.id, setTeamInfo],
+    [thread.id, setTeamInfo, defaultState],
   )
   const gotTeamLists = (r: LinearTeamLists) => setTeamInfo(r.team.id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
 
@@ -205,7 +213,7 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     edit(patch)
     touched.current.delete('state_id')
     touched.current.delete('label_ids')
-    const next = { ...formRef.current, label_ids: [], state_id: teamInfoRef.current[id]?.team?.default_state_id ?? '' }
+    const next = { ...formRef.current, label_ids: [], state_id: preferredState(teamInfoRef.current[id]?.team, defaultState) }
     formRef.current = next
     setForm(next)
   }

@@ -158,8 +158,8 @@ func TestLinearDraftLLMDropsUnknownIds(t *testing.T) {
 	if l := d["label_ids"].([]any); len(l) != 1 || l[0] != "lab-1" {
 		t.Errorf("labels %v", d["label_ids"])
 	}
-	// proj-2 is a project of team 2 only; the assignee is not you; the state is unknown (default instead)
-	if d["project_id"] != "" || d["assignee_id"] != "user-1" || d["state_id"] != "st-2" {
+	// proj-2 is a project of team 2 only; the assignee is not you; the state is unknown (the team's In Progress state instead)
+	if d["project_id"] != "" || d["assignee_id"] != "user-1" || d["state_id"] != "st-3" {
 		t.Errorf("project/assignee/state: %v", d)
 	}
 	// The drafted team's lists came with it.
@@ -218,12 +218,12 @@ func TestLinearDraftTwoStepFetchesOnlyTheDraftedTeam(t *testing.T) {
 			t.Errorf("%s calls %v", tool, cs)
 		}
 	}
-	// A failing step two keeps the draft (default state, no labels).
+	// A failing step two keeps the draft (In Progress state, no labels).
 	e.srv.lin.draftCache = map[string]draftEntry{}
 	h.pickErr = errors.New("boom")
 	_, obj = e.draft(id, "llm")
 	d = obj["draft"].(map[string]any)
-	if d["title"] != "T" || d["state_id"] != "st-2" || len(d["label_ids"].([]any)) != 0 {
+	if d["title"] != "T" || d["state_id"] != "st-3" || len(d["label_ids"].([]any)) != 0 {
 		t.Errorf("step two failure: %v", d)
 	}
 	// The extra prompt is in both steps' trusted section.
@@ -633,6 +633,37 @@ func TestLinearDraftFallbackUsesFirstUserMessageAndWorkBullets(t *testing.T) {
 	if d.Title != "Export" || !strings.HasPrefix(d.Description, "Please add CSV export") ||
 		!strings.Contains(d.Description, "## Work so far\n- Started the exporter\n- Tests added") {
 		t.Errorf("fallback %+v", d)
+	}
+}
+
+func TestLinearDefaultStatePolicy(t *testing.T) {
+	th := &store.Thread{Subject: "x"}
+	withStarted := metaTeam{ID: "t1", DefaultStateID: "todo", StartedStateID: "prog", States: []metaState{{ID: "todo"}, {ID: "prog"}}}
+	noStarted := metaTeam{ID: "t2", DefaultStateID: "todo2", States: []metaState{{ID: "todo2"}}}
+	m := &linearMeta{Teams: []metaTeam{withStarted, noStarted}}
+	// Thread-bound (the default): the started state; a team without one falls back to its default.
+	if d := defaultsFor(linearDraft{TeamID: "t1"}, m, th); d.StateID != "prog" {
+		t.Errorf("started team: %q", d.StateID)
+	}
+	if d := defaultsFor(linearDraft{TeamID: "t2"}, m, th); d.StateID != "todo2" {
+		t.Errorf("team without a started state: %q", d.StateID)
+	}
+	// An unknown state (validateDraft clears it) becomes the started state; a valid choice is kept.
+	d := validateDraft(linearDraft{TeamID: "t1", StateID: "nope"}, m)
+	if d = defaultsFor(d, m, th); d.StateID != "prog" {
+		t.Errorf("invalid LLM state: %q", d.StateID)
+	}
+	d = validateDraft(linearDraft{TeamID: "t1", StateID: "todo"}, m)
+	if d = defaultsFor(d, m, th); d.StateID != "todo" {
+		t.Errorf("LLM's own choice: %q", d.StateID)
+	}
+	// The other policy keeps the team's default.
+	if d := defaultsForState(linearDraft{TeamID: "t1"}, m, th, stateDefaultTeam); d.StateID != "todo" {
+		t.Errorf("team_default policy: %q", d.StateID)
+	}
+	// Both prompts name In Progress as the default.
+	if p := buildTeamPickPrompt(linearDraft{}, &withStarted, ""); !strings.Contains(p, "In Progress state") || !strings.Contains(p, "clearly indicates otherwise") {
+		t.Errorf("step two prompt:\n%s", p)
 	}
 }
 
