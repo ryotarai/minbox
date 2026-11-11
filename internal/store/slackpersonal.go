@@ -32,6 +32,21 @@ CREATE TABLE IF NOT EXISTS slack_items (
   updated_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (channel, thread_ts)
 );
+CREATE TABLE IF NOT EXISTS slack_threads (
+  channel TEXT NOT NULL,
+  thread_ts TEXT NOT NULL,
+  latest_ts TEXT NOT NULL DEFAULT '',
+  fetched_at INTEGER NOT NULL DEFAULT 0,
+  seen_at INTEGER NOT NULL DEFAULT 0,
+  data TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (channel, thread_ts)
+);
+CREATE TABLE IF NOT EXISTS slack_users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  bot INTEGER NOT NULL DEFAULT 0,
+  fetched_at INTEGER NOT NULL DEFAULT 0
+);
 `
 
 // SlackItem is one row of slack_items.
@@ -152,6 +167,9 @@ func (s *Store) SetSlackMinboxThread(ctx context.Context, channel, ts, threadID 
 
 // ClearSlackCache deletes judgements and list views (the person's dismissals and links stay).
 func (s *Store) ClearSlackCache(ctx context.Context) error {
+	if err := s.ClearSlackFetched(ctx); err != nil {
+		return err
+	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM slack_items WHERE state='active' AND minbox_thread_id=''`); err != nil {
 		return err
 	}
@@ -159,9 +177,117 @@ func (s *Store) ClearSlackCache(ctx context.Context) error {
 	return err
 }
 
-// DeleteSlackItems removes every item (Disconnect).
+// DeleteSlackItems removes every item and every fetched copy (Disconnect).
 func (s *Store) DeleteSlackItems(ctx context.Context) error {
+	if err := s.ClearSlackFetched(ctx); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM slack_items`)
+	return err
+}
+
+// SlackThreadRow is a fetched Slack thread as last read (Data is JSON owned by the server's slack
+// code; it holds message text, never the token).
+type SlackThreadRow struct {
+	Channel   string
+	ThreadTS  string
+	LatestTS  string
+	FetchedAt time.Time
+	SeenAt    time.Time
+	Data      string
+}
+
+// SlackUserRow is a resolved Slack user name.
+type SlackUserRow struct {
+	ID        string
+	Name      string
+	Bot       bool
+	FetchedAt time.Time
+}
+
+// SaveSlackThread stores (or replaces) a fetched thread and marks it seen now.
+func (s *Store) SaveSlackThread(ctx context.Context, r SlackThreadRow) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO slack_threads(channel, thread_ts, latest_ts, fetched_at, seen_at, data) VALUES(?,?,?,?,?,?)
+	  ON CONFLICT(channel, thread_ts) DO UPDATE SET latest_ts=excluded.latest_ts, fetched_at=excluded.fetched_at, seen_at=excluded.seen_at, data=excluded.data`,
+		r.Channel, r.ThreadTS, r.LatestTS, ms(r.FetchedAt), ms(s.now()), r.Data)
+	return err
+}
+
+// TouchSlackThreads marks the threads ([channel, thread_ts] pairs) seen now, so pruning keeps them.
+func (s *Store) TouchSlackThreads(ctx context.Context, keys [][2]string) error {
+	now := ms(s.now())
+	for _, k := range keys {
+		if _, err := s.db.ExecContext(ctx, `UPDATE slack_threads SET seen_at=? WHERE channel=? AND thread_ts=?`, now, k[0], k[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SlackThreads returns every stored thread.
+func (s *Store) SlackThreads(ctx context.Context) ([]SlackThreadRow, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT channel, thread_ts, latest_ts, fetched_at, seen_at, data FROM slack_threads`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SlackThreadRow
+	for rows.Next() {
+		var r SlackThreadRow
+		var f, sn int64
+		if err := rows.Scan(&r.Channel, &r.ThreadTS, &r.LatestTS, &f, &sn, &r.Data); err != nil {
+			return nil, err
+		}
+		r.FetchedAt, r.SeenAt = fromMs(f), fromMs(sn)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SaveSlackUser(ctx context.Context, u SlackUserRow) error {
+	b := 0
+	if u.Bot {
+		b = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO slack_users(id, name, bot, fetched_at) VALUES(?,?,?,?)
+	  ON CONFLICT(id) DO UPDATE SET name=excluded.name, bot=excluded.bot, fetched_at=excluded.fetched_at`, u.ID, u.Name, b, ms(u.FetchedAt))
+	return err
+}
+
+func (s *Store) SlackUsers(ctx context.Context) ([]SlackUserRow, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, bot, fetched_at FROM slack_users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SlackUserRow
+	for rows.Next() {
+		var u SlackUserRow
+		var b, f int64
+		if err := rows.Scan(&u.ID, &u.Name, &b, &f); err != nil {
+			return nil, err
+		}
+		u.Bot, u.FetchedAt = b != 0, fromMs(f)
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// PruneSlackFetched deletes threads not seen since cutoff and users not refreshed since cutoff.
+func (s *Store) PruneSlackFetched(ctx context.Context, cutoff time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM slack_threads WHERE seen_at < ?`, ms(cutoff)); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM slack_users WHERE fetched_at < ?`, ms(cutoff))
+	return err
+}
+
+// ClearSlackFetched deletes the stored thread copies and user names.
+func (s *Store) ClearSlackFetched(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM slack_threads`); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM slack_users`)
 	return err
 }
 

@@ -106,8 +106,14 @@ One refresh has a strict call budget (80 calls) and runs these stages (the scree
    whichever is installed) judges every thread whose **latest ts changed since it was last judged**, up to 4 threads
    per call, 2 calls at a time, 90 s timeout. A thread you wrote last in is not sent to the helper: it is judged
    "nothing needed" by rule. A failed judgement leaves the thread *unjudged* (shown under Maybe with a note) and it
-   is tried again on the next refresh. Judgements and one-line list snippets are stored (`slack_items`); message text
-   is kept in memory only.
+   is tried again on the next refresh. Judgements and one-line list snippets are stored (`slack_items`). What was
+   read is stored too (`slack_threads`: the kept messages, latest ts, fetch time, permalink, DM peer and unread
+   state; `slack_users`: resolved names) and written through on every fetch, so after a restart the first refresh
+   does not read again a thread whose latest ts is unchanged within the 5-minute TTL, nor look up a known name
+   (6 h TTL), and judges nothing twice. Rows older than the TTLs are read again as before, but stay available (e.g.
+   the thread view when Slack cannot be reached). A thread's stored JSON is capped at 256 KB (over it, files and
+   attachments go and message texts are cut to 4000 characters). Threads not seen in a refresh for 30 days are
+   pruned.
 
 **Rate limits.** The client never sleeps and never retries in a loop. On HTTP 429 (or `ratelimited`) it records
 `Retry-After`, stops reading, keeps what is done, and the screen shows *Partial results … until HH:MM:SS*; calls to
@@ -153,8 +159,10 @@ on the screen ("Using the legacy search.messages because …") and in Settings �
   error: every error text and log line passes a scrubber that removes the token and anything token-shaped.
 - Only the **local helper agent** sees message text (to judge) and, when you start a thread, the agent of that
   thread sees the handoff you previewed. Slack text is always delimited and marked untrusted.
-- Stored: judgements, a one-line snippet per thread, your dismiss/snooze/mute state, and the link to a minbox
-  thread. *Clear Slack cache* deletes judgements and snippets (dismissals and links stay); *Disconnect* deletes the
+- Stored: judgements, a one-line snippet per thread, your dismiss/snooze/mute state, the link to a minbox
+  thread, and the fetched thread copies (message text, author ids, permalinks) and user names (`slack_threads`,
+  `slack_users`; same 0600 database file). Never stored there: the token or any other secret. *Clear Slack cache*
+  deletes judgements, snippets and the fetched copies and names (dismissals and links stay); *Disconnect* deletes the
   token and everything above.
 - `MINBOX_SLACK_API_URL` (tests only) points the client at a fake Slack; it is honoured only for an `http` URL on a
   loopback host, so the token can never be redirected to another machine by the environment.

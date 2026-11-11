@@ -222,6 +222,7 @@ type slackLink struct {
 // threadData returns the thread's messages: the cache when fresh, else read from Slack. A read that
 // fails keeps a cached copy (stale) when there is one.
 func (l *slackSvc) threadData(ctx context.Context, a *slackUserAuth, channel, ts string, refresh bool) (*slackThreadData, string, error) {
+	l.loadPersisted(ctx)
 	k := threadKey(channel, ts)
 	l.mu.Lock()
 	td := l.threads[k]
@@ -259,6 +260,7 @@ func (l *slackSvc) threadData(ctx context.Context, a *slackUserAuth, channel, ts
 	l.mu.Lock()
 	l.threads[threadKey(nt.Channel, nt.ThreadTS)] = nt
 	l.mu.Unlock()
+	l.persistThread(ctx, nt)
 	return nt, "", nil
 }
 

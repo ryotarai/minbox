@@ -76,6 +76,7 @@ type slackSvc struct {
 	notes       []string
 	threads     map[string]*slackThreadData
 	users       map[string]slackUserEntry
+	loaded      bool // the persisted threads and names were loaded (slackpersist.go)
 	// judgeRun runs the helper for a judgement prompt (replaced in tests).
 	judgeRun func(ctx context.Context, prompt string) ([]byte, error)
 
@@ -543,6 +544,7 @@ func (l *slackSvc) forgetCaches() {
 	l.mu.Lock()
 	l.threads = map[string]*slackThreadData{}
 	l.users = map[string]slackUserEntry{}
+	l.loaded = true // the database rows were deleted by the caller
 	l.lastRefresh = time.Time{}
 	l.notes = nil
 	l.scopeNoted = map[string]bool{}
