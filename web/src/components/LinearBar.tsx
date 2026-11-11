@@ -3,11 +3,15 @@ import { api, type LinearEvent, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
 import { LinearCreateDialog } from './LinearCreate'
+import { IconPlus, IconSparkle } from './icons'
 import { Button, cx } from './ui'
 
 // The Linear issue linked to a thread: a chip in the thread header (identifier, title, state,
 // link, unlink) or an input to link one. Opening a linked thread asks the server to sync the
 // issue in the background; the thread reloads by itself when Linear's news has been recorded.
+
+const actionCls =
+  'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2.5 text-[12.5px] text-fg2 hover:border-linestrong hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:opacity-45 sm:h-8'
 
 const inputCls = 'h-8 w-56 rounded-md border border-linestrong bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent'
 
@@ -61,8 +65,9 @@ export function LinearBar({ thread }: { thread: Thread }) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="linear-bar">
         {!open ? (
-          <button type="button" data-testid="linear-link-open" onClick={() => setOpen(true)} className="border-0 bg-transparent p-0 text-subtle hover:text-fg">
-            + Link Linear issue
+          <button type="button" data-testid="linear-link-open" onClick={() => setOpen(true)} className={actionCls}>
+            <IconPlus size={13} />
+            Link Linear issue
           </button>
         ) : (
           <>
@@ -87,7 +92,8 @@ export function LinearBar({ thread }: { thread: Thread }) {
           </>
         )}
         {!open && connected && (
-          <button type="button" data-testid="linear-create-open" onClick={() => setCreating(true)} className="border-0 bg-transparent p-0 text-subtle hover:text-fg">
+          <button type="button" data-testid="linear-create-open" onClick={() => setCreating(true)} className={actionCls}>
+            <IconSparkle size={13} />
             Create Linear issue
           </button>
         )}
@@ -132,12 +138,12 @@ export function LinearBar({ thread }: { thread: Thread }) {
         type="button"
         data-testid="linear-sync"
         onClick={() => api.refreshLinear(thread.id, true).catch(error)}
-        className="border-0 bg-transparent p-0 text-subtle hover:text-fg"
+        className="rounded px-1.5 py-1.5 text-subtle hover:bg-raised hover:text-fg border-0 bg-transparent"
         title={link.last_synced_at ? `Last synced ${shortTime(link.last_synced_at)}` : 'Not synced yet'}
       >
         Sync
       </button>
-      <button type="button" data-testid="linear-unlink" onClick={() => api.unlinkLinear(thread.id).catch(error)} className="border-0 bg-transparent p-0 text-subtle hover:text-fg">
+      <button type="button" data-testid="linear-unlink" onClick={() => api.unlinkLinear(thread.id).catch(error)} className="rounded px-1.5 py-1.5 text-subtle hover:bg-raised hover:text-fg border-0 bg-transparent">
         Unlink
       </button>
     </div>

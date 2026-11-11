@@ -28,6 +28,11 @@ export const IconPlus = (p: P) => (
     <path d="M8 3v10M3 8h10" />
   </Svg>
 )
+export const IconSparkle = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="M7 2l1.4 3.6L12 7 8.4 8.4 7 12 5.6 8.4 2 7l3.6-1.4zM12.5 10.5v3M11 12h3" />
+  </Svg>
+)
 export const IconChevronRight = (p: P) => (
   <Svg strokeWidth={1.75} {...p}>
     <path d="M6 3l5 5-5 5" />
