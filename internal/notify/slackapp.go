@@ -56,7 +56,7 @@ var slackAppType = Type{
 			{Value: EventsAction, Label: "Only messages that need your answer"},
 		}},
 		{Key: "receive", Label: "Receive messages from Slack", Kind: "bool", Default: false,
-			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (files:read to take images you send, reactions:write for the ✅ ack), and takes up to the poll interval to arrive."},
+			Hint: "Off by default. On: minbox polls Slack (no public URL needed) so you can reply to a notification in its Slack thread, or DM the bot to start a new thread. Needs a user ID as Channel (a DM), the im:history scope (files:read to take images you send, reactions:write for the 👀 ack), and takes up to the poll interval to arrive."},
 		{Key: "allowed_users", Label: "Allowed Slack user IDs", Kind: "text", Placeholder: "U0123ABCD, U0456EFGH",
 			Hint: "Only messages from these members are taken (comma separated). Empty: the user ID in Channel. Required when receiving is on.", validate: validUserIDs},
 		{Key: "pick_project", Label: "Let Claude Haiku pick the project", Kind: "bool", Default: true,
@@ -71,7 +71,7 @@ var slackAppType = Type{
 	finish: finishSlackApp,
 	Help: "Slack app setup:\n" +
 		"1. Open api.slack.com/apps → Create New App → From scratch.\n" +
-		"2. OAuth & Permissions → Bot Token Scopes: add chat:write, im:history (to receive your replies), files:write (to send images, HTML and other files Claude attaches), files:read (to take images you send in Slack as input) and optionally reactions:write (the ✅ on delivered messages). Not needed: chat:write.public, im:write, channels:*.\n" +
+		"2. OAuth & Permissions → Bot Token Scopes: add chat:write, im:history (to receive your replies), files:write (to send images, HTML and other files Claude attaches), files:read (to take images you send in Slack as input) and optionally reactions:write (the 👀 on delivered messages). Not needed: chat:write.public, im:write, channels:*.\n" +
 		"3. App Home → Show Tabs: turn Messages Tab on and tick 'Allow users to send Slash commands and messages from the messages tab'.\n" +
 		"4. Install to Workspace (Reinstall after any scope change), then copy the Bot User OAuth Token (xoxb-…) into Bot token.\n" +
 		"5. No Event Subscriptions, no Socket Mode, no Request URL: minbox polls Slack, nothing is exposed.\n" +

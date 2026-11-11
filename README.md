@@ -210,11 +210,11 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
   it dropped the message. If the model run itself fails (for example no coding agent is installed), or *Let Claude
   Haiku pick* is off, the *Fallback project* is used straight away; with none, the DM is ignored. Only allowed members' DMs ever reach the model. The
   model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions; on a machine without `claude` the same pick runs through Pi (its own default model, or `MINBOX_PI_HELPER_MODEL`). Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
-  delivered messages get a ✅. **Images and files you send** in Slack (a DM, or a reply in a
+  delivered messages get a 👀. **Images and files you send** in Slack (a DM, or a reply in a
   notification's thread) are downloaded with the bot token (scope `files:read`) and attached to
   the minbox message exactly like a file you attach in the web UI, so Claude gets their paths:
   images, text and JSON files and PDFs only, 5 files and 20 MB each at most, only from allowed
-  members; anything else is skipped with a note in the message. Add the `im:history` scope (and `reactions:write` for the ✅) under
+  members; anything else is skipped with a note in the message. Add the `im:history` scope (and `reactions:write` for the 👀) under
   OAuth & Permissions and reinstall the app. Messages arrive within the poll interval (30 s to
   5 min; polling slows down when nothing is going on) and polling stays within 20 Slack calls a
   minute and obeys `Retry-After`. Each poll reads the latest 200 top-level messages of the DM (one
@@ -227,7 +227,7 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
 1. [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From scratch*.
 2. OAuth & Permissions → Bot Token Scopes: `chat:write`, `im:history` (to receive),
    `files:write` (to send Claude's images and files), `files:read` (to take images you send) and
-   optionally `reactions:write` (the ✅). Not needed: `chat:write.public`, `im:write`, `channels:*`.
+   optionally `reactions:write` (the 👀). Not needed: `chat:write.public`, `im:write`, `channels:*`.
 3. App Home → Show Tabs → turn **Messages Tab** on, and tick *Allow users to send Slash commands
    and messages from the messages tab*.
 4. Install to Workspace (**Reinstall** after every scope change), then copy the *Bot User OAuth

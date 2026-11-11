@@ -912,7 +912,7 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   payload, updated_at)`, payload = JSON `{orig, answers[], files[]}` with the held message and its downloaded images; dropped after 24 h
   without answer or when the destination is deleted). Pending parents are found in the same `conversations.history` call
   (via `latest_reply`) and their replies read with `conversations.replies` under the same budget (the question's own ts is the
-  initial cursor). An answer from an allowed member (same dedupe/allowlist/✅ as any message; its files are added) goes to Haiku
+  initial cursor). An answer from an allowed member (same dedupe/allowlist/👀 as any message; its files are added) goes to Haiku
   with "Message: <orig>" and each answer; identified -> `NewThread` with the ORIGINAL text and all held files, `notification_slack_threads`
   is set to this Slack thread (so later replies in it are delivered to the minbox thread and the agent's notifications reply
   there), a short "Started a thread" post, pending removed. Unsure again -> ask again ("I still could not tell ..."), at most 3
@@ -937,14 +937,14 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   blob + `store.Upload`, then `attachUploads`: a read-only copy on the session's host and an attachment with `author: user`), so the
   agent reads them from the same paths as web uploads. Skipped files add a bracketed note to the message text; a message of only
   skipped files and no text is ignored. A file-only message gets the first file name as its thread subject. Text: Slack `<url|label>` becomes `label`, `&lt;&gt;&amp;` decoded, capped at 4000 characters
-  (a note is appended). Delivered messages get a ✅ (`reactions.add white_check_mark`); `missing_scope` /
+  (a note is appended). Delivered messages get a 👀 (`reactions.add eyes`); `missing_scope` /
   `already_reacted` never fail the delivery (one log line).
 - **State** (additive): columns `notification_slack_threads.last_notified_at`, `.reply_cursor`; tables
   `notification_slack_state(destination_id, key, value)` (`since`, `dm_channel`, `dm_cursor`, `last_inbound`) and
   `notification_slack_seen(destination_id, channel_id, ts, at)` (PK; a message is taken with INSERT OR IGNORE before delivery and
   released if delivery fails, so it is delivered at most once; pruned after 7 days). On first enable `since` = now: no history is
   imported. A PATCH that changes `receive`, `channel` or `bot_token` resets this state.
-- **Rate limits**: at most 20 API calls/minute per destination (all methods, the ✅ included; sliding window), a 429 pauses the
+- **Rate limits**: at most 20 API calls/minute per destination (all methods, the 👀 included; sliding window), a 429 pauses the
   whole poller for exactly `Retry-After`, other errors back off exponentially with jitter (cap 5 minutes), success resets. With
   nothing notified and nothing received in 24h the interval is multiplied by 3 (cap 5 minutes). Slack gives apps distributed in
   the Marketplace (and non-Marketplace apps created after 2025-05-29 that are commercially distributed) only 1 request/minute on
@@ -952,7 +952,7 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   Retry-After either way, which is slow but safe.
 - **Errors**: a polling failure is shown in `last_error` prefixed "Receiving from Slack:", e.g. `missing_scope` -> "The app lacks the
   im:history scope: add it under OAuth & Permissions … and reinstall the app"; the next successful poll clears it.
-- **Scopes**: `im:history` (DM history and replies), `reactions:write` (optional ✅), plus `chat:write`. v1 is DM only; private
+- **Scopes**: `im:history` (DM history and replies), `reactions:write` (optional 👀), plus `chat:write`. v1 is DM only; private
   channels (`groups:history`) and public channels (`channels:history`) are not supported.
 
 ### Secrecy

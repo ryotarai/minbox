@@ -235,7 +235,7 @@ func TestInboundReplyDeliveredOnceAndFiltered(t *testing.T) {
 		t.Fatalf("calls = %v", m)
 	}
 	for _, c := range f.all() {
-		if c.method == "reactions.add" && (c.body["name"] != "white_check_mark" || c.body["channel"] != dmChan) {
+		if c.method == "reactions.add" && (c.body["name"] != "eyes" || c.body["channel"] != dmChan) {
 			t.Fatalf("reaction = %v", c.body)
 		}
 	}

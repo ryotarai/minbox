@@ -241,7 +241,7 @@ func (p *Poller) Status(ctx context.Context, d *store.Destination) *RecvStatus {
 	}
 	if st.reactScope {
 		s.MissingScopes = append(s.MissingScopes, "reactions:write")
-		s.Problems = append(s.Problems, "The app lacks reactions:write: delivered messages get no ✅ (optional)")
+		s.Problems = append(s.Problems, "The app lacks reactions:write: delivered messages get no 👀 (optional)")
 	}
 	return s
 }

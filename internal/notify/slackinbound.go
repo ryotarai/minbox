@@ -655,7 +655,7 @@ func (w *pollWorker) ack(ctx context.Context, channel, ts string) {
 	if w.take() != nil {
 		return
 	}
-	_, err := w.app.call(ctx, "reactions.add", map[string]any{"channel": channel, "timestamp": ts, "name": "white_check_mark"})
+	_, err := w.app.call(ctx, "reactions.add", map[string]any{"channel": channel, "timestamp": ts, "name": "eyes"})
 	var se *SendError
 	if err == nil || !errors.As(err, &se) {
 		return
@@ -668,9 +668,9 @@ func (w *pollWorker) ack(ctx context.Context, channel, ts string) {
 		w.reactWarned = true
 		if se.code == "missing_scope" {
 			w.cyc.reactScope = true
-			log.Printf("slack inbound: %s: no ✅ reaction: add the reactions:write scope and reinstall the app to get it", w.dest.ID)
+			log.Printf("slack inbound: %s: no 👀 reaction: add the reactions:write scope and reinstall the app to get it", w.dest.ID)
 		} else {
-			log.Printf("slack inbound: %s: could not add the ✅ reaction: %s", w.dest.ID, se.Msg)
+			log.Printf("slack inbound: %s: could not add the 👀 reaction: %s", w.dest.ID, se.Msg)
 		}
 	}
 }
