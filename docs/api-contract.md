@@ -143,6 +143,19 @@ Settings (one JSON object; PUT merges top-level keys):
 
 Defaults: system, 13, true, true, true, true, false, false, "", {true,false,false,false,false}.
 
+## Thread commands
+
+Design and behaviour: [thread-commands.md](thread-commands.md). `POST /api/threads/{id}/reply` with `words` starting
+with `!` (and something after it) stores a person's message of `kind: "command"` and answers `201` with it at once; the
+command runs in the background in the session's folder (`sh -c`, stdout and stderr together, 60 s, 64 KB). The message
+carries `command: {message_id, command, cwd, state: "running"|"done", exit_code, timed_out, truncated, error?, output,
+duration_ms, told}`; when it is done SSE `thread` is published, as for any thread change. The message is stored
+delivered: it is not in `GET /api/agent/pending` as a message of its own. The finished result is put in front of the
+thread's next delivered message in `/api/agent/pending` as a `<minbox_user_command>` block (once; `told` turns true when
+that message is marked delivered). `422` for answers, markups, files or `forward_to` together with a command, a command
+over 4000 characters, a session on another host, and `!cmd` as the body of a new thread (`POST /api/sessions/{id}/threads`).
+`\!text` (in a reply or a new thread) is the text `!text`; a lone `!` is a normal message. Same auth as any reply.
+
 ## Reply suggestions
 
 `GET /api/threads/{id}/suggestions` -> `{suggestions: string[0..3], reason?: "disabled"|"not_needed"|"no_agent", error?: string}`.
@@ -154,6 +167,10 @@ Always 200 for generation problems (error = short reason, suggestions empty); 40
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
   (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
   Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
+- Denied commands: when the agent's last message has a denial word (denied, rejected, declined, refused, not allowed, ... or Japanese
+  equivalents) and quotes one single-line command (first fenced block, else first inline code, at most 199 characters), the first
+  suggestion is `!<command>` (a "Thread commands" run), put there by the server without the helper; it is still offered when the
+  helper fails. The helper prompt also asks for it.
 - The UI (ThreadView) requests it when a thread opens or its last message changes and the reply box is empty and no
   question is open; it shows up to 3 chips (`reply-suggestions` / `reply-suggestion`). Click sends, the pencil edits.
 - Generator (always on the minbox server machine, also for remote hosts): the agent is chosen as in "Coding agents" >
@@ -200,6 +217,8 @@ POST  /api/threads/{id}/reask               a note asking Claude to ask the open
 POST  /api/threads/{id}/reply               body adds annotations, urgent, forward_to (session id: the reply
                                               starts a new thread there instead; → {thread_id, ...}), resume (bool:
                                               restart the ended session after storing). A reply unsnoozes.
+                                              A `words` that starts with `!` (no leading space) runs as a command, see
+                                              "Thread commands"; `\!` sends the text without the backslash.
 POST  /api/messages/{id}/send-now           urgent=true
 POST  /api/messages/{id}/cancel             deletes the person's message while it is still queued (not delivered, not
                                               being delivered) so it is never delivered → {ok, thread_id, thread_deleted}

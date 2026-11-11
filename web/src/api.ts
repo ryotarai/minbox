@@ -233,6 +233,20 @@ export type Annotation = {
 
 export type ClosedReason = 'moved_on' | 'replaced' | 'marked_read' | 'archived'
 
+export type MessageCommand = {
+  message_id: string
+  command: string
+  cwd: string
+  state: 'running' | 'done'
+  exit_code: number
+  timed_out: boolean
+  truncated: boolean
+  error?: string
+  output: string
+  duration_ms: number
+  told: boolean
+}
+
 export type Message = {
   id: string
   thread_id: string
@@ -248,7 +262,8 @@ export type Message = {
   delivered_at: string | null
   answer_state?: Record<string, Answer> | null
   delivery?: Delivery
-  kind?: 'message' | 'note'
+  kind?: 'message' | 'note' | 'command'
+  command?: MessageCommand | null
   attachments?: Attachment[] | null
   inline_images?: Attachment[] | null
   annotations?: Annotation[] | null

@@ -30,6 +30,7 @@ import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
+import { CommandMessage, commandOf } from './CommandMessage'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
 type Props = {
@@ -383,7 +384,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const compactOne = anchor >= 1 ? messages[anchor - 1] : null
   const shown = messages.slice(anchor)
   const linearEv = groupLinearEvents(shown, thread.linear_events)
-  const lastUser = [...messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note')
+  const lastUser = [...messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
   const newCount = newIdx >= 0 ? messages.slice(newIdx).filter((m) => m.author === 'agent').length : 0
 
   return (
@@ -1056,6 +1057,7 @@ function UserMessage({
   openId: string | null
   newestId: string | null
 }) {
+  if (m.kind === 'command') return <CommandMessage m={m} phone={phone} />
   if (m.kind === 'note') {
     return (
       <div data-testid="message" data-author="human" data-kind="note" className="rounded-[10px] border border-line2 bg-raised px-3 py-2.5 text-[12.5px] text-fg2">
@@ -1535,6 +1537,13 @@ function ReplyBox({
     el.style.overflowY = el.scrollHeight + border > max ? 'auto' : 'hidden'
   }, [words, full, phone, replyRef])
 
+  const cmd = commandOf(words)
+  const commandHint = cmd ? (
+    <span data-testid="command-hint" className="min-w-0 truncate text-[12px] text-subtle" title={session.cwd}>
+      Runs as a command in {session.cwd}. Start with \! to send the text instead.
+    </span>
+  ) : null
+
   const textarea = (
     <textarea
       ref={replyRef}
@@ -1613,6 +1622,7 @@ function ReplyBox({
       <div className={cx('flex flex-col gap-2 border-t border-line bg-surface px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5', full ? 'min-h-0 flex-1' : 'shrink-0')} onDragOver={io.onDragOver} onDrop={io.onDrop}>
         {chips}
         {counter}
+        {commandHint}
         {fileTiles}
         <div className={cx('flex gap-2', full ? 'min-h-0 flex-1 items-stretch' : 'items-end')}>
           <div className={cx('flex flex-1 gap-1 rounded-xl border border-linestrong bg-sunken px-3 py-3 focus-within:border-accent', full ? 'items-stretch' : 'items-end')}>
@@ -1644,6 +1654,7 @@ function ReplyBox({
       {chips}
       {fileTiles}
       {textarea}
+      {commandHint}
       {(picksCount > 0 || annos.length > 0 || counter) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center rounded-[6px] bg-chip px-2 text-[12px]">✓ {plural(picksCount, 'pick')}</span>}
@@ -1671,7 +1682,7 @@ function ReplyBox({
         {fullButton}
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{canSend ? 'Draft saved' : ''}</span>
         <Button ref={sendRef} variant="primary" size="sm" data-testid="reply-send" disabled={!canSend || sending} onClick={() => void send()}>
-          {sending ? 'Sending…' : 'Send ⌘↵'}
+          {sending ? (cmd ? 'Running…' : 'Sending…') : cmd ? 'Run ⌘↵' : 'Send ⌘↵'}
         </Button>
       </div>
       {where}
