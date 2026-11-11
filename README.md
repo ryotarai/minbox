@@ -255,6 +255,11 @@ not mirrored. New comments on the issue are fetched when you open the thread, sh
 agent in front of your next message (marked as untrusted external content; filterable by author). Details,
 limits and what is unverified against the real Linear: [docs/linear.md](docs/linear.md).
 
+**Create Linear issue** (thread header, next to *Link Linear issue*): a dialog pre-filled from the thread by
+your local coding agent (Claude Code or Pi) and Linear's own teams, states, labels and projects. It opens at
+once, the guess fills in only what you have not typed, and nothing is sent to Linear until you press Create;
+the thread is then linked to the new issue.
+
 ## Search and quick actions
 
 <p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>

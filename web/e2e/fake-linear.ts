@@ -25,6 +25,8 @@ export class FakeLinear {
     url: 'https://linear.app/some-workspace/issue/ENG-123/fix-the-thing',
   }
   comments: any[] = []
+  /** Issues made by save_issue without an id (the Create-issue dialog). */
+  created: any[] = []
   calls: { tool: string; args: any }[] = []
   private seq = 0
   statuses = [
@@ -133,7 +135,20 @@ export class FakeLinear {
             { name: 'list_comments', inputSchema: schema('issueId') },
             { name: 'list_issue_statuses', inputSchema: schema('team') },
             { name: 'save_comment', inputSchema: schema('issueId', 'body', 'id') },
-            { name: 'save_issue', inputSchema: schema('id', 'state') },
+            {
+              name: 'save_issue',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  ...schema('id', 'state', 'title', 'description', 'team', 'assignee', 'project').properties,
+                  priority: { type: 'number' },
+                  labels: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+            { name: 'list_teams', inputSchema: schema('query') },
+            { name: 'list_issue_labels', inputSchema: schema('team', 'limit') },
+            { name: 'list_projects', inputSchema: schema('limit') },
           ],
         })
       case 'tools/call': {
@@ -142,13 +157,37 @@ export class FakeLinear {
         switch (name) {
           case 'get_user':
             return text({ id: 'u1', name: 'Ryota', email: 'ryota@example.com' })
-          case 'get_issue':
+          case 'list_teams':
+            return text({ teams: [{ id: 'team-1', name: 'Engineering', key: 'ENG' }, { id: 'team-2', name: 'Design', key: 'DES' }] })
+          case 'list_issue_labels':
+            return text({ labels: [{ id: 'lab-1', name: 'Bug' }, { id: 'lab-2', name: 'Feature' }] })
+          case 'list_projects':
+            return text({ projects: [{ id: 'proj-1', name: 'Website' }] })
+          case 'get_issue': {
+            const made = this.created.find((c) => c.identifier === a.id || c.id === a.id)
+            if (made) return text(made)
             return a.id === 'ENG-123' || a.id === this.issue.id ? text(this.issue) : sse({ isError: true, content: [{ type: 'text', text: 'Entity not found' }] })
+          }
           case 'list_comments':
             return text({ comments: this.comments })
           case 'list_issue_statuses':
             return text({ statuses: this.statuses })
           case 'save_issue': {
+            if (!a.id) {
+              const n = this.created.length + 1
+              const state = this.statuses.find((x) => x.id === a.state || x.name === a.state) ?? this.statuses[0]
+              const iss = {
+                id: `iss-new-${n}`,
+                identifier: `ENG-${100 + n}`,
+                title: a.title,
+                description: a.description,
+                url: `https://linear.app/some-workspace/issue/ENG-${100 + n}/new`,
+                state: { name: state.name, type: state.type },
+                team: { id: a.team, name: 'Engineering' },
+              }
+              this.created.push({ ...iss, args: a })
+              return text(iss)
+            }
             const st = this.statuses.find((s) => s.name === a.state)
             if (st) this.issue.state = { name: st.name, type: st.type }
             return text(this.issue)

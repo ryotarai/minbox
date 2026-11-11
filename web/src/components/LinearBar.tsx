@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, type LinearEvent, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
+import { LinearCreateDialog } from './LinearCreate'
 import { Button, cx } from './ui'
 
 // The Linear issue linked to a thread: a chip in the thread header (identifier, title, state,
@@ -16,6 +17,8 @@ export function LinearBar({ thread }: { thread: Thread }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [connected, setConnected] = useState(false)
   const link = thread.linear
   const linked = !!link
 
@@ -24,6 +27,19 @@ export function LinearBar({ thread }: { thread: Thread }) {
     if (!linked) return
     api.refreshLinear(thread.id).catch(() => {})
   }, [thread.id, linked])
+
+  // Creating an issue needs a login: the button shows only while Linear is connected.
+  useEffect(() => {
+    if (linked) return
+    let live = true
+    const load = () => api.linearStatus().then((st) => live && setConnected(st.connected)).catch(() => {})
+    load()
+    window.addEventListener('minbox:linear', load)
+    return () => {
+      live = false
+      window.removeEventListener('minbox:linear', load)
+    }
+  }, [linked])
 
   const submit = async () => {
     if (!value.trim()) return
@@ -70,6 +86,12 @@ export function LinearBar({ thread }: { thread: Thread }) {
             </Button>
           </>
         )}
+        {!open && connected && (
+          <button type="button" data-testid="linear-create-open" onClick={() => setCreating(true)} className="border-0 bg-transparent p-0 text-subtle hover:text-fg">
+            Create Linear issue
+          </button>
+        )}
+        {creating && <LinearCreateDialog thread={thread} onClose={() => setCreating(false)} />}
         {err && (
           <span data-testid="linear-link-error" className="text-danger">
             {err}

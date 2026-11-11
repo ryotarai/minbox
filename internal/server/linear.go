@@ -69,6 +69,18 @@ type linearSvc struct {
 
 	linkMu sync.Mutex // read-modify-write of a thread's link
 
+	// Create issue from a thread (linearcreate.go).
+	metaMu        sync.Mutex
+	metaCache     *linearMeta
+	metaAt        time.Time
+	draftMu       sync.Mutex
+	draftCache    map[string]draftEntry
+	draftInflight map[string]*draftCall
+	draftSem      chan struct{}
+	draftRun      func(ctx context.Context, prompt string) ([]byte, error) // replaced in tests
+	createMu      sync.Mutex
+	creates       map[string]*createCall
+
 	mu          sync.Mutex
 	syncing     map[string]bool
 	lastRefresh map[string]time.Time
@@ -85,7 +97,9 @@ type linearSvc struct {
 func newLinearSvc(s *Server) *linearSvc {
 	return &linearSvc{
 		s: s, mcpURL: linear.MCPURLFromEnv(os.Getenv("MINBOX_LINEAR_MCP_URL")),
-		hc:     &http.Client{Timeout: 30 * time.Second},
+		hc:         &http.Client{Timeout: 30 * time.Second},
+		draftCache: map[string]draftEntry{}, draftInflight: map[string]*draftCall{}, draftSem: make(chan struct{}, draftParallel),
+		creates: map[string]*createCall{}, draftRun: s.runLinearDraft,
 		logins: map[string]*loginAttempt{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
 		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 10 * time.Minute, now: time.Now,
 	}
@@ -434,6 +448,10 @@ var linearTools = map[string][]string{
 	"update_comment": {"save_comment", "update_comment"},
 	"update_issue":   {"save_issue", "update_issue"},
 	"list_statuses":  {"list_issue_statuses", "list_workflow_states", "list_statuses"},
+	"list_teams":     {"list_teams"},
+	"list_labels":    {"list_issue_labels", "list_labels"},
+	"list_projects":  {"list_projects"},
+	"create_issue":   {"save_issue", "create_issue"},
 	"get_user":       {"get_user"},
 }
 
@@ -508,6 +526,9 @@ type linkReq struct {
 type wrapErr struct {
 	msg string
 	err error
+	// status and code, when set, are what the API answers with (see createError).
+	status int
+	code   string
 }
 
 func (e *wrapErr) Error() string { return e.msg }
@@ -550,23 +571,35 @@ func (s *Server) putThreadLinear(w http.ResponseWriter, r *http.Request) {
 		linearError(w, &wrapErr{msg: fmt.Sprintf("could not read issue %s: %s", ident, l.errText(err)), err: err})
 		return
 	}
+	out, err := l.linkIssue(ctx, th, is, req.IncludeBody)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, 200, l.view(out))
+}
+
+// linkIssue stores the thread's link to the issue (keeping what was learned when it is the same
+// issue again), records the comments that exist now as seen, and starts the first sync. The
+// create flow uses it too, so a created issue is linked exactly like a pasted one.
+func (l *linearSvc) linkIssue(ctx context.Context, th *store.Thread, is *linear.Issue, includeBody *bool) (*store.ThreadLink, error) {
+	s, id := l.s, th.ID
 	lk := &store.ThreadLink{ThreadID: id, IssueID: is.ID, Identifier: is.Identifier, URL: is.URL, Title: is.Title, State: is.State,
-		StateType: is.StateType, Assignee: is.Assignee, TeamID: is.TeamID, TeamName: is.TeamName, IncludeBody: req.IncludeBody}
+		StateType: is.StateType, Assignee: is.Assignee, TeamID: is.TeamID, TeamName: is.TeamName, IncludeBody: includeBody}
 	if old, err := s.store.GetThreadLink(ctx, id); err == nil && old.IssueID == lk.IssueID {
 		// The same issue again: keep what was learned (the progress comment, the seen comments).
 		cp := *old
 		cp.Title, cp.State, cp.StateType, cp.Assignee, cp.URL = lk.Title, lk.State, lk.StateType, lk.Assignee, lk.URL
-		if req.IncludeBody != nil {
-			cp.IncludeBody = req.IncludeBody
+		if includeBody != nil {
+			cp.IncludeBody = includeBody
 		}
 		lk = &cp
 	}
 	l.linkMu.Lock()
-	err = s.store.PutThreadLink(ctx, lk)
+	err := s.store.PutThreadLink(ctx, lk)
 	l.linkMu.Unlock()
 	if err != nil {
-		storeError(w, err)
-		return
+		return nil, err
 	}
 	// Baseline: what is on the issue now is not news. Best effort; the first sync retries it.
 	if !lk.Baselined {
@@ -576,8 +609,7 @@ func (s *Server) putThreadLinear(w http.ResponseWriter, r *http.Request) {
 	}
 	s.publishThread(th.SessionID, id)
 	go l.threadChanged(id)
-	out, _ := s.store.GetThreadLink(ctx, id)
-	writeJSON(w, 200, l.view(out))
+	return s.store.GetThreadLink(ctx, id)
 }
 
 func (l *linearSvc) view(k *store.ThreadLink) *store.ThreadLink {
@@ -657,10 +689,11 @@ type linearSettings struct {
 	AuthorFilter string   // "everyone" | "allow_list"
 	Allowed      []string // names, emails or ids
 	IncludeBody  bool
+	ThreadLink   bool // the drafted issue description ends with a link to the minbox thread
 }
 
 func defaultLinearSettings() map[string]any {
-	return map[string]any{"author_filter": "everyone", "allowed_authors": "", "include_body": false}
+	return map[string]any{"author_filter": "everyone", "allowed_authors": "", "include_body": false, "thread_link": false}
 }
 
 // normalizeLinearSettings validates the "linear" setting (a JSON object) and returns it cleaned.
@@ -687,10 +720,10 @@ func normalizeLinearSettings(raw json.RawMessage) (json.RawMessage, error) {
 				return nil, errors.New("allowed_authors must be a string (names, emails or ids; comma or line separated)")
 			}
 			out[k] = s
-		case "include_body":
+		case "include_body", "thread_link":
 			b, ok := v.(bool)
 			if !ok {
-				return nil, errors.New("include_body must be true or false")
+				return nil, errors.New(k + " must be true or false")
 			}
 			out[k] = b
 		}
@@ -717,6 +750,7 @@ func (s *Server) linearSettings(ctx context.Context) linearSettings {
 		}
 	}
 	ls.IncludeBody, _ = m["include_body"].(bool)
+	ls.ThreadLink, _ = m["thread_link"].(bool)
 	return ls
 }
 

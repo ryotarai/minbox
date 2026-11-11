@@ -91,12 +91,17 @@ export class Minbox {
     return `http://127.0.0.1:${this.port}`
   }
 
+  /** While this file exists the fake helper holds back its Linear-issue draft (see fake-suggest.py). */
+  get draftHold() {
+    return join(this.dataDir, 'linear-draft.hold')
+  }
+
   async start() {
     if (!this.slackApi.url) await this.slackApi.start()
     if (!this.linear.url) await this.linear.start()
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp' },
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', FAKE_LINEAR_DRAFT_HOLD: this.draftHold },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
