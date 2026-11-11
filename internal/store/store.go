@@ -491,6 +491,9 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(forkSchema); err != nil {
 		return err
 	}
+	if _, err := db.Exec(handoffSchema); err != nil {
+		return err
+	}
 	for _, c := range addedColumns {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
 		if err != nil {
@@ -1505,6 +1508,9 @@ func (s *Store) MarkDelivered(ctx context.Context, sessionID, messageID string) 
 			return true, err
 		}
 		if err := s.markForkDelivered(ctx, messageID); err != nil {
+			return true, err
+		}
+		if err := s.markHandoffDelivered(ctx, messageID); err != nil {
 			return true, err
 		}
 	}

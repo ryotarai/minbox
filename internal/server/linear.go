@@ -108,6 +108,9 @@ type linearSvc struct {
 	createMu      sync.Mutex
 	creates       map[string]*createCall
 
+	// My issues (linearissues.go).
+	iss issuesState
+
 	mu          sync.Mutex
 	syncing     map[string]bool
 	lastRefresh map[string]time.Time
@@ -126,7 +129,7 @@ func newLinearSvc(s *Server) *linearSvc {
 		s: s, mcpURL: linear.MCPURLFromEnv(os.Getenv("MINBOX_LINEAR_MCP_URL")),
 		hc:        &http.Client{Timeout: 30 * time.Second},
 		teamCache: map[string]teamEntry{}, teamInflight: map[string]*teamCall{}, draftCache: map[string]draftEntry{}, draftInflight: map[string]*draftCall{}, draftSem: make(chan struct{}, draftParallel),
-		creates: map[string]*createCall{}, draftRun: s.runLinearDraft,
+		creates: map[string]*createCall{}, draftRun: s.runLinearDraft, iss: newIssuesState(),
 		outcomes: map[string]*loginOutcome{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
 		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 20 * time.Minute, now: time.Now,
 	}
@@ -650,6 +653,7 @@ var linearTools = map[string][]string{
 	"list_projects":  {"list_projects"},
 	"create_issue":   {"save_issue", "create_issue"},
 	"get_user":       {"get_user"},
+	"list_issues":    {"list_issues"},
 }
 
 func (l *linearSvc) call(ctx context.Context, op string, build func(t linear.Tool) (map[string]any, error)) (any, error) {

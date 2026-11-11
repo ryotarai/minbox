@@ -198,6 +198,10 @@ func (s *Server) forkInject(ctx context.Context, sessionID string, pending []sto
 		if h, ok := s.store.ForkHandoffFor(ctx, pending[i].ID); ok {
 			pre = append(pre, h)
 		}
+		// A thread started from a Linear issue (linearissues.go): same mechanism.
+		if h, ok := s.store.ThreadHandoffFor(ctx, pending[i].ID); ok {
+			pre = append(pre, h)
+		}
 		if len(pre) > 0 {
 			pending[i].Body = strings.Join(pre, "\n\n") + "\n\n" + pending[i].Body
 		}
