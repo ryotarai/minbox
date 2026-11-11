@@ -30,6 +30,13 @@ export class FakeLinear {
   calls: { tool: string; args: any }[] = []
   /** list_issue_labels answers a tool error (the Create dialog then warns). */
   failLabels = false
+  /** Milliseconds list_issue_statuses waits before answering (to see the dialog's loading indicator). */
+  statusesDelay = 0
+  /** Team 2 (Design) has states and labels of its own. */
+  designStatuses = [
+    { id: 'st-d1', name: 'Backlog', type: 'backlog' },
+    { id: 'st-d2', name: 'In Review', type: 'started' },
+  ]
   private seq = 0
   statuses = [
     { id: 'st-2', name: 'Todo', type: 'unstarted' },
@@ -163,6 +170,7 @@ export class FakeLinear {
             return text({ teams: [{ id: 'team-1', name: 'Engineering', key: 'ENG' }, { id: 'team-2', name: 'Design', key: 'DES' }] })
           case 'list_issue_labels':
             if (this.failLabels) return sse({ isError: true, content: [{ type: 'text', text: 'labels are down' }] })
+            if (a.team === 'team-2') return text({ labels: [{ id: 'lab-d1', name: 'Pixels' }] })
             return text({ labels: [{ id: 'lab-1', name: 'Bug' }, { id: 'lab-2', name: 'Feature' }] })
           case 'list_projects':
             return text({ projects: [{ id: 'proj-1', name: 'Website' }] })
@@ -173,8 +181,11 @@ export class FakeLinear {
           }
           case 'list_comments':
             return text({ comments: this.comments })
-          case 'list_issue_statuses':
-            return text({ statuses: this.statuses })
+          case 'list_issue_statuses': {
+            const sts = a.team === 'team-2' ? this.designStatuses : this.statuses
+            if (this.statusesDelay > 0) return void setTimeout(() => text({ statuses: sts }), this.statusesDelay)
+            return text({ statuses: sts })
+          }
           case 'save_issue': {
             if (!a.id) {
               const n = this.created.length + 1

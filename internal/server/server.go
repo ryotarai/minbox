@@ -208,6 +208,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/threads/{id}/linear", s.deleteThreadLinear)
 	mux.HandleFunc("POST /api/threads/{id}/linear/refresh", s.refreshThreadLinear)
 	mux.HandleFunc("POST /api/threads/{id}/linear/draft", s.linearDraft)
+	mux.HandleFunc("POST /api/threads/{id}/linear/team/{teamId}/lists", s.linearTeamLists)
 	mux.HandleFunc("POST /api/threads/{id}/linear/create", s.linearCreate)
 	mux.HandleFunc("GET /api/integrations/linear", s.linearStatus)
 	mux.HandleFunc("POST /api/integrations/linear/login", s.linearLogin)

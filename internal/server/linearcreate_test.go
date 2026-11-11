@@ -21,18 +21,26 @@ func draftEnvelope(draft map[string]any) []byte {
 }
 
 type fakeDraftHelper struct {
-	mu     sync.Mutex
-	prompt string
-	calls  int
-	out    []byte
-	err    error
-	delay  time.Duration
+	mu      sync.Mutex
+	prompt  string
+	calls   int
+	out     []byte
+	err     error
+	delay   time.Duration
+	schemas []string // the schema of each call, in order
+	prompts []string
+	pickOut []byte // the answer of step two (the state and labels), by its schema
+	pickErr error
 }
 
-func (h *fakeDraftHelper) run(ctx context.Context, prompt string) ([]byte, error) {
+func (h *fakeDraftHelper) run(ctx context.Context, prompt, schema string) ([]byte, error) {
 	h.mu.Lock()
 	h.prompt, h.calls = prompt, h.calls+1
+	h.schemas, h.prompts = append(h.schemas, schema), append(h.prompts, prompt)
 	out, err, d := h.out, h.err, h.delay
+	if schema == teamPickSchema {
+		out, err = h.pickOut, h.pickErr
+	}
 	h.mu.Unlock()
 	if d > 0 {
 		select {
@@ -77,13 +85,6 @@ func TestLinearDraftMetaAndFallback(t *testing.T) {
 	if len(teams) != 2 || meta["user"].(map[string]any)["id"] != "user-1" {
 		t.Fatalf("meta %v", meta)
 	}
-	t1 := teams[0].(map[string]any)
-	if len(t1["states"].([]any)) != 4 || t1["default_state_id"] != "st-2" || t1["started_state_id"] != "st-3" {
-		t.Errorf("states %v", t1)
-	}
-	if n := len(t1["labels"].([]any)); n != 2 { // "Design only" belongs to the other team
-		t.Errorf("labels of team 1: %d", n)
-	}
 	if n := len(meta["projects"].([]any)); n != 2 {
 		t.Errorf("projects %d", n)
 	}
@@ -113,11 +114,11 @@ func TestLinearDraftMetaAndFallback(t *testing.T) {
 			t.Errorf("%s called %d times by drafting", c, n)
 		}
 	}
-	// A failing label list is a warning, not a failure.
+	// A failing project list is a warning, not a failure.
 	e.srv.lin.metaCache = nil
-	e.f.failLabels = true
+	e.f.failProjects = true
 	_, obj = e.draft(id, "meta")
-	if w, _ := obj["meta"].(map[string]any)["warnings"].([]any); len(w) != 2 {
+	if w, _ := obj["meta"].(map[string]any)["warnings"].([]any); len(w) != 1 {
 		t.Errorf("warnings %v", obj["meta"])
 	}
 	// No teams: the dialog cannot work and says so.
@@ -142,8 +143,9 @@ func TestLinearDraftLLMDropsUnknownIds(t *testing.T) {
 	h.err = nil
 	h.out = draftEnvelope(map[string]any{
 		"team_id": "team-1", "title": "  Fix the\nlogin bug ", "description": "## Summary\nLogin fails.", "priority": 2,
-		"label_ids": []string{"lab-1", "lab-3", "nope", "lab-1"}, "project_id": "proj-2", "assignee_id": "someone-else", "state_id": "st-9",
+		"project_id": "proj-2", "assignee_id": "someone-else",
 	})
+	h.pickOut = draftEnvelope(map[string]any{"label_ids": []string{"lab-1", "lab-3", "nope", "lab-1"}, "state_id": "st-9"})
 	code, obj := e.draft(id, "llm")
 	if code != 200 || obj["source"] != "llm" {
 		t.Fatalf("%d %v", code, obj)
@@ -160,13 +162,21 @@ func TestLinearDraftLLMDropsUnknownIds(t *testing.T) {
 	if d["project_id"] != "" || d["assignee_id"] != "user-1" || d["state_id"] != "st-2" {
 		t.Errorf("project/assignee/state: %v", d)
 	}
-	// An unknown team is dropped, and ids that hang on it with it.
+	// The drafted team's lists came with it.
+	if tl, _ := obj["team_lists"].(map[string]any); tl == nil || tl["team"].(map[string]any)["id"] != "team-1" {
+		t.Errorf("team_lists %v", obj["team_lists"])
+	}
+	// An unknown team is dropped: no lists are fetched for it, and no second step runs.
 	e.srv.lin.draftCache = map[string]draftEntry{}
-	h.out = draftEnvelope(map[string]any{"team_id": "team-99", "title": "T", "description": "D", "priority": "3", "label_ids": []string{"lab-1"}, "project_id": "proj-1", "assignee_id": nil, "state_id": "st-3"})
+	n := h.calls
+	h.out = draftEnvelope(map[string]any{"team_id": "team-99", "title": "T", "description": "D", "priority": "3", "project_id": "proj-1", "assignee_id": nil})
 	_, obj = e.draft(id, "llm")
 	d = obj["draft"].(map[string]any)
 	if d["team_id"] != "" || d["state_id"] != "" || len(d["label_ids"].([]any)) != 0 || d["project_id"] != "proj-1" || d["priority"] != float64(3) {
 		t.Errorf("unknown team: %v", d)
+	}
+	if h.calls != n+1 {
+		t.Errorf("calls %d -> %d, want one (no second step for an unknown team)", n, h.calls)
 	}
 	// A reply with prose and a code fence around the JSON is still read.
 	e.srv.lin.draftCache = map[string]draftEntry{}
@@ -175,6 +185,91 @@ func TestLinearDraftLLMDropsUnknownIds(t *testing.T) {
 	_, obj = e.draft(id, "llm")
 	if d, _ := obj["draft"].(map[string]any); d["title"] != "Fenced" {
 		t.Errorf("fenced answer: %v", obj)
+	}
+}
+
+func TestLinearDraftTwoStepFetchesOnlyTheDraftedTeam(t *testing.T) {
+	e, h, id := newDraftEnv(t)
+	h.err = nil
+	h.out = draftEnvelope(map[string]any{"team_id": "team-1", "title": "T", "description": "D", "priority": 0, "project_id": nil, "assignee_id": nil})
+	h.pickOut = draftEnvelope(map[string]any{"state_id": "st-3", "label_ids": []string{"lab-2"}})
+	e.draft(id, "meta")
+	_, obj := e.draft(id, "llm")
+	d := obj["draft"].(map[string]any)
+	if d["state_id"] != "st-3" || len(d["label_ids"].([]any)) != 1 || d["label_ids"].([]any)[0] != "lab-2" {
+		t.Errorf("step two not applied: %v", d)
+	}
+	if len(h.schemas) != 2 || h.schemas[0] != draftSchema1 || h.schemas[1] != teamPickSchema {
+		t.Fatalf("helper calls %d (%v)", len(h.schemas), len(h.schemas))
+	}
+	// Step one sees the teams and projects but neither states nor labels; step two sees the
+	// drafted team's states and labels only.
+	p1, p2 := h.prompts[0], h.prompts[1]
+	if !strings.Contains(p1, "team: id=team-1") || !strings.Contains(p1, "team: id=team-2") || !strings.Contains(p1, "project: id=proj-1") || strings.Contains(p1, "state: id=") || strings.Contains(p1, "label: id=") {
+		t.Errorf("step one prompt:\n%s", p1)
+	}
+	if !strings.Contains(p2, "state: id=st-3") || !strings.Contains(p2, "label: id=lab-2") || strings.Contains(p2, "lab-3") || strings.Contains(p2, "team-2") {
+		t.Errorf("step two prompt:\n%s", p2)
+	}
+	// One pair of list calls, for the drafted team alone.
+	for _, tool := range []string{"list_issue_statuses", "list_issue_labels"} {
+		cs := e.f.callsOf(tool)
+		if len(cs) != 1 || cs[0].Args["team"] != "team-1" {
+			t.Errorf("%s calls %v", tool, cs)
+		}
+	}
+	// A failing step two keeps the draft (default state, no labels).
+	e.srv.lin.draftCache = map[string]draftEntry{}
+	h.pickErr = errors.New("boom")
+	_, obj = e.draft(id, "llm")
+	d = obj["draft"].(map[string]any)
+	if d["title"] != "T" || d["state_id"] != "st-2" || len(d["label_ids"].([]any)) != 0 {
+		t.Errorf("step two failure: %v", d)
+	}
+	// The extra prompt is in both steps' trusted section.
+	e.srv.lin.draftCache = map[string]draftEntry{}
+	h.pickErr = nil
+	e.do("PUT", "/api/settings", map[string]any{"linear": map[string]any{"draft_extra_prompt": "Always pick the Bug label"}}, nil)
+	h.schemas, h.prompts = nil, nil
+	e.draft(id, "llm")
+	if len(h.prompts) != 2 || !strings.Contains(h.prompts[0], "Always pick the Bug label") || !strings.Contains(h.prompts[1], "Always pick the Bug label") {
+		t.Errorf("extra prompt missing: %d prompts", len(h.prompts))
+	}
+}
+
+func TestLinearDraftPreselectedTeamIsOneStep(t *testing.T) {
+	e, h, id := newDraftEnv(t)
+	h.err = nil
+	// The helper answers for another team: the chosen one wins.
+	h.out = draftEnvelope(map[string]any{"team_id": "team-1", "title": "T", "description": "D", "priority": 0, "project_id": nil, "assignee_id": nil, "state_id": "st-3", "label_ids": []string{"lab-3", "lab-2"}})
+	code, obj, _ := e.do("POST", "/api/threads/"+id+"/linear/draft", map[string]any{"stage": "llm", "team_id": "team-2"}, nil)
+	if code != 200 {
+		t.Fatalf("%d %v", code, obj)
+	}
+	d := obj["draft"].(map[string]any)
+	if d["team_id"] != "team-2" {
+		t.Errorf("team %v", d["team_id"])
+	}
+	if len(h.schemas) != 1 || h.schemas[0] != draftSchema {
+		t.Fatalf("calls %v", h.schemas)
+	}
+	p := h.prompts[0]
+	if !strings.Contains(p, "team_id must be exactly team-2") || !strings.Contains(p, "label: id=lab-3") || !strings.Contains(p, "state: id=st-2") || strings.Contains(p, "team: id=team-1") {
+		t.Errorf("prompt:\n%s", p)
+	}
+	// lab-2 is not a label of... all of team 2's labels include workspace labels; lab-3 is its own.
+	if l := d["label_ids"].([]any); len(l) != 2 {
+		t.Errorf("labels %v", l)
+	}
+	for _, c := range e.f.callsOf("list_issue_statuses") {
+		if c.Args["team"] != "team-2" {
+			t.Errorf("lists fetched for %v", c.Args["team"])
+		}
+	}
+	// A different team is a different draft (the cache key has the team).
+	e.draft(id, "llm")
+	if h.calls != 3 { // one step with the team + two steps without
+		t.Errorf("helper calls %d", h.calls)
 	}
 }
 
@@ -325,6 +420,47 @@ func TestLinearCreateLinksTheThread(t *testing.T) {
 		if n := len(e.f.created); n != 1 {
 			t.Errorf("%s: %d issues created", variant, n)
 		}
+	}
+}
+
+func TestLinearCreateValidatesAgainstLazilyLoadedLists(t *testing.T) {
+	e, _, id := newDraftEnv(t)
+	// Never opened the dialog for this team: the lists are fetched now, once, to check the ids.
+	body := goodCreate()
+	body["label_ids"] = []string{"lab-3"} // team 2's label on a team 1 issue
+	if code, obj := e.create(id, body); code != 400 || obj["code"] != "unknown_label" {
+		t.Fatalf("%d %v", code, obj)
+	}
+	if a, b := len(e.f.callsOf("list_issue_statuses")), len(e.f.callsOf("list_issue_labels")); a != 1 || b != 1 {
+		t.Errorf("calls: statuses %d labels %d", a, b)
+	}
+	body = goodCreate()
+	body["state_id"] = "st-x"
+	if code, obj := e.create(id, body); code != 400 || obj["code"] != "unknown_state" {
+		t.Fatalf("%d %v", code, obj)
+	}
+	if a := len(e.f.callsOf("list_issue_statuses")); a != 1 { // cached
+		t.Errorf("status calls %d", a)
+	}
+	// Without a state or labels no team lists are needed at all.
+	e2, _, id2 := newDraftEnv(t)
+	body = goodCreate()
+	delete(body, "state_id")
+	delete(body, "label_ids")
+	if code, obj := e2.create(id2, body); code != 200 {
+		t.Fatalf("%d %v", code, obj)
+	}
+	if a := len(e2.f.callsOf("list_issue_statuses")) + len(e2.f.callsOf("list_issue_labels")); a != 0 {
+		t.Errorf("%d team list calls", a)
+	}
+	// A team whose lists cannot be loaded cannot vouch for a state: refused, nothing created.
+	e3, _, id3 := newDraftEnv(t)
+	e3.f.failStatusTeam = "team-1"
+	if code, obj := e3.create(id3, goodCreate()); code != 400 || obj["code"] != "unknown_state" {
+		t.Errorf("%d %v", code, obj)
+	}
+	if n := len(e3.f.created); n != 0 {
+		t.Errorf("created %d", n)
 	}
 }
 

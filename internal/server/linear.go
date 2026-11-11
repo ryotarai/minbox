@@ -97,11 +97,14 @@ type linearSvc struct {
 	metaMu        sync.Mutex
 	metaCache     *linearMeta
 	metaAt        time.Time
+	teamMu        sync.Mutex
+	teamCache     map[string]teamEntry
+	teamInflight  map[string]*teamCall
 	draftMu       sync.Mutex
 	draftCache    map[string]draftEntry
 	draftInflight map[string]*draftCall
 	draftSem      chan struct{}
-	draftRun      func(ctx context.Context, prompt string) ([]byte, error) // replaced in tests
+	draftRun      func(ctx context.Context, prompt, schema string) ([]byte, error) // replaced in tests
 	createMu      sync.Mutex
 	creates       map[string]*createCall
 
@@ -121,8 +124,8 @@ type linearSvc struct {
 func newLinearSvc(s *Server) *linearSvc {
 	return &linearSvc{
 		s: s, mcpURL: linear.MCPURLFromEnv(os.Getenv("MINBOX_LINEAR_MCP_URL")),
-		hc:         &http.Client{Timeout: 30 * time.Second},
-		draftCache: map[string]draftEntry{}, draftInflight: map[string]*draftCall{}, draftSem: make(chan struct{}, draftParallel),
+		hc:        &http.Client{Timeout: 30 * time.Second},
+		teamCache: map[string]teamEntry{}, teamInflight: map[string]*teamCall{}, draftCache: map[string]draftEntry{}, draftInflight: map[string]*draftCall{}, draftSem: make(chan struct{}, draftParallel),
 		creates: map[string]*createCall{}, draftRun: s.runLinearDraft,
 		outcomes: map[string]*loginOutcome{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
 		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 20 * time.Minute, now: time.Now,

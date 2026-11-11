@@ -59,7 +59,7 @@ test('Create Linear issue: warning details are visible and Reload lists refetche
   await page.getByTestId('linear-create-open').click()
   await expect(page.getByTestId('linear-create-counts')).toHaveText('2 teams loaded, 1 project', { timeout: 15_000 })
   const warnings = page.getByTestId('linear-create-warnings')
-  await expect(warnings).toBeVisible() // open by default, no hover needed
+  await expect(warnings).toBeVisible({ timeout: 15_000 }) // open by default, no hover needed
   await expect(warnings).toContainText('list_issue_labels of Engineering')
   await expect(warnings).toContainText('labels are down')
   await expect(page.getByTestId('linear-create-lists-summary')).toContainText('list_teams [list_teams]: 1 page(s), 2 items, 2 parsed')

@@ -64,6 +64,8 @@ type fakeLinear struct {
 	failTeamsPage2 bool
 	failStatusTeam string // list_issue_statuses for this team id is a tool error
 	failLabels     bool
+	failProjects   bool
+	failLabelsTeam string // list_issue_labels for this team id is a tool error
 	createDelay    time.Duration
 }
 
@@ -305,12 +307,16 @@ func (f *fakeLinear) mcp(w http.ResponseWriter, r *http.Request) {
 			reply(map[string]any{"content": []map[string]any{{"type": "text", "text": s}}})
 		})
 	case "list_issue_labels":
-		if f.failLabels {
+		if f.failLabels || (f.failLabelsTeam != "" && s("team") == f.failLabelsTeam) {
 			toolErr("labels unavailable")
 			return
 		}
 		text(map[string]any{"labels": []map[string]any{{"id": "lab-1", "name": "Bug", "color": "#f00"}, {"id": "lab-2", "name": "Feature"}, {"id": "lab-3", "name": "Design only", "team": map[string]any{"id": "team-2"}}}})
 	case "list_projects":
+		if f.failProjects {
+			toolErr("projects unavailable")
+			return
+		}
 		text(map[string]any{"projects": []map[string]any{{"id": "proj-1", "name": "Website"}, {"id": "proj-2", "name": "Design system", "teams": []map[string]any{{"id": "team-2"}}}}})
 	case "save_issue", "create_issue":
 		if call.Name == "create_issue" || s("id") == "" {

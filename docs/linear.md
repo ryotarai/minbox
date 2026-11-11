@@ -23,11 +23,23 @@ A thread that is not linked (with Linear connected) has **Create Linear issue** 
 issue**. The dialog opens at once and fills in three steps; **nothing is written to Linear until you press
 Create**.
 
-1. **Linear's lists** (through the MCP client, adapting to `tools/list`): teams, each team's workflow states
-   and labels, projects, and who you are. Cached for 90 seconds. The dialog gets a **basic prefill** from the
-   thread: title = the thread subject (else the first line of your first message), description = the latest
-   agent message (else your first message), the assignee = you, the state = the team's unstarted state, and a
-   team or project named like the minbox project (or the only team).
+1. **Linear's global lists** (through the MCP client, adapting to `tools/list`): teams (paginated), projects
+   (with their team ids when the tool says), and who you are. Cached for 90 seconds. **Nothing that hangs on a
+   team is fetched here**: the dialog makes no per-team call while it loads, however many teams there are.
+   The dialog gets a **basic prefill** from the thread: title = the thread subject (else the first line of
+   your first message), description = the latest agent message (else your first message), the assignee = you,
+   and a team or project named like the minbox project (or the only team).
+   **A team's own lists load when the team is selected.** The lists that hang on a team (workflow states via
+   `list_issue_statuses`, labels via `list_issue_labels`, one paginated call each) are fetched by
+   `POST /api/threads/{id}/linear/team/{teamId}/lists` (body `{"refresh":true}` bypasses the cache) when a team
+   gets selected: by you in the dialog, by the prefill, or by the helper's draft. They are cached per team for
+   90 seconds (a fetch with warnings is never cached), and simultaneous requests for one team share one fetch.
+   Until they arrive the State field is disabled and "Loading states and labels..." shows next to Labels; what
+   you typed is kept. Switching team clears the old team's labels and state (they belong to the old team), loads
+   the new team's lists and then sets its default (unstarted) state; going back to a team loaded before hits the
+   cache. A team whose lists fail stays selectable (a warning names the team, Retry is offered). The Details
+   block shows the global lists plus one `list_issue_statuses of <team>` / `list_issue_labels of <team>` entry
+   per team loaded so far.
 2. **The helper agent's guess** ("Drafting..." shows while it runs; it never blocks the dialog). When a helper
    agent is installed (the server says so with `llm_available` in the first response), the dialog does not
    show the basic prefill first: the title and description stay empty with a "Drafting..." hint (you can type
@@ -51,8 +63,19 @@ Create**.
    leniently (a code fence or prose around the JSON is fine) and **every id it names (team, state, labels,
    project, assignee) must exist in the fetched lists**, else it is dropped (a label must belong to the team,
    a project to the team when it says so; the assignee can only be you). Runs are limited to two at a time,
-   one per thread, message count and last message (so a growing thread refreshes), and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
+   one per thread, message count, last message, extra prompt and chosen team (so a growing thread refreshes), and kept 10 minutes (a failure 15 seconds), so reopening the dialog does
    not ask again.
+   **Two steps, so no big upfront fetch.** Without a chosen team the draft runs in two helper calls. Step 1's
+   prompt holds the thread, the teams, the projects and you (no states, no labels) and answers `team_id`, title,
+   description, priority, project and assignee. The server then loads **that team's** lists through the shared
+   per-team loader (the same cache the dialog uses) and, when the team has states or labels, step 2 (a small
+   prompt: the team's lists plus the drafted title and description, same untrusted delimiting, same trusted
+   extra-prompt section) chooses `state_id` and `label_ids`, which are validated against the lists. A failing
+   step 2 keeps the draft (the team's default state, no labels). When a team is **already selected when the
+   draft starts** (you chose it, or the prefill named it), the dialog passes it (`team_id` in the `llm` stage):
+   the lists are loaded first and a single call drafts for that team with its states and labels in the prompt,
+   and the draft's team is forced to it. The lists of the drafted team come back with the draft (`team_lists`)
+   so the dialog does not ask again.
    **Extra prompt.** Settings -> Integrations -> Linear -> "Auto-fill: extra prompt" (`linear.draft_extra_prompt`,
    at most 4000 characters, empty by default) is your own text. The server cleans it (control characters other than
    newline and tab dropped, our delimiter tags removed, capped; nothing is redacted, and it is not logged) and puts it in the
@@ -67,14 +90,15 @@ Create**.
    fails or times out (40 s), the basic prefill stays and a small note says why.
 
 Fields: Team (required), Title (required), Description (Markdown), Priority, Labels, Project, Assignee
-(Me / Unassigned), State (the team's states; the default is its unstarted one). **Create** is disabled until
+(Me / Unassigned), State (the team's states, loaded when the team is selected; the default is its unstarted
+one). **Create** is disabled until
 the team and title are set. The description contains the model's short summary, not the conversation. It
 ends with a link to the minbox thread only if **Settings -> Integrations -> Linear -> "Link to the thread in
 drafted issues"** is on (default off) and the public URL is set; you can edit it away in the dialog anyway.
 
 Create calls `save_issue` (without `id`) or `create_issue`, picking argument names from the tool's schema
 (`title`, `description`, `team`, `state`, `assignee`, `priority`, `labels`, `project`; ids are passed as
-ids), then links the thread exactly as the link flow does (stores identifier, URL, title, state, records the
+ids; the client's ids are never trusted: the server checks the team, project and assignee against the global lists and the state and labels against the selected team's own lists, loading them on demand when they are not cached, and refuses with 400 `unknown_state` / `unknown_label` when they do not match, also when the team's lists cannot be loaded), then links the thread exactly as the link flow does (stores identifier, URL, title, state, records the
 existing comments as seen, starts the first sync). A **submission id** makes it idempotent: a double click or
 a retried request gets the first one's answer; without one, simultaneous requests for a thread are coalesced
 and a thread that is already linked is refused (409). Linear's refusal is shown in the dialog (HTTP 422, code
@@ -200,7 +224,8 @@ against a fake OAuth + MCP server.
 - **Create dialog: teams are missing, or "Some of Linear's lists could not be loaded."** Open the dialog's
   **Details** (open by itself when something failed) and read it:
   - The header says "N teams loaded, M projects". Every team the tool returned is offered, even when its
-    states or labels failed (it then has no states / labels and no default state).
+    states or labels fail to load (it then has no states / labels and no default state). Those two lists are
+    fetched when the team is selected, so their warnings appear after you (or the draft) pick the team.
   - Each warning starts with the list: `list_teams: ...`, `list_issue_statuses of <team>: ...`,
     `list_issue_labels of <team>: ...`, `list_projects: ...`. The text after it is the scrubbed error
     (`linear: tool failed: ...`, `HTTP 429`, ...), or `page 2 failed: ...` (the pages before it are kept),
@@ -210,11 +235,12 @@ against a fake OAuth + MCP server.
   - The monospace block under it is the per-list summary (tool name used, pages fetched, items read /
     parsed / skipped, error): paste it when reporting a problem. The server logs the same one line per
     warning (`linear: meta: ...`) in `~/.minbox/minbox.log`.
-  - **Reload lists** refetches everything and bypasses the 90 s cache. A result with warnings is never
-    cached, so reopening the dialog retries anyway.
+  - **Reload lists** refetches the global lists and the selected team's lists, bypassing the 90 s caches
+    (other teams load again when selected). A result with warnings is never cached, so reopening the dialog
+    retries anyway.
   - Lists are read page by page (up to 10 pages) with the largest `limit` the tool's schema allows (100 when
     it declares no maximum, never above 250), passing the cursor under the argument name the schema declares
-    (`cursor`, `after`, `endCursor`). Up to 250 teams are offered; per-team calls run 4 at a time.
+    (`cursor`, `after`, `endCursor`). Up to 250 teams are offered.
 - "Linear login failed" on the callback page but Settings says Connected: the callback was requested twice
   (a prefetch, reload or second tab). The first one succeeded. minbox now shows the success page again for a
   state that just succeeded (kept 5 minutes, no second token exchange). The log shows both hits as

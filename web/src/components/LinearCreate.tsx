@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconLinear } from './icons'
-import { api, type LinearDraft, type LinearMeta, type Thread } from '../api'
+import { api, type LinearDraft, type LinearListInfo, type LinearMeta, type LinearTeam, type LinearTeamLists, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { Button, Modal, cx } from './ui'
 
-// "Create Linear issue" from a thread. The dialog opens at once. Linear's lists (teams, states,
-// labels, projects) load first and the form gets a basic prefill from the thread; then the local
-// helper agent's guess arrives and fills in only the fields the person has not touched. Nothing
-// is sent to Linear until Create.
+// "Create Linear issue" from a thread. The dialog opens at once. Linear's global lists (teams,
+// projects, who you are) load first and the form gets a basic prefill from the thread; the lists
+// that hang on a team (workflow states, labels) are fetched only when that team is selected (by the
+// person, or by the draft). Then the local helper agent's guess arrives and fills in only the
+// fields the person has not touched. Nothing is sent to Linear until Create.
 
 const PRIORITIES = ['No priority', 'Urgent', 'High', 'Medium', 'Low']
 const EMPTY: LinearDraft = { team_id: '', title: '', description: '', priority: 0, label_ids: [], project_id: '', assignee_id: '', state_id: '' }
 type Field = keyof LinearDraft
+/** What is known of one team's own lists: loading, loaded (with this fetch's warnings and summaries) or failed. */
+type TeamInfo = { status: 'loading' | 'done' | 'error'; team?: LinearTeam; warnings: string[]; lists: LinearListInfo[]; error?: string }
 
 const field = 'h-9 w-full rounded-md border border-linestrong bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent'
 
@@ -27,6 +30,15 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
   const touched = useRef(new Set<Field>())
   const [meta, setMeta] = useState<LinearMeta | null>(null)
   const metaRef = useRef<LinearMeta | null>(null)
+  const [teamInfo, setTeamInfoState] = useState<Record<string, TeamInfo>>({})
+  const teamInfoRef = useRef<Record<string, TeamInfo>>({})
+  const setTeamInfo = useCallback((id: string | null, info?: TeamInfo) => {
+    const next = { ...teamInfoRef.current }
+    if (id && info) next[id] = info
+    else if (id) delete next[id]
+    teamInfoRef.current = next
+    setTeamInfoState(next)
+  }, [])
   const [loadErr, setLoadErr] = useState('')
   const [drafting, setDrafting] = useState(false)
   const [note, setNote] = useState('')
@@ -58,11 +70,41 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     set('project_id', d.project_id, true)
     set('label_ids', d.label_ids, true)
     // A team the person never chose and a state that is not that team's: use the team's default.
-    const t = metaRef.current?.teams.find((x) => x.id === next.team_id)
-    if (t && !t.states.some((s) => s.id === next.state_id)) next.state_id = t.default_state_id
+    const t = teamInfoRef.current[next.team_id]?.team
+    if (t && !(t.states ?? []).some((s) => s.id === next.state_id)) next.state_id = t.default_state_id ?? ''
+    // The lists are not here yet (they load for the team): the state is set when they arrive.
+    else if (!t && next.team_id !== cur.team_id) next.state_id = ''
+
     formRef.current = next
     setForm(next)
   }, [])
+
+  // Fetch the lists that hang on a team (states, labels): once per team while the dialog is open
+  // (the server caches them too); refresh bypasses both.
+  const loadTeam = useCallback(
+    async (id: string, refresh = false) => {
+      const cur = teamInfoRef.current[id]
+      if (!refresh && (cur?.status === 'loading' || cur?.status === 'done')) return
+      setTeamInfo(id, { status: 'loading', warnings: [], lists: [], team: cur?.team })
+      try {
+        const r = await api.linearTeamLists(thread.id, id, refresh)
+        if (closed.current) return
+        setTeamInfo(id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
+        // The team's default state, unless the person (or the draft) already chose one.
+        const f = formRef.current
+        if (f.team_id === id && !f.state_id && r.team.default_state_id) {
+          const next = { ...f, state_id: r.team.default_state_id }
+          formRef.current = next
+          setForm(next)
+        }
+      } catch (e) {
+        if (closed.current) return
+        setTeamInfo(id, { status: 'error', warnings: [], lists: [], error: e instanceof Error ? e.message : String(e) })
+      }
+    },
+    [thread.id, setTeamInfo],
+  )
+  const gotTeamLists = (r: LinearTeamLists) => setTeamInfo(r.team.id, { status: 'done', team: r.team, warnings: r.warnings ?? [], lists: r.lists ?? [] })
 
   const load = useCallback(async () => {
     setLoadErr('')
@@ -89,8 +131,11 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     // No helper: the fallback is already applied and there is nothing to wait for.
     if (!helper) return
     try {
-      const r = await api.linearDraft(thread.id, 'llm')
+      // A team already selected (by the person, or the project-named guess): the draft is made for it, in one step.
+      const chosen = formRef.current.team_id
+      const r = await api.linearDraft(thread.id, 'llm', false, chosen)
       if (closed.current) return
+      if (r.team_lists) gotTeamLists(r.team_lists) // the drafted team's lists came with the draft
       if (r.draft) apply(r.draft)
       else {
         if (fallback) apply(fallback)
@@ -106,6 +151,14 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
   useEffect(() => {
     void load()
   }, [load])
+  // Whatever team is selected (by the person, the basic prefill or the draft) gets its lists. A
+  // team only guessed while the draft is pending waits for the draft (which usually decides it).
+  useEffect(() => {
+    const id = form.team_id
+    if (!id || !meta) return
+    if (drafting && !touched.current.has('team_id')) return
+    void loadTeam(id)
+  }, [form.team_id, meta, drafting, loadTeam])
 
   // Reload lists: refetch Linear's lists bypassing the server's cache; the form keeps what it holds.
   const [reloading, setReloading] = useState(false)
@@ -116,6 +169,10 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
       if (closed.current) return
       metaRef.current = r.meta ?? null
       setMeta(r.meta ?? null)
+      // The selected team's lists again (bypassing the cache); other teams load again when selected.
+      const sel = formRef.current.team_id
+      for (const id of Object.keys(teamInfoRef.current)) if (id !== sel) setTeamInfo(id)
+      if (sel) await loadTeam(sel, true)
     } catch (e) {
       if (!closed.current) toast('Could not reload the lists: ' + (e instanceof Error ? e.message : String(e)))
     } finally {
@@ -124,6 +181,13 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
   }
 
   const team = useMemo(() => meta?.teams.find((t) => t.id === form.team_id), [meta, form.team_id])
+  const info: TeamInfo | undefined = teamInfo[form.team_id]
+  const states = info?.team?.states ?? []
+  const labels = info?.team?.labels ?? []
+  // Lists of the selected team are on their way (or waiting for the draft to decide the team).
+  const listsLoading = !!team && (info?.status === 'loading' || (!info && drafting))
+  const allWarnings = useMemo(() => [...(meta?.warnings ?? []), ...Object.values(teamInfo).flatMap((i) => i.warnings)], [meta, teamInfo])
+  const allLists = useMemo(() => [...(meta?.lists ?? []), ...Object.values(teamInfo).flatMap((i) => i.lists)], [meta, teamInfo])
   const projects = useMemo(() => (meta?.projects ?? []).filter((p) => !p.team_ids?.length || !form.team_id || p.team_ids.includes(form.team_id)), [meta, form.team_id])
 
   const edit = (patch: Partial<LinearDraft>) => {
@@ -133,12 +197,17 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
     setForm(next)
   }
   const chooseTeam = (id: string) => {
-    const t = meta?.teams.find((x) => x.id === id)
-    // The team's own lists replace the old team's. The person's other fields stay.
-    const patch: Partial<LinearDraft> = { team_id: id, label_ids: [], state_id: t?.default_state_id ?? '' }
+    // The old team's labels and state do not belong to the new team: cleared (the new team's lists
+    // load, and its default state is set when they arrive). The person's other fields stay.
+    const patch: Partial<LinearDraft> = { team_id: id }
     const p = meta?.projects.find((x) => x.id === formRef.current.project_id)
     if (p?.team_ids?.length && !p.team_ids.includes(id)) patch.project_id = ''
     edit(patch)
+    touched.current.delete('state_id')
+    touched.current.delete('label_ids')
+    const next = { ...formRef.current, label_ids: [], state_id: teamInfoRef.current[id]?.team?.default_state_id ?? '' }
+    formRef.current = next
+    setForm(next)
   }
 
   const ready = !!form.team_id && !!form.title.trim() && !busy && !!meta
@@ -201,24 +270,24 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
                 <span data-testid="linear-create-counts">
                   {meta.teams.length} {meta.teams.length === 1 ? 'team' : 'teams'} loaded, {meta.projects.length} {meta.projects.length === 1 ? 'project' : 'projects'}
                 </span>
-                {meta.warnings?.length ? <span>Some of Linear's lists could not be loaded.</span> : null}
+                {allWarnings.length ? <span>Some of Linear's lists could not be loaded.</span> : null}
                 <Button size="sm" data-testid="linear-create-reload" disabled={reloading} onClick={() => void reloadLists()}>
                   {reloading ? 'Reloading…' : 'Reload lists'}
                 </Button>
               </div>
-              {meta.warnings?.length || meta.lists?.length ? (
-                <details data-testid="linear-create-details" open={!!meta.warnings?.length}>
+              {allWarnings.length || allLists.length ? (
+                <details data-testid="linear-create-details" open={!!allWarnings.length}>
                   <summary className="cursor-pointer">Details</summary>
-                  {meta.warnings?.length ? (
+                  {allWarnings.length ? (
                     <ul data-testid="linear-create-warnings" className="list-disc pl-4 select-text">
-                      {meta.warnings.map((w, i) => (
+                      {allWarnings.map((w, i) => (
                         <li key={i}>{w || 'unknown problem (no detail)'}</li>
                       ))}
                     </ul>
                   ) : null}
-                  {meta.lists?.length ? (
+                  {allLists.length ? (
                     <pre data-testid="linear-create-lists-summary" className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap select-text font-mono text-[11px]">
-                      {meta.lists
+                      {allLists
                         .map((l) => `${l.list} [${l.tool ?? '?'}]: ${l.pages} page(s), ${l.items} items, ${l.parsed} parsed, ${l.skipped} skipped${l.error ? ', error: ' + l.error : ''}`)
                         .join('\n')}
                     </pre>
@@ -241,9 +310,9 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
             </label>
             <label className={label}>
               State
-              <select data-testid="linear-create-state" value={form.state_id} onChange={(e) => edit({ state_id: e.target.value })} className={field} disabled={!team}>
-                <option value="">Team default</option>
-                {(team?.states ?? []).map((s) => (
+              <select data-testid="linear-create-state" value={form.state_id} onChange={(e) => edit({ state_id: e.target.value })} className={field} disabled={!team || listsLoading}>
+                <option value="">{listsLoading ? 'Loading…' : 'Team default'}</option>
+                {states.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -297,10 +366,26 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
             </label>
           </div>
           <div className={label}>
-            Labels
+            <span className="flex items-center gap-2">
+              Labels
+              {listsLoading && (
+                <span data-testid="linear-create-team-loading" className="text-[12px]">
+                  Loading states and labels…
+                </span>
+              )}
+            </span>
             <div className="flex flex-wrap gap-1.5" data-testid="linear-create-labels">
-              {(team?.labels ?? []).length === 0 && <span className="text-[12px]">{team ? 'This team has no labels.' : 'Choose a team first.'}</span>}
-              {(team?.labels ?? []).map((l) => {
+              {info?.status === 'error' ? (
+                <span className="text-[12px] text-danger" data-testid="linear-create-team-error">
+                  Could not load this team's states and labels ({info.error}){' '}
+                  <button type="button" className="underline" data-testid="linear-create-team-retry" onClick={() => void loadTeam(form.team_id, true)}>
+                    Retry
+                  </button>
+                </span>
+              ) : (
+                labels.length === 0 && !listsLoading && <span className="text-[12px]">{team ? 'This team has no labels.' : 'Choose a team first.'}</span>
+              )}
+              {labels.map((l) => {
                 const on = form.label_ids.includes(l.id)
                 return (
                   <button

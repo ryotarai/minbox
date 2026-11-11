@@ -201,3 +201,78 @@ test('Linear create dialog: without a helper agent the basic draft is there at o
   await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0)
   expect(llmCalls).toBe(0)
 })
+
+// The lists that hang on a team (workflow states, labels) are fetched only for a team that gets
+// selected: nothing per team while the dialog loads, one pair of calls per selected team, a loading
+// indicator meanwhile, the old team's choices cleared on a switch, a cache hit when going back.
+test("Linear create dialog: a team's states and labels load when it is selected, and only then", async ({ page, minbox }) => {
+  const lin = minbox.linear
+  const teamsOf = (tool: string) => lin.calls.filter((c) => c.tool === tool).map((c) => c.args.team)
+  writeFileSync(minbox.draftHold, '')
+  await openCreateDialog(page, minbox, 'lin-lazy')
+  await expect(page.getByTestId('linear-create-team').locator('option')).toHaveCount(3)
+  await expect(page.getByTestId('linear-create-drafting')).toBeVisible()
+  // The draft is pending and no team is chosen: Linear was asked for no team's lists.
+  expect(teamsOf('list_issue_statuses')).toEqual([])
+  expect(teamsOf('list_issue_labels')).toEqual([])
+  rmSync(minbox.draftHold)
+  await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0, { timeout: 15_000 })
+  // The draft chose team 1: its lists (one pair of calls) came with it.
+  await expect(page.getByTestId('linear-create-team')).toHaveValue('team-1')
+  await expect(page.getByTestId('linear-create-label-Bug')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-3')
+  expect(teamsOf('list_issue_statuses')).toEqual(['team-1'])
+  expect(teamsOf('list_issue_labels')).toEqual(['team-1'])
+
+  // Switch to team 2: loading indicator, fields held back, then its own lists; the old choices are gone.
+  lin.statusesDelay = 1500
+  await page.getByTestId('linear-create-title').fill('Mine')
+  await page.getByTestId('linear-create-team').selectOption('team-2')
+  await expect(page.getByTestId('linear-create-team-loading')).toHaveText('Loading states and labels…')
+  await expect(page.getByTestId('linear-create-state')).toBeDisabled()
+  await expect(page.getByTestId('linear-create-label-Bug')).toHaveCount(0)
+  await expect(page.getByTestId('linear-create-team-loading')).toHaveCount(0, { timeout: 15_000 })
+  await expect(page.getByTestId('linear-create-label-Pixels')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('linear-create-state')).toBeEnabled()
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-d1') // the team's default
+  await expect(page.getByTestId('linear-create-state').locator('option')).toHaveText(['Team default', 'Backlog', 'In Review'])
+  await expect(page.getByTestId('linear-create-title')).toHaveValue('Mine') // typed text kept
+  // Both teams' lists are in the Details, with the team named.
+  await expect(page.getByTestId('linear-create-lists-summary')).toContainText('list_issue_statuses of Design')
+  expect(teamsOf('list_issue_statuses')).toEqual(['team-1', 'team-2'])
+  expect(teamsOf('list_issue_labels')).toEqual(['team-1', 'team-2'])
+
+  // Back to team 1: cached, no new calls, and team 2's choices do not carry over.
+  lin.statusesDelay = 0
+  await page.getByTestId('linear-create-team').selectOption('team-1')
+  await expect(page.getByTestId('linear-create-label-Bug')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-2')
+  expect(teamsOf('list_issue_statuses')).toEqual(['team-1', 'team-2'])
+})
+
+test("Linear create dialog: a team already selected when the draft starts is the draft's team (one step, no lists for other teams)", async ({ page, minbox }) => {
+  const lin = minbox.linear
+  // The basic prefill names team 2 (as when a team is named like the minbox project): it is selected
+  // before the draft request is made, which then asks for a draft for that team.
+  let llmBody: any
+  await page.route('**/api/threads/*/linear/draft', async (route) => {
+    const body = route.request().postDataJSON()
+    if (body?.stage === 'llm') {
+      llmBody = body
+      return route.continue()
+    }
+    const r = await route.fetch()
+    const j = await r.json()
+    await route.fulfill({ response: r, json: { ...j, fallback: { ...j.fallback, team_id: 'team-2' } } })
+  })
+  await openCreateDialog(page, minbox, 'lin-preteam')
+  await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0, { timeout: 15_000 })
+  await expect(page.getByTestId('linear-create-team')).toHaveValue('team-2')
+  expect(llmBody.team_id).toBe('team-2')
+  await expect(page.getByTestId('linear-create-state')).toHaveValue('st-d2')
+  await expect(page.getByTestId('linear-create-label-Pixels')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('linear-create-desc')).toHaveValue(/Drafted from the thread/)
+  // Team 1 was never asked for; team 2 once.
+  const lists = lin.calls.filter((c) => c.tool === 'list_issue_statuses' || c.tool === 'list_issue_labels')
+  expect(lists.map((c) => c.args.team)).toEqual(['team-2', 'team-2'])
+})

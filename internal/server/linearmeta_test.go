@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -84,34 +85,123 @@ func TestLinearMetaLimitHonoured(t *testing.T) {
 	}
 }
 
-func TestLinearMetaStatusFailureKeepsTeam(t *testing.T) {
+// teamListsOf asks for one team's lists (the call the dialog makes when a team is selected).
+func (e *linEnv) teamListsOf(id, team string, refresh bool) (int, map[string]any) {
+	e.t.Helper()
+	code, obj, _ := e.do("POST", "/api/threads/"+id+"/linear/team/"+team+"/lists", map[string]any{"refresh": refresh}, nil)
+	return code, obj
+}
+
+func TestLinearMetaMakesNoPerTeamCalls(t *testing.T) {
 	e, _, id := newDraftEnv(t)
-	e.f.failStatusTeam = "team-2"
 	m := e.metaOf(id, false)
-	teams := m["teams"].([]any)
-	if len(teams) != 2 {
-		t.Fatalf("teams %v", teams)
+	for _, tm := range m["teams"].([]any) {
+		if tm := tm.(map[string]any); tm["states"] != nil || tm["labels"] != nil {
+			t.Errorf("team lists in the meta stage: %v", tm)
+		}
 	}
-	t2 := teams[1].(map[string]any)
-	if t2["name"] != "Design" || len(t2["states"].([]any)) != 0 || t2["default_state_id"] != "" {
-		t.Errorf("team 2 %v", t2)
+	for _, tool := range []string{"list_issue_statuses", "list_issue_labels"} {
+		if n := len(e.f.callsOf(tool)); n != 0 {
+			t.Errorf("%s called %d times by the meta stage", tool, n)
+		}
 	}
-	if len(teams[0].(map[string]any)["states"].([]any)) != 4 {
-		t.Errorf("team 1 states lost")
+	for _, l := range m["lists"].([]any) {
+		if name := l.(map[string]any)["list"].(string); strings.Contains(name, " of ") {
+			t.Errorf("per-team entry in the meta lists: %s", name)
+		}
 	}
-	w := warningsOf(m)
+}
+
+func TestLinearTeamListsOnSelection(t *testing.T) {
+	e, _, id := newDraftEnv(t)
+	e.metaOf(id, false)
+	code, obj := e.teamListsOf(id, "team-1", false)
+	if code != 200 {
+		t.Fatalf("%d %v", code, obj)
+	}
+	tm := obj["team"].(map[string]any)
+	if len(tm["states"].([]any)) != 4 || tm["default_state_id"] != "st-2" || tm["started_state_id"] != "st-3" || len(tm["labels"].([]any)) != 2 {
+		t.Errorf("team 1 %v", tm) // "Design only" belongs to the other team
+	}
+	if obj["warnings"] != nil || len(obj["lists"].([]any)) != 2 {
+		t.Errorf("warnings/lists %v %v", obj["warnings"], obj["lists"])
+	}
+	if a, b := len(e.f.callsOf("list_issue_statuses")), len(e.f.callsOf("list_issue_labels")); a != 1 || b != 1 {
+		t.Fatalf("calls: statuses %d labels %d, want 1 each", a, b)
+	}
+	// Re-selecting hits the cache; refresh bypasses it.
+	e.teamListsOf(id, "team-1", false)
+	if a := len(e.f.callsOf("list_issue_statuses")); a != 1 {
+		t.Errorf("cache not used: %d status calls", a)
+	}
+	e.teamListsOf(id, "team-1", true)
+	if a := len(e.f.callsOf("list_issue_statuses")); a != 2 {
+		t.Errorf("refresh did not refetch: %d", a)
+	}
+	// Another team costs its own pair of calls, and only when selected.
+	_, obj = e.teamListsOf(id, "team-2", false)
+	if n := len(obj["team"].(map[string]any)["labels"].([]any)); n != 3 {
+		t.Errorf("team 2 labels %d", n)
+	}
+	if a := len(e.f.callsOf("list_issue_statuses")); a != 3 {
+		t.Errorf("status calls %d", a)
+	}
+	if code, _ := e.teamListsOf(id, "team-99", false); code != 404 {
+		t.Errorf("unknown team: %d", code)
+	}
+}
+
+func TestLinearTeamListsAreDeduplicated(t *testing.T) {
+	e, _, id := newDraftEnv(t)
+	e.metaOf(id, false)
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); e.teamListsOf(id, "team-1", false) }()
+	}
+	wg.Wait()
+	if a, b := len(e.f.callsOf("list_issue_statuses")), len(e.f.callsOf("list_issue_labels")); a != 1 || b != 1 {
+		t.Errorf("concurrent selections: statuses %d labels %d, want 1 each", a, b)
+	}
+}
+
+func TestLinearTeamListsFailureWarnsAndIsNotCached(t *testing.T) {
+	e, _, id := newDraftEnv(t)
+	e.metaOf(id, false)
+	e.f.failStatusTeam = "team-2"
+	code, obj := e.teamListsOf(id, "team-2", false)
+	if code != 200 {
+		t.Fatalf("%d %v", code, obj)
+	}
+	tm := obj["team"].(map[string]any)
+	if tm["name"] != "Design" || tm["states"] != nil || len(tm["labels"].([]any)) != 3 {
+		t.Errorf("team 2 %v", tm)
+	}
+	w := warningsOf(obj)
 	if len(w) != 1 || !strings.HasPrefix(w[0], "list_issue_statuses of Design: ") || !strings.Contains(w[0], "statuses unavailable") {
 		t.Errorf("warnings %v", w)
 	}
-	// The per-list summary names the failure too.
 	var found bool
-	for _, l := range m["lists"].([]any) {
+	for _, l := range obj["lists"].([]any) {
 		if l := l.(map[string]any); l["list"] == "list_issue_statuses of Design" && strings.Contains(fmt.Sprint(l["error"]), "unavailable") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("lists %v", m["lists"])
+		t.Errorf("lists %v", obj["lists"])
+	}
+	// The other team is unaffected, and the failure was not kept: the retry fetches again.
+	e.f.failStatusTeam = ""
+	_, obj = e.teamListsOf(id, "team-2", false)
+	if obj["warnings"] != nil || len(obj["team"].(map[string]any)["states"].([]any)) != 4 {
+		t.Errorf("retry %v", obj)
+	}
+	// A failing label list: a warning naming the team, the states still come.
+	e.f.failLabelsTeam = "team-1"
+	_, obj = e.teamListsOf(id, "team-1", false)
+	w = warningsOf(obj)
+	if len(w) != 1 || !strings.HasPrefix(w[0], "list_issue_labels of Engineering: ") || len(obj["team"].(map[string]any)["states"].([]any)) != 4 {
+		t.Errorf("labels failure: %v %v", w, obj)
 	}
 }
 
@@ -147,28 +237,13 @@ func TestLinearMetaLaterPageFailureKeepsTeams(t *testing.T) {
 	}
 }
 
-func TestLinearMetaOneListFailingKeepsOthers(t *testing.T) {
-	e, _, id := newDraftEnv(t)
-	e.f.failLabels = true
-	m := e.metaOf(id, false)
-	teams := m["teams"].([]any)
-	if len(teams) != 2 || len(teams[0].(map[string]any)["states"].([]any)) != 4 || len(m["projects"].([]any)) != 2 {
-		t.Fatalf("meta %v", m)
-	}
-	for _, w := range warningsOf(m) {
-		if !strings.HasPrefix(w, "list_issue_labels of ") || !strings.Contains(w, "labels unavailable") {
-			t.Errorf("warning %q", w)
-		}
-	}
-}
-
 func TestLinearMetaFailuresAreNotCached(t *testing.T) {
 	e, _, id := newDraftEnv(t)
-	e.f.failLabels = true
-	if w := warningsOf(e.metaOf(id, false)); len(w) != 2 {
+	e.f.failProjects = true
+	if w := warningsOf(e.metaOf(id, false)); len(w) != 1 || !strings.HasPrefix(w[0], "list_projects: ") {
 		t.Fatalf("warnings %v", w)
 	}
-	e.f.failLabels = false
+	e.f.failProjects = false
 	m := e.metaOf(id, false) // no explicit refresh: the partial result was not kept
 	if m["warnings"] != nil {
 		t.Errorf("stale warnings %v", m["warnings"])

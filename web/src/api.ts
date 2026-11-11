@@ -403,14 +403,30 @@ export type LinearSettings = {
 }
 
 /** Linear's own lists, for the Create-issue dialog. */
+export type LinearListInfo = { list: string; tool?: string; pages: number; items: number; parsed: number; skipped: number; error?: string }
+
+/** A team. Its states and labels are not part of the meta stage: they come with the team's lists once it is selected. */
+export type LinearTeam = {
+  id: string
+  name: string
+  key: string
+  states?: { id: string; name: string; type: string }[]
+  labels?: { id: string; name: string; color?: string }[]
+  default_state_id?: string
+  started_state_id?: string
+}
+
 export type LinearMeta = {
   user?: { id: string; name: string; email: string }
-  teams: { id: string; name: string; key: string; states: { id: string; name: string; type: string }[]; labels: { id: string; name: string; color?: string }[]; default_state_id: string; started_state_id: string }[]
+  teams: LinearTeam[]
   projects: { id: string; name: string; team_ids?: string[] }[]
   warnings?: string[]
-  /** One entry per list fetched: the tool used, pages, items read/parsed/skipped, the error. */
-  lists?: { list: string; tool?: string; pages: number; items: number; parsed: number; skipped: number; error?: string }[]
+  /** One entry per global list fetched: the tool used, pages, items read/parsed/skipped, the error. */
+  lists?: LinearListInfo[]
 }
+
+/** The lists that hang on one team (fetched when the team is selected), with this fetch's warnings and summaries. */
+export type LinearTeamLists = { team: LinearTeam; warnings?: string[]; lists?: LinearListInfo[] }
 
 /** The fields of the Create-issue dialog (priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low). */
 export type LinearDraft = {
@@ -434,6 +450,8 @@ export type LinearDraftResult = {
   llm_reason?: 'no_agent'
   /** The helper agent's guess (ids already checked against the lists). */
   draft?: LinearDraft
+  /** The drafted team's lists (the draft fetched them): the dialog need not ask again. */
+  team_lists?: LinearTeamLists
   source?: 'llm'
   reason?: 'no_agent' | 'error'
   note?: string
@@ -764,8 +782,10 @@ export const api = {
   linearDisconnect: () => call<LinearStatus>('POST', '/api/integrations/linear/disconnect'),
   linearTest: () => call<{ ok: boolean; error?: string; user?: { name: string; email: string }; tools?: string[] }>('POST', '/api/integrations/linear/test'),
   linkLinear: (threadId: string, issue: string) => call<ThreadLink>('PUT', `/api/threads/${threadId}/linear`, { issue }),
-  linearDraft: (threadId: string, stage: 'meta' | 'llm', refresh = false) =>
-    call<LinearDraftResult>('POST', `/api/threads/${threadId}/linear/draft`, refresh ? { stage, refresh: true } : { stage }),
+  linearDraft: (threadId: string, stage: 'meta' | 'llm', refresh = false, teamId = '') =>
+    call<LinearDraftResult>('POST', `/api/threads/${threadId}/linear/draft`, { stage, ...(refresh ? { refresh: true } : {}), ...(teamId ? { team_id: teamId } : {}) }),
+  linearTeamLists: (threadId: string, teamId: string, refresh = false) =>
+    call<LinearTeamLists>('POST', `/api/threads/${threadId}/linear/team/${encodeURIComponent(teamId)}/lists`, refresh ? { refresh: true } : {}),
   createLinearIssue: (threadId: string, body: LinearDraft & { submission_id: string }) => call<ThreadLink>('POST', `/api/threads/${threadId}/linear/create`, body),
   unlinkLinear: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/linear`),
   refreshLinear: (threadId: string, force = false) =>

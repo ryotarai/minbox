@@ -11,6 +11,11 @@ import time
 
 prompt = sys.stdin.read()
 
+if prompt.startswith("Choose the workflow state"):
+    # Step two of the Create-Linear-issue draft: the team's state and labels.
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"state_id": "st-3", "label_ids": ["lab-1"]}}))
+    sys.exit(0)
+
 if prompt.startswith("Draft a Linear issue"):
     # The Create-Linear-issue dialog's guess. FAKE_LINEAR_DRAFT_HOLD: while that file exists the
     # answer is held back (tests use it to type while the draft is still "coming").
@@ -33,6 +38,15 @@ if prompt.startswith("Draft a Linear issue"):
         "assignee_id": "u1",
         "state_id": "st-3",
     }
+    if "team_id must be exactly " in prompt:
+        # One step: the person chose the team first, the prompt holds its states and labels.
+        draft["team_id"] = prompt.split("team_id must be exactly ", 1)[1].split(" ", 1)[0]
+        if draft["team_id"] == "team-2":
+            draft["state_id"], draft["label_ids"] = "st-d2", ["lab-d1"]
+    else:
+        # Two steps: no states or labels in this answer (step two chooses them).
+        draft.pop("state_id")
+        draft.pop("label_ids")
     # The person's extra prompt (Settings): echo what the instruction section held, so tests see it arrive.
     hdr = "Additional instructions from the person"
     if hdr in prompt:
