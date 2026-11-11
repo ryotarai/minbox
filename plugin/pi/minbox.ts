@@ -176,7 +176,43 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     return { ok: false, status: 0, json: { error: 'the minbox server is not reachable' } }
   }
 
-  const api = (method: string, path: string, body?: unknown, timeoutMs = CALL_TIMEOUT_MS) => apiOnce(method, path, body, timeoutMs)
+  /** A small log of this extension's own trouble (ids and counts only), sent with each heartbeat. */
+  let events: { at: string; kind: string; msg: string }[] = []
+  let failStreak = 0
+  let lastPollAt = ''
+  let lastDeliveryAt = ''
+  let heartbeatSeq = 0
+  let lastBeat = 0
+  const note = (kind: string, msg: string) => {
+    events.push({ at: new Date(deps.now()).toISOString(), kind, msg })
+    if (events.length > 40) events = events.slice(-40)
+  }
+  const api = async (method: string, path: string, body?: unknown, timeoutMs = CALL_TIMEOUT_MS) => {
+    const res = await apiOnce(method, path, body, timeoutMs)
+    if (res.status === 0 || res.status >= 500) {
+      if (failStreak++ < 10) note('api-error', `${method} ${path.split('?')[0]}: ${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}`)
+    } else {
+      if (failStreak >= 3) note('online', `the server answers again after ${failStreak} failed call(s)`)
+      failStreak = 0
+    }
+    return res
+  }
+
+  /** Every 15 s (checked once per loop round): the server tells a live extension from a silent one. See docs/mod-connection.md. */
+  async function heartbeat(): Promise<void> {
+    if (deps.now() - lastBeat < 15_000) return
+    lastBeat = deps.now()
+    await api('POST', '/api/agent/heartbeat', {
+      seq: ++heartbeatSeq,
+      agent: 'pi',
+      ext_version: EXT_VERSION,
+      state: busy ? 'working' : 'idle',
+      last_poll_at: lastPollAt,
+      last_delivery_at: lastDeliveryAt,
+      info: { fail_streak: failStreak },
+      events: events.slice(-25),
+    })
+  }
 
   const fail = (res: ApiResult): never => {
     throw new Error(`minbox: ${res.json?.error ?? `HTTP ${res.status}`}`)
@@ -383,6 +419,7 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     const res = await api('GET', `/api/agent/pending?owner=${encodeURIComponent(owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
     if (stopped) return false
     if (!res.ok) return false
+    lastPollAt = new Date(deps.now()).toISOString()
     if (!Array.isArray(res.json) || res.json.length === 0) return wait > 0
     const pending = res.json as Pending[]
     // Deliver only into a quiet session, so the person's own typing goes first; an urgent
@@ -419,6 +456,8 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       }
       return false
     }
+    lastDeliveryAt = new Date(deps.now()).toISOString()
+    note('delivered', `submitted ${deliver.length} message(s): ${deliver.map((p) => p.id).join(',')}`)
     for (const p of deliver) await api('POST', pendingPath(p.id, 'delivered'))
     return true
   }
@@ -433,9 +472,10 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       while (!stopped) {
         const t0 = deps.now()
         try {
+          await heartbeat()
           await deliverOnce()
-        } catch {
-          /* the next round tries again */
+        } catch (err) {
+          note('loop-error', String(err).slice(0, 150)) // the next round tries again
         }
         // A long poll takes seconds; anything quicker (busy, an error, an old server that does not
         // wait) must not turn into a tight loop.

@@ -194,3 +194,25 @@ func TestSortThreads(t *testing.T) {
 		}
 	}
 }
+
+// A claim whose release (or whose reply) was lost must not hide the message from its own claimant for ever.
+func TestOwnStaleClaimIsOfferedAgain(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	sess, _ := s.CreateSession(ctx, "a", "/a", "u-a")
+	_, msg, _ := s.CreateThread(ctx, sess.ID, "hi", NewMessage{Author: AuthorUser, Body: "do X", Words: "do X"})
+	if ok, _ := s.Claim(ctx, sess.ID, msg.ID, "me"); !ok {
+		t.Fatal("claim")
+	}
+	if p, _ := s.PendingForSession(ctx, sess.ID, "me"); len(p) != 0 {
+		t.Fatalf("a fresh own claim is in flight and stays hidden: %+v", p)
+	}
+	base := s.now()
+	s.now = func() time.Time { return base.Add(ClaimTimeout + time.Second) }
+	if p, _ := s.PendingForSession(ctx, sess.ID, "me"); len(p) != 1 {
+		t.Fatalf("a stale own claim must be offered again: %+v", p)
+	}
+	if ok, _ := s.Claim(ctx, sess.ID, msg.ID, "me"); !ok {
+		t.Fatal("re-claim by the same owner")
+	}
+}

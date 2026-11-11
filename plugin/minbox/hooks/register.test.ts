@@ -8,7 +8,7 @@ const registeredTools: Record<string, boolean> = {}
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: any[], opts: { instructions?: string; failHello?: boolean; hangPolls?: number } = {}) {
+function fakeServer(on: any, pending: any[], opts: { instructions?: string; failHello?: boolean; hangPolls?: number; down?: boolean; failPaths?: RegExp } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
@@ -27,13 +27,14 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
     const body = e.init?.body ? JSON.parse(e.init.body) : undefined
     const method = e.init?.method ?? 'GET'
     calls.push({ method, path: url.pathname, body })
+    if (opts.down || (opts.failPaths && opts.failPaths.test(url.pathname))) return { value: { status: 503, ok: false, headers: {}, text: '{"error":"down"}' } }
     const ok = (json: unknown) => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify(json) } })
     if (url.pathname === '/api/agent/pending') {
       if (opts.hangPolls && opts.hangPolls > 0) {
         opts.hangPolls--
         return new Promise(() => {}) // a connection that never answers
       }
-      return ok(pending.filter((p) => !claimed.has(p.id)))
+      return ok(pending.filter((p) => !claimed.has(p.id) && !delivered.has(p.id)))
     }
     const m = url.pathname.match(/^\/api\/agent\/pending\/([^/]+)\/(claim|release|delivered)$/)
     if (m) {
@@ -71,7 +72,7 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
     submitted.push(e.text)
     return { text: e.text, context: e.context }
   })
-  return { calls, submitted, delivered }
+  return { calls, submitted, delivered, releaseAll: () => claimed.clear() }
 }
 
 const REPLY = {
@@ -536,4 +537,81 @@ test('read_thread pages through any thread and says what is missing', async ($, 
   expect(text).toContain('Showing the newest 1 of 40 messages; 38 older ones are not shown.')
   expect(text).toContain('mcp__minbox__read_thread with this thread_id and before \\"msg_1\\"')
   expect(text).toContain('session other (not yours)')
+})
+
+test('a heartbeat goes out at start and every 15 s, carrying the mod state and its own event log', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(1000)
+  const beats = () => server.calls.filter((c) => c.path === '/api/agent/heartbeat')
+  expect(beats().length).toBe(1)
+  expect(beats()[0]!.body.seq).toBe(1)
+  expect(beats()[0]!.body.state).toBe('idle')
+  expect(beats()[0]!.body.agent).toBe('claude')
+  expect(typeof beats()[0]!.body.ext_version).toBe('string')
+  expect(beats()[0]!.body.events.map((e: any) => e.kind)).toContain('hello')
+  await $.turn.start({ turnId: 't1' } as any)
+  await clock.advance(15000)
+  expect(beats().length).toBe(2)
+  expect(beats()[1]!.body.seq).toBe(2)
+  expect(beats()[1]!.body.state).toBe('working')
+  await clock.advance(30000)
+  expect(beats().length).toBe(4)
+})
+
+test('a delivery shows in the next heartbeat (last_delivery_at, an event) and carries no message text', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(20000)
+  const last = server.calls.filter((c) => c.path === '/api/agent/heartbeat').pop()!
+  expect(last.body.last_delivery_at).not.toBe('')
+  expect(last.body.last_poll_at).not.toBe('')
+  expect(last.body.events.some((e: any) => e.kind === 'delivered' && e.msg.includes('msg_r1'))).toBe(true)
+  expect(JSON.stringify(last.body)).not.toContain('Answer: A')
+})
+
+test('failed calls are recorded in the mod log, go offline with one toast, and come back with one', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const toasts: string[] = []
+  on('ui.toast', (_: any, e: any) => {
+    toasts.push(String(e.message ?? e.text ?? JSON.stringify(e)))
+    return { value: null }
+  })
+  const opts = { down: false }
+  const server = fakeServer(on, [], opts)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000)
+  opts.down = true
+  await clock.advance(40000)
+  expect(toasts.filter((t) => t.includes('cannot reach')).length).toBe(1)
+  opts.down = false
+  await clock.advance(40000)
+  expect(toasts.filter((t) => t.includes('connected to the server again')).length).toBe(1)
+  const last = server.calls.filter((c) => c.path === '/api/agent/heartbeat').pop()!
+  const kinds = last.body.events.map((e: any) => e.kind)
+  expect(kinds).toContain('api-error')
+  expect(kinds).toContain('offline')
+  expect(kinds).toContain('online')
+})
+
+test('when the delivered call fails the message is acknowledged again, never submitted twice', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { failPaths: /\/delivered$/ }
+  const server = fakeServer(on, [REPLY], opts)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  expect(server.submitted.length).toBe(1)
+  expect(server.delivered.size).toBe(0)
+  // The server lists the message again (its claim went stale); the mod only acknowledges.
+  opts.failPaths = undefined
+  server.releaseAll()
+  await clock.advance(30000)
+  expect(server.submitted.length).toBe(1)
+  expect([...server.delivered]).toEqual(['msg_r1'])
 })

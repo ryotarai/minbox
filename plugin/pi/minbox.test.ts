@@ -247,3 +247,21 @@ test('read_thread pages: limit and before are passed on, the answer says what is
   assert.equal(t.calls.at(-1)!.path, '/api/agent/threads')
   t.ext!.stop()
 })
+
+test('a heartbeat goes out with the loop (every 15 s) carrying state, version and its own events', async () => {
+  const t = setup({ fail: (c) => c.path === '/api/agent/title' })
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
+  await settle()
+  const beats = () => t.calls.filter((c) => c.path === '/api/agent/heartbeat')
+  assert.equal(beats().length, 1)
+  assert.deepEqual([beats()[0]!.body.seq, beats()[0]!.body.agent, beats()[0]!.body.state], [1, 'pi', 'idle'])
+  assert.equal(typeof beats()[0]!.body.ext_version, 'string')
+  await t.tools.get('minbox_set_session_title').execute('1', { title: 'T' }).catch(() => {})
+  t.advance(16_000)
+  await settle()
+  assert.equal(beats().length >= 2, true)
+  const last = beats().pop()!
+  assert.equal(last.body.seq >= 2, true)
+  assert.match(JSON.stringify(last.body.events), /api-error/)
+  t.ext!.stop()
+})

@@ -35,11 +35,14 @@ type HostConn interface {
 
 // sessionManager starts, stops and resumes sessions on their hosts.
 type sessionManager struct {
-	cfg     Config
-	store   *store.Store
-	hub     *hub
-	hosts   *hostSet
-	localFS *hostfs.Local
+	// modLog and modForget feed the mod connection log (modconn.go); nil in a bare manager.
+	modLog    func(id, kind, format string, args ...any)
+	modForget func(id, why string)
+	cfg       Config
+	store     *store.Store
+	hub       *hub
+	hosts     *hostSet
+	localFS   *hostfs.Local
 
 	mu sync.Mutex
 	// shellMu serialises starting companion shells (two attaches must not spawn twice).
@@ -414,6 +417,9 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 		log.Printf("session %s (%s): folder change: %v", sess.ID, sess.Name, err)
 		return
 	}
+	if m.modLog != nil {
+		m.modLog(sess.ID, "relocated", "from=%q to=%q new_conversation=%q", sess.Cwd, dir, newID)
+	}
 	log.Printf("session %s (%s): moved from %s to %s (previous conversation %q)", sess.ID, sess.Name, sess.Cwd, dir, prevID)
 	sess.Cwd, sess.RelocateTo, sess.ClaudeSessionID = dir, "", newID
 	if prevDir != "" {
@@ -563,6 +569,9 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	}
 	_ = host.Remove(ctx, sess.ID) // forget an exited terminal of the same id
 	m.relocate(ctx, sess)
+	if m.modLog != nil {
+		m.modLog(sess.ID, "spawn", "resume=%v agent=%s host=%q cwd=%q", resume, sess.Agent, sess.HostID, sess.Cwd)
+	}
 	_, err = host.Spawn(ctx, termhost.SpawnRequest{
 		ID:         sess.ID,
 		Argv:       m.argv(ctx, sess, resume),
@@ -762,6 +771,12 @@ func (m *sessionManager) onExit(ctx context.Context, id string, code int) {
 	delete(m.stopping, id)
 	m.mu.Unlock()
 	m.endShell(ctx, id)
+	if m.modLog != nil {
+		m.modLog(id, "exit", "terminal exited code=%d", code)
+	}
+	if m.modForget != nil {
+		m.modForget(id, fmt.Sprintf("process exited code=%d", code))
+	}
 	if err := m.store.SetSessionEnded(ctx, id, code); err != nil && !errors.Is(err, store.ErrNotFound) {
 		log.Printf("mark %s ended: %v", id, err)
 	}

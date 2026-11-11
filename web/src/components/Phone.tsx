@@ -11,6 +11,7 @@ import { useAllThreads } from './ThreadList'
 import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
 import { TerminalKeys } from './TerminalKeys'
 import { AttachmentViewer } from './AttachmentViewer'
+import { ModConnection } from './ModConnection'
 
 /**
  * Follows the visual viewport, so bars stay above the on-screen keyboard, and
@@ -112,6 +113,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
               </span>
               <span data-testid="phone-session-name" className="mono flex max-w-full items-center gap-1.5 text-[11.5px] leading-[18px] text-fg2">
                 <span className="truncate">{session.name}</span>
+                <ModConnection session={session} phone />
               </span>
               {thread?.forked_from && (
                 <span data-testid="phone-fork-crumb" className="flex max-w-full items-center gap-1 text-[11px] leading-[16px] text-subtle">
@@ -169,6 +171,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 {session.name}
               </span>
               {session.status === 'ended' && <EndedTag />}
+              <ModConnection session={session} phone />
             </div>
             {session.kind !== 'shell' ? (
               <button

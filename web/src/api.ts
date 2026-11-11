@@ -81,6 +81,10 @@ export type Session = {
   mod_seen_at?: string | null
   /** A Claude Code session whose mod has been silent for a while (45 s). */
   mod_silent?: boolean
+  /** The mod's connection, judged by its heartbeats: connected | stale | connecting | none. */
+  mod_conn?: 'connected' | 'stale' | 'connecting' | 'none'
+  /** The last heartbeat (null: none since the server started). */
+  mod_beat_at?: string | null
   last_activity?: string
   top_thread?: TopThread | null
   host_id?: string
@@ -89,6 +93,33 @@ export type Session = {
   project_id?: string
   /** The project's main session: new threads go to it by default. */
   is_main?: boolean
+}
+
+/** GET /api/sessions/{id}/connection: the diagnostics of a session's mod connection. */
+export type ModConnectionInfo = {
+  session_id: string
+  state: 'connected' | 'stale' | 'connecting' | 'none'
+  stale_after_s: number
+  server_time: string
+  server_started_at: string
+  session_status: string
+  heartbeat: boolean
+  last_contact_at: string | null
+  last_beat_at: string | null
+  age_s: number | null
+  beats?: number
+  seq?: number
+  agent?: string
+  mod_version?: string
+  mod_state?: string
+  last_poll_at?: string
+  last_delivery_at?: string
+  mod_info?: Record<string, string | number | boolean> | null
+  reconnects?: number
+  stale_since?: string
+  queue: { count: number; oldest_wait_s: number | null }
+  mod_events: { at: string; kind: string; msg: string }[]
+  events: { at: string; kind: string; msg: string }[]
 }
 
 /** A folder on a host; sessions (and so threads) are resources under it. */
@@ -885,6 +916,7 @@ export const api = {
   retryHost: (id: string) => call<Ok>('POST', `/api/hosts/${id}/retry`),
   renameSession: (id: string, name: string) => call<Ok>('PATCH', `/api/sessions/${id}`, { name }),
   stopSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/stop`),
+  sessionConnection: (id: string) => call<ModConnectionInfo>('GET', `/api/sessions/${id}/connection`),
   restartSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/restart`),
   deleteSession: (id: string) => call<Ok>('DELETE', `/api/sessions/${id}`),
   archiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/archive`),

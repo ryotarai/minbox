@@ -635,6 +635,7 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if req.Agent != "" && req.Agent != agent.Must(sess.Agent).Kind() {
 		log.Printf("session %s (%s): hello from a %q integration, but the session runs %q", sess.ID, sess.Name, req.Agent, agent.Must(sess.Agent).Kind())
 	}
+	s.modLog(sess.ID, "hello", "name=%q agent=%q ext_version=%q status=%s conversation_changed=%v", sess.Name, req.Agent, req.ExtVersion, sess.Status, convID != "" && convID != sess.ClaudeSessionID)
 	if req.ExtVersion != "" || req.SessionFile != "" {
 		log.Printf("session %s (%s): hello: agent %q extension %q conversation %q file %q", sess.ID, sess.Name, req.Agent, req.ExtVersion, convID, req.SessionFile)
 	}
@@ -908,6 +909,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
 			s.commandInject(r.Context(), pending)
+			s.modPendingServed(sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
 		}
@@ -918,6 +920,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
 			s.commandInject(r.Context(), pending)
+			s.modPendingServed(sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
 		case <-s.closing:
@@ -939,7 +942,10 @@ func (s *Server) agentClaim(w http.ResponseWriter, r *http.Request, sess *store.
 		return
 	}
 	if ok {
+		s.modDelivery(sess.ID, "claimed", r.PathValue("id"))
 		s.publishMessageChange(r.Context(), sess.ID, r.PathValue("id"))
+	} else {
+		s.modLog(sess.ID, "claim-refused", "msg=%s (delivered, or claimed by another instance within the last %s)", r.PathValue("id"), store.ClaimTimeout)
 	}
 	writeJSON(w, 200, map[string]bool{"claimed": ok})
 }
@@ -951,6 +957,7 @@ func (s *Server) agentRelease(w http.ResponseWriter, r *http.Request, sess *stor
 		return
 	}
 	if ok {
+		s.modLog(sess.ID, "released", "msg=%s (the mod could not submit it, or went busy)", r.PathValue("id"))
 		s.publishMessageChange(r.Context(), sess.ID, r.PathValue("id"))
 		s.wakePending(sess.ID)
 	}
@@ -968,6 +975,7 @@ func (s *Server) agentDelivered(w http.ResponseWriter, r *http.Request, sess *st
 		httpError(w, 404, "no such message in this session")
 		return
 	}
+	s.modDelivery(sess.ID, "delivered", r.PathValue("id"))
 	s.publishMessageChange(r.Context(), sess.ID, r.PathValue("id"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

@@ -27,6 +27,7 @@ func (s *Server) touchMod(sessionID string) {
 	s.modMu.Lock()
 	prev, seen := s.modSeen[sessionID]
 	s.modSeen[sessionID] = now
+	s.modObserveLocked(sessionID, false, s.nowFn())
 	wasSilent := (!seen && now.Sub(s.startedAt) > s.modSilentAfter) || (seen && now.Sub(prev) > s.modSilentAfter)
 	if t := s.modTimers[sessionID]; t != nil {
 		t.Reset(s.modSilentAfter + time.Second)
@@ -46,6 +47,7 @@ func (s *Server) watchStartup() {
 
 // withModSeen fills mod_seen_at and mod_silent.
 func (s *Server) withModSeen(sess *store.Session) {
+	s.withModConn(sess)
 	now := time.Now()
 	s.modMu.Lock()
 	t, seen := s.modSeen[sess.ID]

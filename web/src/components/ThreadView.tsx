@@ -31,6 +31,7 @@ import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { CommandMessage, commandOf } from './CommandMessage'
+import { ModConnection } from './ModConnection'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
 
 type Props = {
@@ -639,6 +640,7 @@ function ThreadHeaderBar({ session, onBack, others = 0, children }: { session: S
         )}
         <span className="truncate">{session.name}</span>
       </button>
+      <ModConnection session={session} />
       <span className="flex-1" />
       {children}
     </div>
@@ -1252,8 +1254,9 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   } else {
     const waited = minutesSince(m.created_at)
     const waitedMs = Date.now() - new Date(m.created_at).getTime()
-    const stuck = waitedMs >= queuedWarnMs() && (session.status !== 'working' || !!session.mod_silent)
-    if (stuck && session.mod_silent) {
+    const silent = !!session.mod_silent || session.mod_conn === 'stale' // no call, or no heartbeat, for a while
+    const stuck = waitedMs >= queuedWarnMs() && (session.status !== 'working' || silent)
+    if (stuck && silent) {
       text = m.urgent ? 'Send now pressed · Claude Code is not answering; it goes in when it does.' : 'Claude Code is not picking this up. Its connection to minbox is silent.'
       now = !m.urgent
       restart = true

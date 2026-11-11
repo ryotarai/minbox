@@ -145,6 +145,12 @@ up the list and shows the question.
   git worktrees for the subagents' changes (the orchestrator prompt); you can add your own
   extra instructions there.
 
+  **Is the mod connected?** The mod sends a heartbeat every 15 s. A small dot beside the session
+  name shows it (green: connected; red "no heartbeat for 2 m": stale); click it for the diagnostics
+  and **Copy diagnostics**. The server logs `modconn:` lines for hello, deliveries and
+  connected/stale transitions. See [docs/mod-connection.md](docs/mod-connection.md). A changed mod
+  loads only in a Claude Code session started after the update.
+
   **Thread status** becomes `working` when you write, `need action` when Claude sends a
   question, and Claude sets it with `status`, e.g. `finished` when it is done. You can change it
   by hand from the thread's `...` menu (**Mark as**).

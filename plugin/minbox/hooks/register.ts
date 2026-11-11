@@ -14,6 +14,8 @@
  *   as a plugin turn with `$.prompt.submit`, then acknowledged as delivered.
  *   A failed submit releases the claim; nothing is delivered twice.
  * - Reports whether Claude is working or idle (main-loop turn.start / turn.complete).
+ * - Sends a heartbeat every HEARTBEAT_MS (its state, last poll / delivery, and a tail of its own
+ *   event log) so the server can tell a live mod from a silent one; see docs/mod-connection.md.
  * - Adds a one-paragraph reminder of the inbox to the first prompt, and the
  *   session's open threads to the first prompt after a compaction.
  *
@@ -57,6 +59,15 @@ import {
 } from './text'
 
 const TICK_MS = 1000
+/** The mod's version, reported in every heartbeat (keep in step with .claude-plugin/plugin.json). */
+export const MOD_VERSION = '0.1.0'
+/** A heartbeat this often; the server calls the connection stale after 45 s without one. */
+const HEARTBEAT_MS = 15_000
+/** The mod's own event log keeps this many recent events; the last HEARTBEAT_EVENTS ride each heartbeat. */
+const MAX_EVENTS = 60
+const HEARTBEAT_EVENTS = 25
+/** This many failed calls in a row make the connection "offline" (one toast, one event). */
+const OFFLINE_AFTER_FAILURES = 3
 /** The server's instructions are repeated on every Nth prompt (models forget the first instruction); the default N is 20. The first prompt after each hello and the first after a compaction carry them too. MINBOX_ORCHESTRATOR_EVERY overrides N. */
 const ORCHESTRATOR_EVERY = 20
 const POLL_WAIT_S = 20
@@ -74,6 +85,9 @@ const POLL_STUCK_TICKS = 60
 const BUSY_STALE_TICKS = 120
 
 type Conn = { token: string; serverFile: string; owner: string }
+
+/** One line of the mod's own log: ids, counts and timings only, never a message body. */
+type ModEvent = { at: string; kind: string; msg: string }
 
 let conn: Conn | null = null
 let baseUrl: string | null = null
@@ -95,6 +109,19 @@ let promptCount = 0
 /** The hello delivered the instructions and no prompt has carried them since: the next one does. */
 let orchestratorFresh = false
 let helloing: Promise<void> | null = null
+/** The mod's recent events (see ModEvent); a tail goes with each heartbeat. */
+let events: ModEvent[] = []
+let heartbeatTimer: { cancel(): void } | null = null
+let heartbeatSeq = 0
+let heartbeatInFlight = false
+/** Consecutive failed API calls (status 0 or 5xx), and whether the connection is reported offline. */
+let failStreak = 0
+let offline = false
+let lastPollAt: string | null = null
+let lastDeliveryAt: string | null = null
+/** Messages whose submit is running (never offered twice), and those submitted whose 'delivered' call failed (retried). */
+const inflight = new Set<string>()
+const undeliveredAcks = new Set<string>()
 let timer: { cancel(): void } | null = null
 let busy = false
 let idleTicks = 0
@@ -112,6 +139,50 @@ let deliveredThreads: string[] = []
 let turnThreads: string[] = []
 /** The next reminder is about these threads (a turn answered them without send_message). */
 let replyNudgeThreads: string[] = []
+
+/** Records an event in the mod's ring buffer. Identical consecutive events are folded into a count. */
+function note($: any, kind: string, msg: string): void {
+  const at = new Date().toISOString()
+  const last = events[events.length - 1]
+  if (last && last.kind === kind && last.msg.replace(/ \(x\d+\)$/, '') === msg) {
+    const n = Number(/ \(x(\d+)\)$/.exec(last.msg)?.[1] ?? 1) + 1
+    events[events.length - 1] = { at, kind, msg: `${msg} (x${n})` }
+    return
+  }
+  events.push({ at, kind, msg })
+  if (events.length > MAX_EVENTS) events = events.slice(events.length - MAX_EVENTS)
+}
+
+/** Counts failures of the connection to the server; says so once when it goes offline and once when it is back. */
+function trackConnection($: any, label: string, res: ApiResult): void {
+  const failed = res.status === 0 || res.status >= 500
+  if (!failed) {
+    if (res.status === 401 || res.status === 403) {
+      note($, 'auth', `${label}: HTTP ${res.status} (the session token is not accepted)`)
+      if (!authWarned) {
+        authWarned = true
+        $.ui.toast('minbox: the server does not accept this session (unknown token); replies will not arrive. Restart the session from minbox.')
+      }
+    }
+    if (failStreak > 0 || offline) {
+      if (offline) {
+        note($, 'online', `${label}: the server answers again after ${failStreak} failed call(s)`)
+        $.ui.toast('minbox: connected to the server again.')
+      }
+      failStreak = 0
+      offline = false
+    }
+    return
+  }
+  failStreak++
+  note($, 'api-error', `${label}: ${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}`)
+  if (!offline && failStreak >= OFFLINE_AFTER_FAILURES) {
+    offline = true
+    note($, 'offline', `${failStreak} calls in a row failed; last: ${label}`)
+    $.ui.toast('minbox: cannot reach the server; replies are held until it is back.')
+  }
+}
+let authWarned = false
 
 function randomId(): string {
   const b = new Uint8Array(8)
@@ -150,6 +221,8 @@ async function api($: any, method: string, path: string, body?: unknown, timeout
       },
     )
   })
+  // The label has no query string: owners and ids stay out of the log.
+  trackConnection($, `${method} ${path.split('?')[0]!.replace(/\/pending\/[^/]+\//, '/pending/{id}/')}`, res)
   return res
 }
 
@@ -183,7 +256,9 @@ async function hello($: any): Promise<void> {
   const id = await $.session.id().catch(() => null)
   if (typeof id === 'string' && id !== lastClaudeSessionId) {
     const res = await api($, 'POST', '/api/agent/hello', { claude_session_id: id })
+    if (!res.ok) note($, 'hello-failed', `hello failed: ${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}; retried every tick`)
     if (res.ok) {
+      note($, 'hello', lastClaudeSessionId ? 'hello again (the conversation changed)' : 'hello ok')
       lastClaudeSessionId = id
       instructions = typeof res.json?.instructions === 'string' && res.json.instructions.trim() ? res.json.instructions : null
       orchestratorFresh = true
@@ -192,12 +267,52 @@ async function hello($: any): Promise<void> {
 }
 
 function status($: any, value: 'working' | 'idle'): void {
-  void api($, 'POST', '/api/agent/status', { status: value })
+  void api($, 'POST', '/api/agent/status', { status: value }).then((r) => {
+    if (!r.ok) note($, 'status-failed', `status ${value} not recorded: ${r.status === 0 ? 'not reachable' : 'HTTP ' + r.status}`)
+  })
+}
+
+/** The heartbeat: who the mod is, what it thinks it is doing, and the tail of its own log. */
+async function heartbeat($: any): Promise<void> {
+  if (!conn || heartbeatInFlight) return
+  heartbeatInFlight = true
+  try {
+    const res = await api($, 'POST', '/api/agent/heartbeat', {
+      seq: ++heartbeatSeq,
+      agent: 'claude',
+      ext_version: MOD_VERSION,
+      state: busy ? 'working' : 'idle',
+      last_poll_at: lastPollAt ?? '',
+      last_delivery_at: lastDeliveryAt ?? '',
+      info: {
+        busy_ticks: busyTicks,
+        idle_ticks: idleTicks,
+        polling: polling,
+        poll_ticks: pollTicks,
+        inflight: inflight.size,
+        unacked: undeliveredAcks.size,
+        offline,
+        fail_streak: failStreak,
+        owner_prefix: conn.owner.slice(0, 4),
+      },
+      events: events.slice(-HEARTBEAT_EVENTS),
+    })
+    if (res.status === 404 || res.status === 405) note($, 'heartbeat-unsupported', 'the server has no heartbeat endpoint (an older minbox)')
+  } finally {
+    heartbeatInFlight = false
+  }
 }
 
 /** A pending message's route, with this instance as the owner. */
 function pendingPath(id: string, action: 'claim' | 'release' | 'delivered'): string {
   return `/api/agent/pending/${encodeURIComponent(id)}/${action}?owner=${encodeURIComponent(conn?.owner ?? '')}`
+}
+
+/** Tells the server a submitted message is delivered; a failed call is retried on the next polls. */
+async function acknowledge($: any, id: string): Promise<void> {
+  const r = await api($, 'POST', pendingPath(id, 'delivered'))
+  if (r.ok) undeliveredAcks.delete(id)
+  else note($, 'ack-failed', `'delivered' for ${id} not recorded (${r.status === 0 ? 'not reachable' : 'HTTP ' + r.status}); retried`)
 }
 
 /** One tick: deliver the person's messages once Claude has been idle a while. */
@@ -208,6 +323,7 @@ async function tick($: any): Promise<void> {
     busy = false
     busyTicks = 0
     idleTicks = IDLE_TICKS
+    note($, 'busy-stale', `no hook event for ${BUSY_STALE_TICKS} ticks while busy: treating Claude as idle`)
     status($, 'idle')
   }
   idleTicks = busy ? 0 : idleTicks + 1
@@ -218,13 +334,15 @@ async function tick($: any): Promise<void> {
     replyNudgeThreads = []
     try {
       await $.prompt.submit({ text: threads.length > 0 ? replyNudgeText(sendToolName, threads) : nudgeText(sendToolName) })
-    } catch {
+    } catch (err) {
       nudging = false
+      note($, 'nudge-failed', `reminder submit threw: ${String(err).slice(0, 150)}`)
     }
   }
   if (polling) {
     if (++pollTicks < POLL_STUCK_TICKS) return
     pollGen++ // abandon the stuck poll; its late results are dropped
+    note($, 'poll-stuck', `a poll step ran for ${POLL_STUCK_TICKS} ticks and was abandoned`)
     baseUrl = null
   }
   polling = true
@@ -237,16 +355,26 @@ async function tick($: any): Promise<void> {
     // Wait on the server only while idle; while busy, just look.
     const wait = busy ? 0 : POLL_WAIT_S
     const res = await api($, 'GET', `/api/agent/pending?owner=${encodeURIComponent(conn.owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
-    if (stale() || !res.ok || !Array.isArray(res.json) || res.json.length === 0) return
+    if (stale()) return
+    if (res.ok) lastPollAt = new Date().toISOString()
+    if (res.ok && !Array.isArray(res.json)) note($, 'poll-bad-reply', 'the pending poll returned something that is not a list')
+    if (!res.ok || !Array.isArray(res.json) || res.json.length === 0) return
+    // A message whose submit went through but whose 'delivered' call failed is only acknowledged again, never submitted twice.
+    const submittedBefore = new Set((res.json as Pending[]).filter((p) => undeliveredAcks.has(p.id)).map((p) => p.id))
+    for (const id of submittedBefore) await acknowledge($, id)
     // Deliver only into a quiet session, so the person's own typing goes first;
     // an urgent message (Send now, or one that waited long) goes in anyway.
     const quiet = !busy && idleTicks >= IDLE_TICKS
-    const due = (res.json as Pending[]).filter((p) => quiet || p.urgent)
-    if (due.length === 0) return
+    const due = (res.json as Pending[]).filter((p) => (quiet || p.urgent) && !inflight.has(p.id) && !submittedBefore.has(p.id))
+    if (due.length === 0) {
+      if ((res.json as Pending[]).length > 0) note($, 'held', `${(res.json as Pending[]).length} message(s) waiting; busy=${busy} idle_ticks=${idleTicks}`)
+      return
+    }
     const claimed: Pending[] = []
     for (const p of due) {
       const c = await api($, 'POST', pendingPath(p.id, 'claim'))
       if (c.ok && c.json?.claimed) claimed.push(p)
+      else note($, 'claim-failed', `claim of ${p.id} not granted: ${c.ok ? 'claimed elsewhere' : c.status === 0 ? 'not reachable' : 'HTTP ' + c.status}`)
     }
     if (stale() || claimed.length === 0) return
     // Re-check as late as possible: the submit cannot be taken back.
@@ -256,15 +384,24 @@ async function tick($: any): Promise<void> {
       claimed.splice(0, claimed.length, ...claimed.filter((p) => p.urgent))
       if (claimed.length === 0) return
     }
+    for (const p of claimed) inflight.add(p.id)
     try {
       await $.prompt.submit({ text: wakeText(claimed, sendToolName, readToolName) })
       deliveredThreads = [...new Set(claimed.map((p) => p.thread_id))]
+      lastDeliveryAt = new Date().toISOString()
+      note($, 'delivered', `submitted ${claimed.length} message(s): ${claimed.map((p) => p.id).join(',')}`)
     } catch (err) {
+      for (const p of claimed) inflight.delete(p.id)
+      note($, 'submit-failed', `prompt.submit threw: ${String(err).slice(0, 150)}`)
       for (const p of claimed) await api($, 'POST', pendingPath(p.id, 'release'))
       $.ui.toast(`minbox: a reply could not be delivered (${String(err)}); it stays in the inbox.`)
       return
     }
-    for (const p of claimed) await api($, 'POST', pendingPath(p.id, 'delivered'))
+    for (const p of claimed) {
+      inflight.delete(p.id)
+      undeliveredAcks.add(p.id)
+      await acknowledge($, p.id)
+    }
   } finally {
     if (!stale()) polling = false
   }
@@ -276,6 +413,7 @@ export const register: Register = (on) => {
     const serverFile = await $.env.get('MINBOX_SERVER_FILE')
     if (!token || !serverFile || !e.isInteractive) return next(e)
     conn = { token, serverFile, owner: randomId() }
+    note($, 'session-start', `mod ${MOD_VERSION} started; owner ${conn.owner.slice(0, 4)}…`)
 
     const send = await $.tool.register({ name: SEND_TOOL, description: SEND_DESCRIPTION, inputSchema: SEND_SCHEMA, isDeferred: false })
     sendToolName = send?.tool ?? sendToolName
@@ -293,13 +431,21 @@ export const register: Register = (on) => {
 
     timer?.cancel()
     timer = $.clock.every(TICK_MS, () => tick($))
+    heartbeatTimer?.cancel()
+    heartbeatTimer = $.clock.every(HEARTBEAT_MS, () => heartbeat($))
     helloing = hello($)
+    void helloing.then(() => heartbeat($))
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
+    note($, 'session-end', 'session.end: the mod stops polling')
+    // One last heartbeat says so (best effort); then the ticks stop.
+    void heartbeat($)
     timer?.cancel()
     timer = null
+    heartbeatTimer?.cancel()
+    heartbeatTimer = null
     return next(e)
   })
 

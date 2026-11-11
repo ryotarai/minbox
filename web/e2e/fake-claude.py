@@ -8,6 +8,7 @@ Typed commands (one per line):
   say <text> send a plain message
   mark <status> [text]  send a message that sets the thread's status (working|need_action|finished)
   work       status working: queued messages wait (idle ends it)
+  nobeat     stop the heartbeat (beat starts it again); the poll carries on
   exit       quit
 """
 import json, os, sys, threading, time, urllib.error, urllib.request, uuid
@@ -21,6 +22,8 @@ mode = "resume" if "--resume" in args else "new"
 last_thread = None
 busy = False  # "work": a turn is running; only urgent messages are taken
 deaf = False  # "deaf": the mod stopped answering (no polling) until "listen"
+beating = True  # "nobeat": the heartbeat stops until "beat"
+beat_seq = 0
 
 
 def base():
@@ -63,10 +66,30 @@ def poll():
             time.sleep(1)
 
 
+def heartbeat_loop():
+    global beat_seq
+    every = float(os.environ.get("FAKE_HEARTBEAT_S", "1"))
+    while True:
+        time.sleep(every)
+        if not beating:
+            continue
+        try:
+            beat_seq += 1
+            api("POST", "/api/agent/heartbeat", {
+                "seq": beat_seq, "agent": "claude", "ext_version": "fake-1", "state": "working" if busy else "idle",
+                "last_poll_at": "", "last_delivery_at": "",
+                "info": {"deaf": deaf},
+                "events": [{"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "kind": "fake", "msg": "fake mod heartbeat"}],
+            }, timeout=5)
+        except Exception:
+            pass
+
+
 out(f"fake-claude {mode} session={session_id} cwd={os.getcwd()}")
 api("POST", "/api/agent/hello", {"claude_session_id": session_id})
 api("POST", "/api/agent/status", {"status": "idle"})
 threading.Thread(target=poll, daemon=True).start()
+threading.Thread(target=heartbeat_loop, daemon=True).start()
 out("ready> ")
 
 for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
@@ -74,6 +97,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     if line == "exit":
         out("bye")
         sys.exit(0)
+    elif line in ("nobeat", "beat"):
+        beating = line == "beat"
+        out(f"status {line}")
     elif line in ("deaf", "listen"):
         deaf = line == "deaf"
         out(f"status {line}")

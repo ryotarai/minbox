@@ -88,6 +88,8 @@ export class Minbox {
     public pi = 'minbox-e2e-no-such-pi',
     /** The Claude Code command; the fake claude by default. */
     public claude = `python3 ${FAKE}`,
+    /** More environment for the server (and so the fake claude it starts). */
+    public extraEnv: Record<string, string> = {},
   ) {}
 
   get url() {
@@ -105,7 +107,7 @@ export class Minbox {
     if (!this.slackUser.url) await this.slackUser.start()
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold },
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, ...this.extraEnv },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
@@ -167,7 +169,16 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox }>({
+  // A minbox that calls a mod stale after 4 s without a heartbeat (45 s by default), and a fake claude that beats every second.
+  connMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), undefined, undefined, { MINBOX_MOD_SILENT_S: '4', FAKE_HEARTBEAT_S: '1' })
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
   // A minbox on a machine with only Pi: there is no `claude` at all.
   piOnlyMinbox: async ({}, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))

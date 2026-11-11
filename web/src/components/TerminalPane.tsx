@@ -7,6 +7,7 @@ import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
 import { Button, AgentTag, HostTag, IconButton, EndedTag, cx } from './ui'
 import { SessionMenu } from './Sidebar'
+import { ModConnection } from './ModConnection'
 
 /** The center column: the session's terminal with its header and the ended bar. */
 export function TerminalPane({ session, onThreads }: { session: Session | null; onThreads?: () => void }) {
@@ -86,6 +87,7 @@ export function TerminalPane({ session, onThreads }: { session: Session | null; 
         )}
         <HostTag name={session.host_name} />
         <AgentTag agent={session.agent} />
+        <ModConnection session={session} />
         <span className="mono hidden min-w-0 truncate text-[12px] text-subtle min-[1800px]:inline">{homeRelative(session.cwd)}</span>
         {session.status === 'ended' && <EndedTag />}
         <span className="flex-1" />

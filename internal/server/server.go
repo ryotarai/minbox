@@ -77,8 +77,13 @@ type Server struct {
 	modTimers      map[string]*time.Timer
 	modSilentAfter time.Duration
 	startedAt      time.Time
-	closing        chan struct{}
-	closeOnce      sync.Once
+	// The mod connection (modconn.go): heartbeats, stale detection, per-session logs.
+	modConns            map[string]*modConn
+	modStaleAfter       time.Duration
+	modUndeliveredAfter time.Duration
+	clock               func() time.Time // nil: time.Now (tests inject one)
+	closing             chan struct{}
+	closeOnce           sync.Once
 
 	files *fileState
 
@@ -109,18 +114,21 @@ type Server struct {
 func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	h := newHub()
 	s := &Server{
-		cfg:            cfg,
-		store:          st,
-		hub:            h,
-		web:            web,
-		pendingCh:      map[string]chan struct{}{},
-		modSeen:        map[string]time.Time{},
-		modTimers:      map[string]*time.Timer{},
-		modSilentAfter: modSilentAfterFromEnv(),
-		startedAt:      time.Now(),
-		closing:        make(chan struct{}),
-		files:          newFileState(),
-		devAuth:        newDeviceAuth(),
+		cfg:                 cfg,
+		store:               st,
+		hub:                 h,
+		web:                 web,
+		pendingCh:           map[string]chan struct{}{},
+		modSeen:             map[string]time.Time{},
+		modTimers:           map[string]*time.Timer{},
+		modSilentAfter:      modSilentAfterFromEnv(),
+		startedAt:           time.Now(),
+		modConns:            map[string]*modConn{},
+		modStaleAfter:       modSilentAfterFromEnv(),
+		modUndeliveredAfter: modUndeliveredDefault,
+		closing:             make(chan struct{}),
+		files:               newFileState(),
+		devAuth:             newDeviceAuth(),
 		sessions: &sessionManager{
 			cfg: cfg, store: st, hub: h, stopping: map[string]bool{}, restarting: map[string]*restartState{},
 			hosts: newHostSet(),
@@ -131,6 +139,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 			}},
 		},
 	}
+	s.sessions.modLog, s.sessions.modForget = s.modLog, s.modForget
 	s.lin = newLinearSvc(s)
 	s.slack = newSlackSvc(s)
 	s.poller = notify.NewPoller(st, slackInbound{s})
@@ -188,6 +197,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("POST /api/sessions", s.createSession)
 	mux.HandleFunc("PATCH /api/sessions/{id}", s.updateSession)
+	mux.HandleFunc("GET /api/sessions/{id}/connection", s.getConnection)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 	mux.HandleFunc("POST /api/sessions/{id}/restart", s.restartSession)
 	mux.HandleFunc("POST /api/sessions/{id}/stop", s.stopSession)
@@ -319,6 +329,7 @@ func (s *Server) routes() http.Handler {
 	// The Claude Code mod's API (bearer token per session).
 	mux.HandleFunc("POST /api/agent/hello", s.agent(s.agentHello))
 	mux.HandleFunc("POST /api/agent/status", s.agent(s.agentStatus))
+	mux.HandleFunc("POST /api/agent/heartbeat", s.agent(s.agentHeartbeat))
 	mux.HandleFunc("POST /api/agent/title", s.agent(s.agentTitle))
 	mux.HandleFunc("POST /api/agent/open", s.agent(s.agentOpen))
 	mux.HandleFunc("POST /api/agent/messages", s.agent(s.agentSend))

@@ -1094,3 +1094,18 @@ never returned (only `token_masked`); every error text is scrubbed of it. `MINBO
   (`{handoff, message, text, bytes, subject, agent, project, warnings}` / 201 `{thread, session, link_error?}`). The handoff `<slack_thread_handoff source="untrusted-external" thread="…">` is composed
   by the server once, stored in `thread_handoffs` (kind `slack_thread`) and prepended to the first message by `GET /api/agent/pending` exactly once; the item records `minbox_thread_id`.
 
+
+## Mod connection (heartbeat)
+
+See `docs/mod-connection.md` for the delivery path, failure modes and log lines.
+
+- `POST /api/agent/heartbeat` (the agent API, bearer = the session token) body `{seq, agent: "claude"|"pi", ext_version, state: "idle"|"working",
+  last_poll_at, last_delivery_at, info: {string|number|bool values, at most 30}, events: [{at, kind, msg}]}` (the last 50 events are kept, texts cut) -> `{ok: true, server_time}`.
+  The mod sends it every 15 s. The server records it per session, judges the connection by it, logs `modconn:` lines (hello, heartbeat-first, pending, claimed, delivered,
+  released, claim-refused, stale, reconnected, undelivered, seq-reset, spawn, relocated, exit; ids, lengths and timings only) and publishes a `sessions` event when the state flips.
+- Session JSON adds `mod_conn` (`connected` | `stale` | `connecting` | `none`) and `mod_beat_at` (the last heartbeat, null before the first). `connected` means a heartbeat within 45 s
+  (`MINBOX_MOD_SILENT_S` overrides; a mod that never sends heartbeats is judged by its calls). `none`: a shell or an ended session. `mod_seen_at` / `mod_silent` stay (any call).
+- `GET /api/sessions/{id}/connection` -> `{session_id, state, stale_after_s, server_time, server_started_at, session_status, heartbeat, last_contact_at, last_beat_at, age_s,
+  first_seen_at?, beats?, seq?, agent?, mod_version?, mod_state?, last_poll_at?, last_delivery_at?, mod_info?, reconnects?, last_gap_s?, stale_since?,
+  queue: {count, oldest_wait_s}, mod_events: [{at, kind, msg}] (the mod's own tail), events: [{at, kind, msg}] (the server's log of this session)}`. No message text, token or owner key.
+- `GET /api/agent/pending` offers a message whose claim is older than 60 s again, also to the instance that made the claim (before, its own stale claim hid the message for ever).

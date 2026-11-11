@@ -161,7 +161,10 @@ type Session struct {
 	// The mod's last call (any /api/agent/*, the long poll included); filled by the server, nil before the first one since it started.
 	ModSeenAt *time.Time `json:"mod_seen_at"`
 	// ModSilent: a Claude Code session whose mod has not called for a while (the server's modSilentAfter).
-	ModSilent    bool       `json:"mod_silent"`
+	ModSilent bool `json:"mod_silent"`
+	// ModConn: the mod's connection state (connected | stale | connecting | none), judged by its heartbeats; ModBeatAt: the last heartbeat. See docs/mod-connection.md.
+	ModConn      string     `json:"mod_conn"`
+	ModBeatAt    *time.Time `json:"mod_beat_at"`
 	LastActivity time.Time  `json:"last_activity"`
 	TopThread    *TopThread `json:"top_thread"`
 }
@@ -1446,13 +1449,17 @@ type PendingDelivery struct {
 }
 
 // PendingForSession lists the person's undelivered messages of the session,
-// oldest first, leaving out those another mod instance claimed recently.
+// oldest first, leaving out those claimed recently (by any instance, the caller's own included:
+// its submit is in flight). A claim older than ClaimTimeout is stale and the message is offered
+// again, also to the instance that made it: its release, or the reply to its claim, may have been
+// lost, and a message hidden from its own claimant would wait for ever. The owner argument is kept
+// for callers; it no longer changes the result.
 func (s *Store) PendingForSession(ctx context.Context, sessionID, owner string) ([]PendingDelivery, error) {
 	stale := ms(s.now().Add(-ClaimTimeout))
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id, t.subject FROM messages m JOIN threads t ON t.id=m.thread_id
 	  WHERE t.session_id=? AND m.author='user' AND m.delivered_at IS NULL
-	    AND (m.claimed_at IS NULL OR (m.claim_owner!=? AND m.claimed_at<?))
-	  ORDER BY m.created_at, m.rowid`, sessionID, owner, stale)
+	    AND (m.claimed_at IS NULL OR m.claimed_at<?)
+	  ORDER BY m.created_at, m.rowid`, sessionID, stale)
 	if err != nil {
 		return nil, err
 	}
