@@ -268,6 +268,19 @@ file is inserted followed by a space. The text is `@path`, or `@"a path"` when t
 plain text. The new-thread boxes also offer the project's `@agents` after the files, and `/skills`. Not active while an IME composes, in a `!`
 command, or for Cmd/Ctrl+Enter (still sends). Sessions on another host list that host's files. E2E: `mention-files.spec.ts` (desktop and phone).
 
+## New thread from the reply box (long press)
+
+Holding the reply box's send button for about 500 ms (touch or mouse), right-clicking it, or the
+context-menu key opens a small "New thread" dialog (a bottom sheet on a phone). The text is the
+reply box's draft, editable (`@` file mentions work); the destination defaults to the thread's own
+session and can be any other session of the same project. **Create** uses the normal create-thread
+endpoint (`POST /api/sessions/{id}/threads`), so the thread is queued as usual. The dialog closes, a
+toast "Thread created - Open" links to the new thread (nothing navigates by itself), and the reply
+box is cleared only if its draft was used unchanged. A text starting with `!` is refused inline
+(`\!` escapes); other errors show in the dialog. Releasing early, moving or scrolling cancels the
+press; the click after a long press is swallowed, so nothing is sent. Code: `lib/useLongPress.ts`,
+`components/NewThreadDialog.tsx`.
+
 ## Diagrams and annotating images in the composer
 
 A pencil-on-shapes button (`compose-draw`, "Draw a diagram") sits right of the paperclip in both composers (new

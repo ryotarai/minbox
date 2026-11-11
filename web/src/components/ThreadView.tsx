@@ -29,6 +29,8 @@ import {
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
+import { NewThreadDialog } from './NewThreadDialog'
+import { useLongPress } from '../lib/useLongPress'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { ModConnection } from './ModConnection'
@@ -1408,11 +1410,13 @@ function ReplyBox({
   onToggleFull: () => void
   sessions: Session[]
 }) {
-  const { error, toast, settings } = useApp()
+  const { error, toast, settings, navigate } = useApp()
   const draft = useReplyDraft(thread.id)
   const [sending, setSending] = useState(false)
   const [whereAnchor, setWhereAnchor] = useState<HTMLElement | null>(null)
   const sendRef = useRef<HTMLButtonElement>(null)
+  const [newThread, setNewThread] = useState<string | null>(null)
+  const longPress = useLongPress(() => setNewThread(draft.words))
   const words = draft.words
   const picksCount = answers.length
   const annos = draft.annotations
@@ -1584,6 +1588,21 @@ function ReplyBox({
     />
   )
 
+  const newThreadDialog = newThread !== null && (
+    <NewThreadDialog
+      session={session}
+      initialText={newThread}
+      onClose={() => setNewThread(null)}
+      onCreated={(th, text) => {
+        setNewThread(null)
+        if (text.trim() === words.trim()) {
+          clearReplyDraft(thread.id)
+          clearFiles(thread.id)
+        }
+        toast('Thread created', { action: 'Open', onAction: () => navigate({ s: th.session_id, t: th.id, f: null, view: 'main', tab: 'inbox' }), ms: 6000 })
+      }}
+    />
+  )
   const where = (
     <Popover anchor={whereAnchor} open={!!whereAnchor} onClose={() => setWhereAnchor(null)} side="top" align="start" className="w-[320px] p-3">
       <div className="flex flex-col gap-2" data-testid="where-reply">
@@ -1654,12 +1673,16 @@ function ReplyBox({
             data-testid="reply-send"
             disabled={!canSend || sending}
             onClick={() => void send()}
+            title="Hold to start a new thread"
+            aria-description="Hold to start a new thread"
+            {...longPress}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-0 bg-accent p-0 text-onaccent disabled:opacity-45"
           >
             <IconSend size={20} />
           </button>
         </div>
         {where}
+        {newThreadDialog}
       </div>
     )
   }
@@ -1699,11 +1722,12 @@ function ReplyBox({
         {clip}
         {fullButton}
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-subtle">{canSend ? 'Draft saved' : ''}</span>
-        <Button ref={sendRef} variant="primary" size="sm" data-testid="reply-send" disabled={!canSend || sending} onClick={() => void send()}>
+        <Button ref={sendRef} variant="primary" size="sm" data-testid="reply-send" disabled={!canSend || sending} onClick={() => void send()} title="Hold to start a new thread" aria-description="Hold to start a new thread" {...longPress}>
           {sending ? (cmd ? 'Running…' : 'Sending…') : cmd ? 'Run ⌘↵' : 'Send ⌘↵'}
         </Button>
       </div>
       {where}
+      {newThreadDialog}
     </div>
   )
 }

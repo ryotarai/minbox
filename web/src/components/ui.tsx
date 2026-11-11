@@ -237,12 +237,15 @@ export function Modal({
   label,
   className,
   top,
+  bottom,
 }: {
   children: ReactNode
   onClose: () => void
   label: string
   className?: string
   top?: boolean
+  /** A sheet at the bottom edge (phones). */
+  bottom?: boolean
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -257,7 +260,7 @@ export function Modal({
   }, [onClose])
   return createPortal(
     <div
-      className={cx('fixed inset-0 z-50 flex justify-center bg-[rgba(5,5,7,0.6)] p-4', top ? 'items-start pt-[10vh]' : 'items-center')}
+      className={cx('fixed inset-0 z-50 flex justify-center bg-[rgba(5,5,7,0.6)]', bottom ? 'items-end p-0' : cx('p-4', top ? 'items-start pt-[10vh]' : 'items-center'))}
       style={{ zoom: (document.getElementById('root') as HTMLElement).style.zoom || undefined }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
