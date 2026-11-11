@@ -376,6 +376,9 @@ export type LinearDraftResult = {
   /** Basic prefill without the helper agent. */
   fallback?: LinearDraft
   link_in_description?: boolean
+  /** Meta stage: a helper agent is installed, so the dialog waits for its draft instead of prefilling. */
+  llm_available?: boolean
+  llm_reason?: 'no_agent'
   /** The helper agent's guess (ids already checked against the lists). */
   draft?: LinearDraft
   source?: 'llm'
