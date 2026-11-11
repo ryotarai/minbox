@@ -791,6 +791,14 @@ func (s *Server) linearDraft(w http.ResponseWriter, r *http.Request) {
 		out["meta"] = m
 		out["fallback"] = s.withBackref(ctx, fallbackDraft(th, m), th)
 		out["link_in_description"] = s.linearSettings(ctx).ThreadLink
+		// Whether a helper agent is installed: the dialog then leaves the helper-derived fields
+		// empty ("Drafting...") instead of flashing the basic prefill before the guess.
+		if _, _, herr := s.helperPlan(ctx, "haiku", draftSystemPrompt, draftSchema); herr == nil {
+			out["llm_available"] = true
+		} else {
+			out["llm_available"] = false
+			out["llm_reason"] = "no_agent"
+		}
 	}
 	if req.Stage == "" || req.Stage == "llm" {
 		f := s.threadFacts(ctx, th)

@@ -65,24 +65,40 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
 
   const load = useCallback(async () => {
     setLoadErr('')
+    let fallback: LinearDraft | undefined
+    let helper = false
     try {
       const r = await api.linearDraft(thread.id, 'meta')
       if (closed.current) return
       metaRef.current = r.meta ?? null
       setMeta(r.meta ?? null)
-      if (r.fallback) apply(r.fallback)
+      fallback = r.fallback
+      // With a helper agent the helper-derived fields stay empty ("Drafting…") until its draft
+      // arrives, so nothing flashes; only the certain defaults (team, assignee, state) go in now.
+      helper = r.llm_available === true
+      if (helper) {
+        if (fallback) apply({ team_id: fallback.team_id, assignee_id: fallback.assignee_id, state_id: fallback.state_id })
+        setDrafting(true)
+      } else if (fallback) apply(fallback)
     } catch (e) {
       if (!closed.current) setLoadErr(e instanceof Error ? e.message : String(e))
       return
     }
-    setDrafting(true)
+    if (closed.current) return
+    // No helper: the fallback is already applied and there is nothing to wait for.
+    if (!helper) return
     try {
       const r = await api.linearDraft(thread.id, 'llm')
       if (closed.current) return
       if (r.draft) apply(r.draft)
-      else setNote(r.note ?? 'Showing a basic draft.')
+      else {
+        if (fallback) apply(fallback)
+        setNote(r.note ?? 'Showing a basic draft.')
+      }
     } catch (e) {
-      if (!closed.current) setNote('Could not draft with the helper agent (' + (e instanceof Error ? e.message : String(e)) + '): a basic draft is shown.')
+      if (closed.current) return
+      if (fallback) apply(fallback)
+      setNote('Could not draft with the helper agent (' + (e instanceof Error ? e.message : String(e)) + '): a basic draft is shown.')
     }
     if (!closed.current) setDrafting(false)
   }, [thread.id, apply])
@@ -190,13 +206,14 @@ export function LinearCreateDialog({ thread, onClose }: { thread: Thread; onClos
           </div>
           <label className={label}>
             Title (required)
-            <input data-testid="linear-create-title" value={form.title} onChange={(e) => edit({ title: e.target.value })} className={field} maxLength={256} />
+            <input data-testid="linear-create-title" value={form.title} placeholder={drafting ? 'Drafting…' : undefined} onChange={(e) => edit({ title: e.target.value })} className={field} maxLength={256} />
           </label>
           <label className={label}>
             Description (Markdown)
             <textarea
               data-testid="linear-create-desc"
               value={form.description}
+              placeholder={drafting ? 'Drafting…' : undefined}
               onChange={(e) => edit({ description: e.target.value })}
               rows={9}
               className="rounded-md border border-linestrong bg-sunken p-2.5 text-[13px] text-fg outline-none focus:border-accent"

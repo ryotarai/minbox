@@ -1,5 +1,6 @@
 import { writeFileSync, rmSync } from 'node:fs'
-import { createSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
+import type { Page } from '@playwright/test'
+import { createSession, expect, expectTerminal, test, typeInTerminal, type Minbox } from './fixtures'
 
 // Linear integration, against a fake Linear (OAuth + MCP) on loopback: log in from Settings, link a
 // thread to an issue, see its comments arrive when the thread opens, and have them delivered to
@@ -99,10 +100,14 @@ test('create a Linear issue from a thread: late draft keeps what was typed; crea
   await page.getByTestId('linear-create-open').click()
   const submit = page.getByTestId('linear-create-submit')
   await expect(page.getByTestId('linear-create-drafting')).toBeVisible()
-  // Linear's lists and the basic prefill are there while the draft is pending.
+  // Linear's lists and the certain defaults are there while the draft is pending; the title and
+  // description are empty with a "Drafting…" hint (no flash of the basic prefill).
   await expect(page.getByTestId('linear-create-team').locator('option')).toHaveCount(3) // placeholder + 2 teams
-  await expect(page.getByTestId('linear-create-title')).toHaveValue('Note')
   await expect(page.getByTestId('linear-create-assignee')).toHaveValue('u1')
+  await expect(page.getByTestId('linear-create-title')).toHaveValue('')
+  await expect(page.getByTestId('linear-create-title')).toHaveAttribute('placeholder', 'Drafting…')
+  await expect(page.getByTestId('linear-create-desc')).toHaveValue('')
+  await expect(page.getByTestId('linear-create-desc')).toHaveAttribute('placeholder', 'Drafting…')
   // Team is required: no team, no Create.
   await expect(submit).toBeDisabled()
   // Typing meanwhile.
@@ -111,6 +116,7 @@ test('create a Linear issue from a thread: late draft keeps what was typed; crea
 
   rmSync(minbox.draftHold)
   await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0, { timeout: 15_000 })
+  await expect(page.getByTestId('linear-create-desc')).not.toHaveAttribute('placeholder', 'Drafting…')
   // Untouched fields were filled by the guess; the touched ones were not overwritten.
   await expect(page.getByTestId('linear-create-team')).toHaveValue('team-1')
   await expect(page.getByTestId('linear-create-desc')).toHaveValue(/Drafted from the thread/)
@@ -145,4 +151,53 @@ test('create a Linear issue from a thread: late draft keeps what was typed; crea
   // Linked like a pasted issue: no second create offered, unlink available.
   await expect(page.getByTestId('linear-create-open')).toHaveCount(0)
   await expect(page.getByTestId('linear-unlink')).toBeVisible()
+})
+
+async function openCreateDialog(page: Page, minbox: Minbox, name: string) {
+  await page.goto(`${minbox.url}/#v=settings&ss=integrations`)
+  await page.getByTestId('linear-connect').click()
+  await expect(page.getByTestId('linear-status')).toHaveText('Connected', { timeout: 15_000 })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, name)
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Working on the login bug')
+  await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Note')
+  await page.getByTestId('linear-create-open').click()
+}
+
+test('Linear create dialog: when the helper fails, the basic draft is applied afterwards with a note', async ({ page, minbox }) => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  await page.route('**/api/threads/*/linear/draft', async (route) => {
+    if (route.request().postDataJSON()?.stage !== 'llm') return route.continue()
+    await gate
+    await route.fulfill({ json: { reason: 'error', note: 'Could not draft with the helper agent (boom): a basic draft is shown.' } })
+  })
+  await openCreateDialog(page, minbox, 'lin-fail')
+  await expect(page.getByTestId('linear-create-team').locator('option')).toHaveCount(3)
+  await expect(page.getByTestId('linear-create-title')).toHaveValue('')
+  await expect(page.getByTestId('linear-create-desc')).toHaveValue('')
+  release()
+  await expect(page.getByTestId('linear-create-note')).toContainText('boom')
+  await expect(page.getByTestId('linear-create-title')).toHaveValue('Note')
+  await expect(page.getByTestId('linear-create-desc')).not.toHaveValue('')
+  await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0)
+})
+
+test('Linear create dialog: without a helper agent the basic draft is there at once', async ({ page, minbox }) => {
+  let llmCalls = 0
+  await page.route('**/api/threads/*/linear/draft', async (route) => {
+    if (route.request().postDataJSON()?.stage === 'llm') llmCalls++
+    if (route.request().postDataJSON()?.stage !== 'meta') return route.continue()
+    const r = await route.fetch()
+    const j = await r.json()
+    await route.fulfill({ response: r, json: { ...j, llm_available: false, llm_reason: 'no_agent' } })
+  })
+  await openCreateDialog(page, minbox, 'lin-nohelper')
+  await expect(page.getByTestId('linear-create-title')).toHaveValue('Note')
+  await expect(page.getByTestId('linear-create-desc')).not.toHaveValue('')
+  await expect(page.getByTestId('linear-create-title')).not.toHaveAttribute('placeholder', 'Drafting…')
+  await expect(page.getByTestId('linear-create-drafting')).toHaveCount(0)
+  expect(llmCalls).toBe(0)
 })

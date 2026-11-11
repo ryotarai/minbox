@@ -28,7 +28,12 @@ Create**.
    thread: title = the thread subject (else the first line of your first message), description = the latest
    agent message (else your first message), the assignee = you, the state = the team's unstarted state, and a
    team or project named like the minbox project (or the only team).
-2. **The helper agent's guess** ("Drafting..." shows while it runs; it never blocks the dialog). It goes through
+2. **The helper agent's guess** ("Drafting..." shows while it runs; it never blocks the dialog). When a helper
+   agent is installed (the server says so with `llm_available` in the first response), the dialog does not
+   show the basic prefill first: the title and description stay empty with a "Drafting..." hint (you can type
+   right away; what you touch is never overwritten) while the team, assignee and state defaults are filled in
+   at once. If the helper fails or times out, the basic prefill is applied to the untouched fields then, with a
+   note. Without any helper the basic prefill is applied immediately. It goes through
    the same one-shot helper as reply suggestions and the Slack project pick: Claude Code `claude -p` or Pi,
    whichever is installed (the default agent first), tool-less and in an empty folder. The prompt holds the
    thread subject, minbox project and thread name, folder, git branch (local sessions only), the session's

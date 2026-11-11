@@ -95,6 +95,18 @@ func TestLinearDraftMetaAndFallback(t *testing.T) {
 	if fb["team_id"] != "" { // two teams, none named like the project
 		t.Errorf("team guessed: %v", fb["team_id"])
 	}
+	// No helper agent is installed here: the dialog is told so and applies the fallback at once.
+	e.srv.cfg.ClaudeCommand, e.srv.cfg.PiCommand = []string{"minbox-no-such-claude"}, []string{"minbox-no-such-pi"}
+	e.srv.sessions.cfg.ClaudeCommand, e.srv.sessions.cfg.PiCommand = e.srv.cfg.ClaudeCommand, e.srv.cfg.PiCommand
+	if _, o := e.draft(id, "meta"); o["llm_available"] != false || o["llm_reason"] != "no_agent" {
+		t.Errorf("llm_available without a helper: %v %v", o["llm_available"], o["llm_reason"])
+	}
+	// With a helper command configured it is available.
+	e.srv.cfg.SuggestCommand = []string{"fake-helper"}
+	if _, o := e.draft(id, "meta"); o["llm_available"] != true || o["llm_reason"] != nil {
+		t.Errorf("llm_available with a helper: %v %v", o["llm_available"], o["llm_reason"])
+	}
+	e.srv.cfg.SuggestCommand = nil
 	// Nothing was written to Linear.
 	for _, c := range []string{"save_issue", "create_issue"} {
 		if n := len(e.f.callsOf(c)); n != 0 {
