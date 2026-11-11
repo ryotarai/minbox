@@ -271,6 +271,14 @@ fuzzy-searched list. Start with a prefix to search one kind: `>` actions, `@` se
 `#` threads, `!` projects. Threads match their title and the session and project names;
 sessions match name, title and folder. `↵` runs the highlighted row.
 
+## Start a thread from a message
+
+Hover a message (or use its "…" menu, the only way on a phone) and choose **Start new thread from here**. The dialog
+puts the new thread in this session (default), a new session in any project, or another session, shows the exact text
+the new agent will receive first (the quoted message, the id of the source thread and how to read it with `read_thread`)
+and takes an optional request. The new thread shows where it came from; the source thread shows a marker under the
+message, and its agent hears of forks into other sessions with your next message. Details: [docs/thread-fork.md](docs/thread-fork.md).
+
 ## Other devices and machines
 
 ### Your phone and other browsers

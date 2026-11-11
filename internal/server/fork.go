@@ -266,7 +266,7 @@ func (s *Server) planFork(ctx context.Context, parentID string, req forkReq) (*f
 		}
 		return nil, err
 	}
-	p := &forkPlan{parent: parent, idx: -1}
+	p := &forkPlan{parent: parent, idx: -1, warnings: []string{}}
 	for i := range parent.Messages {
 		if parent.Messages[i].ID == req.MessageID {
 			p.idx = i

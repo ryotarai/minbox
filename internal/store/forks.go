@@ -73,9 +73,11 @@ type ForkedFrom struct {
 	Subject     string `json:"subject"`
 	ProjectName string `json:"project_name"`
 	SessionName string `json:"session_name"`
-	MessageID   string `json:"message_id"`
-	Seq         int    `json:"seq"`
-	Gone        bool   `json:"gone"`
+	// SessionID: the parent thread's session ('' when it is gone), to open it.
+	SessionID string `json:"session_id"`
+	MessageID string `json:"message_id"`
+	Seq       int    `json:"seq"`
+	Gone      bool   `json:"gone"`
 	// MessageGone: the message is not in the parent thread any more (cancelled, or the thread is gone).
 	MessageGone bool `json:"message_gone"`
 	SameSession bool `json:"same_session"`
@@ -181,12 +183,12 @@ func (s *Store) ForkedFromOf(ctx context.Context, threadID string) (*ForkedFrom,
 	var f ForkedFrom
 	var parent sql.NullString
 	var created int64
-	var liveSubject, liveProject, liveSession, msgThread sql.NullString
+	var liveSubject, liveProject, liveSession, liveSessID, msgThread sql.NullString
 	err := s.db.QueryRowContext(ctx, `SELECT f.parent_thread_id, f.from_message_id, f.from_seq, f.parent_subject, f.parent_project_name, f.parent_session_name,
-	  f.same_session, f.carry_before, f.handoff, f.created_at, pt.subject, p.name, ss.name, (SELECT thread_id FROM messages WHERE id=f.from_message_id)
+	  f.same_session, f.carry_before, f.handoff, f.created_at, pt.subject, p.name, ss.name, ss.id, (SELECT thread_id FROM messages WHERE id=f.from_message_id)
 	  FROM thread_forks f LEFT JOIN threads pt ON pt.id=f.parent_thread_id LEFT JOIN sessions ss ON ss.id=pt.session_id LEFT JOIN projects p ON p.id=ss.project_id
 	  WHERE f.child_thread_id=?`, threadID).
-		Scan(&parent, &f.MessageID, &f.Seq, &f.Subject, &f.ProjectName, &f.SessionName, &f.SameSession, &f.CarryBefore, &f.Handoff, &created, &liveSubject, &liveProject, &liveSession, &msgThread)
+		Scan(&parent, &f.MessageID, &f.Seq, &f.Subject, &f.ProjectName, &f.SessionName, &f.SameSession, &f.CarryBefore, &f.Handoff, &created, &liveSubject, &liveProject, &liveSession, &liveSessID, &msgThread)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -203,6 +205,7 @@ func (s *Store) ForkedFromOf(ctx context.Context, threadID string) (*ForkedFrom,
 		if liveSession.Valid {
 			f.SessionName = liveSession.String
 		}
+		f.SessionID = liveSessID.String
 		f.MessageGone = !msgThread.Valid || msgThread.String != parent.String
 	} else {
 		f.Gone, f.MessageGone = true, true

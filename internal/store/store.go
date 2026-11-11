@@ -211,11 +211,11 @@ type Thread struct {
 	Linear       *ThreadLink   `json:"linear,omitempty"`
 	LinearEvents []LinearEvent `json:"linear_events,omitempty"`
 	// Forks (see forks.go). IsFork / ForkCount are in every list; ForkedFrom and Forks in GetThread only.
-	IsFork     bool        `json:"is_fork,omitempty"`
-	ForkCount  int         `json:"fork_count,omitempty"`
-	ForkedFrom *ForkedFrom `json:"forked_from,omitempty"`
-	Forks      []ForkChild `json:"forks,omitempty"`
-	undelivered  int
+	IsFork      bool        `json:"is_fork,omitempty"`
+	ForkCount   int         `json:"fork_count,omitempty"`
+	ForkedFrom  *ForkedFrom `json:"forked_from,omitempty"`
+	Forks       []ForkChild `json:"forks,omitempty"`
+	undelivered int
 }
 
 type Message struct {

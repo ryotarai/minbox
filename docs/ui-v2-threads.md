@@ -253,6 +253,11 @@ the selected session) since the list is global.
   is off for that frame and restored after. The bottom-pin flag is re-read first. If the thread is too short to hold
   the position, the view clamps to the bottom. E2E: `thread-earlier.spec.ts` (desktop and phone).
 
+- **Start a thread from a message** (`ForkDialog`, markers and breadcrumb in `ThreadView`; see [thread-fork.md](thread-fork.md)): the message header has a
+  fork button (hover / focus, testid `message-fork`) and a "…" menu (`message-more` -> `message-fork-item`, the only entry on the phone). The new thread
+  shows a `fork-breadcrumb` (and `phone-fork-crumb` in the phone header) and a collapsed `handoff-card`; the source shows a derived `fork-marker` under the
+  message; the list rows get a fork icon (`fork-icon`) and a count (`fork-count`). E2E: `fork.spec.ts` (desktop and phone).
+
 ## Diagrams and annotating images in the composer
 
 A pencil-on-shapes button (`compose-draw`, "Draw a diagram") sits right of the paperclip in both composers (new

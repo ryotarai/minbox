@@ -3,7 +3,7 @@ import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '..
 import { useApp } from '../lib/app'
 import { initials, oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
-import { IconPin } from './icons'
+import { IconFork, IconPin } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
 import { useSelectedProject } from '../lib/projects'
 
@@ -124,6 +124,7 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         {!scopedProject && <ThreadProjectBadge projectId={t.project_id} projectName={t.project_name} />}
         {t.unread > 0 && <span aria-label="Unread" className="h-[7px] w-[7px] shrink-0 rounded-full bg-wait" />}
         {t.pinned_at && <IconPin size={12} className="shrink-0 text-muted" />}
+        {t.is_fork && <IconFork size={12} className="shrink-0 text-accent" aria-label="Forked from another thread" data-testid="fork-icon" />}
         <span title={t.subject} className={cx('min-w-0 flex-1 truncate', phone ? 'text-[15.5px]' : 'text-[14px]', strong ? 'font-[650] text-fg' : 'font-normal text-fg2')}>{t.subject}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
@@ -138,6 +139,12 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         {t.open_questions > 0 && (
           <span className="shrink-0 rounded-[6px] bg-accent px-1.5 text-[11px] font-bold text-onaccent" title="Open questions" data-testid="thread-questions">
             ?{t.open_questions}
+          </span>
+        )}
+        {(t.fork_count ?? 0) > 0 && (
+          <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] text-subtle" title={`${t.fork_count} thread(s) started from here`} data-testid="fork-count">
+            <IconFork size={11} />
+            {t.fork_count}
           </span>
         )}
         {t.status && <ThreadStatusBadge status={t.status} />}
