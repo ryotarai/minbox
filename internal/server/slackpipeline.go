@@ -590,7 +590,7 @@ func (l *slackSvc) run(ctx context.Context) error {
 		fresh = append(fresh, td)
 	}
 	l.trimCache()
-	_ = l.s.store.TouchSlackThreads(ctx, seen)
+	_ = l.s.store.TouchSlackThreads(ctx, seen, l.now())
 	l.pruneFetched(ctx)
 	fresh = append(fresh, retry...) // cached threads whose judgement failed earlier are judged again
 	if len(fresh) == 0 {
