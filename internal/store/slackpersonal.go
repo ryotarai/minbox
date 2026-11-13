@@ -205,17 +205,21 @@ type SlackUserRow struct {
 	FetchedAt time.Time
 }
 
-// SaveSlackThread stores (or replaces) a fetched thread and marks it seen now.
+// SaveSlackThread stores (or replaces) a fetched thread and marks it seen at r.SeenAt (the caller's clock; the store clock if zero).
 func (s *Store) SaveSlackThread(ctx context.Context, r SlackThreadRow) error {
+	seen := r.SeenAt
+	if seen.IsZero() {
+		seen = s.now()
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO slack_threads(channel, thread_ts, latest_ts, fetched_at, seen_at, data) VALUES(?,?,?,?,?,?)
 	  ON CONFLICT(channel, thread_ts) DO UPDATE SET latest_ts=excluded.latest_ts, fetched_at=excluded.fetched_at, seen_at=excluded.seen_at, data=excluded.data`,
-		r.Channel, r.ThreadTS, r.LatestTS, ms(r.FetchedAt), ms(s.now()), r.Data)
+		r.Channel, r.ThreadTS, r.LatestTS, ms(r.FetchedAt), ms(seen), r.Data)
 	return err
 }
 
-// TouchSlackThreads marks the threads ([channel, thread_ts] pairs) seen now, so pruning keeps them.
-func (s *Store) TouchSlackThreads(ctx context.Context, keys [][2]string) error {
-	now := ms(s.now())
+// TouchSlackThreads marks the threads ([channel, thread_ts] pairs) seen at seenAt, so pruning keeps them.
+func (s *Store) TouchSlackThreads(ctx context.Context, keys [][2]string, seenAt time.Time) error {
+	now := ms(seenAt)
 	for _, k := range keys {
 		if _, err := s.db.ExecContext(ctx, `UPDATE slack_threads SET seen_at=? WHERE channel=? AND thread_ts=?`, now, k[0], k[1]); err != nil {
 			return err

@@ -30,7 +30,7 @@ type slEnv struct {
 
 func newSlEnv(t *testing.T) *slEnv {
 	t.Helper()
-	e := &slEnv{env: newEnv(t), f: newFakeSlackUser(t), clock: time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC), verdict: map[string]map[string]any{}}
+	e := &slEnv{env: newEnv(t), f: newFakeSlackUser(t), clock: time.Now().UTC().Truncate(time.Hour), verdict: map[string]map[string]any{}}
 	l := e.srv.slack
 	l.cl.Base = e.f.ts.URL
 	l.now = func() time.Time { e.mu.Lock(); defer e.mu.Unlock(); return e.clock }
