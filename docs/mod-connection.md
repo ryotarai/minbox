@@ -57,12 +57,21 @@ out.
    submitted a second time after 60 s. The mod now keeps the ids it submitted, retries the
    `delivered` call on the next polls, and never submits an id twice (also not while a submit is
    still running).
-3. **The mod stopped polling and nobody could tell (gap, now visible).** Possible causes: the
-   mod's `session.end` ran (it cancels the timer) without a `session.start` after it (a
-   `/clear`, `/resume` or reload sequence the mod does not survive); `session.start` was not
-   interactive so the mod stayed disabled (`!e.isInteractive`); a hook threw. The old `mod_silent`
-   flag (any call within 45 s) caught some of this, but without a reason. The heartbeat, the mod's
-   event log and `GET /api/sessions/{id}/connection` now show it.
+3. **The mod stopped polling after `/clear` (confirmed, fixed).** The Claude Code mod API fires
+   `session.end` with `reason: 'clear'` on `/clear` and fires no `session.start` after it (the
+   process goes on under a new Claude session id; the same holds for a resume). The mod's
+   `session.end` hook cancelled both the tick timer (polling, delivery) and the heartbeat timer,
+   and only `session.start` re-created them, so after `/clear` the heartbeat stopped (the UI shows
+   "no heartbeat") and replies were no longer picked up. Verified from the type documentation and
+   by a mod test that reproduces the sequence; not observed live in a session. The mod now keeps
+   both timers running across `session.end` (they die with the process), resets its
+   per-conversation state (busy, nudges, pending reminders) and re-sends the instructions with the
+   next prompt; the tick's `hello` sends the new `claude_session_id` within a second, and the
+   server's hello handler stores it (`SetClaudeSessionID`), so a later restart resumes the
+   conversation after the `/clear`. Other causes of silence remain possible: a `session.start`
+   that is not interactive (the mod stays disabled), or a hook that threw.
+   **The fix takes effect only in a Claude Code session started after the new mod is installed**;
+   a running session keeps the old mod and still goes silent on `/clear` (restart it).
 4. **Stuck busy.** If Claude never sent `turn.complete`, non-urgent messages wait up to 120 s,
    then 5 minutes as `urgent`. A long turn without tool calls (long thinking) over 120 s makes the
    mod believe Claude is idle and deliver into a running turn (queued by Claude Code; not lost).

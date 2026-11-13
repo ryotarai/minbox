@@ -8,13 +8,13 @@ const registeredTools: Record<string, boolean> = {}
 type Call = { method: string; path: string; body: any }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: any[], opts: { instructions?: string; failHello?: boolean; hangPolls?: number; down?: boolean; failPaths?: RegExp } = {}) {
+function fakeServer(on: any, pending: any[], opts: { instructions?: string; failHello?: boolean; hangPolls?: number; down?: boolean; failPaths?: RegExp; id?: { current: string } } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
   const claimed = new Set<string>()
   on('fs.read', (_: any, e: any) => ({ value: e.path === SERVER_FILE ? JSON.stringify({ url: 'http://127.0.0.1:4848' }) : null }))
-  on('session.id', () => ({ value: 'claude-1' }))
+  on('session.id', () => ({ value: opts.id?.current ?? 'claude-1' }))
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId ?? 't' }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
@@ -615,3 +615,32 @@ test('when the delivered call fails the message is acknowledged again, never sub
   expect(server.submitted.length).toBe(1)
   expect([...server.delivered]).toEqual(['msg_r1'])
 })
+
+for (const restart of [false, true]) {
+  test(`/clear (session.end reason clear${restart ? ', then a session.start' : ', no start after'}): heartbeat and polling go on, hello is re-sent`, async ($, on) => {
+    const clock = mock.clock(on)
+    mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+    const id = { current: 'claude-1' }
+    const pending: any[] = []
+    const server = fakeServer(on, pending, { id })
+    on('session.end', (_: any, e: any) => ({ sessionId: e.sessionId }))
+    await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+    await clock.advance(5000)
+    const hellos = () => server.calls.filter((c) => c.path === '/api/agent/hello')
+    const beats = () => server.calls.filter((c) => c.path === '/api/agent/heartbeat').length
+    expect(hellos().length).toBe(1)
+
+    id.current = 'claude-2'
+    await $.session.end({ reason: 'clear', sessionId: 'claude-1', resume: {} } as any)
+    if (restart) await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+    const before = beats()
+    await clock.advance(40_000)
+    expect(beats()).toBeGreaterThan(before + 1) // the 15 s heartbeat did not stop
+    expect(hellos().at(-1)!.body).toEqual({ claude_session_id: 'claude-2' })
+    // a reply sent after the clear is still picked up and delivered
+    pending.push(REPLY)
+    await clock.advance(5000)
+    expect(server.submitted.length).toBe(1)
+    expect([...server.delivered]).toEqual(['msg_r1'])
+  })
+}
