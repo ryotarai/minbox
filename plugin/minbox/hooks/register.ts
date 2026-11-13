@@ -439,13 +439,26 @@ export const register: Register = (on) => {
   })
 
   on('session.end', async ($, e, next) => {
-    note($, 'session-end', 'session.end: the mod stops polling')
-    // One last heartbeat says so (best effort); then the ticks stop.
-    void heartbeat($)
-    timer?.cancel()
-    timer = null
-    heartbeatTimer?.cancel()
-    heartbeatTimer = null
+    // session.end is a conversation lifecycle event, not the process's: /clear (and a resume) fire it
+    // with no session.start after, and the process carries on under a new Claude session id. The tick
+    // and heartbeat timers therefore keep running (they die with the process); the tick's hello
+    // follows the new id. Only the per-conversation state starts over.
+    note($, 'session-end', `session.end (${(e as any).reason ?? '?'}): the mod keeps polling; the next hello follows the new conversation id`)
+    if (conn) {
+      busy = false
+      busyTicks = 0
+      idleTicks = 0
+      nudgeNext = false
+      nudging = false
+      sentThisTurn = false
+      turnThreads = []
+      deliveredThreads = []
+      replyNudgeThreads = []
+      threadsNext = false
+      remindNext = true // the new conversation has not seen the instructions
+      status($, 'idle')
+      void heartbeat($)
+    }
     return next(e)
   })
 
