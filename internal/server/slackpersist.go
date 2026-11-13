@@ -90,7 +90,7 @@ func (l *slackSvc) persistThread(ctx context.Context, td *slackThreadData) {
 	if data == "" {
 		return
 	}
-	_ = l.s.store.SaveSlackThread(ctx, store.SlackThreadRow{Channel: td.Channel, ThreadTS: td.ThreadTS, LatestTS: td.LatestTS, FetchedAt: td.FetchedAt, Data: data})
+	_ = l.s.store.SaveSlackThread(ctx, store.SlackThreadRow{Channel: td.Channel, ThreadTS: td.ThreadTS, LatestTS: td.LatestTS, FetchedAt: td.FetchedAt, SeenAt: l.now(), Data: data})
 }
 
 func (l *slackSvc) persistUser(ctx context.Context, id string, e slackUserEntry) {
