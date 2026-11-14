@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { placePopover } from '../lib/popoverPlacement'
 import { THREAD_STATUS_LABEL, type ThreadStatus } from '../api'
 
 export function cx(...v: (string | false | null | undefined)[]): string {
@@ -113,27 +114,33 @@ export function Popover({
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
   useLayoutEffect(() => {
     if (!open || !anchor) return
     const place = () => {
       const r = anchor.getBoundingClientRect()
       const el = ref.current
       const w = el?.offsetWidth ?? 200
-      const h = el?.offsetHeight ?? 200
       const zoom = parseFloat((document.getElementById('root') as HTMLElement).style.zoom || '1')
-      const vw = window.innerWidth / zoom
-      const vh = window.innerHeight / zoom
+      const v = window.visualViewport
+      const vv = v
+        ? { left: v.offsetLeft / zoom, top: v.offsetTop / zoom, width: v.width / zoom, height: v.height / zoom }
+        : { left: 0, top: 0, width: window.innerWidth / zoom, height: window.innerHeight / zoom }
       const ar = { left: r.left / zoom, right: r.right / zoom, top: r.top / zoom, bottom: r.bottom / zoom }
-      let left = side === 'right' ? ar.right + 4 : align === 'end' ? ar.right - w : ar.left
-      let top = side === 'top' ? ar.top - h - 4 : side === 'right' ? ar.top : ar.bottom + 4
-      if (top + h > vh - 8) top = Math.max(8, ar.top - h - 4)
-      left = Math.min(Math.max(8, left), vw - w - 8)
-      setPos({ left, top })
+      const h = Math.max(el?.offsetHeight ?? 200, el?.scrollHeight ?? 0)
+      setPos(placePopover({ anchor: ar, width: w, height: h, vv, side, align }))
     }
     place()
     const raf = requestAnimationFrame(place)
-    return () => cancelAnimationFrame(raf)
+    // The on-screen keyboard shrinks the visual viewport (not the layout one): re-place on resize/scroll.
+    const vvp = window.visualViewport
+    vvp?.addEventListener('resize', place)
+    vvp?.addEventListener('scroll', place)
+    return () => {
+      cancelAnimationFrame(raf)
+      vvp?.removeEventListener('resize', place)
+      vvp?.removeEventListener('scroll', place)
+    }
   }, [open, anchor, align, side])
   useEffect(() => {
     if (!open) return
@@ -177,7 +184,7 @@ export function Popover({
     <div
       ref={ref}
       role="menu"
-      style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, zoom: (document.getElementById('root') as HTMLElement).style.zoom || undefined }}
+      style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, maxHeight: pos?.maxHeight, overflowY: 'auto', overscrollBehavior: 'contain', zoom: (document.getElementById('root') as HTMLElement).style.zoom || undefined }}
       className={cx('z-[60] min-w-[190px] rounded-[10px] border border-linestrong bg-overlay p-[5px] text-[13px] shadow-pop', className)}
     >
       {children}
