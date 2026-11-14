@@ -1,7 +1,7 @@
 # The mod connection
 
 How a message you send reaches the agent, how to tell that the connection between the agent's
-integration (the Claude Code mod in `plugin/minbox`, or the Pi extension in `plugin/pi`) and the
+integration (the Claude Code mod in `plugin/minbox`, the Pi extension in `plugin/pi`, or the OpenCode plugin in `plugin/opencode`) and the
 minbox server is alive, and what can go wrong. Written after reports of replies that an idle agent
 did not pick up.
 
@@ -95,11 +95,11 @@ out.
 
 ## The heartbeat
 
-Every 15 s (`HEARTBEAT_MS`; Pi: once per loop round, at most every 15 s) the mod sends
+Every 15 s (`HEARTBEAT_MS`; Pi and OpenCode: once per loop round, at most every 15 s) the mod sends
 `POST /api/agent/heartbeat`, authenticated like every agent call (the session's bearer token):
 
 ```
-{ seq, agent: "claude"|"pi", ext_version, state: "idle"|"working",
+{ seq, agent: "claude"|"pi"|"opencode", ext_version, state: "idle"|"working",
   last_poll_at, last_delivery_at,            // the mod's own timestamps, "" before the first
   info: { busy_ticks, idle_ticks, polling, poll_ticks, inflight, unacked, offline, fail_streak, owner_prefix },
   events: [ { at, kind, msg } ... up to 25 ] } // the tail of the mod's own event log

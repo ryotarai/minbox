@@ -134,7 +134,7 @@ Settings (one JSON object; PUT merges top-level keys):
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
   reply_suggestions: bool,     (default true; see "Reply suggestions")
-  default_agent: ""|"claude"|"pi",  (default ""; the agent of a new session when neither the request nor the project says;
+  default_agent: ""|"claude"|"pi"|"opencode",  (default ""; the agent of a new session when neither the request nor the project says;
                                 "" = Claude Code if installed, else the installed one; see "Coding agents")
   orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
                                 block to --append-system-prompt; read per spawn, running sessions keep theirs)
@@ -982,24 +982,26 @@ when `public_url` is set. `&`, `<`, `>` are escaped (`&amp;` `&lt;` `&gt;`). Con
 and fences kept. With `include_body` off only the header, context and button are sent.
 
 
-## Coding agents (Claude Code and Pi)
+## Coding agents (Claude Code, Pi and OpenCode)
 
 See docs/agents.md for the model. API surface:
 
-- `GET /api/agents` -> `{agents: [{kind: "claude"|"pi", label, installed, command, path, caps: {subagents, preassigned_id, remote_hosts, completions}}], default: "claude"|"pi"}`.
-  `installed` is whether the first word of the configured command (`--claude`, `--pi`) is on the server's `PATH`; no agent is run. `default` is
-  the effective agent of a new session with nothing else said (setting `default_agent` if installed, else Claude Code if installed, else the
-  installed one, else `claude`). `GET /api/about` adds `pi_command` and the same `agents` list.
-- `Session.agent` (`"claude"` | `"pi"`; existing rows `claude`). `Session.kind` stays `claude` (has the inbox) | `shell`. `claude_session_id`,
+- `GET /api/agents` -> `{agents: [{kind: "claude"|"pi"|"opencode", label, installed, command, path, caps: {subagents, preassigned_id, remote_hosts, completions, movable_conversation?}, version?, supported, reason?}], default: "claude"|"pi"|"opencode"}`.
+  `installed` is whether the first word of the configured command (`--claude`, `--pi`, `--opencode`) is on the server's `PATH`; Claude Code and
+  Pi are not run. For OpenCode `opencode --version` is read (cached per executable): `version`, and `supported: false` with a `reason` for 1.x.
+  `default` is the effective agent of a new session with nothing else said (setting `default_agent` if usable, else Claude Code, Pi, OpenCode,
+  the first usable, else `claude`). `GET /api/about` adds `pi_command`, `opencode_command` and the same `agents` list.
+- `Session.agent` (`"claude"` | `"pi"` | `"opencode"`; existing rows `claude`). `Session.kind` stays `claude` (has the inbox) | `shell`. `claude_session_id`,
   `prev_claude_session_id` and `prev_chain[].claude_session_id` hold the agent's conversation id for either agent.
-- `POST /api/sessions` takes `agent?: "claude"|"pi"`. Omitted: the project's `default_agent`, else the `default_agent` setting, else the
+- `POST /api/sessions` takes `agent?: "claude"|"pi"|"opencode"`. Omitted: the project's `default_agent`, else the `default_agent` setting, else the
   installed agent. 400: unknown agent; Pi not installed (`Pi is not installed (looked for "pi" on PATH)`); Pi on a host other than the
-  built-in one (`Pi sessions run on the server's own machine only for now …`). Claude Code that is not installed fails when the terminal
+  built-in one (`Pi sessions run on the server's own machine only for now …`); the same for OpenCode, plus an unsupported OpenCode
+  (`OpenCode cannot be used: OpenCode 1.0.150 is OpenCode 1.x; …`). Claude Code that is not installed fails when the terminal
   host starts it, as before.
-- `Project.default_agent` (`""` | `"claude"` | `"pi"`); `PATCH /api/projects/{id}` takes `default_agent` (400 for another value).
+- `Project.default_agent` (`""` | `"claude"` | `"pi"` | `"opencode"`); `PATCH /api/projects/{id}` takes `default_agent` (400 for another value).
 - `POST /api/agent/hello` (the integration's first call) takes, besides the old `claude_session_id`, `agent_session_id` (the agent's current
   conversation id; either key moves the session's stored id, which is how `/clear` in Claude Code and `/new` in Pi are followed), `agent`
-  (`"claude"|"pi"`, informational), `session_file` and `ext_version` (logged). It answers with an `agent` field (the session's agent) next to
+  (`"claude"|"pi"|"opencode"`, informational), `session_file` and `ext_version` (logged). It answers with an `agent` field (the session's agent) next to
   `session_id`, `name`, `instructions`, `prompt_extra`, `orchestrator`. `instructions` uses the agent's tool names (`mcp__minbox__*` for
   Claude Code, `minbox_*` for Pi) and `orchestrator` is `""` for an agent without subagents (Pi). For Pi, `instructions` ends with a short `# minbox: subagents` section about `minbox_subagent` (docs/agents.md, "Pi subagents").
 - The text "Asked <agent label> to ask the N open questions again." uses the session's agent.
@@ -1107,7 +1109,7 @@ never returned (only `token_masked`); every error text is scrubbed of it. `MINBO
 
 See `docs/mod-connection.md` for the delivery path, failure modes and log lines.
 
-- `POST /api/agent/heartbeat` (the agent API, bearer = the session token) body `{seq, agent: "claude"|"pi", ext_version, state: "idle"|"working",
+- `POST /api/agent/heartbeat` (the agent API, bearer = the session token) body `{seq, agent: "claude"|"pi"|"opencode", ext_version, state: "idle"|"working",
   last_poll_at, last_delivery_at, info: {string|number|bool values, at most 30}, events: [{at, kind, msg}]}` (the last 50 events are kept, texts cut) -> `{ok: true, server_time}`.
   The mod sends it every 15 s. The server records it per session, judges the connection by it, logs `modconn:` lines (hello, heartbeat-first, pending, claimed, delivered,
   released, claim-refused, stale, reconnected, undelivered, seq-reset, spawn, relocated, exit; ids, lengths and timings only) and publishes a `sessions` event when the state flips.
