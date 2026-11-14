@@ -1,53 +1,58 @@
-# Coding agents: Claude Code and Pi
+# Coding agents: Claude Code, Pi and OpenCode
 
 minbox runs a coding agent in each session's terminal and talks to it through a small integration
-loaded into the agent (a mod for Claude Code, an extension for Pi). Two agents are supported; **either
-one alone is enough**: minbox starts, shows its UI and runs sessions on a machine that has only Pi
-(no `claude` binary), or only Claude Code.
+loaded into the agent (a mod for Claude Code, an extension for Pi, a plugin for OpenCode). Three agents are
+supported; **any one alone is enough**: minbox starts, shows its UI and runs sessions on a machine that has only Pi
+or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: [opencode.md](opencode.md).
 
-| | Claude Code | Pi |
-| --- | --- | --- |
-| Package | `claude` (Claude Code with mod support) | `pi`: `@earendil-works/pi-coding-agent` 1.x (Node 22.19+). Not the deprecated `@mariozechner/pi-coding-agent` 0.x |
-| Integration | `plugin/minbox` (hooks module), `--plugin-dir` | `plugin/pi/minbox.ts`, `-e` |
-| Command (flag / env / default) | `--claude` / `MINBOX_CLAUDE` / `claude` | `--pi` / `MINBOX_PI` / `pi` |
-| Tool names the agent sees | `mcp__minbox__send_message`, … | `minbox_send_message`, … |
-| Subagents / orchestrator prompt | yes | no (the orchestrator prompt is never added) |
-| Conversation id | chosen by minbox, `--session-id`, later `--resume` | chosen by minbox, `--session-id` (create-or-continue) |
-| Remote hosts | yes | not yet (this machine only) |
-| Permission prompts | none in minbox's setup | none: Pi has no permission system. It runs with your user's permissions. Use a container if you want a boundary |
+| | Claude Code | Pi | OpenCode |
+| --- | --- | --- | --- |
+| Package | `claude` (Claude Code with mod support) | `pi`: `@earendil-works/pi-coding-agent` 1.x (Node 22.19+). Not the deprecated `@mariozechner/pi-coding-agent` 0.x | `opencode` 2.x ("V2"); 1.x is listed as unsupported |
+| Integration | `plugin/minbox` (hooks module), `--plugin-dir` | `plugin/pi/minbox.ts`, `-e` | `plugin/opencode` (V2 server plugin), `OPENCODE_CONFIG_CONTENT` `plugins` |
+| Command (flag / env / default) | `--claude` / `MINBOX_CLAUDE` / `claude` | `--pi` / `MINBOX_PI` / `pi` | `--opencode` / `MINBOX_OPENCODE` / `opencode` |
+| Tool names the agent sees | `mcp__minbox__send_message`, … | `minbox_send_message`, … | `minbox_send_message`, … |
+| Subagents / orchestrator prompt | yes | no (the orchestrator prompt is never added) | yes (OpenCode's `subagent` tool; plus an OpenCode section) |
+| Conversation id | chosen by minbox, `--session-id`, later `--resume` | chosen by minbox, `--session-id` (create-or-continue) | chosen by minbox (`ses_…`), created by minbox before the start, `--session` |
+| Instructions | `--append-system-prompt` (+ the mod re-injects) | `--append-system-prompt` | the plugin's `context` hook, every request |
+| Folder change | fresh conversation + note | fresh conversation + note | the session moves with the project |
+| Remote hosts | yes | not yet (this machine only) | not yet (this machine only) |
+| Permission prompts | none in minbox's setup | none: Pi has no permission system. It runs with your user's permissions. Use a container if you want a boundary | `--auto`: approved unless your OpenCode configuration denies it |
 
 ## How agents are modelled
 
-* `internal/agent` holds the `Agent` interface and the two adapters (`claude.go`, `pi.go`). The server asks
-  the adapter for everything that depends on the agent: the command line, the tool-name prefix for the
-  instructions text, the "this thread moved folder" note, capabilities, and the headless (one-shot) run.
+* `internal/agent` holds the `Agent` interface and the adapters (`claude.go`, `pi.go`, `opencode.go`). The server asks
+  the adapter for everything that depends on the agent: the command line and extra environment, a fresh
+  conversation id, the tool-name prefix for the instructions text, the "this thread moved folder" note,
+  capabilities, and the headless (one-shot) run.
   Termhost, threads, questions, the pending queue, attachments, Slack and the whole `/api/agent/*`
   API do not know the agent kind.
-* A session has an agent: `sessions.agent` (`claude` | `pi`; `kind` still says `claude` | `shell`, and a Pi
-  session has `kind: "claude"`, i.e. "a session with the inbox"). Existing rows get `claude` by migration.
+* A session has an agent: `sessions.agent` (`claude` | `pi` | `opencode`; `kind` still says `claude` | `shell`, and a Pi
+  or OpenCode session has `kind: "claude"`, i.e. "a session with the inbox"). Existing rows get `claude` by migration.
   The columns `claude_session_id` / `prev_claude_session_id` / `prev_chain` and the API keys with those
   names keep their names; they hold the agent's conversation id whatever the agent is.
 * A project has an optional default: `projects.default_agent` (`""` follows the setting).
 * The agent of a new session is, in order: the request's `agent`, the project's `default_agent`, the
-  `default_agent` setting, then `Commands.Choose`: Claude Code if it is installed, else the installed one
+  `default_agent` setting, then `Commands.Choose`: Claude Code if it is usable, else Pi, else OpenCode
   (so on a Pi-only machine the default is Pi). "Installed" means the first word of the configured
-  command is found on `PATH`; minbox never runs the agent to find out.
-* `GET /api/agents` lists both with `installed`, `command`, `path`, capabilities and the effective
-  `default`. The UI shows an agent picker in New session only when more than one is installed, a
-  "Coding agents" block in Settings → Capabilities, and a small "Pi" tag on Pi sessions.
+  command is found on `PATH`; minbox never runs Claude Code or Pi to find out. OpenCode is also asked its
+  version (`opencode --version`, cached per executable): only 2.x is "supported"; "usable" = installed and supported.
+* `GET /api/agents` lists all three with `installed`, `command`, `path`, capabilities, `version`/`supported`/`reason`
+  and the effective `default`. The UI shows an agent picker in New session only when more than one is usable, a
+  "Coding agents" block in Settings → Capabilities, and a small "Pi" / "OpenCode" tag on their sessions.
 * **One instruction text.** `buildInstructions` in `internal/server/sessions.go` is written once with
   Claude Code's tool names (`mcp__minbox__send_message`); `buildInstructionsFor(agent, …)` swaps the prefix
-  for the agent's (`minbox_`) and leaves out the orchestrator block when the agent has no subagents. The
-  command line (`--append-system-prompt`) and the hello answer carry the same text. For Claude Code the
-  result is byte-identical to before.
+  for the agent's (`minbox_`), leaves out the orchestrator block when the agent has no subagents, and adds Pi's
+  or OpenCode's subagent section. The command line (`--append-system-prompt`) and the hello answer carry the
+  same text (OpenCode gets it only from the hello). For Claude Code the result is byte-identical to before.
 
 ## Nothing needs `claude`
 
 * Startup, `GET /api/agents`, `/api/about`, the UI and creating a Pi session never run or require `claude`.
 * **Helper runs** (reply suggestions, picking the project of a Slack DM) used to call `claude -p`. They now go
   through `helperPlan` in `internal/server/suggest.go`: `MINBOX_SUGGEST_COMMAND` (a Claude-format helper,
-  used by the tests) wins; otherwise the default agent runs the helper; if it is not installed the other one does;
-  if neither is, the error is `agent.ErrNoneInstalled`: the suggestions endpoint answers
+  used by the tests) wins; otherwise the default agent runs the helper; if it is not installed another one does;
+  OpenCode only when neither Claude Code nor Pi is installed (opencode.md, "Helper runs"); if none is, the error is
+  `agent.ErrNoneInstalled`: the suggestions endpoint answers
   `{"suggestions": [], "reason": "no_agent"}` and a Slack DM falls back to the fallback project. Never a crash.
 * Claude's helper is unchanged (`claude -p … --json-schema`, Haiku). Pi's is
   `pi --print --offline --no-session --no-tools --no-extensions --no-skills --no-prompt-templates --no-context-files --no-themes --system-prompt <system + schema> [--model M] "<answer in JSON>"`
@@ -193,12 +198,13 @@ killed child); the whole worktree merge flow with a real worker; that a long rea
 
 ## How to add an agent
 
-1. Implement `agent.Agent` in `internal/agent/<name>.go`: `Kind`, `Label`, `Tools` (the prefix), `Caps`, `Argv`,
-   `RelocationNote`, `Headless`; register the kind in `For` and `Kinds` (the order is the preference order).
+1. Implement `agent.Agent` in `internal/agent/<name>.go`: `Kind`, `Label`, `Tools` (the prefix), `Caps`, `Argv`, `Env`,
+   `NewConversationID`, `RelocationNote`, `Headless`; register the kind in `For` and `Kinds` (the order is the preference order).
 2. Write the integration (the thing loaded into the agent) against `/api/agent/*`: hello (`agent`, `agent_session_id`),
    status, pending → claim → delivered/release, messages, title, open, threads, cards. Reuse
    `plugin/minbox/hooks/text.ts` for the wording; embed the files in `plugin/embed.go` like `ExtractPi`.
 3. Add its command to `Config`, `agent.Commands`, `cmd/minbox/main.go` (flag + env) and `sessionManager.argv`.
-4. If its conversations are stored per folder, teach `conversationExists` where they are.
+4. If its conversations are stored per folder, teach `conversationExists` where they are (never read an agent's
+   database directly: OpenCode's check goes through `opencode api --standalone`).
 5. Add the kind to `web/src/api.ts` (`AgentKind`) and `AgentTag`; the pickers read `GET /api/agents`.
 6. Tests: an adapter table test, a server test with a fake executable on `PATH`, a fake agent for Playwright.
