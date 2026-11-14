@@ -26,12 +26,13 @@ export function messageText(m: Message): string {
  */
 export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; message: Message; seq: number; onClose: () => void }) {
   const { sessions, projects, navigate, error, isPhone, reloadSessions, reloadProjects } = useApp()
-  const agentsInfo = useAgents()
-  const installed = installedAgents(agentsInfo)
   const parent = sessions?.find((s) => s.id === thread.session_id)
   const sameOk = !!parent && !parent.archived_at && parent.status !== 'ended'
   const [dest, setDest] = useState<Dest>(sameOk ? 'same' : 'new')
   const [projectId, setProjectId] = useState(thread.project_id ?? projects?.[0]?.id ?? '')
+  // The agents of the chosen project's machine (its host).
+  const agentsInfo = useAgents(projects?.find((p) => p.id === projectId)?.host_id)
+  const installed = installedAgents(agentsInfo)
   const [agentPick, setAgentPick] = useState<AgentKind | ''>('')
   const others = useMemo(() => (sessions ?? []).filter((s) => s.kind === 'claude' && !s.archived_at && s.status !== 'ended' && s.id !== thread.session_id), [sessions, thread.session_id])
   const [otherId, setOtherId] = useState('')

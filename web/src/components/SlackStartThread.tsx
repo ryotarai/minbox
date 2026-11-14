@@ -14,8 +14,6 @@ import { Button, IconButton, Modal, cx } from './ui'
  */
 export function SlackStartThreadDialog({ thread, onClose, onStarted }: { thread: SlackThreadDetail; onClose: () => void; onStarted: () => void }) {
   const { sessions, projects, navigate, error, isPhone, reloadSessions, reloadProjects } = useApp()
-  const agentsInfo = useAgents()
-  const installed = installedAgents(agentsInfo)
   const live = (projects ?? []).filter((p) => !p.archived_at)
   const [projectId, setProjectId] = useState(() => {
     const last = lastSlackProject()
@@ -25,6 +23,9 @@ export function SlackStartThreadDialog({ thread, onClose, onStarted }: { thread:
   const sessionTouched = useRef(false)
   const [pick, setPick] = useState<'picking' | ProjectSuggestion>('picking')
   const project = live.find((p) => p.id === projectId)
+  // The agents of the project's machine (its host).
+  const agentsInfo = useAgents(project?.host_id)
+  const installed = installedAgents(agentsInfo)
 
   // Sessions of the project that can take a thread; the main one first.
   const choices = useMemo(() => {
