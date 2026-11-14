@@ -323,3 +323,7 @@ thread and reply). It opens a modal (90vw x 90vh, full screen on a phone) with a
 - GFM as in marked: fenced code with a language, tables, task lists (checkboxes rendered disabled), `~~strike~~`,
   bare-URL autolinks, nested lists, blockquotes, rules, two-trailing-space / backslash hard breaks. Raw HTML is
   sanitised as before. Not supported: emoji shortcodes, footnotes, alerts (`> [!NOTE]`), `@mention`/`#issue` links.
+
+## Popovers and the on-screen keyboard (phones)
+
+On Android Chrome the keyboard overlays the page: the layout viewport keeps its size, only `window.visualViewport` shrinks. The shared `Popover` (`web/src/components/ui.tsx`) therefore places itself inside the visual viewport (`placePopover` in `web/src/lib/popoverPlacement.ts`: flips above/below to the side with more room, caps `max-height` to it, scrolls inside) and re-places on `visualViewport` resize/scroll. Search fields in pickers (session picker) are not autofocused on coarse pointers, so the keyboard opens only when the user taps the field; the search input is sticky at the top of the scrolling popover. Tests: `web/e2e/popover-keyboard.spec.ts`.

@@ -16,6 +16,7 @@ import { NextStep } from './NextStep'
 import { NotificationAsk, Logo, groupSessions } from './Sidebar'
 import { ThreadRow, useAllThreads } from './ThreadList'
 import { Button, AgentTag, HostTag, IconButton, MenuItem, MenuSep, Popover, Skeleton, cx } from './ui'
+import { coarsePointer } from '../lib/popoverPlacement'
 import { PhoneSessionSheet } from './PhoneSessions'
 import { PhoneProjectButton } from './PhoneProjects'
 
@@ -396,7 +397,7 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
   return (
     <div data-testid="session-picker">
       <input
-        autoFocus
+        autoFocus={!coarsePointer()}
         aria-label="Find a session"
         data-testid="session-picker-search"
         value={q}
@@ -405,7 +406,7 @@ export function SessionPicker({ filter, activeId, onPick, onNew }: { filter?: bo
           if (e.key === 'Enter' && list[0]) onPick(list[0])
         }}
         placeholder="Find a session"
-        className="mb-1 h-8 w-full rounded-md border border-line2 bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent"
+        className="sticky top-0 z-10 mb-1 h-8 w-full rounded-md border border-line2 bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent"
       />
       <div className="max-h-[320px] overflow-y-auto">
         {filter && (
