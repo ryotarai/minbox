@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/hostauth"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/notify"
@@ -39,6 +40,16 @@ type Config struct {
 	PiSubagentExtension string
 	// PiHelperModel is the model Pi uses for one-shot helper runs (MINBOX_PI_HELPER_MODEL); empty: Pi's own default.
 	PiHelperModel string
+	// OpenCodeCommand starts OpenCode 2.x (MINBOX_OPENCODE), e.g. ["opencode"]; empty: OpenCode is not offered.
+	OpenCodeCommand []string
+	// OpenCodePlugin is the extracted minbox plugin folder for OpenCode (plugin/opencode), loaded
+	// through OPENCODE_CONFIG_CONTENT.
+	OpenCodePlugin string
+	// OpenCodeHelperModel is the model of OpenCode's helper runs (MINBOX_OPENCODE_HELPER_MODEL, provider/model);
+	// empty: OpenCode's own default.
+	OpenCodeHelperModel string
+	// OpenCodeRunner runs the opencode CLI for session checks (nil: on this machine). Tests replace it.
+	OpenCodeRunner agent.Runner
 	// SuggestCommand starts the reply-suggestions generator (MINBOX_SUGGEST_COMMAND); empty: the first word of ClaudeCommand.
 	SuggestCommand []string
 	// PickModel is the model that picks the project of a new thread from a Slack DM (MINBOX_PICK_MODEL); empty: claude-haiku-5-5.

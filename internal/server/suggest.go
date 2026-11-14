@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -330,9 +331,11 @@ func (s *Server) runSuggest(ctx context.Context, prompt string) ([]string, error
 // helperPlan chooses the agent for a one-shot helper run (reply suggestions, Slack project pick) and
 // builds its command line. Config.SuggestCommand (MINBOX_SUGGEST_COMMAND), if set, is a Claude-format
 // helper and wins. Otherwise the default agent runs it (the default_agent setting, else the installed
-// one), falling back to the other agent when the preferred one is not installed; with none
-// installed the error is agent.ErrNoneInstalled and the feature is simply off. claudeModel is the
-// model for Claude Code; Pi uses Config.PiHelperModel (or its own default).
+// one), falling back to another agent when the preferred one is not installed; with none
+// installed the error is agent.ErrNoneInstalled and the feature is simply off. OpenCode runs helpers
+// only when neither Claude Code nor Pi is installed (its runs are slower: each starts a private server,
+// and each leaves a session that is deleted afterwards). claudeModel is the model for Claude Code; Pi
+// uses Config.PiHelperModel, OpenCode Config.OpenCodeHelperModel (or their own defaults).
 func (s *Server) helperPlan(ctx context.Context, claudeModel, system, schema string) (name string, h agent.Headless, err error) {
 	claudeSpec := func() agent.Headless {
 		return agent.Must(agent.Claude).Headless(agent.HeadlessSpec{Command: s.claudeBase(), Model: claudeModel, System: system, Schema: schema})
@@ -342,11 +345,23 @@ func (s *Server) helperPlan(ctx context.Context, claudeModel, system, schema str
 	}
 	cmds := s.sessions.commands()
 	kind := s.sessions.defaultAgent(ctx)
-	if !cmds.Installed(kind) {
+	if kind == agent.OpenCode {
+		// OpenCode is the helper of last resort, even when it is the default agent.
+		for _, k := range []string{agent.Claude, agent.Pi} {
+			if cmds.Usable(k) {
+				kind = k
+				break
+			}
+		}
+	}
+	if !cmds.Usable(kind) {
 		return "", agent.Headless{}, agent.ErrNoneInstalled
 	}
-	if kind == agent.Pi {
+	switch kind {
+	case agent.Pi:
 		return "pi", agent.Must(agent.Pi).Headless(agent.HeadlessSpec{Command: cmds[agent.Pi][:1], Model: s.cfg.PiHelperModel, System: system, Schema: schema}), nil
+	case agent.OpenCode:
+		return "opencode", agent.Must(agent.OpenCode).Headless(agent.HeadlessSpec{Command: cmds[agent.OpenCode][:1], Model: s.cfg.OpenCodeHelperModel, System: system, Schema: schema}), nil
 	}
 	return "claude", claudeSpec(), nil
 }
@@ -371,7 +386,19 @@ func (s *Server) runHelper(ctx context.Context, claudeModel, system, schema, pro
 	if err != nil {
 		return nil, err
 	}
-	out, err := runHelperRaw(ctx, name, h.Argv, prompt)
+	out, err := runHelperEnv(ctx, name, h.Argv, h.Env, prompt)
+	if h.Cleanup != nil {
+		if argv := h.Cleanup(out); len(argv) > 0 {
+			// Best effort, after the answer: the person's session list should not fill with helper runs.
+			go func() {
+				cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if _, err := runHelperEnv(cctx, name+" cleanup", argv, nil, ""); err != nil {
+					log.Printf("helper cleanup (%s): %v", strings.Join(argv, " "), err)
+				}
+			}()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +407,11 @@ func (s *Server) runHelper(ctx context.Context, claudeModel, system, schema, pro
 
 // runHelperRaw runs argv in a fresh empty directory, the prompt on stdin, and returns stdout.
 func runHelperRaw(ctx context.Context, name string, argv []string, prompt string) ([]byte, error) {
+	return runHelperEnv(ctx, name, argv, nil, prompt)
+}
+
+// runHelperEnv is runHelperRaw with variables added to the environment.
+func runHelperEnv(ctx context.Context, name string, argv, env []string, prompt string) ([]byte, error) {
 	dir, err := os.MkdirTemp("", "minbox-helper-")
 	if err != nil {
 		return nil, errors.New("no temp directory")
@@ -387,6 +419,9 @@ func runHelperRaw(ctx context.Context, name string, argv []string, prompt string
 	defer os.RemoveAll(dir)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

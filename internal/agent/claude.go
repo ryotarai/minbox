@@ -17,6 +17,9 @@ func (claude) Caps() Caps {
 	return Caps{Subagents: true, PreassignedID: true, RemoteHosts: true, Completions: true}
 }
 
+func (claude) Env(ArgvReq) []string      { return nil }
+func (claude) NewConversationID() string { return NewUUID() }
+
 // Argv: the person's claude command, our mod, and the conversation id (a new one, or --resume of
 // the existing one), then the instructions.
 func (claude) Argv(req ArgvReq) []string {

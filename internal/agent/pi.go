@@ -28,6 +28,9 @@ func (pi) Tools() ToolNames { return ToolNames{Prefix: "minbox_"} }
 // (--session-id), and in this first version runs on the server's machine only.
 func (pi) Caps() Caps { return Caps{PreassignedID: true} }
 
+func (pi) Env(ArgvReq) []string      { return nil }
+func (pi) NewConversationID() string { return NewUUID() }
+
 // Argv: the person's pi command, the extension, the conversation (--session-id both starts a new
 // one and continues an existing one), and the instructions. Pi still reads AGENTS.md and
 // CLAUDE.md from the folder (no -nc): they are the project's own notes.

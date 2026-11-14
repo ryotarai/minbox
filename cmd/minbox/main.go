@@ -1,4 +1,4 @@
-// Command minbox: an inbox for Claude Code and Pi sessions, with their terminals.
+// Command minbox: an inbox for Claude Code, Pi and OpenCode sessions, with their terminals.
 //
 //	minbox start         start the server as a daemon (and the terminal host, if none runs)
 //	minbox stop          stop the server (sessions keep running in the terminal host)
@@ -440,10 +440,10 @@ func hostCmd(args []string) error {
 
 // serveFlags are the flags of `minbox start` (and its old name, serve).
 type serveFlags struct {
-	fs                                                          *flag.FlagSet
-	addr, listen, dataDir, claudeCmd, piCmd, tsService, tsLogin *string
-	noOpen, tsServe, foreground                                 *bool
-	tsPort                                                      *int
+	fs                                                                 *flag.FlagSet
+	addr, listen, dataDir, claudeCmd, piCmd, ocCmd, tsService, tsLogin *string
+	noOpen, tsServe, foreground                                        *bool
+	tsPort                                                             *int
 }
 
 func newServeFlags(name string) *serveFlags {
@@ -454,7 +454,8 @@ func newServeFlags(name string) *serveFlags {
 	f.listen = fs.String("listen", "", "listen on this address instead, e.g. 0.0.0.0:4848; browsers from other machines must be paired (minbox pair accept <code>)")
 	f.dataDir = fs.String("data-dir", defaultDataDir(), "data directory")
 	f.claudeCmd = fs.String("claude", envOr("MINBOX_CLAUDE", "claude"), "command that starts Claude Code (split on spaces)")
-	f.piCmd = fs.String("pi", envOr("MINBOX_PI", "pi"), "command that starts Pi (split on spaces); either agent alone is enough")
+	f.piCmd = fs.String("pi", envOr("MINBOX_PI", "pi"), "command that starts Pi (split on spaces); any one agent alone is enough")
+	f.ocCmd = fs.String("opencode", envOr("MINBOX_OPENCODE", "opencode"), "command that starts OpenCode 2.x (split on spaces); any one agent alone is enough")
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser")
 	f.tsServe = fs.Bool("tailscale", false, "also serve minbox on the tailnet through tailscale serve (HTTPS); browsers there must be paired")
 	f.tsService = fs.String("tailscale-service", "", "serve minbox as this Tailscale Service (svc:<name>, https://<name>.<tailnet>.ts.net) instead of on this machine's name; the service must be defined in the Tailscale admin console")
@@ -520,6 +521,13 @@ func serve(args []string) error {
 	} else {
 		piSub = plugin.PiSubagentPath(piExt)
 	}
+	ocCommand := strings.Fields(*f.ocCmd)
+	ocPlugin, err := plugin.ExtractOpenCode(filepath.Join(*dataDir, "opencode-plugin"))
+	if err != nil {
+		// OpenCode is optional: without its plugin OpenCode is simply not offered.
+		log.Printf("extract the OpenCode plugin: %v (OpenCode sessions are unavailable)", err)
+		ocCommand, ocPlugin = nil, ""
+	}
 
 	cfg := server.Config{
 		Addr:                *addr,
@@ -529,6 +537,9 @@ func serve(args []string) error {
 		PiExtension:         piExt,
 		PiSubagentExtension: piSub,
 		PiHelperModel:       os.Getenv("MINBOX_PI_HELPER_MODEL"),
+		OpenCodeCommand:     ocCommand,
+		OpenCodePlugin:      ocPlugin,
+		OpenCodeHelperModel: os.Getenv("MINBOX_OPENCODE_HELPER_MODEL"),
 		SuggestCommand:      strings.Fields(os.Getenv("MINBOX_SUGGEST_COMMAND")),
 		PickModel:           os.Getenv("MINBOX_PICK_MODEL"),
 		PluginDir:           pluginDir,
