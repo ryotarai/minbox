@@ -83,7 +83,7 @@ func TestPiArgv(t *testing.T) {
 	if got := Must(Claude).Argv(ArgvReq{Command: []string{"claude"}, Extension: "/p", ExtraExtensions: []string{"/x.ts"}, Instructions: "T"}); hasArg(got, "/x.ts") {
 		t.Fatalf("claude got the Pi extension: %q", got)
 	}
-	if c := a.Caps(); c.Subagents || !c.PreassignedID || c.RemoteHosts {
+	if c := a.Caps(); c.Subagents || !c.PreassignedID || !c.RemoteHosts {
 		t.Fatalf("caps = %+v", c)
 	}
 	if a.Tools().Name("send_message") != "minbox_send_message" || Must(Claude).Tools().Name("send_message") != "mcp__minbox__send_message" {

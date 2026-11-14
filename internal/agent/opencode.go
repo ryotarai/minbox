@@ -36,10 +36,10 @@ func (opencode) Tools() ToolNames { return ToolNames{Prefix: "minbox_"} }
 
 // Caps: OpenCode has subagents (its `subagent` tool, general and explore), takes a conversation id
 // chosen by minbox (--session; minbox creates the session first, see OpenCodeEnsureSession), can move
-// a session to another folder (the plugin does it at startup), and runs on the server's machine only
-// for now.
+// a session to another folder (the plugin does it at startup), and runs on remote hosts too (the
+// host has its own copy of the plugin and runs the opencode CLI for minbox there).
 func (opencode) Caps() Caps {
-	return Caps{Subagents: true, PreassignedID: true, MovableConversation: true}
+	return Caps{Subagents: true, PreassignedID: true, MovableConversation: true, RemoteHosts: true}
 }
 
 // NewConversationID: OpenCode's session id format, "ses_" + 12 hex digits + 14 base62 characters.
@@ -258,8 +258,8 @@ func OpenCodeRunText(out []byte) (text, sessionID string, err error) {
 
 var versionRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
 
-// OpenCodeVersionProbe runs `<command> --version` and returns what it printed. For a session on
-// another machine (not supported yet) the same command would run there.
+// OpenCodeVersionProbe runs `<command> --version` on this machine and returns what it printed. On
+// another machine ProbeHost runs the same command through the host.
 var OpenCodeVersionProbe = func(command []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -346,8 +346,8 @@ func truncate(s string, n int) string {
 // ---- sessions (through the OpenCode CLI, never its database) ----
 
 // Runner runs a command for a session's machine: argv in dir with env added, stdin as input, and
-// returns stdout (and stderr folded into the error). Today only the local machine has one
-// (LocalRunner); a remote host would run the same command there.
+// returns stdout (and stderr folded into the error). LocalRunner runs it on this machine; the server
+// has one per remote host that runs it there (through the host's POST /exec).
 type Runner func(ctx context.Context, argv []string, dir string, env []string, stdin string) ([]byte, error)
 
 // ExitError is a command that ran and failed: its exit code and output.

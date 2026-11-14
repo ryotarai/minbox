@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/hostauth"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/store"
@@ -43,7 +44,11 @@ type hostConn struct {
 	fs       hostfs.FS
 	status   string // online | offline | connecting
 	version  string
+	protocol int // the host's protocol (termhost.ProtocolVersion of its minbox)
 	os, arch string
+	// agents: the coding agents found on that machine (hostAgents), and when.
+	agents   []agent.Info
+	agentsAt time.Time
 	latency  int64 // ms; -1 unknown
 	lastSeen *time.Time
 	err      string
@@ -97,7 +102,7 @@ func (c *hostConn) setOffline(err error) {
 func (c *hostConn) setVersion(v termhost.VersionInfo, latency time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.version, c.os, c.arch = v.Version, v.OS, v.Arch
+	c.version, c.os, c.arch, c.protocol = v.Version, v.OS, v.Arch, v.Protocol
 	c.latency = latency.Milliseconds()
 	now := time.Now()
 	c.lastSeen = &now
@@ -343,6 +348,7 @@ func (s *Server) remoteLoop(ctx context.Context, c *hostConn) {
 		c.setVersion(v, latency)
 		c.setClient(client, client.FS())
 		s.hub.publish(Event{Type: "hosts"})
+		s.refreshHostAgents(ctx, c.id)
 		if err := s.sessions.reconcileHost(ctx, c.id); err != nil {
 			log.Printf("host %s: reconcile: %v", c.id, err)
 		}
@@ -409,6 +415,8 @@ type hostJSON struct {
 	LastSeen       *time.Time `json:"last_seen"`
 	Error          string     `json:"error,omitempty"`
 	Sessions       int        `json:"sessions"`
+	// Agents: the coding agents of that machine as last found (nil before the first look).
+	Agents []agent.Info `json:"agents"`
 }
 
 func (s *Server) hostView(ctx context.Context, h store.Host) hostJSON {
@@ -438,6 +446,7 @@ func (s *Server) hostView(ctx context.Context, h store.Host) hostJSON {
 		out.Version = Version
 	}
 	out.Sessions, _ = s.store.SessionsOnHost(ctx, h.ID)
+	out.Agents = s.sessions.cachedHostAgents(h.ID)
 	return out
 }
 

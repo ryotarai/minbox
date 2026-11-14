@@ -18,7 +18,7 @@ func TestOpenCodeArgvAndEnv(t *testing.T) {
 		t.Fatalf("kind/prefix: %s %s", a.Kind(), a.Tools().Prefix)
 	}
 	c := a.Caps()
-	if !c.Subagents || !c.PreassignedID || c.RemoteHosts || !c.MovableConversation {
+	if !c.Subagents || !c.PreassignedID || !c.RemoteHosts || !c.MovableConversation {
 		t.Fatalf("caps: %+v", c)
 	}
 	// New and resumed look the same: minbox creates the session before the start.

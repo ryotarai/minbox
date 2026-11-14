@@ -33,7 +33,10 @@ import (
 // returns to its start size when no client is left that tells its size.
 // A "resize" with lease:true is a lease: it counts for leaseTTL and the client
 // repeats it while its view is shown; one without lease never expires.
-const ProtocolVersion = 4
+// 5: Pi and OpenCode on remote hosts (AgentsProtocol): the host fills in its own
+// Pi extension and OpenCode plugin, runs short commands (POST /exec) and finds
+// executables on its PATH (POST /lookpath).
+const ProtocolVersion = 5
 
 // RemoteProtocol is the lowest host protocol a server pairs with over the network.
 const RemoteProtocol = 3
@@ -329,6 +332,10 @@ type Host struct {
 	PluginDir      string
 	ServerFile     string
 	Version        string
+	// The host's own Pi extension files (minbox.ts, subagent.ts) and OpenCode plugin folder.
+	PiExtension    string
+	PiSubagent     string
+	OpenCodePlugin string
 	relay          *relayHub
 }
 
@@ -365,7 +372,7 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 	}
 	h.mu.Unlock()
 
-	sub := strings.NewReplacer(PluginDirPlaceholder, h.PluginDir, ServerFilePlaceholder, h.ServerFile)
+	sub := h.replacer()
 	argv := make([]string, len(req.Argv))
 	for i, a := range req.Argv {
 		argv[i] = sub.Replace(a)
@@ -374,9 +381,7 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 	if req.InheritEnv {
 		env = CleanEnv(os.Environ())
 	}
-	for _, e := range req.Env {
-		env = append(env, sub.Replace(e))
-	}
+	env = append(env, h.substEnv(env, req.Env)...)
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = req.Cwd
 	cmd.Env = env
@@ -515,6 +520,8 @@ func (h *Host) Handler() http.Handler {
 		mux.HandleFunc("GET /pair/{code}", h.pairStatus)
 		mux.HandleFunc("DELETE /pair/self", h.pairForget)
 	}
+	mux.HandleFunc("POST /exec", h.execRoute)
+	mux.HandleFunc("POST /lookpath", h.lookPathRoute)
 	mux.HandleFunc("GET /terminals", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, h.List())
 	})
@@ -811,6 +818,10 @@ type RemoteOptions struct {
 	PluginDir      string
 	ServerFile     string
 	Version        string
+	// PiExtension, PiSubagent: the host's Pi extension files; OpenCodePlugin: its OpenCode plugin folder.
+	PiExtension    string
+	PiSubagent     string
+	OpenCodePlugin string
 	// Listening is called with the bound address once the host listens.
 	Listening func(addr string)
 }
@@ -830,6 +841,7 @@ func ServeRemote(ctx context.Context, o RemoteOptions) error {
 	h.TailscaleLogin = o.TailscaleLogin
 	h.FS = hostfs.NewLocal(o.DataDir)
 	h.PluginDir, h.ServerFile, h.Version = o.PluginDir, o.ServerFile, o.Version
+	h.PiExtension, h.PiSubagent, h.OpenCodePlugin = o.PiExtension, o.PiSubagent, o.OpenCodePlugin
 	srv := &http.Server{Handler: h.Handler()}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

@@ -99,6 +99,9 @@ func Handler(l *Local) http.Handler {
 	mux.HandleFunc("GET /fs/transcript", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]bool{"exists": l.TranscriptExists(r.Context(), q(r, "cwd"), q(r, "id"))})
 	})
+	mux.HandleFunc("GET /fs/piconversation", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]string{"path": l.PiConversationFile(r.Context(), q(r, "cwd"), q(r, "id"))})
+	})
 	mux.HandleFunc("PUT /fs/write", func(w http.ResponseWriter, r *http.Request) {
 		p, err := l.WriteFile(r.Context(), q(r, "area"), q(r, "rel"), r.Body, q(r, "readonly") == "1")
 		if err != nil {
@@ -247,6 +250,15 @@ func (c *Remote) TranscriptExists(ctx context.Context, cwd, id string) bool {
 		return false
 	}
 	return v.Exists
+}
+
+func (c *Remote) PiConversationFile(ctx context.Context, cwd, id string) string {
+	var v struct{ Path string }
+	if err := c.getJSON(ctx, "/fs/piconversation", url.Values{"cwd": {cwd}, "id": {id}}, &v); err != nil {
+		log.Printf("hostfs: Pi session check for %s on the remote host failed: %v", id, err)
+		return ""
+	}
+	return v.Path
 }
 
 func (c *Remote) WriteFile(ctx context.Context, area, rel string, r io.Reader, readOnly bool) (string, error) {
