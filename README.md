@@ -346,7 +346,11 @@ minbox pair list                    # servers and browsers waiting to be paired
    key.
 
 Sessions there run with that machine's own `$SHELL`, environment and files. Their mods reach the
-server back through the same connection.
+server back through the same connection. Claude Code, Pi and OpenCode sessions all run there: the
+host has its own copy of the mod, the Pi extension and the OpenCode plugin, and Settings → Hosts shows
+which agents that machine has (Pi needs Node 22.19+ there, OpenCode must be 2.x). New session offers
+the agents of the host you pick. Update `minbox` on the other machine too: Pi and OpenCode need a host
+of this version (protocol 5).
 
 ## Keyboard
 
@@ -387,8 +391,8 @@ coding agent installed the feature is simply off.
 
 **Coding agents** (Settings → Capabilities): which of Claude Code, Pi and OpenCode are installed (OpenCode with its
 version; 1.x is shown as unsupported), and the default for new sessions (projects can set their own in their edit dialog).
-Pi has no permission prompts, no subagents (the orchestrator prompt does not apply) and runs on this machine only for now;
-OpenCode runs with `--auto` and `--standalone`, on this machine only for now.
+Pi has no permission prompts and its own subagent tool instead of the orchestrator prompt; OpenCode runs with `--auto`
+and `--standalone`. Both also run on other hosts (each host's agents are listed there and in Settings → Hosts).
 
 ## Development
 

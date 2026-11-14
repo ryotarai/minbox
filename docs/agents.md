@@ -15,7 +15,7 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
 | Conversation id | chosen by minbox, `--session-id`, later `--resume` | chosen by minbox, `--session-id` (create-or-continue) | chosen by minbox (`ses_…`), created by minbox before the start, `--session` |
 | Instructions | `--append-system-prompt` (+ the mod re-injects) | `--append-system-prompt` | the plugin's `context` hook, every request |
 | Folder change | fresh conversation + note | fresh conversation + note | the session moves with the project |
-| Remote hosts | yes | not yet (this machine only) | not yet (this machine only) |
+| Remote hosts | yes | yes: Pi and Node 22.19+ on that machine | yes: OpenCode 2 on that machine |
 | Permission prompts | none in minbox's setup | none: Pi has no permission system. It runs with your user's permissions. Use a container if you want a boundary | `--auto`: approved unless your OpenCode configuration denies it |
 
 ## How agents are modelled
@@ -37,8 +37,10 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
   command is found on `PATH`; minbox never runs Claude Code or Pi to find out. OpenCode is also asked its
   version (`opencode --version`, cached per executable): only 2.x is "supported"; "usable" = installed and supported.
 * `GET /api/agents` lists all three with `installed`, `command`, `path`, capabilities, `version`/`supported`/`reason`
-  and the effective `default`. The UI shows an agent picker in New session only when more than one is usable, a
-  "Coding agents" block in Settings → Capabilities, and a small "Pi" / "OpenCode" tag on their sessions.
+  and the effective `default`; with `?host_id=` the list is that remote host's (see "Remote hosts"). The UI shows an
+  agent picker in New session only when more than one is usable on the chosen host, a "Coding agents" block in
+  Settings → Capabilities (with a line per remote host), each remote host's agents in Settings → Hosts, and a small
+  "Pi" / "OpenCode" tag on their sessions.
 * **One instruction text.** `buildInstructions` in `internal/server/sessions.go` is written once with
   Claude Code's tool names (`mcp__minbox__send_message`); `buildInstructionsFor(agent, …)` swaps the prefix
   for the agent's (`minbox_`), leaves out the orchestrator block when the agent has no subagents, and adds Pi's
@@ -91,7 +93,7 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
   `pi.sendUserMessage` and marks them delivered (a failed delivery releases the claim); an urgent message
   (Send now) is delivered into a running turn with `deliverAs: "steer"`.
   Not in the Pi extension yet (planned Phase 2): the reminder when a turn asks the person only in the chat,
-  the open-threads reminder after a compaction, mod-silent parity, remote hosts, completions.
+  the open-threads reminder after a compaction, mod-silent parity, completions. Remote hosts: see below.
 * **Instructions** reach Pi once, on the command line, because Pi keeps its system prompt through
   compactions. The Claude mod's periodic re-injection is not used.
 * **Subagents**: see "Pi subagents" below (`plugin/pi/subagent.ts`, second `-e`).
@@ -179,7 +181,7 @@ prompt injection through what a child reads, which the main agent passes on.
    and the quality of Pi's JSON answers (a model that wraps JSON in prose is handled; one that answers without JSON makes the
    helper fail, which turns the feature off for that call).
 5. `--session <path>` across folders (see above), and Pi 1.5+ (tested with 1.4.0; the proposal's notes were for 1.5.1).
-6. Pi on a remote host: refused with a clear message. Not designed yet (needs Pi, Node 22.19+ and the extension path on that host).
+6. Pi on a real second machine (see "Remote hosts": tested with a second `minbox host --listen` on the same machine).
 
 ## Subagents: verified and not
 
@@ -195,6 +197,50 @@ write good briefs and follow the instructions section, and does Pi's schema coer
 and abort behaviour with real children (the fake only simulates SIGTERM handling; whether Pi's own `bash` grandchildren die with a
 killed child); the whole worktree merge flow with a real worker; that a long real run keeps minbox's status "working" in the UI
 (the 120 s rule is unit-tested with a fake clock only); `--offline` for a child that needs a model catalog refresh.
+
+## Remote hosts
+
+Pi and OpenCode sessions run on remote hosts (`minbox host --listen` / `--tailscale`, Settings → Hosts) like Claude Code
+ones. The design reuses what Claude Code's mod already had:
+
+* **The integration files come from the host's own binary.** At start `minbox host` extracts the mod, the Pi extensions
+  (`pi/minbox.ts`, `pi/subagent.ts`, `pi/agents/*.md`, with the shared `minbox/hooks/text.ts`, `nav.ts`) and the OpenCode plugin
+  into its data dir, each in a content-hash folder (`plugin/<hash>`, `pi-extension/<hash>`, `opencode-plugin/<hash>`;
+  idempotent, an update gets a new folder). The server's spawn request carries placeholders (`{{MINBOX_PI_EXTENSION}}`,
+  `{{MINBOX_PI_SUBAGENT}}`, `{{MINBOX_OPENCODE_PLUGIN}}`, next to the mod's `{{MINBOX_PLUGIN_DIR}}`) that the host fills in. So
+  the integration is the host's minbox version, as for the Claude mod: update minbox on both machines together.
+* **Reaching the server**: unchanged. `MINBOX_SERVER_FILE` is the host's relay file (`{{MINBOX_SERVER_FILE}}`), `MINBOX_TOKEN`
+  the session's token; the relay carries `/api/agent/*` (hello, heartbeat, pending/claim/delivered, messages, …), so the
+  heartbeat and the connection diagnostics work as on this machine.
+* **Environment**: the host's own (`InheritEnv`): its `PATH`, `HOME`, Pi's and OpenCode's configuration and logins there.
+  minbox's `OPENCODE_CONFIG_CONTENT` entry is merged by the host into one the host's environment already sets.
+* **What is installed there** (`sessionManager.hostAgents`, `agent.ProbeHost`): the host looks up each configured command's
+  first word on its `PATH` (`POST /lookpath`). Pi is usable when `node --version` there is 22.19+ (Pi itself is not run);
+  OpenCode when `opencode --version` there is 2.x (through `POST /exec`). Probed when the host connects and at most once a
+  minute on demand (`GET /api/agents?host_id=…&fresh=1` forces it). The commands are the server's `--pi` / `--opencode`
+  (a path or flags apply on every machine). Claude Code is not checked against this list (its start fails there as before).
+* **Choosing**: New session asks `GET /api/agents?host_id=` for the picked host (or the project's), so it offers only what
+  that host can run; a session's default on a host is the `default_agent` setting if the host can run it, else the first it
+  can. `POST /api/sessions` (and the fork / Slack / Linear starts) refuse with the host's name and reason.
+* **OpenCode CLI calls** (`openCodeRunner` = `runnerOn(hostID)`): `opencode api --standalone session.get|session.create` run on
+  the host through `POST /exec`, in the session's folder there, with the host's environment. Pre-creation before the TUI,
+  `conversationExists` and the startup move work as on this machine; the session and its database are the host's.
+* **Pi session files** are on the host: resume logging, `conversationExists` and the relocation check use
+  `GET /fs/piconversation` (the host's `$PI_CODING_AGENT_SESSION_DIR` / `$PI_CODING_AGENT_DIR` / `~/.pi`). The relocation
+  note's `~/.pi/agent/sessions/…` path is the host's home.
+* **Pi subagents** run inside the Pi process on the host: children (`process.execPath`, `process.argv[1]`), roles
+  (`~/.pi/agent/agents`, `.pi/agents` of the folder) and `minbox-sub/<id>` worktrees (`$MINBOX_SUBAGENT_DIR`, else the host's
+  `<tmp>/minbox-subagents`) are all on that machine.
+* **Helper runs** (reply suggestions, Slack/Linear project pick, drafts) stay on the server's machine, as before.
+* **Old hosts**: a host before protocol 5 (`termhost.AgentsProtocol`) has no exec, lookpath or Pi/OpenCode files; Pi and
+  OpenCode are listed as unavailable there ("the minbox on this host is too old …"), creation is refused and a restart of such
+  a session fails with "update minbox on that machine" instead of starting the agent without minbox's part.
+
+Tests: `internal/server/hostagents_test.go` (an in-process `minbox host --listen`: detection, the host's files in the command
+line, the OpenCode session created through the host's exec, the merged config, Pi's session file found on the host, refusals,
+old host), `internal/termhost/exec_test.go`, `internal/agent/remote_test.go`, and `web/e2e/hosts.spec.ts` (a second
+`minbox host` process with the fake pi and fake opencode: Node too old → not offered and refused; then a Pi and an OpenCode
+session there, inbox through the relay, heartbeat). Not verified: a real second machine, real Pi or OpenCode on it.
 
 ## How to add an agent
 
