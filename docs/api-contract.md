@@ -991,13 +991,24 @@ See docs/agents.md for the model. API surface:
   Pi are not run. For OpenCode `opencode --version` is read (cached per executable): `version`, and `supported: false` with a `reason` for 1.x.
   `default` is the effective agent of a new session with nothing else said (setting `default_agent` if usable, else Claude Code, Pi, OpenCode,
   the first usable, else `claude`). `GET /api/about` adds `pi_command`, `opencode_command` and the same `agents` list.
+- `GET /api/agents?host_id=<remote host>[&fresh=1]` -> the same shape for that host's machine, plus `host_id` (and `error` with
+  `agents: []` when the host cannot be asked): the host looks up the commands on its own `PATH` (`POST /lookpath`); Pi is
+  `supported` when `node --version` there is 22.19+ (`version: "node 22.19.0"`; Pi itself is not run), OpenCode when
+  `opencode --version` there is 2.x. Cached per host for a minute and probed again when the host (re)connects; `fresh=1`
+  probes now. A host before protocol 5 lists Claude Code as installed (its PATH decides at the start, as before) and Pi and
+  OpenCode as not installed with `reason` "the minbox on this host is too old to run …: update minbox there".
+  `default` is the `default_agent` setting if that host can run it, else the first agent it can run.
+- Host JSON (`GET /api/hosts`) adds `agents`: that list as last found (`null` before the first look; the built-in host's is
+  this machine's).
 - `Session.agent` (`"claude"` | `"pi"` | `"opencode"`; existing rows `claude`). `Session.kind` stays `claude` (has the inbox) | `shell`. `claude_session_id`,
   `prev_claude_session_id` and `prev_chain[].claude_session_id` hold the agent's conversation id for either agent.
 - `POST /api/sessions` takes `agent?: "claude"|"pi"|"opencode"`. Omitted: the project's `default_agent`, else the `default_agent` setting, else the
-  installed agent. 400: unknown agent; Pi not installed (`Pi is not installed (looked for "pi" on PATH)`); Pi on a host other than the
-  built-in one (`Pi sessions run on the server's own machine only for now …`); the same for OpenCode, plus an unsupported OpenCode
-  (`OpenCode cannot be used: OpenCode 1.0.150 is OpenCode 1.x; …`). Claude Code that is not installed fails when the terminal
-  host starts it, as before.
+  installed agent (on a remote host: one that host can run). 400: unknown agent; Pi not installed (`Pi is not installed (looked for "pi" on PATH)`);
+  the same for OpenCode, plus an unsupported OpenCode (`OpenCode cannot be used: OpenCode 1.0.150 is OpenCode 1.x; …`). On a remote host the
+  message names the host: `Pi is not installed on host devbox (looked for "pi" on its PATH)`, `Pi cannot be used on host devbox: Node.js
+  20.11.1 is too old: Pi needs Node 22.19 or later`, `OpenCode cannot be used on host devbox: …`, or (a host older than protocol 5)
+  `… the minbox on this host is too old to run Pi …`. Claude Code that is not installed fails when the terminal host starts it, as before.
+  The fork, Slack and Linear starts check the same way (`resolveAgent`).
 - `Project.default_agent` (`""` | `"claude"` | `"pi"` | `"opencode"`); `PATCH /api/projects/{id}` takes `default_agent` (400 for another value).
 - `POST /api/agent/hello` (the integration's first call) takes, besides the old `claude_session_id`, `agent_session_id` (the agent's current
   conversation id; either key moves the session's stored id, which is how `/clear` in Claude Code and `/new` in Pi are followed), `agent`
@@ -1119,3 +1130,25 @@ See `docs/mod-connection.md` for the delivery path, failure modes and log lines.
   first_seen_at?, beats?, seq?, agent?, mod_version?, mod_state?, last_poll_at?, last_delivery_at?, mod_info?, reconnects?, last_gap_s?, stale_since?,
   queue: {count, oldest_wait_s}, mod_events: [{at, kind, msg}] (the mod's own tail), events: [{at, kind, msg}] (the server's log of this session)}`. No message text, token or owner key.
 - `GET /api/agent/pending` offers a message whose claim is older than 60 s again, also to the instance that made the claim (before, its own stale claim hid the message for ever).
+
+
+## Pi and OpenCode on remote hosts (host protocol 5)
+
+See docs/agents.md ("Remote hosts"). Host protocol 5 (`termhost.AgentsProtocol`) adds, on remote hosts (signed requests like
+every other route; the local socket host serves them too but the server does not use them there):
+
+- Spawn placeholders `{{MINBOX_PI_EXTENSION}}`, `{{MINBOX_PI_SUBAGENT}}`, `{{MINBOX_OPENCODE_PLUGIN}}` (next to `{{MINBOX_PLUGIN_DIR}}` and
+  `{{MINBOX_SERVER_FILE}}`): the host fills in its own copies, extracted from its binary at `minbox host` start into
+  `<host data dir>/pi-extension/<hash>/pi/{minbox,subagent}.ts` and `<host data dir>/opencode-plugin/<hash>/opencode`
+  (content-hash folders, idempotent, like the Claude mod's `plugin/<hash>`). In `OPENCODE_CONFIG_CONTENT` the path is filled in
+  JSON-escaped, and the server's entry is merged into an `OPENCODE_CONFIG_CONTENT` of the host's own environment (its `plugins`
+  are kept, ours appended; other keys of ours win; a value that is not plain JSON is replaced).
+- `POST /exec {argv, dir?, env?, stdin?, timeout_ms?}` -> `{exit_code, stdout (base64), stderr, error?, not_found?, timed_out?}`:
+  a short command with the host's cleaned environment plus `env` (placeholders filled in); `argv[0]` is looked up on the host's
+  `PATH` (`not_found`); 30 s by default, at most 10 min; 4 MB of output per stream. Used for `opencode api --standalone
+  session.get|session.create` and the version probes.
+- `POST /lookpath {names}` -> `{paths: {name: path|""}}` on the host's `PATH`.
+- `GET /fs/piconversation?cwd=&id=` -> `{path}`: Pi's session file of conversation `id` on that machine (`""` if none; Pi's
+  sessions folder of the host's environment).
+
+A Pi or OpenCode session on a host older than protocol 5 is refused at create and at (re)start ("update minbox on that machine").

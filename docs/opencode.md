@@ -32,7 +32,7 @@ minbox lists it as **unsupported** (Settings → Capabilities says why) and neve
 | Permissions | `--auto` (approve what is not explicitly denied, like Pi's "no prompts"). The plugin's `permission` hook denies shell commands that open a page on the host (`open URL`, `gh … --web`; the agent is told to use `minbox_open_url`) and OpenCode's `question` tool in the minbox session (the person answers in minbox) |
 | Subagents | OpenCode's own `subagent` tool (`general`, `explore`, `background: true`); the orchestrator prompt applies, plus a short OpenCode section (`OpenCodeSubagentPrompt`) with the per-thread guidance and worktrees via `tools.opencode.worktree_create` |
 | Folder change | OpenCode sessions can move: the conversation id stays and the plugin moves the session to `MINBOX_OPENCODE_DIR` at startup (`ctx.session.move`); no "moved" note |
-| Remote hosts | not yet (`Caps.RemoteHosts=false`), see below |
+| Remote hosts | yes: OpenCode 2 on that machine; the host has its own copy of the plugin and runs the CLI calls (see below) |
 
 The plugin runs in OpenCode's private server process (`--standalone`; the shared background service on
 127.0.0.1:49374 would not see the session's environment). OpenCode loads a plugin once per location (folder) the
@@ -110,19 +110,23 @@ configured as an OpenCode provider (`providers.mock`, `@opencode/ai/providers/op
    starting a private server (~0.3–1 s).
 7. Compaction and long sessions; `/new` following was tested with the fake context only.
 
-## Remote hosts (later)
+## Remote hosts
 
-`Caps.RemoteHosts` is false; `resolveAgent` refuses OpenCode on another host. The code is kept host-aware where it was
-cheap, so remote support needs:
+OpenCode sessions run on remote hosts (docs/agents.md, "Remote hosts", has the common design):
 
-* `sessionManager.openCodeRunner(hostID)`: the single place that runs the `opencode` CLI for a session (version is read
-  through `agent.OpenCodeVersionProbe`, sessions through `agent.Runner`). A remote host needs a runner that executes the
-  command there (the terminal host protocol would need a "run a command and return its output" call).
-* The plugin folder on the host: like the Claude mod (`termhost.PluginDirPlaceholder`), the host would extract its own copy
-  and substitute the path in `OPENCODE_CONFIG_CONTENT` (`Env` currently builds the JSON with the server's path).
-* The version check per host (OpenCode may differ per machine), and `Commands.Support` per host in `GET /api/agents`.
+* `sessionManager.openCodeRunner(hostID)` is `runnerOn(hostID)`: on another host `opencode api --standalone session.get|create`
+  run there through the host's `POST /exec` (in the session's folder, with the host's environment), so the session is created
+  in that machine's OpenCode database before the TUI starts. `conversationExists` asks the same way.
+* The plugin folder is the host's own (`<host data dir>/opencode-plugin/<hash>/opencode`): the server's environment carries
+  `OPENCODE_CONFIG_CONTENT={"plugins":[{"package":"{{MINBOX_OPENCODE_PLUGIN}}"}]}`; the host fills in the path and merges the
+  entry into an `OPENCODE_CONFIG_CONTENT` of its own environment (the person's configuration there is kept).
+* The version check is per host (`opencode --version` there, through the host); a 1.x there is listed as unsupported for that
+  host and refused with its reason. Settings → Hosts and New session show each host's.
 * Helper runs stay on the server's machine.
-* The plugin itself needs nothing new: it reads `MINBOX_SERVER_FILE` like Pi's extension (the host's relay URL).
+* The plugin needed nothing new: it reads `MINBOX_SERVER_FILE`, which is the host's relay file.
+
+Verified with the fake opencode and a second `minbox host --listen` on the same machine (Go test and e2e). Not verified: a real
+OpenCode on a real second machine.
 
 ## Tests
 
