@@ -1,5 +1,5 @@
 import { Component, useEffect, useState, type ReactNode } from 'react'
-import { api, type About, type Session, type Storage, type Thread } from '../api'
+import { api, type About, type AgentKind, type Session, type Storage, type Thread } from '../api'
 import { installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { notificationPermission, notify, requestNotifications, dingDong } from '../lib/alerts'
@@ -276,22 +276,31 @@ function AgentsGroup() {
         <Row
           key={a.kind}
           label={a.label}
-          desc={a.installed ? `Found at ${a.path}` : `Not installed: no “${a.command.split(' ')[0] || a.kind}” on the server's PATH`}
+          desc={
+            !a.installed
+              ? `Not installed: no “${a.command.split(' ')[0] || a.kind}” on the server's PATH`
+              : a.supported === false
+                ? `Found at ${a.path}, but not supported: ${a.reason ?? 'unknown reason'}`
+                : `Found at ${a.path}${a.version ? ` (version ${a.version})` : ''}`
+          }
         >
-          <span data-testid={`agent-status-${a.kind}`} className={cx('mono text-[12.5px]', a.installed ? 'text-ok' : 'text-subtle')}>
-            {a.installed ? 'installed' : 'not installed'}
+          <span
+            data-testid={`agent-status-${a.kind}`}
+            className={cx('mono text-[12.5px]', a.installed && a.supported !== false ? 'text-ok' : a.installed ? 'text-waitfg' : 'text-subtle')}
+          >
+            {!a.installed ? 'not installed' : a.supported === false ? 'unsupported' : a.version ? `installed · ${a.version}` : 'installed'}
           </span>
         </Row>
       ))}
       {info && installed.length === 0 && (
-        <p className="m-0 text-[13px] leading-[1.6] text-muted">No coding agent is installed, so sessions cannot start. Install Claude Code or Pi; either one alone is enough.</p>
+        <p className="m-0 text-[13px] leading-[1.6] text-muted">No coding agent is installed, so sessions cannot start. Install Claude Code, Pi or OpenCode 2; any one alone is enough.</p>
       )}
       {installed.length > 1 && (
         <Row label="Default agent" desc="For a new session when neither the dialog nor the project says. Projects can set their own.">
           <select
             data-testid="default-agent"
             value={settings.default_agent}
-            onChange={(e) => saveSettings({ default_agent: e.target.value as '' | 'claude' | 'pi' })}
+            onChange={(e) => saveSettings({ default_agent: e.target.value as '' | AgentKind })}
             className="h-8 rounded-md border border-linestrong bg-sunken px-2 text-[13px]"
           >
             <option value="">Claude Code, unless it is missing</option>
@@ -306,6 +315,11 @@ function AgentsGroup() {
       {info?.agents.some((a) => a.kind === 'pi' && a.installed) && (
         <p className="m-0 text-[12.5px] leading-[1.6] text-subtle">
           Pi runs with your user's full permissions and has no permission prompts, like Claude Code with every permission granted. It works on this machine only for now (not on other hosts) and has no subagents, so the orchestrator prompt does not apply to it.
+        </p>
+      )}
+      {info?.agents.some((a) => a.kind === 'opencode' && a.installed && a.supported !== false) && (
+        <p data-testid="opencode-note" className="m-0 text-[12.5px] leading-[1.6] text-subtle">
+          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). It works on this machine only for now. It runs reply suggestions only when neither Claude Code nor Pi is installed.
         </p>
       )}
     </Group>

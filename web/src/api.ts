@@ -38,7 +38,7 @@ export type TopThread = {
 export type SessionKind = 'claude' | 'shell'
 
 /** The coding agent a session runs (sessions.agent); a missing value means Claude Code. */
-export type AgentKind = 'claude' | 'pi'
+export type AgentKind = 'claude' | 'pi' | 'opencode'
 
 /** A coding agent minbox can run, and whether it is installed on the server's machine (GET /api/agents). */
 export type AgentInfo = {
@@ -47,7 +47,12 @@ export type AgentInfo = {
   installed: boolean
   command: string
   path: string
-  caps: { subagents: boolean; preassigned_id: boolean; remote_hosts: boolean; completions: boolean }
+  caps: { subagents: boolean; preassigned_id: boolean; remote_hosts: boolean; completions: boolean; movable_conversation?: boolean }
+  /** The version minbox read (OpenCode only). */
+  version?: string
+  /** False for an installed agent minbox cannot run (OpenCode 1.x); reason says why. */
+  supported?: boolean
+  reason?: string
 }
 export type AgentsInfo = { agents: AgentInfo[]; default: AgentKind }
 

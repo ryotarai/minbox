@@ -361,7 +361,7 @@ func (s *Server) helperPlan(ctx context.Context, claudeModel, system, schema str
 	case agent.Pi:
 		return "pi", agent.Must(agent.Pi).Headless(agent.HeadlessSpec{Command: cmds[agent.Pi][:1], Model: s.cfg.PiHelperModel, System: system, Schema: schema}), nil
 	case agent.OpenCode:
-		return "opencode", agent.Must(agent.OpenCode).Headless(agent.HeadlessSpec{Command: cmds[agent.OpenCode][:1], Model: s.cfg.OpenCodeHelperModel, System: system, Schema: schema}), nil
+		return "opencode", agent.Must(agent.OpenCode).Headless(agent.HeadlessSpec{Command: agent.OpenCodeBase(cmds[agent.OpenCode]), Model: s.cfg.OpenCodeHelperModel, System: system, Schema: schema}), nil
 	}
 	return "claude", claudeSpec(), nil
 }

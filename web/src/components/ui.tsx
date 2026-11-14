@@ -370,7 +370,7 @@ export function AgentTag({ agent, phone }: { agent?: string; phone?: boolean }) 
       data-testid="agent-tag"
       className={cx('mono shrink-0 whitespace-nowrap rounded border border-line2 px-[5px] text-subtle', phone ? 'text-[11px] leading-[17px]' : 'text-[10.5px] leading-4')}
     >
-      {agent === 'pi' ? 'Pi' : agent}
+      {agent === 'pi' ? 'Pi' : agent === 'opencode' ? 'OpenCode' : agent}
     </span>
   )
 }

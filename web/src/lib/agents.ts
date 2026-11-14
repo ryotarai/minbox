@@ -20,11 +20,16 @@ export function useAgents(): AgentsInfo | null {
   return info
 }
 
-/** The agents a session can start with: the installed ones. */
+/** The agents a session can start with: the installed ones minbox can run (an OpenCode 1.x is installed but not supported). */
 export function installedAgents(info: AgentsInfo | null): AgentInfo[] {
-  return (info?.agents ?? []).filter((a) => a.installed)
+  return (info?.agents ?? []).filter((a) => a.installed && a.supported !== false)
+}
+
+/** The name of an agent kind when the server's list is not at hand. */
+export function agentKindLabel(kind: string | undefined): string {
+  return kind === 'pi' ? 'Pi' : kind === 'opencode' ? 'OpenCode' : kind && kind !== 'claude' ? kind : 'Claude Code'
 }
 
 export function agentLabel(info: AgentsInfo | null, kind: AgentKind | string | undefined): string {
-  return info?.agents.find((a) => a.kind === (kind || 'claude'))?.label ?? (kind === 'pi' ? 'Pi' : 'Claude Code')
+  return info?.agents.find((a) => a.kind === (kind || 'claude'))?.label ?? agentKindLabel(kind)
 }

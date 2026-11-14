@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test'
 import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { FakeLinear } from './fake-linear'
@@ -15,6 +15,7 @@ const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 const FAKE_SUGGEST = join(__dirname, 'fake-suggest.py')
 const FAKE_PI = join(__dirname, 'fake-pi.py')
+const FAKE_OPENCODE = join(__dirname, 'fake-opencode.py')
 
 // Concurrent suites (other worktrees, other runs) must not share a server: ask the OS for a free
 // port per instance. MINBOX_E2E_PORT, if set, is the first port to use (then counts up).
@@ -90,6 +91,8 @@ export class Minbox {
     public claude = `python3 ${FAKE}`,
     /** More environment for the server (and so the fake claude it starts). */
     public extraEnv: Record<string, string> = {},
+    /** The OpenCode command; by default OpenCode is not installed (a real `opencode` on PATH is never used). */
+    public opencode = 'minbox-e2e-no-such-opencode',
   ) {}
 
   get url() {
@@ -105,9 +108,9 @@ export class Minbox {
     if (!this.slackApi.url) await this.slackApi.start()
     if (!this.linear.url) await this.linear.start()
     if (!this.slackUser.url) await this.slackUser.start()
-    this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi], {
+    this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi, '--opencode', this.opencode], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, ...this.extraEnv },
+      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, FAKE_OPENCODE_DIR: this.dataDir, ...this.extraEnv },
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))
@@ -161,6 +164,15 @@ export class Minbox {
       // suites in other worktrees and tests of other workers keep their own.
       execSync(`pkill -f "${FAKE}.*${this.dataDir}" || true`)
       execSync(`pkill -f "${FAKE_PI}.*${this.dataDir}" || true`)
+      // The fake OpenCode's command line has no data dir: its sessions' ids are in its state folder.
+      for (const f of (() => {
+        try {
+          return readdirSync(join(this.dataDir, 'fake-opencode')).filter((n) => n.startsWith('ses_'))
+        } catch {
+          return []
+        }
+      })())
+        execSync(`pkill -f "${FAKE_OPENCODE}.*${f}" || true`)
     } catch {
       /* none */
     }
@@ -169,7 +181,34 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox }>({
+  // A minbox where OpenCode is installed too (the fake opencode, 2.x), next to the fake claude.
+  ocMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), undefined, undefined, {}, `python3 ${FAKE_OPENCODE}`)
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
+  // Only OpenCode: no claude (a command that does not exist), no pi.
+  ocOnlyMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), undefined, 'minbox-e2e-no-such-claude', {}, `python3 ${FAKE_OPENCODE}`)
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
+  // OpenCode 1.x installed (the fake says 1.0.150): listed as unsupported, never offered.
+  ocV1Minbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), undefined, undefined, { FAKE_OPENCODE_VERSION: '1.0.150' }, `python3 ${FAKE_OPENCODE}`)
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
   // A minbox that calls a mod stale after 4 s without a heartbeat (45 s by default), and a fake claude that beats every second.
   connMinbox: async ({}, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
@@ -280,7 +319,7 @@ export async function chooseFolder(page: Page) {
 }
 
 /** Creates a session in the given directory through the UI. */
-export async function createSession(page: Page, cwd: string, name: string, agent?: 'claude' | 'pi') {
+export async function createSession(page: Page, cwd: string, name: string, agent?: 'claude' | 'pi' | 'opencode') {
   // With no sessions the dialog opens by itself, maybe right after we look:
   // press New only while the dialog is not there, briefly each time.
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
