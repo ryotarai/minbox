@@ -217,7 +217,7 @@ func (c Commands) Support(kind string) (version string, ok bool, reason string) 
 		return "", false, "not installed"
 	}
 	if kind == OpenCode {
-		return OpenCodeSupport(p)
+		return OpenCodeSupport(p, c[kind])
 	}
 	return "", true, ""
 }

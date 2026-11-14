@@ -242,6 +242,12 @@ func TestOpenCodeEnsureSession(t *testing.T) {
 	if _, _, err := OpenCodeEnsureSession(ctx, f.run, nil, "/", "ses; rm -rf"); err == nil {
 		t.Fatal("a bad id is refused")
 	}
+	if got := OpenCodeBase([]string{"npx", "opencode", "--model", "a/b"}); !reflect.DeepEqual(got, []string{"npx", "opencode"}) {
+		t.Fatalf("base: %q", got)
+	}
+	if got := OpenCodeBase(nil); !reflect.DeepEqual(got, []string{"opencode"}) {
+		t.Fatalf("base of nothing: %q", got)
+	}
 	broken := func(context.Context, []string, string, []string, string) ([]byte, error) {
 		return nil, &ExitError{Code: 2, Stderr: "boom"}
 	}

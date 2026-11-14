@@ -77,6 +77,7 @@ test('with only Pi installed there is no picker, Pi is the default, and nothing 
   expect(agents.agents.map((a: any) => [a.kind, a.installed])).toEqual([
     ['claude', false],
     ['pi', true],
+    ['opencode', false],
   ])
 
   await page.goto(piOnlyMinbox.url)

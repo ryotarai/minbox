@@ -258,12 +258,12 @@ func OpenCodeRunText(out []byte) (text, sessionID string, err error) {
 
 var versionRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
 
-// OpenCodeVersionProbe runs `<path> --version` and returns what it printed. Replaced in tests. For a
-// session on another machine (not supported yet) the same command would run there.
-var OpenCodeVersionProbe = func(path string) (string, error) {
+// OpenCodeVersionProbe runs `<command> --version` and returns what it printed. For a session on
+// another machine (not supported yet) the same command would run there.
+var OpenCodeVersionProbe = func(command []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd := exec.CommandContext(ctx, command[0], append(append([]string{}, command[1:]...), "--version")...)
 	cmd.Stdin = nil
 	out, err := cmd.Output()
 	if err != nil {
@@ -291,30 +291,33 @@ func ResetOpenCodeVersionCache() {
 	versionMu.Unlock()
 }
 
-// OpenCodeSupport says whether the opencode executable at path is a version minbox runs (2.x): its
-// version, ok, and the reason when not. The answer is cached per executable (path, size, mtime), so an
-// upgrade is noticed; a failed probe is retried after a minute.
-func OpenCodeSupport(path string) (version string, ok bool, reason string) {
-	key := path
+// OpenCodeSupport says whether the opencode command (OpenCodeBase of the person's command, its
+// executable found at path) is a version minbox runs (2.x): its version, ok, and the reason when not.
+// The answer is cached per executable (path, size, mtime), so an upgrade is noticed; a failed probe
+// is retried after a minute.
+func OpenCodeSupport(path string, command []string) (version string, ok bool, reason string) {
+	argv := append([]string{path}, OpenCodeBase(command)[1:]...)
+	cacheKey := strings.Join(argv, "\x00")
+	key := cacheKey
 	if st, err := os.Stat(path); err == nil {
-		key = fmt.Sprintf("%s|%d|%d", path, st.Size(), st.ModTime().UnixNano())
+		key = fmt.Sprintf("%s|%d|%d", cacheKey, st.Size(), st.ModTime().UnixNano())
 	}
 	versionMu.Lock()
-	e, hit := versionCache[path]
+	e, hit := versionCache[cacheKey]
 	versionMu.Unlock()
 	if hit && e.key == key && (e.probeFailedAt.IsZero() || time.Since(e.probeFailedAt) < time.Minute) {
 		return e.version, e.ok, e.reason
 	}
-	out, err := OpenCodeVersionProbe(path)
+	out, err := OpenCodeVersionProbe(argv)
 	e = versionEntry{key: key, checkedAt: time.Now()}
 	if err != nil {
-		e.reason = fmt.Sprintf("`%s --version` failed (%v)", path, err)
+		e.reason = fmt.Sprintf("`%s --version` failed (%v)", strings.Join(argv, " "), err)
 		e.probeFailedAt = time.Now()
 	} else {
 		e.version, e.ok, e.reason = judgeOpenCodeVersion(out)
 	}
 	versionMu.Lock()
-	versionCache[path] = e
+	versionCache[cacheKey] = e
 	versionMu.Unlock()
 	return e.version, e.ok, e.reason
 }
@@ -389,7 +392,7 @@ func OpenCodeSessionDir(ctx context.Context, run Runner, command []string, dir, 
 	if !ValidOpenCodeSessionID(id) {
 		return false, "", nil
 	}
-	argv := append(openCodeBase(command), "api", "--standalone", "session.get", "--param", "sessionID="+id)
+	argv := append(OpenCodeBase(command), "api", "--standalone", "session.get", "--param", "sessionID="+id)
 	out, err := run(ctx, argv, dir, nil, "")
 	if err != nil {
 		var ee *ExitError
@@ -429,17 +432,26 @@ func OpenCodeEnsureSession(ctx context.Context, run Runner, command []string, di
 		return false, at, nil
 	}
 	body, _ := json.Marshal(map[string]any{"id": id, "location": map[string]string{"directory": dir}})
-	argv := append(openCodeBase(command), "api", "--standalone", "session.create", "-d", string(body))
+	argv := append(OpenCodeBase(command), "api", "--standalone", "session.create", "-d", string(body))
 	if _, err := run(ctx, argv, dir, nil, ""); err != nil {
 		return false, "", err
 	}
 	return true, "", nil
 }
 
-// openCodeBase is the executable of the person's opencode command (their flags are TUI flags).
-func openCodeBase(command []string) []string {
-	if len(command) == 0 {
+// OpenCodeBase is the person's opencode command without its flags (they are TUI flags, such as
+// --model): the leading words up to the first one that starts with "-" ("opencode", or a wrapper such
+// as "npx opencode").
+func OpenCodeBase(command []string) []string {
+	var base []string
+	for _, w := range command {
+		if strings.HasPrefix(w, "-") {
+			break
+		}
+		base = append(base, w)
+	}
+	if len(base) == 0 {
 		return []string{"opencode"}
 	}
-	return []string{command[0]}
+	return base
 }
