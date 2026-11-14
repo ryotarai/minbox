@@ -40,6 +40,7 @@ func remoteHost(t *testing.T, addr0, dir string) (string, string, func()) {
 		err := termhost.ServeRemote(ctx, termhost.RemoteOptions{
 			Addr: addr0, DataDir: dir,
 			PluginDir: "/plugin-remote", ServerFile: filepath.Join(dir, "host-server.json"), Version: "test",
+			PiExtension: "/pi-remote/pi/minbox.ts", PiSubagent: "/pi-remote/pi/subagent.ts", OpenCodePlugin: "/oc-remote/opencode",
 			Listening: func(a string) { addr <- a },
 		})
 		if err != nil {

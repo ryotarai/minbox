@@ -157,8 +157,8 @@ func TestOpenCodeV1IsRefused(t *testing.T) {
 	if s := e.createSession(); s.Agent == agent.OpenCode {
 		t.Fatal("an unsupported OpenCode became the default")
 	}
-	// Not on another machine either.
-	if _, err := e.srv.sessions.resolveAgent(context.Background(), "opencode", "host_other"); err == nil || !strings.Contains(err.Error(), "own machine") {
+	// A host that does not exist is refused (remote hosts: hostagents_test.go).
+	if _, err := e.srv.sessions.resolveAgent(context.Background(), "opencode", "host_other"); err == nil || !strings.Contains(err.Error(), "no such host") {
 		t.Fatalf("remote: %v", err)
 	}
 }

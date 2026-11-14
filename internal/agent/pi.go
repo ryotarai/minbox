@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
+
+	"github.com/ryotarai/minbox/internal/hostfs"
 )
 
 // pi is Pi (@earendil-works/pi-coding-agent 1.x), an interactive TUI in the terminal with the minbox
@@ -25,8 +24,9 @@ func (pi) Tools() ToolNames { return ToolNames{Prefix: "minbox_"} }
 
 // Caps: Pi has no subagents of its own (the orchestrator prompt is off; the minbox_subagent tool of
 // plugin/pi/subagent.ts is described by a short section of the instructions instead), accepts a preassigned conversation id
-// (--session-id), and in this first version runs on the server's machine only.
-func (pi) Caps() Caps { return Caps{PreassignedID: true} }
+// (--session-id), and runs on remote hosts too (the host has its own copy of the extension, and Pi
+// keeps its session files on that machine).
+func (pi) Caps() Caps { return Caps{PreassignedID: true, RemoteHosts: true} }
 
 func (pi) Env(ArgvReq) []string      { return nil }
 func (pi) NewConversationID() string { return NewUUID() }
@@ -105,64 +105,11 @@ func (pi) Headless(spec HeadlessSpec) Headless {
 	}}
 }
 
-// PiDirName is how Pi names a folder's session directory under <agent dir>/sessions: the path
-// without its leading separator, with / \ and : replaced by -, between "--" and "--".
-func PiDirName(cwd string) string {
-	cwd = strings.TrimLeft(cwd, `/\`)
-	return "--" + strings.NewReplacer("/", "-", `\`, "-", ":", "-").Replace(cwd) + "--"
-}
+// PiDirName is how Pi names a folder's session directory under <agent dir>/sessions (hostfs.PiDirName).
+func PiDirName(cwd string) string { return hostfs.PiDirName(cwd) }
 
-// PiSessionsRoot is where Pi keeps its sessions on this machine: $PI_CODING_AGENT_SESSION_DIR,
-// else $PI_CODING_AGENT_DIR/sessions, else ~/.pi/agent/sessions. (A per-run --session-dir is not
-// known here; minbox does not pass one.)
-func PiSessionsRoot() string {
-	if d := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); d != "" {
-		return d
-	}
-	if d := os.Getenv("PI_CODING_AGENT_DIR"); d != "" {
-		return filepath.Join(d, "sessions")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".pi", "agent", "sessions")
-}
+// PiSessionsRoot is where Pi keeps its sessions on this machine (hostfs.PiSessionsRoot).
+func PiSessionsRoot() string { return hostfs.PiSessionsRoot() }
 
-// PiConversationFile finds the session file of conversation id on this machine: in the folder's
-// own session directory first (also for the symlink-resolved folder), else in any directory (ids
-// are UUIDs). It returns "" if there is none.
-func PiConversationFile(root, cwd, id string) string {
-	if root == "" || id == "" || strings.ContainsAny(id, `/\*?[`) {
-		return ""
-	}
-	find := func(dir string) string {
-		m, _ := filepath.Glob(filepath.Join(dir, "*_"+id+".jsonl"))
-		if len(m) > 0 {
-			return m[0]
-		}
-		return ""
-	}
-	if cwd != "" {
-		if p := find(filepath.Join(root, PiDirName(cwd))); p != "" {
-			return p
-		}
-		if real, err := filepath.EvalSymlinks(cwd); err == nil {
-			if p := find(filepath.Join(root, PiDirName(real))); p != "" {
-				return p
-			}
-		}
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			if p := find(filepath.Join(root, e.Name())); p != "" {
-				return p
-			}
-		}
-	}
-	return ""
-}
+// PiConversationFile finds the session file of conversation id under root (hostfs.PiConversationFile).
+func PiConversationFile(root, cwd, id string) string { return hostfs.PiConversationFile(root, cwd, id) }

@@ -224,14 +224,21 @@ func (m *sessionManager) defaultAgent(ctx context.Context) string {
 // not a supported version), Pi or OpenCode on another machine.
 func (m *sessionManager) resolveAgent(ctx context.Context, requested, hostID string) (string, error) {
 	if requested == "" {
-		requested = m.defaultAgent(ctx)
+		requested = m.hostDefaultAgent(ctx, hostID)
 	}
 	a, err := agent.For(requested)
 	if err != nil {
 		return "", err
 	}
-	if m.remote(hostID) && !a.Caps().RemoteHosts {
-		return "", fmt.Errorf("%s sessions run on the server's own machine only for now (host %s is another machine)", a.Label(), hostID)
+	if m.remote(hostID) {
+		if !a.Caps().RemoteHosts {
+			return "", fmt.Errorf("%s sessions run on the server's own machine only (host %s is another machine)", a.Label(), hostID)
+		}
+		// That machine's PATH, Node and OpenCode version decide (hostagents.go).
+		if err := m.agentOnHost(ctx, a.Kind(), hostID); err != nil {
+			return "", err
+		}
+		return a.Kind(), nil
 	}
 	if a.Kind() != agent.Claude && !m.commands().Usable(a.Kind()) {
 		return "", m.commands().NotInstalledError(a.Kind())
@@ -288,6 +295,7 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	req := agent.ArgvReq{ConversationID: sess.ClaudeSessionID, Cwd: sess.Cwd}
 	if a.Kind() == agent.OpenCode {
 		// --session opens the session minbox created (or found) just before the start (prepareOpenCode).
+		// The plugin is in the environment (sessionEnv).
 		req.Command = m.cfg.OpenCodeCommand
 		req.Extension = m.cfg.OpenCodePlugin
 	} else if a.Kind() == agent.Pi {
@@ -296,9 +304,14 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 		if m.cfg.PiSubagentExtension != "" {
 			req.ExtraExtensions = []string{m.cfg.PiSubagentExtension}
 		}
+		if m.remote(sess.HostID) {
+			// The host fills in its own copy of the extensions.
+			req.Extension = termhost.PiExtensionPlaceholder
+			req.ExtraExtensions = []string{termhost.PiSubagentPlaceholder}
+		}
 		if resume && sess.ClaudeSessionID != "" {
 			// --session-id continues the conversation if the folder has it, else starts it.
-			log.Printf("session %s (%s): resume check: Pi conversation %s, cwd %q, session file found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, m.piConversationExists(sess))
+			log.Printf("session %s (%s): resume check: Pi conversation %s, cwd %q, host %q, session file found: %v", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, sess.HostID, m.piConversationExists(ctx, sess))
 		}
 	} else {
 		req.Command = m.cfg.ClaudeCommand
@@ -325,20 +338,22 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 	return a.Argv(req)
 }
 
-// piConversationExists reports whether Pi has a session file for the session's conversation (this
-// machine only: Pi sessions do not run on other hosts yet).
-func (m *sessionManager) piConversationExists(sess *store.Session) bool {
-	if m.remote(sess.HostID) {
+// piConversationExists reports whether Pi has a session file for the session's conversation on the
+// session's machine (a remote host looks in its own Pi folder).
+func (m *sessionManager) piConversationExists(ctx context.Context, sess *store.Session) bool {
+	f, err := m.fsOf(sess.HostID)
+	if err != nil {
 		return false
 	}
-	return agent.PiConversationFile(agent.PiSessionsRoot(), sess.Cwd, sess.ClaudeSessionID) != ""
+	return f.PiConversationFile(ctx, sess.Cwd, sess.ClaudeSessionID) != ""
 }
 
 // conversationExists reports whether the session's agent has a saved conversation `id` in cwd.
 func (m *sessionManager) conversationExists(ctx context.Context, f hostfs.FS, sess *store.Session, id string) bool {
 	switch sess.Agent {
 	case agent.Pi:
-		return !m.remote(sess.HostID) && agent.PiConversationFile(agent.PiSessionsRoot(), sess.Cwd, id) != ""
+		// Pi's session files are on the session's machine (f is that machine's).
+		return f.PiConversationFile(ctx, sess.Cwd, id) != ""
 	case agent.OpenCode:
 		exists, _, err := m.openCodeSession(ctx, sess, id)
 		if err != nil {
@@ -349,16 +364,9 @@ func (m *sessionManager) conversationExists(ctx context.Context, f hostfs.FS, se
 	return f.TranscriptExists(ctx, sess.Cwd, id)
 }
 
-// openCodeRunner runs the opencode CLI on a session's machine. Only this machine has one for now
-// (OpenCode sessions do not run on other hosts yet); remote support plugs in here.
+// openCodeRunner runs the opencode CLI on a session's machine: here, or through a remote host's exec.
 func (m *sessionManager) openCodeRunner(hostID string) (agent.Runner, error) {
-	if m.remote(hostID) {
-		return nil, fmt.Errorf("OpenCode sessions run on the server's own machine only for now (host %s)", hostID)
-	}
-	if m.cfg.OpenCodeRunner != nil {
-		return m.cfg.OpenCodeRunner, nil
-	}
-	return agent.LocalRunner, nil
+	return m.runnerOn(hostID)
 }
 
 // openCodeCLITimeout bounds one `opencode api --standalone` call (it starts a private server).
@@ -640,12 +648,18 @@ func (m *sessionManager) sessionEnv(sess *store.Session) []string {
 	)
 	// What the agent itself needs (OpenCode: its plugin and the session it serves).
 	if sess.Agent == agent.OpenCode {
-		env = append(env, agent.Must(sess.Agent).Env(agent.ArgvReq{
+		req := agent.ArgvReq{
 			Extension:      m.cfg.OpenCodePlugin,
 			ConversationID: sess.ClaudeSessionID,
 			Cwd:            sess.Cwd,
 			BaseEnv:        env,
-		})...)
+		}
+		if m.remote(sess.HostID) {
+			// The host fills in its own plugin folder and merges the entry into an
+			// OPENCODE_CONFIG_CONTENT of its own environment.
+			req.Extension = termhost.OpenCodePluginPlaceholder
+		}
+		env = append(env, agent.Must(sess.Agent).Env(req)...)
 	}
 	return env
 }
@@ -654,6 +668,12 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	host, err := m.hostOf(sess)
 	if err != nil {
 		return err
+	}
+	if m.remote(sess.HostID) && sess.Agent != agent.Claude && sess.Agent != "" && sess.Kind != store.KindShell {
+		// A host before AgentsProtocol would start Pi/OpenCode without minbox's part.
+		if _, err := m.execOn(sess.HostID); err != nil {
+			return err
+		}
 	}
 	_ = host.Remove(ctx, sess.ID) // forget an exited terminal of the same id
 	m.relocate(ctx, sess)

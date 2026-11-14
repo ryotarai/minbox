@@ -98,6 +98,8 @@ type FS interface {
 	GitDiff(ctx context.Context, cwd, path, base string) (string, error)
 	// TranscriptExists: Claude Code has a transcript for the conversation in cwd.
 	TranscriptExists(ctx context.Context, cwd, claudeSessionID string) bool
+	// PiConversationFile is Pi's session file of conversation id (for cwd) on the machine, "" if none.
+	PiConversationFile(ctx context.Context, cwd, id string) string
 	// WriteFile creates area/rel (exclusive) from r and answers its absolute path.
 	WriteFile(ctx context.Context, area, rel string, r io.Reader, readOnly bool) (string, error)
 }

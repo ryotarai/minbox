@@ -187,6 +187,19 @@ func hostListen(addr, dataDir, tsLogin string, setup func() error) error {
 	if err != nil {
 		return fmt.Errorf("extract mod: %w", err)
 	}
+	// Its own copies of the Pi extension and the OpenCode plugin, for Pi and OpenCode sessions here.
+	// Optional: without them those sessions fail to load minbox's part, Claude Code ones still run.
+	piExt, piSub := "", ""
+	if p, err := plugin.ExtractPi(filepath.Join(dataDir, "pi-extension")); err != nil {
+		log.Printf("extract the Pi extension: %v", err)
+	} else {
+		piExt, piSub = p, plugin.PiSubagentPath(p)
+	}
+	ocPlugin, err := plugin.ExtractOpenCode(filepath.Join(dataDir, "opencode-plugin"))
+	if err != nil {
+		log.Printf("extract the OpenCode plugin: %v", err)
+		ocPlugin = ""
+	}
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
@@ -198,6 +211,7 @@ func hostListen(addr, dataDir, tsLogin string, setup func() error) error {
 	return termhost.ServeRemote(ctx, termhost.RemoteOptions{
 		Addr: addr, DataDir: dataDir, PluginDir: pluginDir, TailscaleLogin: tsLogin,
 		ServerFile: filepath.Join(dataDir, "host-server.json"), Version: server.Version,
+		PiExtension: piExt, PiSubagent: piSub, OpenCodePlugin: ocPlugin,
 		Listening: func(a string) {
 			fmt.Printf("minbox host listening on %s\n", a)
 			if setup != nil {

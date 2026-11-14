@@ -155,9 +155,9 @@ func TestAgentChoiceAndErrors(t *testing.T) {
 	if _, code, obj := e.createAgentSession("gemini"); code != 400 || !strings.Contains(obj["error"].(string), "unknown agent") {
 		t.Fatalf("unknown: %d %v", code, obj)
 	}
-	// Pi cannot run on another machine yet.
+	// A host that does not exist is refused (remote hosts: hostagents_test.go).
 	withPi(e, "sleep 1")
-	if _, err := e.srv.sessions.resolveAgent(context.Background(), "pi", "host_other"); err == nil || !strings.Contains(err.Error(), "own machine") {
+	if _, err := e.srv.sessions.resolveAgent(context.Background(), "pi", "host_other"); err == nil || !strings.Contains(err.Error(), "no such host") {
 		t.Fatalf("remote pi: %v", err)
 	}
 	// Project default: patch it, and a new session in the project follows it; an explicit agent wins.

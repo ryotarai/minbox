@@ -346,6 +346,13 @@ func gitDirOf(path, cwd string) string {
 	return cwd
 }
 
+// PiConversationFile is the session file Pi keeps for conversation id on this machine ("" if none):
+// under $PI_CODING_AGENT_SESSION_DIR, $PI_CODING_AGENT_DIR/sessions or ~/.pi/agent/sessions of the
+// process that asks (on a remote host: the host, whose environment its Pi sessions inherit).
+func (l *Local) PiConversationFile(ctx context.Context, cwd, id string) string {
+	return PiConversationFile(PiSessionsRoot(), cwd, id)
+}
+
 func (l *Local) TranscriptExists(ctx context.Context, cwd, id string) bool {
 	env, _ := l.Env(ctx)
 	if env.ClaudeConfigDir == "" || id == "" {
