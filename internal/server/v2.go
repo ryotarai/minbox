@@ -718,7 +718,7 @@ func (s *Server) clearScratch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) about(w http.ResponseWriter, r *http.Request) {
-	out := map[string]any{"version": Version, "server_protocol": ProtocolVersion, "required_host": RequiredHostVersion, "host": nil, "data_dir": s.cfg.DataDir, "claude_command": strings.Join(s.cfg.ClaudeCommand, " "), "pi_command": strings.Join(s.cfg.PiCommand, " "), "agents": s.sessions.commands().Infos()}
+	out := map[string]any{"version": Version, "server_protocol": ProtocolVersion, "required_host": RequiredHostVersion, "host": nil, "data_dir": s.cfg.DataDir, "claude_command": strings.Join(s.cfg.ClaudeCommand, " "), "pi_command": strings.Join(s.cfg.PiCommand, " "), "opencode_command": strings.Join(s.cfg.OpenCodeCommand, " "), "agents": s.sessions.commands().Infos()}
 	if h, ok := s.sessions.getHost().(interface {
 		Version(ctx context.Context) (termhost.VersionInfo, error)
 	}); ok && h != nil {

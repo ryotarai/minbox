@@ -10,7 +10,7 @@ import (
 )
 
 func TestFor(t *testing.T) {
-	for kind, want := range map[string]string{"": Claude, "claude": Claude, "pi": Pi} {
+	for kind, want := range map[string]string{"": Claude, "claude": Claude, "pi": Pi, "opencode": OpenCode} {
 		a, err := For(kind)
 		if err != nil || a.Kind() != want {
 			t.Fatalf("For(%q) = %v %v", kind, a, err)
@@ -244,8 +244,8 @@ func TestPiHeadless(t *testing.T) {
 // Commands: nothing here may need `claude`. With an empty PATH nothing is installed and Choose still answers.
 func TestCommandsWithoutAnyAgent(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	c := Commands{Claude: {"claude"}, Pi: {"pi"}}
-	if c.Installed(Claude) || c.Installed(Pi) {
+	c := Commands{Claude: {"claude"}, Pi: {"pi"}, OpenCode: {"opencode"}}
+	if c.Installed(Claude) || c.Installed(Pi) || c.Installed(OpenCode) {
 		t.Fatal("installed with an empty PATH")
 	}
 	if got := c.Choose(""); got != Claude {

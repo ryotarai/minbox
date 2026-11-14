@@ -183,7 +183,7 @@ func (m *sessionManager) CreateAgent(ctx context.Context, kind, agentKind, name,
 	if err != nil {
 		return nil, err
 	}
-	claudeID := newUUID()
+	claudeID := agent.Must(agentKind).NewConversationID()
 	var sess *store.Session
 	if project != nil {
 		sess, err = m.store.CreateSessionAgent(ctx, project.ID, kind, agentKind, name, cwd, claudeID)
@@ -209,7 +209,7 @@ func (m *sessionManager) CreateAgent(ctx context.Context, kind, agentKind, name,
 
 // commands are the configured commands of the coding agents.
 func (m *sessionManager) commands() agent.Commands {
-	return agent.Commands{agent.Claude: m.cfg.ClaudeCommand, agent.Pi: m.cfg.PiCommand}
+	return agent.Commands{agent.Claude: m.cfg.ClaudeCommand, agent.Pi: m.cfg.PiCommand, agent.OpenCode: m.cfg.OpenCodeCommand}
 }
 
 // defaultAgent is the agent a new session gets when nobody says: the default_agent setting if that
@@ -220,7 +220,8 @@ func (m *sessionManager) defaultAgent(ctx context.Context) string {
 }
 
 // resolveAgent turns the requested agent ("" = default) into the one to run on a host, and refuses
-// one that cannot run there: an unknown kind, Pi when it is not installed, Pi on another machine.
+// one that cannot run there: an unknown kind, Pi or OpenCode when it is not installed (or, for OpenCode,
+// not a supported version), Pi or OpenCode on another machine.
 func (m *sessionManager) resolveAgent(ctx context.Context, requested, hostID string) (string, error) {
 	if requested == "" {
 		requested = m.defaultAgent(ctx)
@@ -232,8 +233,8 @@ func (m *sessionManager) resolveAgent(ctx context.Context, requested, hostID str
 	if m.remote(hostID) && !a.Caps().RemoteHosts {
 		return "", fmt.Errorf("%s sessions run on the server's own machine only for now (host %s is another machine)", a.Label(), hostID)
 	}
-	if a.Kind() == agent.Pi && !m.commands().Installed(agent.Pi) {
-		return "", m.commands().NotInstalledError(agent.Pi)
+	if a.Kind() != agent.Claude && !m.commands().Usable(a.Kind()) {
+		return "", m.commands().NotInstalledError(a.Kind())
 	}
 	return a.Kind(), nil
 }
@@ -284,8 +285,12 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 		return shellArgv
 	}
 	a := agent.Must(sess.Agent)
-	req := agent.ArgvReq{ConversationID: sess.ClaudeSessionID}
-	if a.Kind() == agent.Pi {
+	req := agent.ArgvReq{ConversationID: sess.ClaudeSessionID, Cwd: sess.Cwd}
+	if a.Kind() == agent.OpenCode {
+		// --session opens the session minbox created (or found) just before the start (prepareOpenCode).
+		req.Command = m.cfg.OpenCodeCommand
+		req.Extension = m.cfg.OpenCodePlugin
+	} else if a.Kind() == agent.Pi {
 		req.Command = m.cfg.PiCommand
 		req.Extension = m.cfg.PiExtension
 		if m.cfg.PiSubagentExtension != "" {
@@ -331,10 +336,69 @@ func (m *sessionManager) piConversationExists(sess *store.Session) bool {
 
 // conversationExists reports whether the session's agent has a saved conversation `id` in cwd.
 func (m *sessionManager) conversationExists(ctx context.Context, f hostfs.FS, sess *store.Session, id string) bool {
-	if sess.Agent == agent.Pi {
+	switch sess.Agent {
+	case agent.Pi:
 		return !m.remote(sess.HostID) && agent.PiConversationFile(agent.PiSessionsRoot(), sess.Cwd, id) != ""
+	case agent.OpenCode:
+		exists, _, err := m.openCodeSession(ctx, sess, id)
+		if err != nil {
+			log.Printf("session %s (%s): cannot check OpenCode session %s: %v", sess.ID, sess.Name, id, err)
+		}
+		return exists
 	}
 	return f.TranscriptExists(ctx, sess.Cwd, id)
+}
+
+// openCodeRunner runs the opencode CLI on a session's machine. Only this machine has one for now
+// (OpenCode sessions do not run on other hosts yet); remote support plugs in here.
+func (m *sessionManager) openCodeRunner(hostID string) (agent.Runner, error) {
+	if m.remote(hostID) {
+		return nil, fmt.Errorf("OpenCode sessions run on the server's own machine only for now (host %s)", hostID)
+	}
+	if m.cfg.OpenCodeRunner != nil {
+		return m.cfg.OpenCodeRunner, nil
+	}
+	return agent.LocalRunner, nil
+}
+
+// openCodeCLITimeout bounds one `opencode api --standalone` call (it starts a private server).
+var openCodeCLITimeout = 30 * time.Second
+
+// openCodeSession asks OpenCode (its CLI, never its database) whether session id exists and where.
+func (m *sessionManager) openCodeSession(ctx context.Context, sess *store.Session, id string) (bool, string, error) {
+	run, err := m.openCodeRunner(sess.HostID)
+	if err != nil {
+		return false, "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, openCodeCLITimeout)
+	defer cancel()
+	return agent.OpenCodeSessionDir(ctx, run, m.cfg.OpenCodeCommand, sess.Cwd, id)
+}
+
+// prepareOpenCode creates the session's OpenCode session before the TUI starts: the TUI shows a
+// session given with --session only if it exists then (a missing one would be created only by the
+// person's first prompt, and turns minbox starts would not show). A failure is logged and the start
+// goes on: the plugin creates the session itself as a fallback.
+func (m *sessionManager) prepareOpenCode(ctx context.Context, sess *store.Session) {
+	if sess.Agent != agent.OpenCode || sess.ClaudeSessionID == "" {
+		return
+	}
+	run, err := m.openCodeRunner(sess.HostID)
+	if err != nil {
+		log.Printf("session %s (%s): %v", sess.ID, sess.Name, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, openCodeCLITimeout)
+	defer cancel()
+	created, at, err := agent.OpenCodeEnsureSession(ctx, run, m.cfg.OpenCodeCommand, sess.Cwd, sess.ClaudeSessionID)
+	switch {
+	case err != nil:
+		log.Printf("session %s (%s): could not create OpenCode session %s in %s (%v); the plugin will try", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd, err)
+	case created:
+		log.Printf("session %s (%s): created OpenCode session %s in %s", sess.ID, sess.Name, sess.ClaudeSessionID, sess.Cwd)
+	default:
+		log.Printf("session %s (%s): resume check: OpenCode session %s exists (in %s)", sess.ID, sess.Name, sess.ClaudeSessionID, at)
+	}
 }
 
 // instructions is the one text that tells the agent how to work with minbox:
@@ -400,11 +464,13 @@ func (m *sessionManager) relocate(ctx context.Context, sess *store.Session) {
 		return
 	}
 	// With no transcript in the old folder (the person never sent a prompt there) the Claude id
-	// stays and so do the older prev_* fields: only the folder moves.
+	// stays and so do the older prev_* fields: only the folder moves. An agent whose conversation can
+	// move (OpenCode: its plugin moves the session at startup) keeps it too.
 	prevDir, prevID, newID := "", "", sess.ClaudeSessionID
 	var chain []store.PrevConv
-	if sess.ClaudeSessionID != "" && m.conversationExists(ctx, f, sess, sess.ClaudeSessionID) {
-		prevDir, prevID, newID = sess.Cwd, sess.ClaudeSessionID, newUUID()
+	movable := agent.Must(sess.Agent).Caps().MovableConversation
+	if !movable && sess.ClaudeSessionID != "" && m.conversationExists(ctx, f, sess, sess.ClaudeSessionID) {
+		prevDir, prevID, newID = sess.Cwd, sess.ClaudeSessionID, agent.Must(sess.Agent).NewConversationID()
 		chain = append(chain, sess.PrevChain...)
 		if sess.PrevDir != "" && sess.PrevClaudeSessionID != "" {
 			chain = append(chain, store.PrevConv{Dir: sess.PrevDir, ClaudeSessionID: sess.PrevClaudeSessionID})
@@ -443,9 +509,13 @@ func buildInstructionsFor(a agent.Agent, orchestrator bool, extra string) string
 	if p := a.Tools().Prefix; p != toolPrefix {
 		text = strings.ReplaceAll(text, toolPrefix, p)
 	}
-	if a.Kind() == agent.Pi {
+	switch a.Kind() {
+	case agent.Pi:
 		// Pi has no Task tool; the subagent extension registers minbox_subagent.
 		text += "\n\n" + PiSubagentPrompt
+	case agent.OpenCode:
+		// OpenCode's subagent tool and its built-in agents differ from Claude Code's Task tool.
+		text += "\n\n" + OpenCodeSubagentPrompt
 	}
 	if extra = strings.TrimSpace(extra); extra != "" {
 		text += "\n\nThe person adds: " + extra
@@ -499,6 +569,14 @@ minbox_subagent runs up to 8 tasks (4 at a time) in separate Pi processes with t
 - Set write: true only for a task that must change files. That child works in its own git worktree on a new branch minbox-sub/<id> (the folder must be inside a git repository), and the result names the branch and path. Review the diff and merge the branch yourself; a child never touches your own checkout.
 - Several minbox threads: a session can get messages from more than one minbox thread. When the work for different threads is independent, do not do it serially yourself: give each thread's work its own minbox_subagent task, run them in parallel, and name the thread id in each task. You stay the coordinator: when a task returns, review it and report it with minbox_send_message in the matching thread (that thread's thread_id). Use write: true only for a thread that needs edits.
 - Children cannot use minbox_* tools; report to the person yourself.`
+
+// OpenCodeSubagentPrompt tells OpenCode how the orchestration above maps onto its own subagents (the
+// subagent tool with the built-in general and explore agents). It is added for OpenCode only.
+const OpenCodeSubagentPrompt = `# minbox: subagents in OpenCode
+Subagents here are OpenCode's subagent tool: agent "general" (can edit files and run commands) or "explore" (read-only search). Give each task a full brief (goal, files, constraints, how to verify): a subagent sees nothing of this conversation.
+- Several minbox threads: a session can get messages from more than one minbox thread. When the work for different threads is independent, start one subagent per thread with background: true so they run in parallel, and name the thread id in each brief. You stay the coordinator: when a subagent reports back, review its result and report it with minbox_send_message in the matching thread (that thread's thread_id).
+- A subagent that changes files works in its own git worktree when the folder is in a git repository: create one first (Code Mode: execute with tools.opencode.worktree_create) and tell the subagent to work only there; review and merge its branch yourself. Read-only investigation needs no worktree.
+- Subagents do not message the person; you report with minbox_send_message.`
 
 // AgentSystemPrompt is minbox's part of Claude's system prompt: reach the
 // person through the inbox, keep the session's title current, and open pages
@@ -555,11 +633,21 @@ func (m *sessionManager) sessionEnv(sess *store.Session) []string {
 	if sess.Kind == store.KindShell {
 		return env // no mod: nothing of minbox's to hand on
 	}
-	return append(env,
+	env = append(env,
 		"MINBOX_SESSION_ID="+sess.ID,
 		"MINBOX_TOKEN="+sess.Token,
 		"MINBOX_SERVER_FILE="+serverFile,
 	)
+	// What the agent itself needs (OpenCode: its plugin and the session it serves).
+	if sess.Agent == agent.OpenCode {
+		env = append(env, agent.Must(sess.Agent).Env(agent.ArgvReq{
+			Extension:      m.cfg.OpenCodePlugin,
+			ConversationID: sess.ClaudeSessionID,
+			Cwd:            sess.Cwd,
+			BaseEnv:        env,
+		})...)
+	}
+	return env
 }
 
 func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume bool) error {
@@ -569,6 +657,7 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	}
 	_ = host.Remove(ctx, sess.ID) // forget an exited terminal of the same id
 	m.relocate(ctx, sess)
+	m.prepareOpenCode(ctx, sess)
 	if m.modLog != nil {
 		m.modLog(sess.ID, "spawn", "resume=%v agent=%s host=%q cwd=%q", resume, sess.Agent, sess.HostID, sess.Cwd)
 	}

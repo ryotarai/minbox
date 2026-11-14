@@ -1,5 +1,6 @@
-// Package plugin holds the minbox Claude Code mod and the minbox Pi extension, embedded into the
-// binary and written out to the data directory for `claude --plugin-dir` and `pi -e`.
+// Package plugin holds the minbox Claude Code mod, the minbox Pi extension and the minbox OpenCode
+// plugin, embedded into the binary and written out to the data directory for `claude --plugin-dir`,
+// `pi -e` and OpenCode's OPENCODE_CONFIG_CONTENT.
 package plugin
 
 import (
@@ -116,13 +117,68 @@ func PiSubagentPath(entry string) string { return filepath.Join(filepath.Dir(ent
 // next to minbox/hooks/text.ts) and returns the path of minbox.ts, the file for `pi -e`; the
 // subagent extension is PiSubagentPath of it. Like Extract, each version gets its own folder.
 func ExtractPi(root string) (string, error) {
-	piSources, err := piSources()
+	srcs, err := piSources()
 	if err != nil {
 		return "", err
 	}
+	dir, err := extractSources(root, srcs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "pi", "minbox.ts"), nil
+}
+
+//go:embed all:opencode
+var openCodeFiles embed.FS
+
+// openCodeSources are the files of the OpenCode plugin: everything under opencode/ except tests and
+// their helpers (opencode/test), and the text helpers it shares with the Claude Code mod
+// (../minbox/hooks/text.ts and nav.ts).
+func openCodeSources() ([]piSource, error) {
+	var out []piSource
+	err := fs.WalkDir(openCodeFiles, "opencode", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path == "opencode/test" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".test.ts") {
+			return nil
+		}
+		out = append(out, piSource{&openCodeFiles, path})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}), nil
+}
+
+// ExtractOpenCode writes the OpenCode plugin under root/<content hash>/ (opencode/index.ts ... next to
+// minbox/hooks/text.ts) and returns the plugin's folder: the "package" of the plugins entry minbox
+// puts in OPENCODE_CONFIG_CONTENT. Like Extract, each version gets its own folder.
+func ExtractOpenCode(root string) (string, error) {
+	srcs, err := openCodeSources()
+	if err != nil {
+		return "", err
+	}
+	dir, err := extractSources(root, srcs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "opencode"), nil
+}
+
+// extractSources writes files under root/<content hash>/, each at its embedded path, and returns that
+// folder; a folder that is complete already is reused.
+func extractSources(root string, srcs []piSource) (string, error) {
 	h := sha256.New()
-	contents := make([][]byte, len(piSources))
-	for i, src := range piSources {
+	contents := make([][]byte, len(srcs))
+	for i, src := range srcs {
 		b, err := src.fs.ReadFile(src.path)
 		if err != nil {
 			return "", err
@@ -132,9 +188,8 @@ func ExtractPi(root string) (string, error) {
 		h.Write(b)
 	}
 	dir := filepath.Join(root, hex.EncodeToString(h.Sum(nil))[:12])
-	entry := filepath.Join(dir, "pi", "minbox.ts")
 	if _, err := os.Stat(filepath.Join(dir, ".complete")); err == nil {
-		return entry, nil
+		return dir, nil
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", err
@@ -144,7 +199,7 @@ func ExtractPi(root string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
-	for i, src := range piSources {
+	for i, src := range srcs {
 		dst := filepath.Join(tmp, filepath.FromSlash(src.path))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", err
@@ -158,9 +213,9 @@ func ExtractPi(root string) (string, error) {
 	}
 	if err := os.Rename(tmp, dir); err != nil {
 		if _, serr := os.Stat(filepath.Join(dir, ".complete")); serr == nil {
-			return entry, nil // another process extracted it first
+			return dir, nil // another process extracted it first
 		}
 		return "", err
 	}
-	return entry, nil
+	return dir, nil
 }
