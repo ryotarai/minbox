@@ -11,17 +11,18 @@ Typed commands (one per line), the subset of fake-claude.py the Pi tests need:
   work / idle       report working / idle (while working only urgent messages are taken)
   args              print the command line it was started with
   env               print MINBOX_* variables it got
+  paths             whether every -e file exists and is under $FAKE_EXPECT_ROOT (a remote host's data dir)
   exit              quit
 """
 import json, os, sys, threading, time, urllib.error, urllib.request, uuid
 
-token = os.environ["MINBOX_TOKEN"]
-server_file = os.environ["MINBOX_SERVER_FILE"]
-owner = uuid.uuid4().hex
 args = sys.argv[1:]
 if "--version" in args:
     print("fake-pi 0.0.0")
     sys.exit(0)
+token = os.environ["MINBOX_TOKEN"]
+server_file = os.environ["MINBOX_SERVER_FILE"]
+owner = uuid.uuid4().hex
 session_id = args[args.index("--session-id") + 1] if "--session-id" in args else "none"
 extension = args[args.index("-e") + 1] if "-e" in args else "none"
 instructions = args[args.index("--append-system-prompt") + 1] if "--append-system-prompt" in args else ""
@@ -103,6 +104,11 @@ for raw in sys.stdin:
         out(f"titled {r['title']}")
     elif line == "args":
         out("args " + json.dumps(args))
+    elif line == "paths":
+        exts = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-e"]
+        root = os.environ.get("FAKE_EXPECT_ROOT", "")
+        ok = bool(root) and all(e.startswith(root) and os.path.exists(e) for e in exts)
+        out(f"paths n={len(exts)} under-root={'yes' if ok else 'no'}")
     elif line == "env":
         out("env " + json.dumps({k: ("set" if v else "") for k, v in os.environ.items() if k.startswith("MINBOX_")}, sort_keys=True))
     elif line:

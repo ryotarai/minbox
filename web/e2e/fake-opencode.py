@@ -19,6 +19,7 @@ Typed commands in the TUI (one per line):
   title <text>      set the session title
   work / idle       report working / idle (while working only urgent messages are taken)
   args              print the command line it was started with
+  paths             whether the plugin folder is under $FAKE_EXPECT_ROOT (a remote host's data dir)
   env               print the MINBOX_* / OPENCODE_* variables it got
   exit              quit
 """
@@ -162,6 +163,10 @@ for raw in sys.stdin:
         out(f"titled {r['title']}")
     elif line == "args":
         out("args " + json.dumps(args))
+    elif line == "paths":
+        root = os.environ.get("FAKE_EXPECT_ROOT", "")
+        cfg = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT", "{}"))
+        out(f"paths under-root={'yes' if root and plugin.startswith(root) and has_entry else 'no'} keys={','.join(sorted(cfg))}")
     elif line == "env":
         out("env " + json.dumps({k: ("set" if v else "") for k, v in os.environ.items() if k.startswith("MINBOX_") or k.startswith("OPENCODE_")}, sort_keys=True))
     elif line:

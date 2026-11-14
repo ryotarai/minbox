@@ -40,7 +40,7 @@ export type SessionKind = 'claude' | 'shell'
 /** The coding agent a session runs (sessions.agent); a missing value means Claude Code. */
 export type AgentKind = 'claude' | 'pi' | 'opencode'
 
-/** A coding agent minbox can run, and whether it is installed on the server's machine (GET /api/agents). */
+/** A coding agent minbox can run, and whether it is installed on the server's machine, or on a host's (GET /api/agents?host_id=). */
 export type AgentInfo = {
   kind: AgentKind
   label: string
@@ -48,13 +48,13 @@ export type AgentInfo = {
   command: string
   path: string
   caps: { subagents: boolean; preassigned_id: boolean; remote_hosts: boolean; completions: boolean; movable_conversation?: boolean }
-  /** The version minbox read (OpenCode only). */
+  /** The version minbox read (OpenCode; on a remote host Pi's is the host's Node, "node 22.19.0"). */
   version?: string
   /** False for an installed agent minbox cannot run (OpenCode 1.x); reason says why. */
   supported?: boolean
   reason?: string
 }
-export type AgentsInfo = { agents: AgentInfo[]; default: AgentKind }
+export type AgentsInfo = { agents: AgentInfo[]; default: AgentKind; host_id?: string; error?: string }
 
 export type Session = {
   id: string
@@ -171,6 +171,8 @@ export type Host = {
   last_seen?: string | null
   error?: string
   sessions: number
+  /** The coding agents found on that machine (null before the first look). */
+  agents?: AgentInfo[] | null
 }
 
 export type HostProbe = { ok: boolean; version?: string; os?: string; arch?: string; hostname?: string; tailscale?: boolean; error?: string }
@@ -889,7 +891,8 @@ export const api = {
   createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind, agent }),
   /** A session inside a project: its host and folder. */
   createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined, agent }),
-  agents: () => call<AgentsInfo>('GET', '/api/agents'),
+  agents: (hostId?: string, fresh?: boolean) =>
+    call<AgentsInfo>('GET', `/api/agents${hostId ? `?host_id=${encodeURIComponent(hostId)}${fresh ? '&fresh=1' : ''}` : ''}`),
   setMainSession: (project_id: string, session_id: string) => call<Project>('PATCH', `/api/projects/${project_id}`, { main_session_id: session_id }),
   setProjectEmoji: (id: string, emoji: string) => call<Project>('PUT', `/api/projects/${id}/icon`, { emoji }),
   clearProjectIcon: (id: string) => call<Project>('DELETE', `/api/projects/${id}/icon`),

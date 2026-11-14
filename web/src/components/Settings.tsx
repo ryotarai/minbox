@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ReactNode } from 'react'
 import { api, type About, type AgentKind, type Session, type Storage, type Thread } from '../api'
-import { installedAgents, useAgents } from '../lib/agents'
+import { agentsSummary, installedAgents, useAgents } from '../lib/agents'
+import { hostAgentReasons } from './Hosts'
 import { useApp } from '../lib/app'
 import { notificationPermission, notify, requestNotifications, dingDong } from '../lib/alerts'
 import { bytes, homeRelative, shortTime } from '../lib/format'
@@ -266,9 +267,10 @@ function Capabilities() {
 
 // Which coding agents this machine has, and which one new sessions start with. Any one is enough.
 function AgentsGroup() {
-  const { settings, saveSettings } = useApp()
+  const { settings, saveSettings, hosts } = useApp()
   const info = useAgents()
   const installed = installedAgents(info)
+  const remotes = hosts.filter((h) => !h.builtin)
   return (
     <Group title="Coding agents">
       {!info && <span className="text-[13px] text-subtle">Loading…</span>}
@@ -312,14 +314,21 @@ function AgentsGroup() {
           </select>
         </Row>
       )}
+      {remotes.map((h) => (
+        <Row key={h.id} label={`On ${h.name}`} desc={h.status === 'online' ? 'Another host: what its machine has (Settings › Hosts).' : `Another host, ${h.status}: as last seen.`}>
+          <span data-testid="host-agents-summary" title={hostAgentReasons(h)} className="mono text-[12.5px] text-muted">
+            {h.agents ? agentsSummary(h.agents) : 'not checked yet'}
+          </span>
+        </Row>
+      ))}
       {info?.agents.some((a) => a.kind === 'pi' && a.installed) && (
         <p className="m-0 text-[12.5px] leading-[1.6] text-subtle">
-          Pi runs with your user's full permissions and has no permission prompts, like Claude Code with every permission granted. It works on this machine only for now (not on other hosts) and has no subagents, so the orchestrator prompt does not apply to it.
+          Pi runs with your user's full permissions and has no permission prompts, like Claude Code with every permission granted. Its own subagent tool replaces the orchestrator prompt. On another host it needs Pi and Node 22.19+ on that machine.
         </p>
       )}
       {info?.agents.some((a) => a.kind === 'opencode' && a.installed && a.supported !== false) && (
         <p data-testid="opencode-note" className="m-0 text-[12.5px] leading-[1.6] text-subtle">
-          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). It works on this machine only for now. It runs reply suggestions only when neither Claude Code nor Pi is installed.
+          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). On another host it needs OpenCode 2 on that machine. It runs reply suggestions only when neither Claude Code nor Pi is installed.
         </p>
       )}
     </Group>

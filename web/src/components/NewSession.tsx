@@ -100,10 +100,16 @@ export function NewSessionDialog({
   const [claudeCmd, setClaudeCmd] = useState('claude')
   // Coding agents: the picker shows only when more than one is installed (a session's agent; a
   // project's default agent when editing a project). '' is "the default".
-  const agentsInfo = useAgents()
+  // The agents of the machine the session runs on (a project's host, else the picked host).
+  const agentsInfo = useAgents((proj ? proj.host_id : hostId) || undefined)
   const installed = installedAgents(agentsInfo)
   const showAgentPicker = installed.length > 1 && (mode === 'session' || mode === 'project-edit')
   const [agentPick, setAgentPick] = useState<AgentKind | ''>(() => (mode === 'project-edit' ? editing?.default_agent ?? '' : ''))
+  // A pick the newly chosen host cannot run falls back to that host's default.
+  useEffect(() => {
+    if (agentPick && agentsInfo && mode === 'session' && !installed.some((a) => a.kind === agentPick)) setAgentPick('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentsInfo])
   const preferred = [proj?.default_agent, agentsInfo?.default].find((k) => k && installed.some((a) => a.kind === k)) as AgentKind | undefined
   const agentKind: AgentKind = (mode === 'session' && agentPick) || preferred || 'claude'
   const agentCmd = agentsInfo?.agents.find((a) => a.kind === agentKind)?.command || claudeCmd

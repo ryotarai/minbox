@@ -181,7 +181,16 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox }>({
+  // All three agents configured: the fake claude, the fake pi and the fake opencode (2.x).
+  allAgentsMinbox: async ({}, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`, undefined, {}, `python3 ${FAKE_OPENCODE}`)
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
   // A minbox where OpenCode is installed too (the fake opencode, 2.x), next to the fake claude.
   ocMinbox: async ({}, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))

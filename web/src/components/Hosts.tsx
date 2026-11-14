@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Host, type HostProbe, type TailnetPeer, type TailscaleInfo } from '../api'
 import { useApp } from '../lib/app'
+import { agentsSummary } from '../lib/agents'
 import { IconMore } from './icons'
 import { Button, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
 
@@ -28,6 +29,14 @@ export function hostAddress(h: Host): string {
   if (h.method === 'tailscale') parts.push(`tailscale${h.tailscale_login ? ` ${h.tailscale_login}` : ''}`)
   parts.push(h.paired ? 'paired' : 'not paired')
   return parts.join(' · ')
+}
+
+/** Why the agents a host cannot run are missing, one per line (the tooltip of the agents line). */
+export function hostAgentReasons(h: Host): string {
+  return (h.agents ?? [])
+    .filter((a) => !(a.installed && a.supported !== false))
+    .map((a) => `${a.label}: ${a.reason || 'not installed'}`)
+    .join('\n')
 }
 
 export function HostsSection() {
@@ -66,6 +75,11 @@ export function HostsSection() {
                   {hostAddress(h)}
                 </span>
                 {!on && h.error && <span className="truncate text-[12px] text-danger">{h.error}</span>}
+                {!h.builtin && h.agents && (
+                  <span className="truncate text-[12px] text-subtle" data-testid="host-agents" title={hostAgentReasons(h)}>
+                    Agents: {agentsSummary(h.agents)}
+                  </span>
+                )}
               </div>
               <span className={cx('w-[170px] text-[12.5px]', on ? 'text-fg2' : h.status === 'pairing' ? 'text-wait' : 'text-danger')} data-testid="host-status">
                 {hostStatus(h)}
