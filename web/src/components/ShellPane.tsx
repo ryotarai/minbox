@@ -17,7 +17,7 @@ export function ShellPane({ session, onClose }: { session: Session; onClose: () 
         <span className="mono min-w-0 flex-1 truncate text-[12px] text-subtle" title={session.cwd}>
           {homeRelative(session.cwd)}
         </span>
-        <IconButton aria-label="Close shell" title="Close shell (Ctrl+`)" data-testid="shell-close" onClick={onClose}>
+        <IconButton aria-label="Close shell" title="Close shell (Ctrl+`; the shell keeps running)" data-testid="shell-close" onClick={onClose}>
           <IconClose />
         </IconButton>
       </div>

@@ -221,7 +221,7 @@ function Desktop() {
         <>
           <Resizer grip order={o.rzThread} onDrag={(dx) => dragThread(swap ? -dx : dx)} />
           <main style={{ order: o.main }} className="min-w-0 flex-1">
-            {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} />}
+            {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} onClose={() => setLayout({ terminalPane: false })} />}
           </main>
         </>
       )}
@@ -300,7 +300,7 @@ function Tablet() {
             <ThreadPane session={session} onBack={leave} />
           </div>
           <Resizer grip onDrag={drag} />
-          <main className="min-w-0 flex-1">{viewer ?? <TerminalPane session={session} onThreads={leave} />}</main>
+          <main className="min-w-0 flex-1">{viewer ?? <TerminalPane session={session} onThreads={leave} onClose={leave} />}</main>
         </>
       ) : (
         <>

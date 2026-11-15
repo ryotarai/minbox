@@ -7,6 +7,7 @@ import { selectProject, shortDir, useProjectStats } from '../lib/projects'
 import { askQuickComposeFocus, setComposeTarget } from '../lib/threadFilter'
 import { ProjectDot } from './ProjectRail'
 import { IconSearch } from './icons'
+import { canOpenShell } from './ThreadView'
 import { Kbd, Modal, cx } from './ui'
 
 // ⌘K: one list of actions, sessions and threads, narrowed as you type. ">" shows only actions,
@@ -162,6 +163,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
         },
         { keywords: `focus console ${current.name}` },
       )
+      // The session's companion shell (desktop: the far-right pane; tablet and phone: full screen).
+      if (canOpenShell(current))
+        act('shell-pane', layout.shellPane ? 'Hide shell' : 'Open shell', () => setLayout({ shellPane: !layout.shellPane }), {
+          keywords: `companion terminal shell pane toggle folder cwd ${current.name}`,
+          shortcut: 'Ctrl+`',
+        })
       if (isClaude)
         act('go-inbox', 'Go to inbox', () => navigate({ view: 'main', tab: 'inbox', t: null, f: null }), {
           keywords: `threads list close thread ${current.name}`,
@@ -175,7 +182,6 @@ export function Palette({ onClose }: { onClose: () => void }) {
     }
     if (!isPhone) {
       if (!isTablet) act('terminal-pane', layout.terminalPane ? 'Hide terminal' : 'Show terminal', () => setLayout({ terminalPane: !layout.terminalPane }), { keywords: 'claude code console toggle pane' })
-      if (isClaude) act('shell-pane', layout.shellPane ? 'Hide shell pane' : 'Show shell pane', () => setLayout({ shellPane: !layout.shellPane }), { keywords: 'companion terminal toggle', shortcut: 'Ctrl+`' })
       act('swap', 'Swap terminal and inbox', () => saveSettings({ swap_panes: !settings.swap_panes }), { keywords: 'panes layout left right' })
     }
     act('theme-dark', 'Theme: Dark', () => saveSettings({ theme: 'dark' }), { keywords: 'appearance color mode night' })

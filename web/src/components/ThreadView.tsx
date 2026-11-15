@@ -23,6 +23,7 @@ import {
   IconSend,
   IconThumb,
   IconUnfold,
+  IconShell,
   IconTerminal,
   IconPaperclip,
   IconPlus,
@@ -79,6 +80,31 @@ export function TerminalButton({ session, onClick, shown }: { session: Session; 
       className={shown ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
       <IconTerminal size={15} />
+    </IconButton>
+  )
+}
+
+/** Whether a session can have a companion shell: an agent session that is not ended (a shell session is its own shell). */
+export const canOpenShell = (s: Session) => s.kind !== 'shell' && s.status !== 'ended'
+
+/**
+ * Header button for the session's companion shell: shows and hides it (desktop: the far-right pane;
+ * tablet: the full-screen overlay), with or without the agent terminal open. Same toggle as Ctrl+`.
+ */
+export function ShellButton({ session }: { session: Session }) {
+  const { layout, setLayout } = useApp()
+  if (!canOpenShell(session)) return null
+  const open = layout.shellPane
+  return (
+    <IconButton
+      data-testid="shell-toggle"
+      aria-label={open ? 'Hide shell' : 'Open shell'}
+      title={open ? 'Hide the shell (Ctrl+`)' : 'Open shell: a shell in this session\'s folder (Ctrl+`)'}
+      aria-pressed={open}
+      onClick={() => setLayout({ shellPane: !open })}
+      className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
+    >
+      <IconShell size={15} />
     </IconButton>
   )
 }
@@ -430,6 +456,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       {!phone && (
         <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
           {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
+          <ShellButton session={session} />
           <IconButton data-testid="mark-read" aria-label="Mark read" title="Mark read (E)" onClick={markRead}>
             <IconCheck size={15} />
           </IconButton>
@@ -456,7 +483,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           </IconButton>
         </ThreadHeaderBar>
       )}
-      <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} onShell={session.kind !== 'shell' && session.status !== 'ended' ? () => setLayout({ shellPane: true }) : undefined} />
+      <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={onBack} openQuestions={openQs.length} onShell={canOpenShell(session) ? () => setLayout({ shellPane: true }) : undefined} />
 
       <div className={cx('relative flex min-h-0 flex-1 flex-col', fullReply && 'hidden')}>
       {unseen > 0 && (

@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconBack, IconClose, IconTerminal, IconImage, IconMore, IconFork } from './icons'
+import { IconBack, IconClose, IconShell, IconTerminal, IconImage, IconMore, IconFork } from './icons'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
 import { Segmented, EndedTag, cx } from './ui'
 import { api } from '../api'
-import { ThreadView, unreadElsewhere, useThread } from './ThreadView'
+import { ThreadView, canOpenShell, unreadElsewhere, useThread } from './ThreadView'
 import { ThreadMoreMenu } from './ThreadMenu'
 import { useAllThreads } from './ThreadList'
 import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
@@ -70,7 +70,7 @@ export function PhoneApp() {
 }
 
 function PhoneSession({ session, keyboard }: { session: Session; keyboard: boolean }) {
-  const { route, navigate, error, toast } = useApp()
+  const { route, navigate, error, toast, layout, setLayout } = useApp()
   const [thread] = useThread(route.t)
   const all = useAllThreads()
   const v = useVisibleThreads()
@@ -86,11 +86,13 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
   // Typing in the terminal: the keyboard takes half the screen, so the
   // terminal takes the rest (the header and tabs come back with the keyboard down).
   const typing = keyboard && (terminal || session.kind === 'shell')
-  const [shellOpen, setShellOpen] = useState(false)
+  // The companion shell: the same switch as the desktop's pane and the ⌘K entry (layout.shellPane).
+  const shellOpen = layout.shellPane
+  const setShellOpen = (v: boolean) => setLayout({ shellPane: v })
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   return (
     <>
-      {shellOpen && session.kind !== 'shell' && session.status !== 'ended' && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
+      {shellOpen && canOpenShell(session) && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
       <header className={cx('flex h-14 shrink-0 items-center gap-0.5 px-1.5', inThread && 'border-b border-line', typing && 'hidden')}>
         <button
           type="button"
@@ -135,6 +137,18 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
             >
               <IconTerminal size={21} />
             </button>
+            {canOpenShell(session) && (
+              <button
+                type="button"
+                aria-label="Open shell"
+                title="Open shell: a shell in this session's folder"
+                data-testid="shell-toggle"
+                onClick={() => setShellOpen(true)}
+                className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
+              >
+                <IconShell size={20} />
+              </button>
+            )}
             <button
               type="button"
               aria-label="More"
@@ -151,7 +165,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 onClose={() => setMoreAnchor(null)}
                 onBack={home}
                 openQuestions={0}
-                onShell={session.kind !== 'shell' && session.status !== 'ended' ? () => setShellOpen(true) : undefined}
+                onShell={canOpenShell(session) ? () => setShellOpen(true) : undefined}
                 onArchive={() => {
                   const id = thread.id
                   api
@@ -174,7 +188,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
               {session.status === 'ended' && <EndedTag />}
               <ModConnection session={session} phone />
             </div>
-            {session.kind !== 'shell' ? (
+            {canOpenShell(session) ? (
               <button
                 type="button"
                 data-testid="shell-toggle"
@@ -182,7 +196,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 onClick={() => setShellOpen(true)}
                 className="flex h-11 w-[52px] items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
               >
-                <IconTerminal size={20} />
+                <IconShell size={20} />
               </button>
             ) : (
               <span className="w-[52px]" />
