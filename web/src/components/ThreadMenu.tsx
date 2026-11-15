@@ -38,9 +38,12 @@ export function ThreadMoreMenu({
   const [snooze, setSnooze] = useState<HTMLElement | null>(null)
   const [pick, setPick] = useState(false)
   const [pickValue, setPickValue] = useState('')
+  const [naming, setNaming] = useState(false)
+  const [nameValue, setNameValue] = useState('')
   const close = () => {
     setSnooze(null)
     setPick(false)
+    setNaming(false)
     onClose()
   }
   const doSnooze = (until: Date) => {
@@ -89,6 +92,32 @@ export function ThreadMoreMenu({
         {onShell && (
           <MenuItem testid="thread-open-shell" onClick={() => (close(), onShell())}>
             Open shell
+          </MenuItem>
+        )}
+        {naming ? (
+          <form
+            className="flex gap-1.5 p-1.5"
+            onSubmit={(e) => {
+              e.preventDefault()
+              close()
+              if (nameValue !== (thread.name ?? '')) api.updateThread(thread.id, { name: nameValue }).catch(error)
+            }}
+          >
+            <input
+              autoFocus
+              aria-label="Thread name"
+              placeholder="short-name"
+              value={nameValue}
+              onChange={(e) => setNameValue(e.target.value.replace(/\s+/g, '-'))}
+              className="mono h-8 min-w-0 flex-1 rounded-md border border-linestrong bg-sunken px-1.5 text-[12px] outline-none focus:border-accent"
+            />
+            <Button size="sm" variant="primary" type="submit">
+              OK
+            </Button>
+          </form>
+        ) : (
+          <MenuItem testid="thread-rename" onClick={() => (setNameValue(thread.name ?? ''), setNaming(true))}>
+            {thread.name ? 'Edit name…' : 'Set name…'}
           </MenuItem>
         )}
         <MenuItem
