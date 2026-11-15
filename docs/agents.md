@@ -50,18 +50,18 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
 ## Nothing needs `claude`
 
 * Startup, `GET /api/agents`, `/api/about`, the UI and creating a Pi session never run or require `claude`.
-* **Helper runs** (reply suggestions, picking the project of a Slack DM) used to call `claude -p`. They now go
+* **Helper runs** (reply questions, picking the project of a Slack DM) used to call `claude -p`. They now go
   through `helperPlan` in `internal/server/suggest.go`: `MINBOX_SUGGEST_COMMAND` (a Claude-format helper,
   used by the tests) wins; otherwise the default agent runs the helper; if it is not installed another one does;
   OpenCode only when neither Claude Code nor Pi is installed (opencode.md, "Helper runs"); if none is, the error is
   `agent.ErrNoneInstalled`: the suggestions endpoint answers
-  `{"suggestions": [], "reason": "no_agent"}` and a Slack DM falls back to the fallback project. Never a crash.
+  `{"questions": [], "reason": "no_agent"}` and a Slack DM falls back to the fallback project. Never a crash.
 * Claude's helper is unchanged (`claude -p … --json-schema`, Haiku). Pi's is
   `pi --print --offline --no-session --no-tools --no-extensions --no-skills --no-prompt-templates --no-context-files --no-themes --system-prompt <system + schema> [--model M] "<answer in JSON>"`
   with the prompt on stdin, run in an empty temp directory. **Pi cannot enforce a JSON Schema**, so the
   schema is repeated in the system prompt and the answer is read leniently (`agent.jsonObjectIn`: the whole
   output, a fenced block, or the first parsable `{…}`). The existing validation stays: the Slack pick
-  only accepts an id of an existing project, suggestions are trimmed, deduplicated and capped.
+  only accepts an id of an existing project, reply questions and options are trimmed, deduplicated and capped.
   The model of Pi's helper is Pi's own default unless `MINBOX_PI_HELPER_MODEL` is set (for example
   `anthropic/claude-haiku-5-5`); the Claude-only `MINBOX_PICK_MODEL` does not apply to it.
 

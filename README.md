@@ -59,7 +59,7 @@ swap places with **Settings → Swap terminal and thread**). The layout follows 
 | 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
 | below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay. |
 
-<p align="center"><img src="docs/img/readme/tablet.png" alt="minbox on a tablet: the threads list beside a finished thread with reply suggestions" width="480"></p>
+<p align="center"><img src="docs/img/readme/tablet.png" alt="minbox on a tablet: the threads list beside a finished thread with reply questions" width="480"></p>
 
 Resizing across a band keeps the selected thread, session and draft. A session's `...` menu
 (Rename, Resume / **Restart**, Stop, Archive, Delete) sits over its terminal. Restart kills the
@@ -166,7 +166,7 @@ up the list and shows the question.
 <p align="center"><img src="docs/images/message-flow.svg" alt="Message flow: Claude sends a question with send_message; the server notifies the inbox; the person answers; the mod long-polls, claims the reply once Claude is idle, submits it as a new turn and marks it delivered" width="920"></p>
 
 1. **Claude asks.** It calls `send_message`, which returns at once.
-2. **You answer.** The thread shows the question (with reply suggestions, if on), and you answer it at any time, on any device.
+2. **You answer.** The thread shows the question (with reply questions, if on), and you answer it at any time, on any device.
 3. **The mod waits for a quiet moment.** It long-polls for your reply and waits until Claude is
    idle (or delivers at once if you pressed *Send now*).
 4. **The reply arrives once.** The mod claims the reply, submits it as a plugin turn
@@ -379,11 +379,14 @@ themselves after a network drop or a server restart, and the open thread reloads
 
 Text size and theme (light, dark, match system; the terminal follows it live with a light palette), swapping the terminal and thread columns,
 browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
-suggestions), **Notifications**, **Hosts**, **Devices**, optional parts (Board, Decision mode),
+questions), **Notifications**, **Hosts**, **Devices**, optional parts (Board, Decision mode),
 archived sessions and threads, storage and About.
 
-**Reply suggestions** (on by default): when the last message of a thread is the agent's, minbox asks
-Haiku through `claude -p` for up to three short replies and shows them as chips. The recent text
+**Help me reply** (on by default): when the last message of a thread is the agent's, minbox asks
+Haiku through `claude -p` for a few questions that help you decide your reply, each with options to pick
+(single or multiple choice, plus "Other…" for your own words). What you pick is added to your reply as
+`Q: … → A: …` lines (a preview shows it) when you press Send; answer nothing and the reply goes as typed.
+When the agent says a command was denied, a chip offers `!<command>` to run it yourself. The recent text
 of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**. Without `claude`
 the default agent runs it instead (Pi: `pi --print`, its own default model, or `MINBOX_PI_HELPER_MODEL`; OpenCode only
 when neither Claude Code nor Pi is installed: `opencode run`, `MINBOX_OPENCODE_HELPER_MODEL`); with no

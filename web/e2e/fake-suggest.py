@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A stand-in for `claude -p --output-format json --json-schema ...` (reply suggestions).
+"""A stand-in for `claude -p --output-format json --json-schema ...` (reply questions and other helpers).
 
-Reads the prompt on stdin and prints a claude-like result envelope. The suggestions are fixed; the
+Reads the prompt on stdin and prints a claude-like result envelope. The reply questions are fixed; the
 first carries the number of PERSON messages in the prompt, so tests can tell what it held.
 """
 import json
@@ -95,10 +95,23 @@ out = {
     "subtype": "success",
     "is_error": False,
     "result": "{}",
-    "structured_output": {"suggestions": ["Sounds good, go ahead (%d)" % n, "Thanks, looks good", "Can you give more detail?"]},
+    "structured_output": {
+        "questions": [
+            {"question": "How should it continue? (%d)" % n, "kind": "single", "options": [
+                {"label": "Go ahead", "description": "Continue with the plan"},
+                {"label": "Wait for me"},
+            ]},
+            {"question": "What should it check?", "kind": "multi", "options": [
+                {"label": "Tests"}, {"label": "Docs"}, {"label": "Lint"},
+            ]},
+            {"question": "Anything else to tell it?", "kind": "single", "options": []},
+        ]
+    },
 }
-# Screenshots (SCREENSHOTS=1) may fix the suggestions with a JSON list in a file.
+# Screenshots (SCREENSHOTS=1) may fix the questions with a JSON file: a list of questions, or the
+# whole structured output ({"questions": [...], "command": "..."}).
 f = os.environ.get("FAKE_SUGGEST_FILE")
 if f and os.path.exists(f):
-    out["structured_output"]["suggestions"] = json.load(open(f))
+    v = json.load(open(f))
+    out["structured_output"] = {"questions": v} if isinstance(v, list) else v
 print(json.dumps(out))

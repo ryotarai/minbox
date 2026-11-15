@@ -39,6 +39,7 @@ import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { ModConnection } from './ModConnection'
 import { useMentions } from './Mentions'
+import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from './ReplyHelp'
 import { Button, IconButton, Kbd, MenuItem, Popover, ThreadStatusBadge, cx, type MenuAt } from './ui'
 
 type Props = {
@@ -183,7 +184,19 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const pinned = useRef(true)
   const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80
   const toBottom = () => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  useEffect(() => {
+  // Following new content jumps (no smooth scroll): an animation would be aimed at a bottom that moves
+  // while the reply area changes height, and its scroll events would read as "not at the bottom".
+  const follow = () => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    requestAnimationFrame(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight
+    })
+  }
+  // A layout effect: decided before the browser can fire a scroll event for the new layout (which
+  // would read as "not at the bottom" and unpin the view).
+  useLayoutEffect(() => {
     if (!thread) return
     const n = messages.length
     const prev = seenCount.current
@@ -198,7 +211,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     const added = messages.slice(prev)
     if (pinned.current || added.every((m) => m.author === 'user')) {
       pinned.current = true
-      requestAnimationFrame(toBottom)
+      follow()
     } else setUnseen((u) => u + added.filter((m) => m.author === 'agent').length)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, messages.length])
@@ -206,9 +219,30 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   // The working indicator appearing grows the list: a view at the bottom stays at the bottom.
   const working = thread?.status === 'working'
   useEffect(() => {
-    if (working && pinned.current) requestAnimationFrame(toBottom)
+    if (working && pinned.current) follow()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [working])
+
+  // The reply area growing (the reply questions appearing, a taller draft) shrinks the list: a view
+  // at the bottom stays at the bottom.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let h = el.clientHeight
+    const ro = new ResizeObserver(() => {
+      // At the bottom with the old height counts too: the scroll event of this same frame may
+      // already have read the new, shorter view as "scrolled up".
+      const wasAtBottom = pinned.current || el.scrollHeight - el.scrollTop - h < 80
+      const shrunk = el.clientHeight < h
+      h = el.clientHeight
+      if (shrunk && wasAtBottom) {
+        pinned.current = true
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [thread?.id])
 
   // Select text in the messages: a bubble offers Reply, which quotes it into the reply box.
   const [quote, setQuote] = useState<{ text: string; x: number; y: number; below: boolean } | null>(null)
@@ -1186,65 +1220,6 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   )
 }
 
-/** Up to three drafted replies above the reply box: click sends, the pencil puts the text in the box. */
-function SuggestionChips({ threadId, lastId, onEdit }: { threadId: string; lastId: string; onEdit: (text: string) => void }) {
-  const { error } = useApp()
-  const [items, setItems] = useState<string[] | null>(null) // null: still drafting
-  const [sent, setSent] = useState(false)
-  useEffect(() => {
-    let live = true
-    api
-      .suggestions(threadId)
-      .then((r) => live && setItems(r.suggestions ?? []))
-      .catch(() => live && setItems([]))
-    return () => {
-      live = false
-    }
-  }, [threadId, lastId])
-  if (sent || (items && items.length === 0)) return null
-  if (!items)
-    return (
-      <div data-testid="reply-suggestions-loading" aria-hidden className="flex gap-1.5">
-        <span className="h-7 w-28 animate-pulse rounded-full bg-chip" />
-        <span className="h-7 w-20 animate-pulse rounded-full bg-chip" />
-      </div>
-    )
-  const send = (text: string) => {
-    setSent(true)
-    api.reply(threadId, { words: text }).catch((err) => {
-      setSent(false)
-      error(err)
-    })
-  }
-  return (
-    <div data-testid="reply-suggestions" role="group" aria-label="Suggested replies" className="flex flex-wrap gap-1.5">
-      {items.slice(0, 3).map((t, i) => (
-        <span key={i} className="inline-flex max-w-full items-center overflow-hidden rounded-full border border-linestrong bg-sunken text-[12.5px] text-fg2">
-          <button
-            type="button"
-            data-testid="reply-suggestion"
-            title={t}
-            onClick={() => send(t)}
-            className="min-w-0 max-w-[60ch] truncate border-0 bg-transparent py-1 pl-3 pr-1.5 text-left hover:bg-raised hover:text-fg"
-          >
-            {t}
-          </button>
-          <button
-            type="button"
-            data-testid="reply-suggestion-edit"
-            aria-label={`Edit: ${t}`}
-            title="Edit before sending"
-            onClick={() => onEdit(t)}
-            className="shrink-0 border-0 bg-transparent py-1 pl-1 pr-2.5 text-subtle hover:bg-raised hover:text-fg"
-          >
-            ✎
-          </button>
-        </span>
-      ))}
-    </div>
-  )
-}
-
 function ReplyBox({
   session,
   thread,
@@ -1286,7 +1261,14 @@ function ReplyBox({
   const { files, addFiles, addPastedText, remove: removeFile } = compose
   const fileInput = useRef<HTMLInputElement>(null)
   const uploading = files.some((f) => f.state === 'uploading')
-  const canSend = (!!words.trim() || picksCount > 0 || annos.length > 0 || files.some((f) => f.state === 'done')) && !uploading
+  const cmd = commandOf(words)
+  const lastMsg = thread.messages?.[thread.messages.length - 1]
+  // Questions that help the person reply (when the agent spoke last and asked nothing itself); the
+  // answers go into the reply on Send, but not into a "!command".
+  const wantHelp = settings.reply_suggestions && lastMsg?.author === 'agent' && openCount === 0 && session.status !== 'ended'
+  const help = useReplyHelp(thread.id, lastMsg?.id, !!wantHelp)
+  const helpText = cmd ? '' : help.text
+  const canSend = (!!words.trim() || !!helpText || picksCount > 0 || annos.length > 0 || files.some((f) => f.state === 'done')) && !uploading
   const io = fileInputHandlers(addFiles, addPastedText)
   const putBack = (f: (typeof files)[number]) => {
     if (!f.pasted) return
@@ -1327,14 +1309,14 @@ function ReplyBox({
       />
     </>
   )
-  const lastMsg = thread.messages?.[thread.messages.length - 1]
-  const wantChips = settings.reply_suggestions && lastMsg?.author === 'agent' && openCount === 0 && session.status !== 'ended' && !words.trim()
-  const chips = wantChips && lastMsg ? (
-    <SuggestionChips
-      key={lastMsg.id}
+  const chips = wantHelp ? (
+    <ReplyHelpPanel
+      help={help}
       threadId={thread.id}
-      lastId={lastMsg.id}
-      onEdit={(text) => {
+      phone={phone}
+      command={!!cmd}
+      onSubmit={() => void send()}
+      onEditCommand={(text) => {
         updateReplyDraft(thread.id, (d) => ({ ...d, words: text }))
         replyRef.current?.focus()
       }}
@@ -1351,7 +1333,7 @@ function ReplyBox({
     setSending(true)
     try {
       const res = await api.reply(thread.id, {
-        words: words.trim(),
+        words: withReplyHelp(helpText, words),
         answers_for: answers.length ? target?.id : undefined,
         answers,
         annotations: annos,
@@ -1361,6 +1343,7 @@ function ReplyBox({
       })
       clearReplyDraft(thread.id)
       clearFiles(thread.id)
+      help.clear()
       if (full) onToggleFull()
       if (opts.forward_to) {
         const to = sessions.find((s) => s.id === opts.forward_to)
@@ -1407,7 +1390,6 @@ function ReplyBox({
     el.style.overflowY = el.scrollHeight + border > max ? 'auto' : 'hidden'
   }, [words, full, phone, replyRef])
 
-  const cmd = commandOf(words)
   const commandHint = cmd ? (
     <span data-testid="command-hint" className="min-w-0 truncate text-[12px] text-subtle" title={session.cwd}>
       Runs as a command in {session.cwd}. Start with \! to send the text instead.

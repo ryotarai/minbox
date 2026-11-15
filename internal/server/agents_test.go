@@ -261,7 +261,7 @@ func TestWithoutAnyAgentTheHelpersAreOffNotBroken(t *testing.T) {
 	_, m, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Done."}, bearer(sess))
 	id := m["thread_id"].(string)
 	code, o, _ := e.do("GET", "/api/threads/"+id+"/suggestions", nil, nil)
-	if code != 200 || o["reason"] != "no_agent" || o["error"] != nil || len(o["suggestions"].([]any)) != 0 {
+	if code != 200 || o["reason"] != "no_agent" || o["error"] != nil || len(o["questions"].([]any)) != 0 {
 		t.Fatalf("suggestions: %d %v", code, o)
 	}
 	// Slack pick: an error (so the DM falls back to the default project), never a panic.
@@ -279,7 +279,7 @@ func TestHelpersRunPiWhenItIsTheOnlyAgent(t *testing.T) {
 	withPi(e, `printf '%s\n' "$@" > `+log+`
 /bin/cat > `+log+`.stdin # PATH is empty in this test
 echo 'Sure, here you go:'
-echo '{"suggestions":["Yes, go ahead","No, wait"]}'`)
+echo '{"questions":[{"question":"Go ahead?","kind":"single","options":[{"label":"Yes, go ahead"},{"label":"No, wait"}]}]}'`)
 	if code, obj, _ := e.do("GET", "/api/agents", nil, nil); code != 200 || obj["default"] != "pi" {
 		t.Fatalf("default = %v", obj["default"])
 	}
@@ -287,7 +287,7 @@ echo '{"suggestions":["Yes, go ahead","No, wait"]}'`)
 		t.Fatalf("with only pi the default agent is pi, got %q", s.Agent)
 	}
 	got, err := e.srv.runSuggest(context.Background(), "the conversation")
-	if err != nil || len(got) != 2 || got[0] != "Yes, go ahead" {
+	if err != nil || len(got.Questions) != 1 || len(got.Questions[0].Options) != 2 || got.Questions[0].Options[0].Label != "Yes, go ahead" {
 		t.Fatalf("suggestions %v %v", got, err)
 	}
 	args, _ := os.ReadFile(log)
@@ -342,16 +342,16 @@ func TestPickProjectThroughPiValidatesIDs(t *testing.T) {
 // The preferred agent runs the helpers; when it is not installed the other one does.
 func TestHelperFallsBackToTheOtherAgent(t *testing.T) {
 	e := newEnv(t)
-	claude := fakeAgentBin(t, "claude", `cat >/dev/null; echo '{"structured_output":{"suggestions":["from claude"]}}'`)
+	claude := fakeAgentBin(t, "claude", `cat >/dev/null; echo '{"structured_output":{"questions":[{"question":"from claude","kind":"single","options":[]}]}}'`)
 	e.srv.cfg.ClaudeCommand = []string{claude}
 	e.srv.sessions.cfg.ClaudeCommand = []string{claude}
-	withPi(e, `cat >/dev/null; echo '{"suggestions":["from pi"]}'`)
+	withPi(e, `cat >/dev/null; echo '{"questions":[{"question":"from pi","kind":"single","options":[]}]}'`)
 	run := func() string {
 		got, err := e.srv.runSuggest(context.Background(), "p")
-		if err != nil || len(got) != 1 {
+		if err != nil || len(got.Questions) != 1 {
 			t.Fatalf("%v %v", got, err)
 		}
-		return got[0]
+		return got.Questions[0].Question
 	}
 	if run() != "from claude" {
 		t.Fatal("claude is the default when both are installed")

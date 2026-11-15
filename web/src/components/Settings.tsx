@@ -239,10 +239,10 @@ function Prompts() {
         <Switch label="Orchestrator prompt" on={settings.orchestrator_prompt} onChange={(v) => saveSettings({ orchestrator_prompt: v })} />
       </Row>
       <Row
-        label="Suggest replies"
-        desc="Sends the recent messages of the open thread to claude (Haiku) to draft replies. Runs on this machine; costs a little per thread."
+        label="Help me reply: questions with options above the reply box"
+        desc="When the agent spoke last, sends the recent messages of the open thread to claude (Haiku) to draft a few questions for you; the answers you pick go into your reply. Runs on this machine; costs a little per thread."
       >
-        <Switch label="Suggest replies" on={settings.reply_suggestions} onChange={(v) => saveSettings({ reply_suggestions: v })} />
+        <Switch label="Help me reply" on={settings.reply_suggestions} onChange={(v) => saveSettings({ reply_suggestions: v })} />
       </Row>
     </Group>
   )
@@ -328,7 +328,7 @@ function AgentsGroup() {
       )}
       {info?.agents.some((a) => a.kind === 'opencode' && a.installed && a.supported !== false) && (
         <p data-testid="opencode-note" className="m-0 text-[12.5px] leading-[1.6] text-subtle">
-          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). On another host it needs OpenCode 2 on that machine. It runs reply suggestions only when neither Claude Code nor Pi is installed.
+          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). On another host it needs OpenCode 2 on that machine. It runs the reply questions only when neither Claude Code nor Pi is installed.
         </p>
       )}
     </Group>
