@@ -47,7 +47,7 @@ test('questions render with options; single, multi and Other compose into the re
   await q(page, 0).getByRole('radio', { name: /Wait for me/ }).focus()
   await page.keyboard.press('ArrowLeft')
   await expect(q(page, 0).getByRole('radio', { name: /Go ahead/ })).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByTestId('reply-qa-preview')).toContainText('Q: How should it continue?')
+  await expect(page.getByTestId('reply-qa-toggle')).toContainText('1 answered')
   await expect(page.getByTestId('reply-send')).toBeEnabled()
 
   // Multi choice plus Other text.
@@ -55,7 +55,9 @@ test('questions render with options; single, multi and Other compose into the re
   await q(page, 1).getByRole('checkbox', { name: 'Lint' }).click()
   await q(page, 1).getByTestId('reply-q-other').click()
   await q(page, 1).getByTestId('reply-q-other-input').fill('the migration script')
-  await expect(page.getByTestId('reply-qa-preview')).toContainText('Q: What should it check? → A: Tests, Lint, the migration script')
+  await expect(q(page, 1).getByRole('checkbox', { name: 'Tests' })).toHaveAttribute('aria-checked', 'true')
+  await expect(q(page, 1).getByRole('checkbox', { name: 'Lint' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('reply-qa-toggle')).toContainText('2 answered')
 
   // Typing keeps the questions; Send composes answers, then the typed text.
   await page.getByTestId('reply-box').fill('Then open a PR.')
@@ -73,7 +75,6 @@ test('nothing answered: a plain send; answers only: the answers are the reply', 
   await page.goto(minbox.url)
   await seed(page, minbox.dataDir)
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
-  await expect(page.getByTestId('reply-qa-preview')).toHaveCount(0)
   await page.getByTestId('reply-box').fill('Just a plain reply')
   await page.getByTestId('reply-send').click()
   await expect.poll(() => lastWords(minbox.url)).toBe('Just a plain reply')
@@ -94,7 +95,6 @@ test('collapse and dismiss', async ({ page, minbox }) => {
   await expect(page.getByTestId('reply-qa-toggle')).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByTestId('reply-q')).toHaveCount(0)
   await expect(page.getByTestId('reply-qa-toggle')).toContainText('1 answered')
-  await expect(page.getByTestId('reply-qa-preview')).toBeVisible() // still says what goes with the reply
   await page.getByTestId('reply-qa-toggle').click()
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
   await page.getByTestId('reply-qa-dismiss').click()
@@ -118,17 +118,32 @@ test('a denied command is offered as a one-tap !command', async ({ page, minbox 
   const chip = page.getByTestId('reply-command')
   await expect(chip).toContainText('!echo hi-from-denied')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
-  // The pencil puts it in the box; answers are not added to a command.
-  await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
+  // The pencil puts it in the box.
   await page.getByTestId('reply-command-edit').click()
   await expect(page.getByTestId('reply-box')).toHaveValue('!echo hi-from-denied')
-  await expect(page.getByTestId('reply-qa-preview')).toContainText('Not added to a command')
   await page.getByTestId('reply-box').fill('')
   // One tap runs it.
   await chip.click()
   const block = page.locator('[data-testid="message"][data-kind="command"]')
   await expect(block).toHaveCount(1)
   await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
+})
+
+test('a !command sent from the box goes alone, without the answers', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox.dataDir, 'Running `echo hi-from-denied` was denied. Should I continue?')
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
+  await page.getByTestId('reply-command-edit').click()
+  await expect(page.getByTestId('reply-box')).toHaveValue('!echo hi-from-denied')
+  await page.getByTestId('reply-send').click()
+  const block = page.locator('[data-testid="message"][data-kind="command"]')
+  await expect(block).toHaveCount(1)
+  await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
+  await expect(block).not.toContainText('How should it continue')
+  const threads: { id: string }[] = await (await fetch(minbox.url + '/api/threads')).json()
+  const th = await (await fetch(`${minbox.url}/api/threads/${threads[0].id}`)).json()
+  expect(JSON.stringify(th.messages)).not.toContain('Q: How should it continue')
 })
 
 test('phone: the questions sit above the compact composer and compose on Send', async ({ page, minbox }) => {
