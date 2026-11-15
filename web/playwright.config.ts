@@ -1,4 +1,17 @@
 import { defineConfig } from '@playwright/test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+// Claude Code's config is never the person's own in the tests: minbox marks the folders of Claude
+// Code sessions trusted in $CLAUDE_CONFIG_DIR/.claude.json (else ~/.claude.json), so every minbox,
+// terminal host and fake claude the tests start gets a throwaway CLAUDE_CONFIG_DIR. Set once in the
+// runner; the workers inherit it. real-claude.spec.ts puts the original back for the real Claude Code.
+if (!process.env.MINBOX_E2E_CLAUDE_CONFIG_DIR) {
+  process.env.MINBOX_E2E_REAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR ?? ''
+  process.env.MINBOX_E2E_CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'minbox-e2e-claude-'))
+}
+process.env.CLAUDE_CONFIG_DIR = process.env.MINBOX_E2E_CLAUDE_CONFIG_DIR
 
 // Each test file starts its own minbox (see e2e/fixtures.ts) with a fake
 // `claude`, so the tests need no model and no network.

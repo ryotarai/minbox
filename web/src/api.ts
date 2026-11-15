@@ -450,6 +450,8 @@ export type Settings = {
   prompt_extra: string
   /** Append the orchestration block to the system prompt of sessions started or resumed from now on. */
   orchestrator_prompt: boolean
+  /** Mark the folder of a Claude Code session trusted in Claude Code's own config before it starts (skips its trust dialog). */
+  claude_trust_folders: boolean
   /** Draft up to three replies with Haiku when a thread opens (sends its recent messages to claude). */
   reply_suggestions: boolean
   /** The address this minbox is reached at from outside (Tailscale URL): notifications link to it. */
@@ -749,6 +751,7 @@ export const DEFAULT_SETTINGS: Settings = {
   swap_panes: true,
   prompt_extra: '',
   orchestrator_prompt: true,
+  claude_trust_folders: true,
   reply_suggestions: true,
   public_url: '',
   default_agent: '',
