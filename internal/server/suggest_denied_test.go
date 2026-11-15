@@ -8,6 +8,14 @@ import (
 	"testing"
 )
 
+// autoPermissionMessage once wrongly offered "!extensions/auto-permission/": `deny` (in code) counted
+// as a denial and the first inline code span, a directory, as the command.
+const autoPermissionMessage = "了解です。auto permission mode は、別のサブエージェントで Pi extension（TypeScript、`extensions/auto-permission/`）として実装を始めました。\n\n" +
+	"- ツール呼び出しごとに `allow` / `deny` / `ask` を判定します\n" +
+	"- `ask` のときは `extension_ui_request` で確認を出します\n" +
+	"- 判定のログは `~/.okaka/state/logs/` に残します\n\n" +
+	"違っていたら言ってください。"
+
 func TestDeniedCommandSuggestion(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"inline", "I tried `npm run build` but you denied it.", "!npm run build"},
@@ -16,7 +24,17 @@ func TestDeniedCommandSuggestion(t *testing.T) {
 		{"no denial", "Run `npm test` to check.", ""},
 		{"no command", "That was denied.", ""},
 		{"multi-line", "denied:\n```\nls\nrm x\n```", ""},
-		{"too long", "denied `" + strings.Repeat("x", 250) + "`", ""},
+		{"too long", "denied `echo " + strings.Repeat("x", 250) + "`", ""},
+		// A denial word only inside code (a list of permission modes) and a directory in inline code.
+		{"path, deny in code", autoPermissionMessage, ""},
+		{"denied path", "Reading `extensions/auto-permission/` was denied.", ""},
+		{"denied home path", "Access to `~/.okaka/state/logs/` was denied.", ""},
+		{"denied lone name", "`extension_ui_request` was rejected.", ""},
+		{"skips a path for the command", "Writing to `build/out/` was denied when I ran `make dist`.", "!make dist"},
+		{"bang form", "Running `! gcloud auth login` was denied; please run it yourself.", "!gcloud auth login"},
+		{"script", "`./scripts/release.sh` was rejected.", "!./scripts/release.sh"},
+		{"env and path exe", "Denied: `GOOS=linux /usr/local/go/bin/go build ./...`", "!GOOS=linux /usr/local/go/bin/go build ./..."},
+		{"lone known command", "`make` was denied.", "!make"},
 	} {
 		if got := deniedCommandSuggestion(tc.body); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
@@ -68,5 +86,14 @@ func TestSuggestionsOfferTheDeniedCommand(t *testing.T) {
 	_, o, _ = e.do("GET", "/api/threads/"+id+"/suggestions", nil, nil)
 	if o["command"] != "!something else" {
 		t.Fatalf("helper command: %v", o)
+	}
+	// Neither the message (a path in code, `deny` only in code) nor a helper's path is offered.
+	e.srv.suggest = newSuggester(func(ctx context.Context, p string) (replyHelp, error) {
+		return replyHelp{Command: "!extensions/auto-permission/", Questions: []ReplyQuestion{}}, nil
+	})
+	e.do("POST", "/api/agent/messages", map[string]any{"thread_id": id, "body": autoPermissionMessage}, bearer(sess))
+	_, o, _ = e.do("GET", "/api/threads/"+id+"/suggestions", nil, nil)
+	if c, ok := o["command"]; ok && c != "" {
+		t.Fatalf("path offered as a command: %v", o)
 	}
 }

@@ -241,7 +241,9 @@ func buildSuggestPrompt(th *store.Thread) string {
 		"If the agent reports completion, ask about the next step (a concrete follow-up, a check, a detail to request). " +
 		"Never ask about thanks, praise, greetings or acknowledgements, and do not ask what the agent already knows. " +
 		"If the agent's last message says a command it wanted to run was denied or rejected and quotes that command, set command to exactly that command " +
-		"(the person can then run it themselves); otherwise leave command out.\n")
+		"(the person can then run it themselves); otherwise leave command out. " +
+		"Never set command to a file or directory path, a lone word or name quoted in the message, or a command the agent did not say was denied: " +
+		"a message that only mentions code, paths or settings (such as allow / deny / ask) has no command.\n")
 	return b.String()
 }
 
@@ -252,31 +254,77 @@ var fencedRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\\n(.*?)\\n?```")
 var inlineCodeRe = regexp.MustCompile("`([^`\\n]{2,})`")
 
 // deniedCommandSuggestion: the command the agent's message says was denied, as "!command" for the
-// composer, or "". It needs a denial word and one quoted command (the first one-line code block, else
-// the first inline code span); a command that does not fit is not offered cut.
+// composer, or "". It needs a denial word in the prose (a word inside code, such as `deny` in a list
+// of permission modes, does not count) and a quoted command: the first one-line code block, else the
+// first inline code span, that reads as a shell command (a bare path or a lone name does not). A
+// command that does not fit is not offered cut.
 func deniedCommandSuggestion(body string) string {
-	if !deniedRe.MatchString(body) {
+	if !deniedRe.MatchString(withoutCode(body)) {
 		return ""
 	}
-	cmd := ""
-	if m := fencedRe.FindStringSubmatch(body); m != nil {
-		cmd = m[1]
-	} else if m := inlineCodeRe.FindStringSubmatch(body); m != nil {
-		cmd = m[1]
+	var cands []string
+	for _, m := range fencedRe.FindAllStringSubmatch(body, -1) {
+		cands = append(cands, m[1])
 	}
-	return bangCommand(cmd)
+	for _, m := range inlineCodeRe.FindAllStringSubmatch(withoutFenced(body), -1) {
+		cands = append(cands, m[1])
+	}
+	for _, c := range cands {
+		if cmd := bangCommand(c); cmd != "" {
+			return cmd
+		}
+	}
+	return ""
 }
 
+// withoutFenced is body with its fenced code blocks taken out; withoutCode also takes out inline code.
+func withoutFenced(body string) string { return fencedRe.ReplaceAllString(body, " ") }
+func withoutCode(body string) string   { return inlineCodeRe.ReplaceAllString(withoutFenced(body), " ") }
+
 // bangCommand: "!command" for a single-line command (a leading "$ " or "!" dropped), or "" when it is
-// empty, spans lines or does not fit in suggestMaxLen.
+// empty, spans lines, does not fit in suggestMaxLen or does not read as a shell command.
 func bangCommand(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
 	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "!"))
 	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
-	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || utf8.RuneCountInString(cmd)+1 > suggestMaxLen {
+	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || utf8.RuneCountInString(cmd)+1 > suggestMaxLen || !looksLikeCommand(cmd) {
 		return ""
 	}
 	return "!" + cmd
+}
+
+var (
+	envAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=\S*$`)
+	execNameRe  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]*$`)
+	execPathRe  = regexp.MustCompile(`^(\./|\.\./|/|~/)\S*[^/\s]$`)
+)
+
+// loneCommands are the commands taken as one when they stand alone, without arguments: any other lone
+// word, such as `allow` or `extension_ui_request`, is more likely a name the agent mentioned.
+var loneCommands = map[string]bool{
+	"make": true, "ls": true, "pwd": true, "whoami": true, "date": true, "env": true, "top": true,
+	"htop": true, "uptime": true, "id": true, "df": true, "ps": true, "history": true, "reboot": true,
+}
+
+// looksLikeCommand: cmd reads as a shell command to run. Its first word (after any VAR=value) is an
+// executable: a plain name, or a path such as ./run.sh or /usr/bin/env that is not a directory (no
+// trailing "/"); a relative path such as dir/sub/ is not. A command of one word must be a ./script or
+// a known argument-less command, so a bare path (extensions/auto-permission/, ~/.okaka/state/logs/,
+// /etc/hosts) or a lone identifier is not one.
+func looksLikeCommand(cmd string) bool {
+	words := strings.Fields(cmd)
+	i := 0
+	for i < len(words)-1 && envAssignRe.MatchString(words[i]) {
+		i++
+	}
+	exe, alone := words[i], len(words)-i == 1
+	switch {
+	case execPathRe.MatchString(exe):
+		return !alone || strings.HasPrefix(exe, "./") || strings.HasPrefix(exe, "../")
+	case execNameRe.MatchString(exe):
+		return !alone || loneCommands[exe]
+	}
+	return false
 }
 
 // withDeniedCommand makes denied the command of the result and drops options that only repeat it
@@ -559,6 +607,7 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), suggestWait)
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
+	res.Command = bangCommand(res.Command) // the helper's command only when it reads as one
 	// A command the person denied the agent: offered as "!command" without asking the helper.
 	if denied := deniedCommandSuggestion(th.Messages[n-1].Body); denied != "" {
 		if err != nil {

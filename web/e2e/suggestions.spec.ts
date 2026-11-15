@@ -129,6 +129,17 @@ test('a denied command is offered as a one-tap !command', async ({ page, minbox 
   await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
 })
 
+test('a path in inline code, with `deny` only in code, is not offered as a command', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(
+    page,
+    minbox.dataDir,
+    '了解です。Pi extension（TypeScript、`extensions/auto-permission/`）として実装を始めました。\n\n- `allow` / `deny` / `ask` を判定します\n- ログは `~/.okaka/state/logs/` に残します\n\n違っていたら言ってください。',
+  )
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(page.getByTestId('reply-command')).toHaveCount(0)
+})
+
 test('a !command sent from the box goes alone, without the answers', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox.dataDir, 'Running `echo hi-from-denied` was denied. Should I continue?')
