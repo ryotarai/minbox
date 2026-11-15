@@ -1,5 +1,5 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-.PHONY: all web build test test-go test-mod test-pi test-opencode test-e2e dev clean
+.PHONY: all web build icons test test-go test-mod test-pi test-opencode test-e2e dev clean
 
 all: build
 
@@ -9,6 +9,10 @@ web/node_modules: web/package.json
 
 web: web/node_modules
 	cd web && npm run build
+
+# Re-renders the PNG app icons (apple-touch-icon, 192, 512) from web/public/favicon.svg.
+icons: web/node_modules
+	cd web && node scripts/icons.mjs "$$PWD"
 
 build: web
 	go build -ldflags "-X github.com/ryotarai/minbox/internal/server.Version=$(VERSION)" -o bin/minbox ./cmd/minbox
@@ -31,4 +35,4 @@ test-e2e: build
 	cd web && npx playwright test
 
 clean:
-	rm -rf bin web/dist/assets web/dist/index.html web/dist/favicon.svg
+	rm -rf bin web/dist/assets web/dist/index.html web/dist/favicon.svg web/dist/*.png
