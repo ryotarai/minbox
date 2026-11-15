@@ -47,6 +47,35 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
   or OpenCode's subagent section. The command line (`--append-system-prompt`) and the hello answer carry the
   same text (OpenCode gets it only from the hello). For Claude Code the result is byte-identical to before.
 
+## Claude Code's folder trust
+
+Claude Code asks "Is this a project you created or one you trust?" the first time it runs in a folder, and an interactive
+session has no flag to skip it, so a session minbox starts would wait there. With the setting `claude_trust_folders`
+(Settings → Capabilities, "Trust folders Claude starts in", on by default) minbox records the folder as trusted first
+(`internal/claudetrust`), for every start of a Claude Code session: new, resume, restart, a fork and the start in a new folder
+after the project moved (all go through `sessionManager.spawn`). Pi, OpenCode and shells are left alone.
+
+* **Where** (read from Claude Code 2.1.x): the global config `$CLAUDE_CONFIG_DIR/.claude.json`, else `~/.claude.json`
+  (`.claude-custom-oauth.json` with `CLAUDE_CODE_CUSTOM_OAUTH_URL`; a non-empty legacy `<config dir>/.config.json` wins),
+  key `projects["<abs path>"].hasTrustDialogAccepted: true`. Claude Code accepts a record on the folder or one above it (up
+  to the git root). minbox writes the cleaned absolute path and the symlink-resolved one when it differs (`/tmp` vs
+  `/private/tmp`). Never the home folder or `/` (Claude Code never records home: it would trust everything below it).
+* **Which machine**: this machine's sessions are done by the server, with the session's environment (its `HOME` and
+  `CLAUDE_CONFIG_DIR`). A remote host's spawn request carries `trust_claude_folder: true`; the host does it on its machine,
+  with the environment the process gets. A host older than that field ignores it (no protocol bump): Claude Code there asks
+  as before.
+* **How it writes**: nothing when the record is there. Otherwise under Claude Code's own lock (the directory
+  `<file>.lock`; waits up to 3 s, never breaks a lock), the file is re-read, only the one key is added (a missing entry is
+  created as `{"hasTrustDialogAccepted": true}`, as Claude Code's own runner seeds them), every other value is kept as
+  written (raw JSON: numbers keep their precision, key order kept), and it is written to a temp file next to it with the same
+  mode, synced and renamed over it, only if the file did not change since it was read (else again, a few times). A symlinked
+  config stays a link. A missing file is not created (Claude Code has not run with that config yet); one that is not a JSON
+  object is not touched. Nothing fails the spawn: problems are logged as `trust: …` lines (never the file's contents).
+* Tests: `internal/claudetrust/trust_test.go`, `internal/server/trust_test.go` (this machine and an in-process remote host),
+  `internal/termhost/trust_test.go`, `web/e2e/trust.spec.ts`. The Go tests and the e2e suite run with a temporary
+  `HOME`/`CLAUDE_CONFIG_DIR` (`TestMain`, `playwright.config.ts`); `claudetrust` also refuses to write under the real home
+  folder from a test binary.
+
 ## Nothing needs `claude`
 
 * Startup, `GET /api/agents`, `/api/about`, the UI and creating a Pi session never run or require `claude`.

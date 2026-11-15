@@ -10,6 +10,14 @@ import { terminalText } from './fixtures'
 const enabled = process.env.MINBOX_REAL_CLAUDE === '1'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
+function realClaudeEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  const orig = process.env.MINBOX_E2E_REAL_CLAUDE_CONFIG_DIR
+  if (orig) env.CLAUDE_CONFIG_DIR = orig
+  else delete env.CLAUDE_CONFIG_DIR
+  return env
+}
+
 test.describe('real Claude Code', () => {
   test.skip(!enabled, 'set MINBOX_REAL_CLAUDE=1')
   test.setTimeout(300_000)
@@ -23,6 +31,9 @@ test.describe('real Claude Code', () => {
   async function startServer() {
     proc = spawn(join(ROOT, 'bin/minbox'), ['start', '--foreground', '--addr', `127.0.0.1:${port}`, '--data-dir', dataDir, '--no-open', '--claude', process.env.MINBOX_CLAUDE ?? 'claude --model haiku'], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      // The real Claude Code uses the person's own config (and login): undo playwright.config.ts's
+      // throwaway CLAUDE_CONFIG_DIR for this opt-in test.
+      env: realClaudeEnv(),
     })
     proc.stdout!.on('data', (d) => (log += d))
     proc.stderr!.on('data', (d) => (log += d))

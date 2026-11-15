@@ -438,7 +438,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 func defaultSettings() map[string]any {
 	return map[string]any{
 		"theme": "system", "text_size": 13, "notifications": true, "sound": true, "tab_count": true, "single_key": true,
-		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
+		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "claude_trust_folders": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
 		"linear": defaultLinearSettings(),
 		"list":   map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
 	}
