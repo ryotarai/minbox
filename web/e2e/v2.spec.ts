@@ -14,10 +14,9 @@ async function openThread(page: Page, subject: string) {
   await expect(page.getByTestId('thread-subject')).toHaveText(subject)
 }
 
-/** The threads pane's ⋯ menu holds Settings, Board, Decide and Drafts. */
+/** The project rail's footer holds Settings, Board, Decide and Drafts. */
 async function fromMenu(page: Page, testid: 'open-settings' | 'open-board' | 'open-decide' | 'drafts') {
-  await page.getByTestId('list-options').click()
-  await page.getByTestId(testid).click()
+  await page.getByTestId('project-rail').getByTestId(testid).click()
 }
 
 test('archiving a thread hides it; Undo restores it; Claude writing brings it back', async ({ page, minbox }) => {
