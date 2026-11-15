@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Host, type HostProbe, type TailnetPeer, type TailscaleInfo } from '../api'
 import { useApp } from '../lib/app'
-import { agentsSummary } from '../lib/agents'
+import { agentKindLabel, agentsSummary } from '../lib/agents'
 import { IconMore } from './icons'
 import { Button, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
 import { useContextMenu } from './ContextMenu'
@@ -18,8 +18,9 @@ function ago(iso?: string | null): string {
 export function hostStatus(h: Host): string {
   if (h.status === 'pairing') return 'Waiting for accept'
   if (h.status === 'connecting') return 'Connecting…'
+  if (h.restarting) return 'Restarting…'
   if (h.status === 'offline') return `Offline${h.last_seen ? ` · ${ago(h.last_seen)}` : ''}`
-  if (h.builtin) return `Online${h.version ? ` · ${h.version}` : ''}`
+  if (h.builtin) return 'Online' // its build is on the line under its address
   return `Online${h.latency_ms !== undefined ? ` · ${h.latency_ms} ms` : ''}`
 }
 
@@ -29,6 +30,14 @@ export function hostAddress(h: Host): string {
   const parts = [h.url]
   if (h.method === 'tailscale') parts.push(`tailscale${h.tailscale_login ? ` ${h.tailscale_login}` : ''}`)
   parts.push(h.paired ? 'paired' : 'not paired')
+  return parts.join(' · ')
+}
+
+/** "minbox v1.4.0 · pid 4242 · started 3 h ago": the host process, as far as the host tells. */
+export function hostBuild(h: Host): string {
+  const parts = [h.version ? `minbox ${h.version}` : 'version unknown']
+  if (h.pid) parts.push(`pid ${h.pid}`)
+  if (h.started_at) parts.push(`started ${ago(h.started_at)}`)
   return parts.join(' · ')
 }
 
@@ -46,6 +55,7 @@ export function HostsSection() {
   const [editing, setEditing] = useState<{ host: Host; field: 'name' | 'url' } | null>(null)
   const [menu, setMenu] = useState<{ el: HTMLElement; host: Host } | null>(null)
   const [removing, setRemoving] = useState<Host | null>(null)
+  const [restarting, setRestarting] = useState<Host | null>(null)
   // Right-click / Shift+F10 / long press on a host row: the same menu as its "…" button, at the pointer.
   const ctx = useContextMenu()
   const ctxHost = ctx.at ? hosts.find((h) => h.id === ctx.at!.el.dataset.hostId) : undefined
@@ -83,6 +93,22 @@ export function HostsSection() {
                 <span className="mono truncate text-[12px] text-muted" data-testid="host-address">
                   {hostAddress(h)}
                 </span>
+                {on && (h.builtin || h.version) && (
+                  <span className="flex min-w-0 items-center gap-2 text-[12px] text-subtle">
+                    <span className="truncate" data-testid="host-build" title={h.started_at ? `Started ${new Date(h.started_at).toLocaleString()}` : undefined}>
+                      {hostBuild(h)}
+                    </span>
+                    {h.version_status === 'outdated' && (
+                      <span
+                        data-testid="host-outdated"
+                        title={h.builtin ? 'This host runs another build of minbox than the server. Restart it to run the current one.' : 'This host runs another version of minbox than the server.'}
+                        className="shrink-0 rounded border border-wait px-1.5 text-[11px] leading-[17px] text-wait"
+                      >
+                        Outdated
+                      </span>
+                    )}
+                  </span>
+                )}
                 {!on && h.error && <span className="truncate text-[12px] text-danger">{h.error}</span>}
                 {!h.builtin && h.agents && (
                   <span className="truncate text-[12px] text-subtle" data-testid="host-agents" title={hostAgentReasons(h)}>
@@ -97,6 +123,11 @@ export function HostsSection() {
               {h.status === 'offline' && (
                 <Button size="sm" onClick={() => api.retryHost(h.id).then(reloadHosts).catch(error)} data-testid="host-retry">
                   Retry
+                </Button>
+              )}
+              {h.restartable && h.status !== 'offline' && (
+                <Button size="sm" disabled={h.restarting} onClick={() => setRestarting(h)} data-testid="host-restart">
+                  Restart
                 </Button>
               )}
               <IconButton aria-label="Host menu" data-testid="host-menu" onClick={(e) => setMenu({ el: e.currentTarget, host: h })}>
@@ -114,6 +145,11 @@ export function HostsSection() {
             <MenuItem testid="host-rename" onClick={() => (setEditing({ host: shown.host, field: 'name' }), closeMenu())}>
               Rename
             </MenuItem>
+            {shown.host.restartable && (
+              <MenuItem testid="host-menu-restart" disabled={shown.host.restarting} onClick={() => (setRestarting(shown.host), closeMenu())}>
+                Restart host…
+              </MenuItem>
+            )}
             {!shown.host.builtin && (
               <>
                 <MenuItem testid="host-edit" onClick={() => (setEditing({ host: shown.host, field: 'url' }), closeMenu())}>
@@ -134,6 +170,7 @@ export function HostsSection() {
 
       {wizard && <AddHostWizard repair={wizard.repair} onClose={() => setWizard(null)} />}
       {editing && <EditHost host={editing.host} field={editing.field} onClose={() => setEditing(null)} />}
+      {restarting && <RestartHost host={restarting} onClose={() => setRestarting(null)} />}
       {removing && (
         <Modal label={`Remove ${removing.name}`} onClose={() => setRemoving(null)} className="flex w-[min(440px,100%)] flex-col gap-3 p-5">
           <h3 className="m-0 text-[16px] font-[650]">Remove {removing.name}?</h3>
@@ -164,6 +201,74 @@ export function HostsSection() {
         </Modal>
       )}
     </>
+  )
+}
+
+/** Restart this machine's terminal host: what `minbox restart --host` does, with the server kept running. */
+function RestartHost({ host, onClose }: { host: Host; onClose: () => void }) {
+  const { sessions, error, toast, reloadHosts, reloadSessions } = useApp()
+  const [resume, setResume] = useState(true)
+  const [busy, setBusy] = useState(false)
+  // The sessions running in it: their processes end with the host.
+  const running = (sessions ?? []).filter((s) => s.status !== 'ended' && (s.host_id || 'local') === host.id)
+  const go = () => {
+    setBusy(true)
+    api
+      .restartHost(host.id, resume)
+      .then((r) => {
+        const n = r.sessions.length
+        const what = n === 0 ? '' : resume ? ` · ${n === 1 ? '1 session resumes' : `${n} sessions resume`}` : ` · ${n === 1 ? '1 session ended' : `${n} sessions ended`}`
+        toast(`Restarted the terminal host${r.new_pid ? ` (pid ${r.new_pid})` : ''}${what}`)
+        onClose()
+      })
+      .catch((e) => {
+        error(e)
+        setBusy(false)
+      })
+      .finally(() => {
+        reloadHosts()
+        reloadSessions()
+      })
+  }
+  return (
+    <Modal label="Restart host" onClose={() => !busy && onClose()} className="flex w-[min(500px,100%)] flex-col gap-3 p-5">
+      <h3 className="m-0 text-[16px] font-[650]">Restart the terminal host?</h3>
+      <p className="m-0 text-[13.5px] leading-[1.6] text-muted">
+        A new host starts from the current minbox binary; the server keeps running. Every process in the host ends: the agents (running turns are interrupted), companion shells, and any agent
+        session that is working on minbox itself.
+      </p>
+      {running.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-[12.5px] text-subtle">{running.length === 1 ? '1 running session stops:' : `${running.length} running sessions stop:`}</span>
+          <ul data-testid="host-restart-sessions" className="m-0 flex max-h-[200px] list-none flex-col gap-0.5 overflow-auto rounded-lg border border-line bg-sunken p-2">
+            {running.map((s) => (
+              <li key={s.id} data-testid="host-restart-session" className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="truncate">{s.name}</span>
+                <span className="shrink-0 text-[12px] text-subtle">{s.kind === 'shell' ? 'Shell' : agentKindLabel(s.agent)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <span className="text-[13px] text-subtle" data-testid="host-restart-none">
+          No session is running in it.
+        </span>
+      )}
+      {running.length > 0 && (
+        <label className="flex items-center gap-2 text-[13.5px]">
+          <input type="checkbox" data-testid="host-restart-resume" checked={resume} onChange={(e) => setResume(e.target.checked)} />
+          Resume these sessions afterwards (their conversations carry on)
+        </label>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="quiet" disabled={busy} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="danger" data-testid="host-restart-confirm" disabled={busy} onClick={go}>
+          {busy ? 'Restarting…' : 'Restart host'}
+        </Button>
+      </div>
+    </Modal>
   )
 }
 

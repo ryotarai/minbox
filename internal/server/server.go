@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ryotarai/minbox/internal/agent"
@@ -119,6 +120,14 @@ type Server struct {
 	slack *slackSvc
 	// commandTimeout overrides the 60 s limit of "!" commands (tests).
 	commandTimeout time.Duration
+
+	// binary is this server's build (termhost.BinaryID), to tell an outdated host.
+	binary string
+	// Restarting the local host (hostrestart.go): one at a time; stopLocalHost
+	// is termhost.Stop on its socket (tests replace it).
+	hostRestartMu  sync.Mutex
+	hostRestarting atomic.Bool
+	stopLocalHost  func(ctx context.Context) (pid int, running bool, err error)
 }
 
 // New builds a server. web holds the built frontend (index.html at its root).
@@ -173,7 +182,10 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	hostURL := cfg.HostURL
 	if hostURL == "" {
 		hostURL = "unix://" + filepath.Join(cfg.DataDir, "termhost.sock")
+		s.cfg.HostURL = hostURL
 	}
+	s.binary = termhost.BinaryID()
+	s.stopLocalHost = s.stopLocalHostDefault
 	if err := st.EnsureLocalHost(context.Background(), hostURL); err != nil {
 		log.Printf("hosts: %v", err)
 	}
@@ -326,6 +338,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.patchHost)
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.deleteHost)
 	mux.HandleFunc("POST /api/hosts/{id}/retry", s.retryHost)
+	mux.HandleFunc("POST /api/hosts/{id}/restart", s.restartHost)
 	mux.HandleFunc("POST /api/devices/pair", s.devicePair)
 	mux.HandleFunc("GET /api/devices/pair/{id}", s.devicePairStatus)
 	mux.HandleFunc("POST /api/devices/auth/challenge", s.deviceChallenge)
