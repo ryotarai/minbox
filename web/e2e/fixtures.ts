@@ -1,11 +1,11 @@
 import { test as base, expect, type Page } from '@playwright/test'
 import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { FakeLinear } from './fake-linear'
 import { FakeSlackUser } from './fake-slack-user'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -104,13 +104,23 @@ export class Minbox {
     return join(this.dataDir, 'linear-draft.hold')
   }
 
+  /** This minbox's own Claude Code config folder (CLAUDE_CONFIG_DIR): where it marks folders trusted. */
+  get claudeConfigDir() {
+    return join(this.dataDir, 'claude-config')
+  }
+
   async start() {
     if (!this.slackApi.url) await this.slackApi.start()
     if (!this.linear.url) await this.linear.start()
     if (!this.slackUser.url) await this.slackUser.start()
+    mkdirSync(this.claudeConfigDir, { recursive: true })
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: this.claudeConfigDir, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, FAKE_OPENCODE_DIR: this.dataDir, ...this.extraEnv }
+    // The person's own Claude Code config must never be written by a test (see playwright.config.ts).
+    const cfg = env.CLAUDE_CONFIG_DIR ? resolve(env.CLAUDE_CONFIG_DIR) : ''
+    if (!cfg || cfg === resolve(homedir(), '.claude') || cfg === resolve(homedir())) throw new Error(`e2e: CLAUDE_CONFIG_DIR must be a temporary folder, not ${cfg || 'unset'}`)
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi, '--opencode', this.opencode], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, FAKE_OPENCODE_DIR: this.dataDir, ...this.extraEnv },
+      env,
     })
     this.proc.stdout!.on('data', (d) => (this.log += d))
     this.proc.stderr!.on('data', (d) => (this.log += d))

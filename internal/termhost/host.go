@@ -23,6 +23,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty"
+	"github.com/ryotarai/minbox/internal/claudetrust"
 	"github.com/ryotarai/minbox/internal/hostauth"
 	"github.com/ryotarai/minbox/internal/hostfs"
 )
@@ -90,6 +91,11 @@ type SpawnRequest struct {
 	InheritEnv bool   `json:"inherit_env,omitempty"`
 	Cols       uint16 `json:"cols"`
 	Rows       uint16 `json:"rows"`
+	// TrustClaudeFolder: the process is Claude Code; record Cwd as trusted in the Claude Code
+	// configuration of this machine (for the environment it starts with) first, so its "do you
+	// trust this folder" dialog does not hold the session up (see internal/claudetrust). A host
+	// that predates the field ignores it and starts the process as before.
+	TrustClaudeFolder bool `json:"trust_claude_folder,omitempty"`
 }
 
 // TerminalInfo describes a terminal the host holds.
@@ -457,6 +463,9 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 		env = CleanEnv(os.Environ())
 	}
 	env = append(env, h.substEnv(env, req.Env)...)
+	if req.TrustClaudeFolder {
+		claudetrust.EnsureLogged(req.Cwd, env, "terminal "+req.ID)
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = req.Cwd
 	cmd.Env = env
