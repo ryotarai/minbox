@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ATTENTION, api, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
+import { agentKindLabel } from '../lib/agents'
 import { homeRelative, isMac, shortTime } from '../lib/format'
 import { fuzzyFields } from '../lib/fuzzy'
 import { selectProject, shortDir, useProjectStats } from '../lib/projects'
@@ -151,7 +152,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (current) {
       act(
         'go-terminal',
-        'Go to terminal',
+        `Go to ${agentKindLabel(current.agent)} terminal`,
         () => {
           if (isPhone) navigate({ view: 'main', tab: 'terminal', t: null, f: null })
           else if (isTablet) navigate({ view: 'main', tab: 'terminal', f: null })
@@ -181,7 +182,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
       }
     }
     if (!isPhone) {
-      if (!isTablet) act('terminal-pane', layout.terminalPane ? 'Hide terminal' : 'Show terminal', () => setLayout({ terminalPane: !layout.terminalPane }), { keywords: 'claude code console toggle pane' })
+      if (!isTablet) act('terminal-pane', `${layout.terminalPane ? 'Hide' : 'Show'} ${current ? `${agentKindLabel(current.agent)} ` : ''}terminal`, () => setLayout({ terminalPane: !layout.terminalPane }), { keywords: 'claude code console toggle pane' })
       act('swap', 'Swap terminal and inbox', () => saveSettings({ swap_panes: !settings.swap_panes }), { keywords: 'panes layout left right' })
     }
     act('theme-dark', 'Theme: Dark', () => saveSettings({ theme: 'dark' }), { keywords: 'appearance color mode night' })

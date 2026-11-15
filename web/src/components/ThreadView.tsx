@@ -4,6 +4,7 @@ import { ALL_THREADS, useApp } from '../lib/app'
 import { clearReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
+import { agentKindLabel } from '../lib/agents'
 import { proseOf, splitQuestions } from '../lib/markdown'
 import { opensBeside, steppable, threadArtifacts } from '../lib/attachments'
 import { SketchButton } from './Sketch'
@@ -24,6 +25,7 @@ import {
   IconThumb,
   IconUnfold,
   IconShell,
+  IconAgentKind,
   IconTerminal,
   IconPaperclip,
   IconPlus,
@@ -57,29 +59,35 @@ type Props = {
   phone?: boolean
 }
 
-/** Header button for the terminal: tablet opens [thread | terminal]; desktop (shown given) toggles the pane. */
+/**
+ * Header button for the agent's terminal: tablet opens [thread | terminal]; desktop (shown given) toggles
+ * the pane. It shows the session's agent (Claude Code, OpenCode, Pi), apart from the shell button (>_).
+ */
 export function TerminalButton({ session, onClick, shown }: { session: Session; onClick: () => void; shown?: boolean }) {
+  const agent = agentKindLabel(session.agent)
   if (shown === undefined)
     return (
       <IconButton
         data-testid="tablet-terminal"
-        aria-label={`Open ${session.name}'s terminal`}
-        title="Terminal: show it next to this thread"
+        data-agent={session.agent || 'claude'}
+        aria-label={`Open ${session.name}'s ${agent} terminal`}
+        title={`${agent} terminal: show it next to this thread`}
         onClick={onClick}
       >
-        <IconTerminal size={15} />
+        <IconAgentKind kind={session.agent} size={15} />
       </IconButton>
     )
   return (
     <IconButton
       data-testid="terminal-toggle"
-      aria-label={shown ? 'Hide terminal' : 'Show terminal'}
-      title={shown ? 'Hide the terminal' : 'Show the terminal'}
+      data-agent={session.agent || 'claude'}
+      aria-label={shown ? `Hide ${agent} terminal` : `Show ${agent} terminal`}
+      title={shown ? `Hide the ${agent} terminal` : `Show the ${agent} terminal`}
       aria-pressed={shown}
       onClick={onClick}
       className={shown ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
-      <IconTerminal size={15} />
+      <IconAgentKind kind={session.agent} size={15} />
     </IconButton>
   )
 }
