@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ryotarai/minbox/internal/agent"
+	"github.com/ryotarai/minbox/internal/claudetrust"
 	"github.com/ryotarai/minbox/internal/hostfs"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
@@ -610,6 +611,20 @@ func settingString(stored map[string]json.RawMessage, key string) string {
 	return ""
 }
 
+// trustClaudeFolder says whether the session is a Claude Code one whose folder is to be marked
+// trusted in Claude Code's configuration before it starts (the claude_trust_folders setting, on
+// unless set to false): Claude Code otherwise stops at its "do you trust this folder" dialog.
+func (m *sessionManager) trustClaudeFolder(ctx context.Context, sess *store.Session) bool {
+	if sess.Kind == store.KindShell || (sess.Agent != agent.Claude && sess.Agent != "") {
+		return false
+	}
+	stored, err := m.store.Settings(ctx)
+	if err != nil {
+		return true
+	}
+	return settingOn(stored, "claude_trust_folders", true)
+}
+
 // orchestratorPrompt reports the orchestrator_prompt setting (on unless set to
 // false), read when a session is started or resumed.
 func (m *sessionManager) orchestratorPrompt(ctx context.Context) bool {
@@ -741,14 +756,22 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	if m.modLog != nil {
 		m.modLog(sess.ID, "spawn", "resume=%v agent=%s host=%q cwd=%q", resume, sess.Agent, sess.HostID, sess.Cwd)
 	}
+	env := m.sessionEnv(sess)
+	trust := m.trustClaudeFolder(ctx, sess)
+	if trust && !m.remote(sess.HostID) {
+		// This machine: here, in the environment the session gets. A remote host does it on its own
+		// machine (TrustClaudeFolder).
+		claudetrust.EnsureLogged(sess.Cwd, env, "session "+sess.ID)
+	}
 	_, err = host.Spawn(ctx, termhost.SpawnRequest{
-		ID:         sess.ID,
-		Argv:       m.argv(ctx, sess, resume),
-		Cwd:        sess.Cwd,
-		Env:        m.sessionEnv(sess),
-		InheritEnv: m.remote(sess.HostID) || sess.Kind == store.KindShell,
-		Cols:       120,
-		Rows:       36,
+		ID:                sess.ID,
+		Argv:              m.argv(ctx, sess, resume),
+		Cwd:               sess.Cwd,
+		Env:               env,
+		InheritEnv:        m.remote(sess.HostID) || sess.Kind == store.KindShell,
+		Cols:              120,
+		Rows:              36,
+		TrustClaudeFolder: trust && m.remote(sess.HostID),
 	})
 	if err != nil {
 		return err

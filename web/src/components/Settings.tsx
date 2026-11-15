@@ -314,6 +314,12 @@ function AgentsGroup() {
           </select>
         </Row>
       )}
+      <Row
+        label="Trust folders Claude starts in"
+        desc="Before a Claude Code session starts, marks its folder trusted in Claude Code's config on the machine it runs on (~/.claude.json, or $CLAUDE_CONFIG_DIR), so it does not stop at the “Do you trust this folder?” dialog. Off: Claude Code asks as usual."
+      >
+        <Switch label="Trust folders Claude starts in" on={settings.claude_trust_folders} onChange={(v) => saveSettings({ claude_trust_folders: v })} />
+      </Row>
       {remotes.map((h) => (
         <Row key={h.id} label={`On ${h.name}`} desc={h.status === 'online' ? 'Another host: what its machine has (Settings › Hosts).' : `Another host, ${h.status}: as last seen.`}>
           <span data-testid="host-agents-summary" title={hostAgentReasons(h)} className="mono text-[12.5px] text-muted">

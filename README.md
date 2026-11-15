@@ -404,6 +404,10 @@ coding agent installed the feature is simply off.
 version; 1.x is shown as unsupported), and the default for new sessions (projects can set their own in their edit dialog).
 Pi has no permission prompts and its own subagent tool instead of the orchestrator prompt; OpenCode runs with `--auto`
 and `--standalone`. Both also run on other hosts (each host's agents are listed there and in Settings → Hosts).
+**Trust folders Claude starts in** (on by default): before a Claude Code session starts, minbox marks its folder trusted in
+Claude Code's config on the machine it runs on (`projects["<folder>"].hasTrustDialogAccepted` in `~/.claude.json`, or
+`$CLAUDE_CONFIG_DIR/.claude.json`), so it does not stop at the "Do you trust this folder?" dialog. Only that key is
+added; the rest of the file is kept as it is (docs/agents.md, "Claude Code's folder trust").
 
 ## Development
 
