@@ -700,15 +700,12 @@ function ThreadName({ thread }: { thread: Thread }) {
         className="mono h-5 w-36 rounded-[5px] border border-accent bg-sunken px-1.5 text-[11px] text-fg outline-none"
       />
     )
+  // No name: nothing here (the "…" menu's "Set name…" sets one).
   return thread.name ? (
     <button type="button" onClick={() => setEditing(true)} className="mono rounded-[5px] border border-linestrong bg-transparent px-1.5 text-[11px] leading-[18px] text-fg2">
       {thread.name}
     </button>
-  ) : (
-    <button type="button" onClick={() => setEditing(true)} className="mono rounded-[5px] border border-dashed border-[#52525b] bg-transparent px-2 text-[11px] leading-[18px] text-subtle">
-      + name
-    </button>
-  )
+  ) : null
 }
 
 function ThreadNotices({ thread, target }: { thread: Thread; target: Message | null }) {
