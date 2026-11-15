@@ -269,7 +269,9 @@ not mirrored. New comments on the issue are fetched when you open the thread, sh
 agent in front of your next message (marked as untrusted external content; filterable by author). Details,
 limits and what is unverified against the real Linear: [docs/linear.md](docs/linear.md).
 
-**Create Linear issue** (thread header, next to *Link Linear issue*): a dialog pre-filled from the thread by
+**Link an issue**: the small **+ (Linear icon)** left of the thread's "N messages · X min" line opens a dialog
+that searches Linear as you type (or takes `ENG-123` / an issue URL); Enter links the pick. Its **New issue**
+entry opens **Create Linear issue**: a dialog pre-filled from the thread by
 your local coding agent (Claude Code or Pi) and Linear's own teams, states, labels and projects. It opens at
 once, the guess fills in only what you have not typed, and nothing is sent to Linear until you press Create;
 the thread is then linked to the new issue. **Settings → Integrations → Linear → "Auto-fill: extra prompt"**

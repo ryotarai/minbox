@@ -1103,6 +1103,9 @@ project_id, updated_at}]}`.
   (completed / canceled) issues are omitted unless `closed=1`; `closed_count` counts them either way. Sorted urgent first, then most recently updated. The result is cached per user for 45 s
   (a plain GET inside that time makes no Linear call); `refresh=1` fetches again but is answered from the cache within 5 s of the last fetch; `cached=1` never calls Linear
   (`{issues: null, cached: true}` when there is nothing cached; `stale: true` when older than 45 s). Pages (up to 6 x 100) are followed. `threads` lists the minbox threads linked to each issue.
+- `GET /api/linear/search?q=…` -> `{issues: IssueView[], query}`: the thread link dialog's search. An identifier or issue URL in `q` is read exactly (`get_issue`) and
+  comes first; text goes to `list_issues` with the tool's query argument (one page, at most 20, no assignee filter); no duplicates. Cached per lower-cased query for 30 s.
+  Empty `q` -> no issues (Linear is not asked); `q` over 200 characters -> 400; not connected -> 409 `linear_login`; Linear's errors as for the list.
 - `GET /api/linear/issues/{identifier}[?refresh=1]` -> `{issue: IssueView (with description), comments: [{id, author, body, url, created_at}] (oldest first, the latest 50, minbox's own progress
   comment left out), comments_total, comments_error?, fetched_at}` (cached 30 s). 400 not an identifier.
 - `POST /api/linear/issues/{identifier}/thread` body `{target: {kind: "session", session_id} | {kind: "new_session", project_id, agent?, name?}, subject?, instruction?}` -> 201

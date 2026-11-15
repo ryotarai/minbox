@@ -34,11 +34,11 @@ test('connect Linear, link an issue, receive its comments, deliver them to the a
   await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Note')
   await page.getByTestId('linear-link-open').click()
-  await page.getByTestId('linear-link-input').fill('nope')
-  await page.getByTestId('linear-link-submit').click()
-  await expect(page.getByTestId('linear-link-error')).toContainText('not a Linear issue')
-  await page.getByTestId('linear-link-input').fill('ENG-123')
-  await page.getByTestId('linear-link-submit').click()
+  await page.getByTestId('linear-link-search').fill('nope')
+  await expect(page.getByTestId('linear-link-empty')).toBeVisible()
+  await page.getByTestId('linear-link-search').fill('ENG-123')
+  await expect(page.getByTestId('linear-link-result').first()).toHaveAttribute('data-identifier', 'ENG-123')
+  await page.getByTestId('linear-link-search').press('Enter')
   const chip = page.getByTestId('linear-chip')
   await expect(chip).toContainText('ENG-123')
   await expect(chip).toContainText('Fix the thing')
@@ -97,7 +97,8 @@ test('create a Linear issue from a thread: late draft keeps what was typed; crea
 
   // The helper's guess is held back until we let it go.
   writeFileSync(minbox.draftHold, '')
-  await page.getByTestId('linear-create-open').click()
+  await page.getByTestId('linear-link-open').click()
+  await page.getByTestId('linear-link-new').click()
   const submit = page.getByTestId('linear-create-submit')
   await expect(page.getByTestId('linear-create-drafting')).toBeVisible()
   // Linear's lists and the certain defaults are there while the draft is pending; the title and
@@ -148,8 +149,8 @@ test('create a Linear issue from a thread: late draft keeps what was typed; crea
   expect(a.assignee).toBe('u1')
   expect(a.state).toBe('st-3')
   expect(a.description).toContain('Drafted from the thread')
-  // Linked like a pasted issue: no second create offered, unlink available.
-  await expect(page.getByTestId('linear-create-open')).toHaveCount(0)
+  // Linked like a picked issue: the meta line shows it, unlink available.
+  await expect(page.getByTestId('linear-meta-issue')).toHaveText('ENG-101')
   await expect(page.getByTestId('linear-unlink')).toBeVisible()
 })
 
@@ -163,7 +164,8 @@ async function openCreateDialog(page: Page, minbox: Minbox, name: string) {
   await typeInTerminal(page, 'say Working on the login bug')
   await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Note')
-  await page.getByTestId('linear-create-open').click()
+  await page.getByTestId('linear-link-open').click()
+  await page.getByTestId('linear-link-new').click()
 }
 
 test('Linear create dialog: when the helper fails, the basic draft is applied afterwards with a note', async ({ page, minbox }) => {
