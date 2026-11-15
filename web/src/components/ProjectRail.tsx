@@ -6,7 +6,7 @@ import { projectHueStyle } from '../lib/projectColor'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
-import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
+import { replyDraftThreads, useDraftsVersion } from '../lib/drafts'
 import { IconArchive, IconBoard, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPencil, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx, type MenuAt } from './ui'
 import { useContextMenu } from './ContextMenu'
@@ -286,7 +286,7 @@ export type GlobalEntry = { id: string; testid: string; label: string; title: st
 export function useGlobalEntries(): GlobalEntry[] {
   const { settings, setOverlay, navigate, route } = useApp()
   useDraftsVersion()
-  const drafts = replyDraftThreads().length + getComposeDrafts().length
+  const drafts = replyDraftThreads().length
   const out: GlobalEntry[] = [
     { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
   ]

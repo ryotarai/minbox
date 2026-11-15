@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { Annotation, Answer } from '../api'
 
 // Drafts live in localStorage: the reply being written in a thread (words,
-// question picks and annotations), and compose messages kept as drafts.
+// question picks and annotations).
 
 export type ReplyDraft = {
   words: string
@@ -14,10 +14,19 @@ export type ReplyDraft = {
   updated: number
 }
 
-export type ComposeDraft = { id: string; session_id: string; subject: string; body: string; name: string; updated: number }
-
 const REPLY = 'minbox:reply:'
-const COMPOSE = 'minbox:compose-drafts'
+
+// The New message screen is gone, and with it its drafts: drop what it left behind (its draft
+// list and the files attached to its drafts).
+try {
+  localStorage.removeItem('minbox:compose-drafts')
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i)
+    if (k?.startsWith('minbox:files:compose:')) localStorage.removeItem(k)
+  }
+} catch {
+  /* storage off */
+}
 
 const listeners = new Set<() => void>()
 let version = 0
@@ -59,26 +68,6 @@ export function updateReplyDraft(threadId: string, fn: (d: ReplyDraft) => ReplyD
 
 export function clearReplyDraft(threadId: string) {
   localStorage.removeItem(REPLY + threadId)
-  changed()
-}
-
-export function getComposeDrafts(): ComposeDraft[] {
-  try {
-    return JSON.parse(localStorage.getItem(COMPOSE) ?? '[]') as ComposeDraft[]
-  } catch {
-    return []
-  }
-}
-
-export function saveComposeDraft(d: ComposeDraft) {
-  const all = getComposeDrafts().filter((x) => x.id !== d.id)
-  all.unshift({ ...d, updated: Date.now() })
-  localStorage.setItem(COMPOSE, JSON.stringify(all.slice(0, 50)))
-  changed()
-}
-
-export function deleteComposeDraft(id: string) {
-  localStorage.setItem(COMPOSE, JSON.stringify(getComposeDrafts().filter((x) => x.id !== id)))
   changed()
 }
 

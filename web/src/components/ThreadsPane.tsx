@@ -3,11 +3,11 @@ import { ATTENTION, THREAD_STATUS_LABEL, THREAD_STATUS_ORDER, api, type Project,
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { useHotkeys } from '../lib/hotkeys'
-import { setComposeTarget, setThreadFilter, useComposeTargetPick, useThreadFilter, type ThreadFilter } from '../lib/threadFilter'
+import { setComposeTarget, setThreadFilter, useComposeTargetPick, useQuickComposeFocusAsk, useThreadFilter, type ThreadFilter } from '../lib/threadFilter'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { SketchButton } from './Sketch'
 import { IconChevronRight, IconExpand, IconInbox, IconMoreV, IconPaperclip, IconPlus, IconSearch } from './icons'
-import { CompletingTextarea } from './Compose'
+import { CompletingTextarea } from './CompletingTextarea'
 import { ConnectionBanner } from './Banners'
 import { PairRequestBanner } from './Devices'
 import { NewSessionDialog } from './NewSession'
@@ -506,6 +506,8 @@ export function useComposeTarget(): Session | null {
 
 /** Quick-compose text per session, kept while the box is unmounted. */
 const quickDrafts = new Map<string, string>()
+/** The last focus request (askQuickComposeFocus) a compose box has answered. */
+let focusHandled = 0
 
 function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; full: boolean; onToggleFull: () => void; onSent: (t: Thread) => void }) {
   const { error, route, navigate } = useApp()
@@ -530,6 +532,20 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [creating, setCreating] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  // ⌘K "New thread": take the focus (also when this box mounted only because of the request).
+  const focusAsk = useQuickComposeFocusAsk()
+  useEffect(() => {
+    if (focusAsk <= focusHandled) return
+    // After the palette has closed and given the focus back.
+    const t = window.setTimeout(() => {
+      const el = ref.current
+      if (!el) return
+      focusHandled = focusAsk
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    }, 30)
+    return () => window.clearTimeout(t)
+  }, [focusAsk])
   const fileRef = useRef<HTMLInputElement>(null)
   const filesId = `quick:${key}`
   const compose = useComposeFiles(filesId)
