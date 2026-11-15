@@ -6,7 +6,7 @@ import { IconClose, IconLinear, IconMore, IconPlus, IconSlack } from './icons'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { projectHueStyle } from '../lib/projectColor'
-import { ProjectBadges, ProjectDot, ProjectIcon, ProjectMenu, RenameProject } from './ProjectRail'
+import { ProjectBadges, ProjectDot, ProjectIcon, ProjectMenu, RenameProject, useGlobalEntries } from './ProjectRail'
 import { HostTag, cx } from './ui'
 import { useContextMenu } from './ContextMenu'
 
@@ -54,6 +54,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
   const ctx = useContextMenu()
   const ctxProject = ctx.at ? projects?.find((p) => p.id === ctx.at!.el.dataset.projectId) : undefined
   const [renaming, setRenaming] = useState<Project | null>(null)
+  const globals = useGlobalEntries()
   const pick = (id: string) => {
     selectProject(id)
     onClose()
@@ -75,7 +76,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
           <IconClose size={20} />
         </button>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {slack.available && (
           <button
             type="button"
@@ -153,6 +154,25 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
           )
         })}
         {projects && projects.length === 0 && <span className="px-4 py-6 text-[13px] text-muted">No projects yet. Start a session or add a project with +.</span>}
+      </div>
+      {/* Not about a project: Settings, Board, Decide, Drafts. Pinned under the list, two taps from home. */}
+      <div data-testid="sheet-global" className="flex shrink-0 gap-1 overflow-x-auto border-t border-line px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5">
+        {globals.map((e) => (
+          <button
+            key={e.id}
+            type="button"
+            data-testid={e.testid}
+            aria-label={e.label}
+            onClick={() => (onClose(), e.run())}
+            className="flex h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border-0 bg-transparent text-fg2 active:bg-raised"
+          >
+            <span className="relative">
+              <e.icon size={20} />
+              {!!e.count && <span className="absolute -right-2.5 -top-1.5 rounded-full bg-chip px-1 text-[9.5px] font-bold leading-[14px] text-fg2">{e.count}</span>}
+            </span>
+            <span className="text-[11.5px]">{e.label}</span>
+          </button>
+        ))}
       </div>
       {menu && <ProjectMenu project={menu.project} anchor={menu.anchor} onClose={() => setMenu(null)} onRename={() => setRenaming(menu.project)} />}
       {ctxProject && <ProjectMenu project={ctxProject} anchor={null} at={ctx.at} onClose={ctx.close} onRename={() => setRenaming(ctxProject)} />}

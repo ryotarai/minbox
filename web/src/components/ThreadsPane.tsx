@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ATTENTION, THREAD_STATUS_LABEL, THREAD_STATUS_ORDER, api, type Project, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
-import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
 import { useHotkeys } from '../lib/hotkeys'
 import { setComposeTarget, setThreadFilter, useComposeTargetPick, useThreadFilter, type ThreadFilter } from '../lib/threadFilter'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { SketchButton } from './Sketch'
-import { IconBoard, IconBolt, IconChevronRight, IconExpand, IconInbox, IconMoreV, IconPaperclip, IconPlus, IconSearch, IconSettings } from './icons'
+import { IconChevronRight, IconExpand, IconInbox, IconMoreV, IconPaperclip, IconPlus, IconSearch } from './icons'
 import { CompletingTextarea } from './Compose'
 import { ConnectionBanner } from './Banners'
 import { PairRequestBanner } from './Devices'
@@ -232,7 +231,7 @@ function TopBar({ phone }: { phone?: boolean }) {
           New
         </Button>
       )}
-      <IconButton size={size} aria-label="Menu" data-testid="list-options" onClick={(e) => setMenu(e.currentTarget)}>
+      <IconButton size={size} aria-label="List options" title="List options" data-testid="list-options" onClick={(e) => setMenu(e.currentTarget)}>
         <IconMoreV size={phone ? 20 : 16} />
       </IconButton>
       <HeaderMenu anchor={menu} onClose={() => setMenu(null)} />
@@ -240,14 +239,9 @@ function TopBar({ phone }: { phone?: boolean }) {
   )
 }
 
+/** The list's own display options. Settings, Board, Decide and Drafts live in the project rail (the project sheet on a phone). */
 function HeaderMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
-  const { settings, saveSettings, setOverlay, navigate, route } = useApp()
-  useDraftsVersion()
-  const drafts = replyDraftThreads().length + getComposeDrafts().length
-  const go = (fn: () => void) => () => {
-    onClose()
-    fn()
-  }
+  const { settings, saveSettings } = useApp()
   const opts: [keyof typeof settings.list, string][] = [
     ['highlight_subject', 'Highlight thread subject'],
     ['compact', 'Compact rows'],
@@ -255,23 +249,6 @@ function HeaderMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: 
   ]
   return (
     <Popover anchor={anchor} open={!!anchor} onClose={onClose} className="w-[260px]">
-      <MenuItem testid="open-settings" onClick={go(() => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }))}>
-        <IconSettings size={15} /> Settings
-      </MenuItem>
-      {settings.board && (
-        <MenuItem testid="open-board" onClick={go(() => navigate({ view: 'board' }))}>
-          <IconBoard size={15} /> Board
-        </MenuItem>
-      )}
-      {settings.decision_mode && (
-        <MenuItem testid="open-decide" onClick={go(() => setOverlay({ kind: 'decide' }))}>
-          <IconBolt size={15} /> Decide
-        </MenuItem>
-      )}
-      <MenuItem testid="drafts" hint={drafts} onClick={go(() => setOverlay({ kind: 'drafts' }))}>
-        Drafts
-      </MenuItem>
-      <MenuSep />
       {opts.map(([k, label]) => (
         <button
           key={k}

@@ -17,8 +17,7 @@ test('the terminal follows the app theme, live', async ({ page, minbox }) => {
   expect(luminance(await termBg(page))).toBeLessThan(0.2)
 
   // Switch through the theme setting, then come back to the terminal: no reload.
-  await page.getByTestId('list-options').click()
-  await page.getByTestId('open-settings').click()
+  await page.getByTestId('project-rail').getByTestId('open-settings').click()
   await page.getByTestId('theme-light').click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByTestId('settings-back').click()

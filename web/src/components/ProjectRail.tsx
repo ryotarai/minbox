@@ -6,7 +6,8 @@ import { projectHueStyle } from '../lib/projectColor'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
-import { IconArchive, IconChevronRight, IconInbox, IconLinear, IconMore, IconPin, IconPlus, IconSlack } from './icons'
+import { getComposeDrafts, replyDraftThreads, useDraftsVersion } from '../lib/drafts'
+import { IconArchive, IconBoard, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPencil, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx, type MenuAt } from './ui'
 import { useContextMenu } from './ContextMenu'
 
@@ -277,6 +278,58 @@ export function RenameProject({ project, onClose }: { project: Project; onClose:
   )
 }
 
+type IconC = typeof IconSettings
+/** An entry that is not about a project: Settings, Board, Decide, Drafts. The rail's footer and the phone's project sheet list them. */
+export type GlobalEntry = { id: string; testid: string; label: string; title: string; icon: IconC; active: boolean; count?: number; run: () => void }
+
+/** Settings always; Board and Decide when they are turned on; Drafts with its count. */
+export function useGlobalEntries(): GlobalEntry[] {
+  const { settings, setOverlay, navigate, route } = useApp()
+  useDraftsVersion()
+  const drafts = replyDraftThreads().length + getComposeDrafts().length
+  const out: GlobalEntry[] = [
+    { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
+  ]
+  if (settings.board) out.push({ id: 'board', testid: 'open-board', label: 'Board', title: 'Board', icon: IconBoard, active: route.view === 'board', run: () => navigate({ view: 'board' }) })
+  if (settings.decision_mode) out.push({ id: 'decide', testid: 'open-decide', label: 'Decide', title: 'Decide (Shift+D)', icon: IconBolt, active: false, run: () => setOverlay({ kind: 'decide' }) })
+  out.push({ id: 'drafts', testid: 'drafts', label: 'Drafts', title: drafts ? `Drafts (${drafts})` : 'Drafts', icon: IconPencil, active: false, count: drafts, run: () => setOverlay({ kind: 'drafts' }) })
+  return out
+}
+
+/** The rail's bottom: the global entries, as icon tiles or icon + label rows. */
+function RailGlobal({ tiles }: { tiles: boolean }) {
+  const entries = useGlobalEntries()
+  return (
+    <div data-testid="rail-global" className={cx('flex shrink-0 gap-0.5 border-t border-line p-1.5', tiles ? 'flex-col items-center' : 'flex-col')}>
+      {entries.map((e) => (
+        <button
+          key={e.id}
+          type="button"
+          data-testid={e.testid}
+          aria-label={e.label}
+          aria-current={e.active ? 'page' : undefined}
+          title={e.title}
+          onClick={e.run}
+          className={cx(
+            'relative flex shrink-0 items-center gap-2 rounded-lg border-0 text-left',
+            tiles ? 'h-9 w-9 justify-center px-0' : 'h-8 w-full px-2.5',
+            e.active ? 'bg-sel text-fg' : 'bg-transparent text-fg2 hover:bg-raised',
+          )}
+        >
+          <e.icon size={tiles ? 17 : 15} className="shrink-0" />
+          {!tiles && <span className="min-w-0 flex-1 truncate text-[13px]">{e.label}</span>}
+          {!!e.count &&
+            (tiles ? (
+              <span className="absolute right-0 top-0 rounded-full bg-chip px-1 text-[9px] font-bold leading-[13px] text-fg2">{e.count}</span>
+            ) : (
+              <span className="shrink-0 rounded-full bg-chip px-1.5 text-[11px] font-bold leading-[18px] text-fg2">{e.count}</span>
+            ))}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** The far-left column: All projects, then the projects. 176 px with names, 56 px as tiles. */
 export function ProjectRail({ narrow }: { narrow: boolean }) {
   const { projects, setOverlay, setLayout, route, navigate } = useApp()
@@ -440,6 +493,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
         })}
         <Archived tiles={tiles} />
       </div>
+      <RailGlobal tiles={tiles} />
       <div className={cx('flex shrink-0 items-center gap-1 border-t border-line p-1.5', tiles && 'flex-col')}>
         <button
           type="button"
