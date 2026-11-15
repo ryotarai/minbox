@@ -4,6 +4,7 @@
 package termhost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,8 @@ import (
 // 5: Pi and OpenCode on remote hosts (AgentsProtocol): the host fills in its own
 // Pi extension and OpenCode plugin, runs short commands (POST /exec) and finds
 // executables on its PATH (POST /lookpath).
+// (Not a version: GET /terminals/{id}/attach?repaint=1 makes the app repaint for the
+// new view, see terminal.repaint; an older host ignores the query.)
 const ProtocolVersion = 5
 
 // RemoteProtocol is the lowest host protocol a server pairs with over the network.
@@ -125,7 +128,16 @@ type frame struct {
 	data []byte
 }
 
-const scrollbackLimit = 2 << 20 // bytes of output kept per terminal for replay
+// scrollbackLimit is how many bytes of output a terminal keeps for replay (tests shorten it).
+var scrollbackLimit = 2 << 20
+
+// repaintWait is how long the host waits, after a repaint attach, for the new view's size
+// (which may resize the PTY, and a resize repaints by itself); repaintGap is how long the
+// PTY stays one row shorter, long enough for an app that debounces resizes to see it.
+var (
+	repaintWait = time.Second
+	repaintGap  = 300 * time.Millisecond
+)
 
 type terminal struct {
 	id   string
@@ -134,6 +146,10 @@ type terminal struct {
 
 	mu         sync.Mutex
 	scrollback []byte
+	start      int64  // the stream offset of scrollback[0]: more than 0 once the start is cut off
+	modes      *modes // the modes the output set, put back around a cut replay
+	resizes    uint64 // PTY size changes so far
+	nudging    bool   // a repaint nudge is under way
 	subs       map[chan frame]struct{}
 	wants      map[chan frame]want // the size each attached client fits
 	leaseTimer *time.Timer
@@ -237,6 +253,7 @@ func (t *terminal) resize(cols, rows uint16) {
 func (t *terminal) resizeLocked(cols, rows uint16) {
 	_ = pty.Setsize(t.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
 	t.cols, t.rows = cols, rows
+	t.resizes++
 	f := t.sizeFrame()
 	for ch := range t.subs {
 		select {
@@ -258,9 +275,10 @@ func (t *terminal) info() TerminalInfo {
 	return TerminalInfo{ID: t.id, PID: pid, Running: t.running, ExitCode: t.exitCode}
 }
 
-// subscribe returns the scrollback so far, a channel of later output, and
-// whether the process still runs (an exited terminal's channel gets nothing).
-func (t *terminal) subscribe() ([]byte, chan frame, bool) {
+// subscribe returns the scrollback so far, a channel of later output, whether
+// the process still runs (an exited terminal's channel gets nothing), and the
+// count of PTY size changes so far (see repaint).
+func (t *terminal) subscribe() ([]byte, chan frame, bool, uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	ch := make(chan frame, 256)
@@ -268,7 +286,47 @@ func (t *terminal) subscribe() ([]byte, chan frame, bool) {
 		t.subs[ch] = struct{}{}
 		ch <- t.sizeFrame() // sent after the replay
 	}
-	return append([]byte(nil), t.scrollback...), ch, t.running
+	return t.replayLocked(), ch, t.running, t.resizes
+}
+
+// replayLocked is the scrollback a new view draws. Once its start is cut off, the
+// modes the app set there are put back: the alternate screen before it, the others after.
+func (t *terminal) replayLocked() []byte {
+	if t.start == 0 || t.modes == nil {
+		return append([]byte(nil), t.scrollback...)
+	}
+	pre, post := t.modes.replayPrefix(t.start), t.modes.replaySuffix()
+	b := make([]byte, 0, len(pre)+len(t.scrollback)+len(post))
+	b = append(b, pre...)
+	b = append(b, t.scrollback...)
+	return append(b, post...)
+}
+
+// repaint makes the app draw its whole screen again, for a view that just attached:
+// the replay alone does not give it a whole screen when the app draws only what changed
+// (OpenCode, Claude Code and Pi all do) and the bytes that drew the rest were cut off
+// the scrollback, or were drawn at another size. An app repaints on a resize, so the PTY
+// is made one row shorter for repaintGap and then given its size back. Attached views are
+// not told (no size frame): they keep their size and see the app redraw. Nothing is done
+// when the PTY was resized since the view subscribed (since, from subscribe): that resize
+// repainted already.
+func (t *terminal) repaint(since uint64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.running || t.nudging || t.resizes != since || t.rows < 2 {
+		return false
+	}
+	t.nudging = true
+	_ = pty.Setsize(t.ptmx, &pty.Winsize{Cols: t.cols, Rows: t.rows - 1})
+	time.AfterFunc(repaintGap, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.nudging = false
+		if t.running {
+			_ = pty.Setsize(t.ptmx, &pty.Winsize{Cols: t.cols, Rows: t.rows}) // the size it has now
+		}
+	})
+	return true
 }
 
 func (t *terminal) unsubscribe(ch chan frame) {
@@ -292,8 +350,16 @@ func (t *terminal) pump() {
 			chunk := append([]byte(nil), buf[:n]...)
 			t.mu.Lock()
 			t.scrollback = append(t.scrollback, chunk...)
+			if t.modes != nil {
+				t.modes.feed(chunk)
+			}
 			if over := len(t.scrollback) - scrollbackLimit; over > 0 {
+				// Cut at an escape: not in the middle of a sequence or a character.
+				if i := bytesIndexESC(t.scrollback[over:], 64<<10); i > 0 {
+					over += i
+				}
 				t.scrollback = append([]byte(nil), t.scrollback[over:]...)
+				t.start += int64(over)
 			}
 			for ch := range t.subs {
 				select {
@@ -396,7 +462,7 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame]want{}, running: true, done: make(chan struct{}), cols: cols, rows: rows, baseCols: cols, baseRows: rows}
+	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame]want{}, running: true, done: make(chan struct{}), modes: newModes(), cols: cols, rows: rows, baseCols: cols, baseRows: rows}
 	h.mu.Lock()
 	h.terminals[req.ID] = t
 	h.mu.Unlock()
@@ -712,7 +778,7 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	defer conn.CloseNow()
 
-	replay, ch, running := t.subscribe()
+	replay, ch, running, resizes := t.subscribe()
 	defer t.unsubscribe(ch)
 	if !running {
 		// An exited terminal: show what it printed, then close.
@@ -721,6 +787,23 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 		}
 		conn.Close(websocket.StatusNormalClosure, "exited")
 		return
+	}
+
+	// ?repaint=1 (the server asks it for an agent's terminal, not a shell): once the
+	// view has told its size, or after repaintWait, the app is made to draw its whole
+	// screen again (see repaint).
+	sized := make(chan struct{})
+	var sizedOnce sync.Once
+	if r.URL.Query().Get("repaint") == "1" {
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sized:
+			case <-time.After(repaintWait):
+			}
+			t.repaint(resizes)
+		}()
 	}
 
 	go func() {
@@ -739,6 +822,7 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 			var msg ResizeMessage
 			if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" && msg.Cols > 0 && msg.Rows > 0 {
 				t.want(ch, msg.Cols, msg.Rows, msg.Lease)
+				sizedOnce.Do(func() { close(sized) })
 			}
 		}
 	}()
@@ -869,4 +953,12 @@ func ServeRemote(ctx context.Context, o RemoteOptions) error {
 		return nil
 	}
 	return err
+}
+
+// bytesIndexESC is the index of the first ESC in the first max bytes of b, or -1.
+func bytesIndexESC(b []byte, max int) int {
+	if len(b) > max {
+		b = b[:max]
+	}
+	return bytes.IndexByte(b, 0x1b)
 }
