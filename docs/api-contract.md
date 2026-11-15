@@ -189,9 +189,9 @@ use that only when no sensible options exist). Always 200 for generation problem
   shown at once for a free-text-only question). Loading: `reply-qa-loading`.
 - Send: the answered questions become one line each, `Q: <question> → A: <answers>` (multi: the picked labels in option
   order, then the Other text, joined by ", "; unanswered questions are left out), then a blank line and the text typed in the
-  reply box. While anything is answered, a preview (`reply-qa-preview`, "Added to your reply when you send:") shows exactly
-  that block, and Send is enabled even with an empty reply box. Nothing answered: the reply is sent unchanged. A reply that
-  is a `!command` is sent alone (the preview says the answers are not added). After a successful send the answers are cleared.
+  reply box. There is no preview of that block: the picked chips stay marked, and while anything is answered Send is
+  enabled even with an empty reply box. Nothing answered: the reply is sent unchanged. A reply that is a `!command` is sent
+  alone (the answers are not added). After a successful send the answers are cleared.
 - Generator (always on the minbox server machine, also for remote hosts): the agent is chosen as in "Coding agents" >
   "Helper runs" (Pi: `pi --print …`, see docs/agents.md; the rest of this bullet describes Claude's). The executable is `MINBOX_SUGGEST_COMMAND`
   (a Claude-format helper; split on spaces; tests) or else the first word of `--claude` only, so the person's own flags (--model...) are not

@@ -6,7 +6,7 @@ import { cx } from './ui'
 
 // Reply help: questions for the person (drafted by the helper agent, GET /api/threads/{id}/suggestions)
 // that help them decide how to answer the agent's latest message. Picked options and "Other" text are
-// put into the reply when it is sent (composeReplyHelp); a preview under the questions shows that text.
+// put into the reply when it is sent (composeReplyHelp).
 
 /** One question's answer: the picked option labels, and the "Other" free text (other: chosen). */
 export type ReplyHelpAnswer = { picked: string[]; other: boolean; text: string }
@@ -109,15 +109,12 @@ export function ReplyHelpPanel({
   help,
   threadId,
   phone,
-  command,
   onEditCommand,
   onSubmit,
 }: {
   help: ReplyHelpHandle
   threadId: string
   phone?: boolean
-  /** The person typed a "!command": answers are not added to it. */
-  command: boolean
   onEditCommand: (text: string) => void
   /** ⌘↵ in an answer field: send the reply. */
   onSubmit: () => void
@@ -214,12 +211,6 @@ export function ReplyHelpPanel({
               {qs.map((q, i) => (
                 <HelpQuestion key={i} q={q} index={i} a={s.answers[i] ?? NONE} phone={phone} onChange={(a) => help.setAnswer(i, a)} onSubmit={onSubmit} />
               ))}
-            </div>
-          )}
-          {help.text && (
-            <div data-testid="reply-qa-preview" className="flex flex-col gap-0.5 border-t border-line pt-1.5">
-              <span className="text-[11px] text-subtle">{command ? 'Not added to a command; send the command on its own' : 'Added to your reply when you send:'}</span>
-              <pre className={cx('m-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[12px]', command ? 'text-faint line-through' : 'text-fg2')}>{help.text}</pre>
             </div>
           )}
         </div>

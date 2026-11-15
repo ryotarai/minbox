@@ -1314,7 +1314,6 @@ function ReplyBox({
       help={help}
       threadId={thread.id}
       phone={phone}
-      command={!!cmd}
       onSubmit={() => void send()}
       onEditCommand={(text) => {
         updateReplyDraft(thread.id, (d) => ({ ...d, words: text }))
