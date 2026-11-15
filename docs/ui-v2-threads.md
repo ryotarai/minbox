@@ -169,6 +169,9 @@ the session filter popover, Cmd+K > a session, the project's main session.
 - `+ New session...` opens the existing NewSession dialog. On creation the composer targets the new session
   and, if text was already typed, **sends it there right away** as the first thread (selecting it). Otherwise
   the terminal shows the new session and the box waits.
+- This box is the only place a new thread is written (there is no separate New message screen, and so no
+  New message drafts in Drafts). ⌘K **New thread** (`new-thread`) aims it at the current session and focuses
+  it; on the phone (and the tablet's terminal view) it first goes back to the thread list.
 - The thread view's reply box uses the same bottom row (clip, full height, hint such as `Draft saved`, Send at the right); it has no Cancel or New message button.
 - On the phone the reply box is one compact row (44 px when empty, growing with the text up to 160 px): a round `+`
   button (`reply-actions`) on the left, the text box, and a round Send button on the right (disabled look when empty;
