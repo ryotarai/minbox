@@ -712,8 +712,12 @@ export type LinearEvent = {
   created_at: string
 }
 
-/** Drafted replies for a thread (the server caches them per last message). */
-export type SuggestResult = { suggestions: string[]; reason?: 'disabled' | 'not_needed' | 'no_agent'; error?: string }
+/** A question for the person that helps them reply to the agent (drafted by the helper agent). Every
+ *  question also takes a free-text "Other" answer; no options means free text only. */
+export type ReplyQuestion = { question: string; kind: 'single' | 'multi'; options: { label: string; description?: string }[] }
+/** Reply help for a thread (the server caches it per last message): questions to answer, and a
+ *  `!command` the agent was denied that the person may run themselves. */
+export type SuggestResult = { questions: ReplyQuestion[]; command?: string; reason?: 'disabled' | 'not_needed' | 'no_agent'; error?: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',

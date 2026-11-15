@@ -21,48 +21,83 @@ import (
 	"github.com/ryotarai/minbox/internal/store"
 )
 
-// Reply suggestions: up to three short replies the person could send next, drafted by Haiku.
-// See docs/api-contract.md ("Reply suggestions").
+// Reply questions ("reply suggestions"): a few questions for the person, each with options to pick,
+// that help them decide how to answer the agent's latest message. The person's answers are put into
+// the reply by the web UI. Drafted by Haiku (or the helper agent). See docs/api-contract.md
+// ("Reply suggestions").
 
 const (
-	suggestMax        = 3
-	suggestMaxLen     = 200  // runes per suggestion
-	suggestMsgCount   = 12   // messages of the thread in the prompt
-	suggestMsgLen     = 1500 // runes per message
-	suggestRunTimeout = 45 * time.Second
-	suggestWait       = 50 * time.Second // how long the endpoint waits for a run
-	suggestCacheSize  = 200
-	suggestCacheTTL   = time.Hour
-	suggestParallel   = 2
+	suggestMaxQuestions = 8
+	suggestMaxOptions   = 5
+	suggestMaxLen       = 200  // runes per question text and per command
+	suggestLabelLen     = 80   // runes per option label
+	suggestDescLen      = 160  // runes per option description
+	suggestMsgCount     = 12   // messages of the thread in the prompt
+	suggestMsgLen       = 1500 // runes per message
+	suggestRunTimeout   = 45 * time.Second
+	suggestWait         = 50 * time.Second // how long the endpoint waits for a run
+	suggestCacheSize    = 200
+	suggestCacheTTL     = time.Hour
+	suggestParallel     = 2
 )
 
-const suggestSystemPrompt = "You draft replies. Output only JSON matching the schema."
+const suggestSystemPrompt = "You write short multiple-choice questions that help a person decide how to reply to their coding agent. Output only JSON matching the schema."
 
-const suggestSchema = `{"type":"object","properties":{"suggestions":{"type":"array","minItems":0,"maxItems":3,"items":{"type":"string","maxLength":200}}},"required":["suggestions"],"additionalProperties":false}`
+const suggestSchema = `{"type":"object","properties":{` +
+	`"questions":{"type":"array","minItems":0,"maxItems":8,"items":{"type":"object","properties":{` +
+	`"question":{"type":"string","maxLength":200},` +
+	`"kind":{"type":"string","enum":["single","multi"]},` +
+	`"options":{"type":"array","minItems":0,"maxItems":5,"items":{"type":"object","properties":{` +
+	`"label":{"type":"string","maxLength":80},"description":{"type":"string","maxLength":160}},` +
+	`"required":["label"],"additionalProperties":false}}},` +
+	`"required":["question","kind","options"],"additionalProperties":false}},` +
+	`"command":{"type":"string","maxLength":200}},` +
+	`"required":["questions"],"additionalProperties":false}`
+
+// ReplyOption is one answer the person can pick.
+type ReplyOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// ReplyQuestion is one question for the person: single (one answer) or multi (any number). Every
+// question also takes a free-text answer in the UI; no options means free text only.
+type ReplyQuestion struct {
+	Question string        `json:"question"`
+	Kind     string        `json:"kind"` // single | multi
+	Options  []ReplyOption `json:"options"`
+}
+
+// replyHelp is one helper run's result (what is cached).
+type replyHelp struct {
+	Questions []ReplyQuestion
+	Command   string // "!command" the person may run themselves, or ""
+}
 
 // SuggestResult is the endpoint's answer.
 type SuggestResult struct {
-	Suggestions []string `json:"suggestions"`
-	Reason      string   `json:"reason,omitempty"` // not_needed | disabled | no_agent (no coding agent is installed)
-	Error       string   `json:"error,omitempty"`
+	Questions []ReplyQuestion `json:"questions"`
+	Command   string          `json:"command,omitempty"` // "!command": a command the agent was denied, to run yourself
+	Reason    string          `json:"reason,omitempty"`  // not_needed | disabled | no_agent (no coding agent is installed)
+	Error     string          `json:"error,omitempty"`
 }
 
 type suggestEntry struct {
 	key     string
-	res     []string
+	res     replyHelp
 	expires time.Time
 }
 
 type suggestCall struct {
 	done chan struct{}
-	res  []string
+	res  replyHelp
 	err  error
 }
 
 // suggester runs the generator: cache per (thread, last message), one run per key, two at a time.
 type suggester struct {
-	// run turns a prompt into suggestions. Replaced in tests.
-	run func(ctx context.Context, prompt string) ([]string, error)
+	// run turns a prompt into questions. Replaced in tests.
+	run func(ctx context.Context, prompt string) (replyHelp, error)
 	// timeout bounds one run (including the wait for a free slot).
 	timeout time.Duration
 
@@ -74,28 +109,28 @@ type suggester struct {
 	now      func() time.Time
 }
 
-func newSuggester(run func(ctx context.Context, prompt string) ([]string, error)) *suggester {
+func newSuggester(run func(ctx context.Context, prompt string) (replyHelp, error)) *suggester {
 	return &suggester{run: run, timeout: suggestRunTimeout, cache: map[string]*list.Element{}, order: list.New(), inflight: map[string]*suggestCall{}, sem: make(chan struct{}, suggestParallel), now: time.Now}
 }
 
-func (g *suggester) cached(key string) ([]string, bool) {
+func (g *suggester) cached(key string) (replyHelp, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	el, ok := g.cache[key]
 	if !ok {
-		return nil, false
+		return replyHelp{}, false
 	}
 	e := el.Value.(*suggestEntry)
 	if g.now().After(e.expires) {
 		g.order.Remove(el)
 		delete(g.cache, key)
-		return nil, false
+		return replyHelp{}, false
 	}
 	g.order.MoveToFront(el)
 	return e.res, true
 }
 
-func (g *suggester) put(key string, res []string) {
+func (g *suggester) put(key string, res replyHelp) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if el, ok := g.cache[key]; ok {
@@ -109,9 +144,9 @@ func (g *suggester) put(key string, res []string) {
 	}
 }
 
-// get returns the suggestions for key, running the generator once however many callers ask.
+// get returns the questions for key, running the generator once however many callers ask.
 // Errors are not cached. fresh reports that this call started the run that produced the result.
-func (g *suggester) get(ctx context.Context, key, prompt string) (res []string, fresh bool, err error) {
+func (g *suggester) get(ctx context.Context, key, prompt string) (res replyHelp, fresh bool, err error) {
 	if r, ok := g.cached(key); ok {
 		return r, false, nil
 	}
@@ -132,7 +167,7 @@ func (g *suggester) get(ctx context.Context, key, prompt string) (res []string, 
 				c.err = errors.New("timed out waiting for a free slot")
 			}
 			if c.err == nil && rctx.Err() != nil {
-				c.res, c.err = nil, errors.New("the coding agent took too long")
+				c.res, c.err = replyHelp{}, errors.New("the coding agent took too long")
 			}
 			if c.err == nil {
 				g.put(key, c.res)
@@ -148,7 +183,7 @@ func (g *suggester) get(ctx context.Context, key, prompt string) (res []string, 
 	case <-c.done:
 		return c.res, !joined, c.err
 	case <-ctx.Done():
-		return nil, false, ctx.Err()
+		return replyHelp{}, false, ctx.Err()
 	}
 }
 
@@ -195,14 +230,18 @@ func buildSuggestPrompt(th *store.Thread) string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("Task: propose up to 3 distinct, short, ready-to-send replies the PERSON could send next. " +
-		"Write in the language the PERSON used above (if they wrote nothing, the agent's language). " +
-		"Each under 200 characters, in the person's voice, no explanations or labels. " +
-		"If the agent asked a question with options, propose the sensible answers. " +
-		"If the agent reports completion, propose short follow-ups that move the work forward (a concrete next step, a request for detail or a check). " +
-		"If the agent's last message says a command it wanted to run was denied or rejected and quotes that command, make one suggestion exactly '!' followed by that command (the person can then run it themselves; a message starting with '!' runs as a shell command). " +
-		"Never propose thanks, praise, greetings, acknowledgements or other replies that add no instruction or information (no 'thank you', 'great', 'OK', 'got it'); " +
-		"if nothing useful can be proposed, return fewer suggestions.\n")
+	b.WriteString("Task: the PERSON is about to reply to the AGENT's last message. Write the questions the PERSON should answer to decide that reply; " +
+		"their answers will be sent to the agent as the reply. " +
+		"Ask as many questions as the message needs: usually 1 to 4, more only when it really raises more separate decisions, none when there is nothing to decide. " +
+		"Each question is short and concrete, with kind \"single\" (exactly one answer fits) or \"multi\" (several answers can apply together), " +
+		"and 2 to 5 options: short labels (a few words) of the likely answers, each with an optional one-line description. " +
+		"Strongly prefer options; leave options empty only when no sensible options exist (the person can always type their own answer, so do not add an \"Other\" option). " +
+		"Write questions and options in the language the PERSON used above (if they wrote nothing, the agent's language). " +
+		"If the agent asked a question with options, ask it with those options. " +
+		"If the agent reports completion, ask about the next step (a concrete follow-up, a check, a detail to request). " +
+		"Never ask about thanks, praise, greetings or acknowledgements, and do not ask what the agent already knows. " +
+		"If the agent's last message says a command it wanted to run was denied or rejected and quotes that command, set command to exactly that command " +
+		"(the person can then run it themselves); otherwise leave command out.\n")
 	return b.String()
 }
 
@@ -214,44 +253,63 @@ var inlineCodeRe = regexp.MustCompile("`([^`\\n]{2,})`")
 
 // deniedCommandSuggestion: the command the agent's message says was denied, as "!command" for the
 // composer, or "". It needs a denial word and one quoted command (the first one-line code block, else
-// the first inline code span); a command that does not fit in a suggestion is not offered cut.
+// the first inline code span); a command that does not fit is not offered cut.
 func deniedCommandSuggestion(body string) string {
 	if !deniedRe.MatchString(body) {
 		return ""
 	}
 	cmd := ""
 	if m := fencedRe.FindStringSubmatch(body); m != nil {
-		cmd = strings.TrimSpace(m[1])
-		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+		cmd = m[1]
 	} else if m := inlineCodeRe.FindStringSubmatch(body); m != nil {
-		cmd = strings.TrimSpace(m[1])
-		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+		cmd = m[1]
 	}
+	return bangCommand(cmd)
+}
+
+// bangCommand: "!command" for a single-line command (a leading "$ " or "!" dropped), or "" when it is
+// empty, spans lines or does not fit in suggestMaxLen.
+func bangCommand(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "!"))
+	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
 	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || utf8.RuneCountInString(cmd)+1 > suggestMaxLen {
 		return ""
 	}
 	return "!" + cmd
 }
 
-// withDeniedCommand puts the denied command first, drops duplicates and keeps at most suggestMax.
-func withDeniedCommand(denied string, rest []string) []string {
-	out := []string{denied}
-	for _, s := range rest {
-		if strings.EqualFold(strings.TrimSpace(s), denied) {
+// withDeniedCommand makes denied the command of the result and drops options that only repeat it
+// (and questions left without options by that).
+func withDeniedCommand(denied string, h replyHelp) replyHelp {
+	out := replyHelp{Command: denied, Questions: []ReplyQuestion{}}
+	same := func(s string) bool {
+		s = strings.TrimSpace(s)
+		return strings.EqualFold(s, denied) || strings.EqualFold("!"+s, denied)
+	}
+	for _, q := range h.Questions {
+		had := len(q.Options) > 0
+		opts := []ReplyOption{}
+		for _, o := range q.Options {
+			if !same(o.Label) {
+				opts = append(opts, o)
+			}
+		}
+		if had && len(opts) == 0 {
 			continue
 		}
-		if len(out) < suggestMax {
-			out = append(out, s)
-		}
+		q.Options = opts
+		out.Questions = append(out.Questions, q)
 	}
 	return out
 }
 
 // ---- result parsing ----
 
-// parseSuggestions reads claude's `--output-format json` envelope: structured_output.suggestions,
-// else the `result` string parsed as the same JSON. Trims, dedupes, drops empties, caps count and length.
-func parseSuggestions(out []byte) ([]string, error) {
+// parseSuggestions reads claude's `--output-format json` envelope: structured_output, else the
+// `result` string parsed as the same JSON. Questions and options are trimmed, deduped
+// (case-insensitive), emptied ones dropped, counts and lengths capped. No questions is a valid answer.
+func parseSuggestions(out []byte) (replyHelp, error) {
 	var env struct {
 		IsError          bool            `json:"is_error"`
 		Subtype          string          `json:"subtype"`
@@ -259,40 +317,71 @@ func parseSuggestions(out []byte) ([]string, error) {
 		StructuredOutput json.RawMessage `json:"structured_output"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(out), &env); err != nil {
-		return nil, errors.New("claude printed no JSON")
+		return replyHelp{}, errors.New("claude printed no JSON")
 	}
 	if env.IsError {
-		return nil, errors.New("claude reported an error: " + truncRunes(firstNonEmpty(env.Result, env.Subtype), 120))
+		return replyHelp{}, errors.New("claude reported an error: " + truncRunes(firstNonEmpty(env.Result, env.Subtype), 120))
 	}
 	var body struct {
-		Suggestions []any `json:"suggestions"`
+		Questions []json.RawMessage `json:"questions"`
+		Command   any               `json:"command"`
 	}
 	raw := []byte(env.StructuredOutput)
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = []byte(env.Result)
 	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return nil, errors.New("claude's answer was not the expected JSON")
+	if err := json.Unmarshal(raw, &body); err != nil || body.Questions == nil {
+		return replyHelp{}, errors.New("claude's answer was not the expected JSON")
 	}
-	var res []string
-	seen := map[string]bool{}
-	for _, v := range body.Suggestions {
-		s, ok := v.(string)
-		if !ok {
+	res := replyHelp{Questions: []ReplyQuestion{}}
+	if c, ok := body.Command.(string); ok {
+		res.Command = bangCommand(c)
+	}
+	seenQ := map[string]bool{}
+	for _, rq := range body.Questions {
+		var q struct {
+			Question string            `json:"question"`
+			Kind     string            `json:"kind"`
+			Options  []json.RawMessage `json:"options"`
+		}
+		if json.Unmarshal(rq, &q) != nil {
 			continue
 		}
-		s = strings.TrimSpace(s)
-		if s == "" || seen[strings.ToLower(s)] {
+		text := strings.TrimSpace(q.Question)
+		if text == "" || seenQ[strings.ToLower(text)] {
 			continue
 		}
-		seen[strings.ToLower(s)] = true
-		res = append(res, truncRunes(s, suggestMaxLen))
-		if len(res) == suggestMax {
+		seenQ[strings.ToLower(text)] = true
+		kind := "single"
+		if strings.EqualFold(strings.TrimSpace(q.Kind), "multi") {
+			kind = "multi"
+		}
+		opts := []ReplyOption{}
+		seenO := map[string]bool{}
+		for _, ro := range q.Options {
+			var o ReplyOption
+			var label string
+			if json.Unmarshal(ro, &label) == nil { // a bare string is a label
+				o.Label = label
+			} else if json.Unmarshal(ro, &o) != nil {
+				continue
+			}
+			o.Label = strings.TrimSpace(o.Label)
+			o.Description = truncRunes(strings.TrimSpace(o.Description), suggestDescLen)
+			if o.Label == "" || seenO[strings.ToLower(o.Label)] {
+				continue
+			}
+			seenO[strings.ToLower(o.Label)] = true
+			o.Label = truncRunes(o.Label, suggestLabelLen)
+			opts = append(opts, o)
+			if len(opts) == suggestMaxOptions {
+				break
+			}
+		}
+		res.Questions = append(res.Questions, ReplyQuestion{Question: truncRunes(text, suggestMaxLen), Kind: kind, Options: opts})
+		if len(res.Questions) == suggestMaxQuestions {
 			break
 		}
-	}
-	if len(res) == 0 {
-		return nil, errors.New("claude returned no suggestions")
 	}
 	return res, nil
 }
@@ -319,11 +408,11 @@ func (s *Server) claudeArgv(model, system, schema string) []string {
 	return agent.Must(agent.Claude).Headless(agent.HeadlessSpec{Command: s.claudeBase(), Model: model, System: system, Schema: schema}).Argv
 }
 
-// runSuggest runs the helper agent for reply suggestions, the prompt on stdin.
-func (s *Server) runSuggest(ctx context.Context, prompt string) ([]string, error) {
+// runSuggest runs the helper agent for the reply questions, the prompt on stdin.
+func (s *Server) runSuggest(ctx context.Context, prompt string) (replyHelp, error) {
 	out, err := s.runHelper(ctx, "haiku", suggestSystemPrompt, suggestSchema, prompt)
 	if err != nil {
-		return nil, err
+		return replyHelp{}, err
 	}
 	return parseSuggestions(out)
 }
@@ -441,8 +530,8 @@ func runHelperEnv(ctx context.Context, name string, argv, env []string, prompt s
 // GET /api/threads/{id}/suggestions
 func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	empty := func(res SuggestResult) {
-		if res.Suggestions == nil {
-			res.Suggestions = []string{}
+		if res.Questions == nil {
+			res.Questions = []ReplyQuestion{}
 		}
 		writeJSON(w, 200, res)
 	}
@@ -471,10 +560,9 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
 	// A command the person denied the agent: offered as "!command" without asking the helper.
-	denied := deniedCommandSuggestion(th.Messages[n-1].Body)
-	if denied != "" {
+	if denied := deniedCommandSuggestion(th.Messages[n-1].Body); denied != "" {
 		if err != nil {
-			res, err = nil, nil
+			res, err = replyHelp{}, nil
 		}
 		res = withDeniedCommand(denied, res)
 	}
@@ -490,5 +578,5 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	if fresh {
 		s.hub.publish(Event{Type: "suggestions", SessionID: th.SessionID, ThreadID: id})
 	}
-	empty(SuggestResult{Suggestions: res})
+	empty(SuggestResult{Questions: res.Questions, Command: res.Command})
 }

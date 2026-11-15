@@ -50,9 +50,9 @@ If you want it to react at once, add a message after the command.
 ## Denied commands
 
 When the agent wanted to run a command and you denied it, its message in the thread says so and quotes the command.
-The reply suggestions then offer `!<command>` first, so one click (the pencil edits it first) runs it yourself. The server
-finds it deterministically (a denial word plus one single-line quoted command, at most 199 characters) and also asks the
-helper to do the same; see "Reply suggestions" in [api-contract.md](api-contract.md). minbox has no hook for the agent's permission prompts,
+Above the reply box (with the reply questions) a chip then offers `!<command>`, so one click (the pencil edits it first)
+runs it yourself. The server finds it deterministically (a denial word plus one single-line quoted command, at most 199
+characters) and also asks the helper to name it; see "Reply suggestions" in [api-contract.md](api-contract.md). minbox has no hook for the agent's permission prompts,
 so this relies on the agent saying it in its message.
 
 ## Safety

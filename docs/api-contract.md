@@ -133,7 +133,7 @@ Settings (one JSON object; PUT merges top-level keys):
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   board: bool, decision_mode: bool, prompt_extra: string,
-  reply_suggestions: bool,     (default true; see "Reply suggestions")
+  reply_suggestions: bool,     (default true; the reply questions, see "Reply suggestions")
   default_agent: ""|"claude"|"pi"|"opencode",  (default ""; the agent of a new session when neither the request nor the project says;
                                 "" = Claude Code if installed, else the installed one; see "Coding agents")
   orchestrator_prompt: bool,   (default true; when on, spawn/resume appends the "# minbox: orchestration"
@@ -158,21 +158,40 @@ over 4000 characters, a session on another host, and `!cmd` as the body of a new
 
 ## Reply suggestions
 
-`GET /api/threads/{id}/suggestions` -> `{suggestions: string[0..3], reason?: "disabled"|"not_needed"|"no_agent", error?: string}`.
-Always 200 for generation problems (error = short reason, suggestions empty); 404 for an unknown thread.
+"Help me reply": when the agent spoke last, the helper drafts **questions for the person** (with options to pick) that
+help them decide how to reply; the person's answers are put into their reply when they press Send.
+
+`GET /api/threads/{id}/suggestions` -> `{questions: ReplyQuestion[0..8], command?: "!<cmd>", reason?: "disabled"|"not_needed"|"no_agent", error?: string}`
+with `ReplyQuestion = {question: string, kind: "single"|"multi", options: {label: string, description?: string}[0..5]}`.
+Every question also takes a free-text "Other" answer in the UI; `options: []` means free text only (the helper is told to
+use that only when no sensible options exist). Always 200 for generation problems (error = short reason, questions empty);
+404 for an unknown thread. No questions and no command is a valid (cached) answer: nothing to ask.
 
 - `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent.
-  `no_agent`: no coding agent (claude or pi) is installed to run the helper (feature off, not an error).
-- Otherwise the request blocks (up to 50 s) for one claude run and returns it. Results are cached in memory per
+  `no_agent`: no coding agent (claude, pi or opencode) is installed to run the helper (feature off, not an error).
+- Otherwise the request blocks (up to 50 s) for one helper run and returns it. Results are cached in memory per
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
   (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
   Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
-- Denied commands: when the agent's last message has a denial word (denied, rejected, declined, refused, not allowed, ... or Japanese
-  equivalents) and quotes one single-line command (first fenced block, else first inline code, at most 199 characters), the first
-  suggestion is `!<command>` (a "Thread commands" run), put there by the server without the helper; it is still offered when the
-  helper fails. The helper prompt also asks for it.
-- The UI (ThreadView) requests it when a thread opens or its last message changes and the reply box is empty and no
-  question is open; it shows up to 3 chips (`reply-suggestions` / `reply-suggestion`). Click sends, the pencil edits.
+- `command` (denied commands): when the agent's last message has a denial word (denied, rejected, declined, refused, not allowed, ...
+  or Japanese equivalents) and quotes one single-line command (first fenced block, else first inline code, at most 199 characters),
+  `command` is `!<command>` (a "Thread commands" run), set by the server without the helper; it is still offered when the
+  helper fails, and options that only repeat it are dropped. Otherwise the helper's own `command` field (asked for the same case;
+  single line, `$ `/`!` prefix dropped) is passed on.
+- The UI (ThreadView, `ReplyHelp.tsx`) requests it when the agent's message is the last one, no question of the agent is
+  open and the session has not ended; the result and the person's answers are kept in memory per (thread, last message).
+  Above the reply box (desktop and phone) it shows: the command as a one-tap chip (`reply-command`: sends `!<cmd>` at once;
+  the pencil `reply-command-edit` puts it in the reply box), then a collapsible, dismissible panel (`reply-qa`,
+  `reply-qa-toggle` with `aria-expanded`, the collapsed state remembered in localStorage `minbox.replyHelp.collapsed`;
+  `reply-qa-dismiss` drops it and its answers for this message). Each question (`reply-q`, `data-kind`) has option chips
+  (`reply-q-option`; `role=radio` in a `radiogroup` with arrow-key roving for single, `role=checkbox` for multi; a second
+  click on a picked radio unpicks it) and an "Other…" chip (`reply-q-other`) that opens a text field (`reply-q-other-input`;
+  shown at once for a free-text-only question). Loading: `reply-qa-loading`.
+- Send: the answered questions become one line each, `Q: <question> → A: <answers>` (multi: the picked labels in option
+  order, then the Other text, joined by ", "; unanswered questions are left out), then a blank line and the text typed in the
+  reply box. While anything is answered, a preview (`reply-qa-preview`, "Added to your reply when you send:") shows exactly
+  that block, and Send is enabled even with an empty reply box. Nothing answered: the reply is sent unchanged. A reply that
+  is a `!command` is sent alone (the preview says the answers are not added). After a successful send the answers are cleared.
 - Generator (always on the minbox server machine, also for remote hosts): the agent is chosen as in "Coding agents" >
   "Helper runs" (Pi: `pi --print …`, see docs/agents.md; the rest of this bullet describes Claude's). The executable is `MINBOX_SUGGEST_COMMAND`
   (a Claude-format helper; split on spaces; tests) or else the first word of `--claude` only, so the person's own flags (--model...) are not
@@ -181,12 +200,17 @@ Always 200 for generation problems (error = short reason, suggestions empty); 40
   --setting-sources "" --strict-mcp-config --disable-slash-commands --output-format json --json-schema '<schema>'`.
   `--system-prompt` replaces the default prompt; `--tools ""` disables all tools; `--setting-sources ""` loads no
   settings/CLAUDE.md; `--bare` is not used (it needs an ANTHROPIC_API_KEY, not the person's login). Verified with
-  claude 2.1.318. Schema: `{suggestions: string[1..3] (each <=200 chars)}`.
+  claude 2.1.318. Schema (`suggestSchema`): `{questions: [{question (<=200), kind: "single"|"multi", options: [{label (<=80),
+  description? (<=160)}] (0..5)}] (0..8), command?: string (<=200)}`.
 - Envelope (`--output-format json`): one object `{"type":"result","subtype":"success","is_error":false,"result":"<the JSON as text>",
-  "structured_output":{"suggestions":[...]}, ...}`; we read `structured_output`, else parse `result`.
+  "structured_output":{"questions":[...]}, ...}`; we read `structured_output`, else parse `result`.
 - Prompt: last 12 messages (each cut at 1,500 chars, PERSON/AGENT), the open questions and options of a final agent
-  message, then the instruction (<=3 distinct short replies in the person's language, each <200 chars).
-  Result parsing trims, dedupes (case-insensitive), drops empties, caps 3 and 200 chars.
+  message, then the instruction: the questions the person should answer to decide their reply, as many as needed (usually
+  1–4, more only when warranted, none when nothing is to be decided), single or multi, 2–5 short options with an optional
+  one-line description, options strongly preferred over free text, no "Other" option (the UI adds it), in the language the
+  person writes in (else the agent's), nothing about thanks or greetings, and the denied command in `command`.
+  Result parsing is lenient: questions and options are trimmed and deduped (case-insensitive), empty or malformed entries
+  dropped, an unknown kind read as single, a bare string option read as its label; caps 8 questions, 5 options, 200/80/160 chars.
 - Privacy/cost: the thread's recent text goes to Anthropic through claude (Haiku, low effort), once per agent message
   opened. Turn it off with the setting.
 

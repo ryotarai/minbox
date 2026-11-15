@@ -194,7 +194,7 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   test.skip(process.env.SCREENSHOTS !== '1', 'set SCREENSHOTS=1')
   test.setTimeout(300_000)
   mkdirSync(OUT, { recursive: true })
-  writeFileSync(SUGGESTIONS, JSON.stringify(['Go with SQLite for now', 'Postgres: we already run it', 'How would we migrate later?']))
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the job queue?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'we already run it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'A later migration' }, { label: 'Backups' }] }]))
   const specDir = join(minbox.dataDir, 'spec')
   mkdirSync(specDir, { recursive: true })
   const dirOf = (p: string) => {
@@ -282,17 +282,17 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   await shot('palette')
   await page.keyboard.press('Escape')
 
-  // Tablet: the list beside a finished thread, with reply suggestions.
-  writeFileSync(SUGGESTIONS, JSON.stringify(['Looks good, open a PR', 'Add a test for the 60 s cap', 'Does this also cover the websocket route?']))
+  // Tablet: the list beside a finished thread, with the reply questions.
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'What next?', kind: 'single', options: [{ label: 'Open a PR' }, { label: 'Add a test for the 60 s cap' }] }, { question: 'Also cover?', kind: 'multi', options: [{ label: 'The websocket route' }, { label: 'Uploads' }] }]))
   await page.setViewportSize({ width: 834, height: 1112 })
   await page.goto(minbox.url + '/#')
   await expect(page.getByTestId('tablet')).toBeVisible()
   await page.getByTestId('thread-row').filter({ hasText: 'Retry-After' }).click()
-  await expect(page.getByTestId('reply-suggestion')).toHaveCount(3)
+  await expect(page.getByTestId('reply-q')).toHaveCount(2)
   await shot('tablet')
 
   // Phone: three screens, composed into one image.
-  writeFileSync(SUGGESTIONS, JSON.stringify(['Go with SQLite for now', 'Postgres: we already run it', 'How would we migrate later?']))
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the job queue?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'we already run it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'A later migration' }, { label: 'Backups' }] }]))
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark', hasTouch: true, isMobile: true })
   const ph = await ctx.newPage()
   await ph.goto(minbox.url + '/#')

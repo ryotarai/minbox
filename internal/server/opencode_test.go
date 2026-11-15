@@ -37,7 +37,7 @@ run)
   /bin/cat > $S/stdin
   printf '%s' "$OPENCODE_CONFIG_CONTENT" > $S/helper-config
   echo '{"type":"step_start","sessionID":"ses_e285a65dfffeYCrRv3lSUZCvnI","part":{"type":"step-start"}}'
-  echo '{"type":"text","sessionID":"ses_e285a65dfffeYCrRv3lSUZCvnI","part":{"type":"text","text":"{\"suggestions\":[\"Ship it\"]}"}}'
+  echo '{"type":"text","sessionID":"ses_e285a65dfffeYCrRv3lSUZCvnI","part":{"type":"text","text":"{\"questions\":[{\"question\":\"Ship it\",\"kind\":\"single\",\"options\":[]}]}"}}'
   exit 0;;
 session) echo "$@" >> $S/deleted; exit 0;;
 esac
@@ -200,7 +200,7 @@ func TestHelpersRunOpenCodeOnlyAsTheLastResort(t *testing.T) {
 	e := newEnv(t)
 	_, state := withOpenCode(e, "opencode v2.1.4")
 	got, err := e.srv.runSuggest(context.Background(), "the conversation")
-	if err != nil || len(got) != 1 || got[0] != "Ship it" {
+	if err != nil || len(got.Questions) != 1 || got.Questions[0].Question != "Ship it" {
 		t.Fatalf("suggestions %v %v", got, err)
 	}
 	if in, _ := os.ReadFile(filepath.Join(state, "stdin")); string(in) != "the conversation" {
@@ -227,9 +227,9 @@ func TestHelpersRunOpenCodeOnlyAsTheLastResort(t *testing.T) {
 	}
 
 	// Pi installed too, OpenCode the default: Pi runs the helper.
-	withPi(e, `/bin/cat >/dev/null; echo '{"suggestions":["from pi"]}'`)
+	withPi(e, `/bin/cat >/dev/null; echo '{"questions":[{"question":"from pi","kind":"single","options":[]}]}'`)
 	_ = e.st.PutSettings(context.Background(), map[string]json.RawMessage{"default_agent": json.RawMessage(`"opencode"`)})
-	if got, err := e.srv.runSuggest(context.Background(), "p"); err != nil || got[0] != "from pi" {
+	if got, err := e.srv.runSuggest(context.Background(), "p"); err != nil || got.Questions[0].Question != "from pi" {
 		t.Fatalf("with pi: %v %v", got, err)
 	}
 	if s := e.createSession(); s.Agent != agent.OpenCode {
