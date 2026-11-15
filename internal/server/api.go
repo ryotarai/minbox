@@ -165,7 +165,16 @@ func (s *Server) bridgeTerminal(w http.ResponseWriter, r *http.Request, sess *st
 		httpError(w, 503, "terminal host is not connected")
 		return
 	}
-	upstream, err := host.Attach(r.Context(), id)
+	// The agent's own terminal (not the companion shell, whose replay is plain output):
+	// the host makes the app repaint for this view, since an agent's TUI draws only what
+	// changed and the replay may not hold the rest of the screen.
+	attach := host.Attach
+	if rp, ok := hc.(interface {
+		AttachRepaint(ctx context.Context, id string) (*websocket.Conn, error)
+	}); ok && id == sess.ID {
+		attach = rp.AttachRepaint
+	}
+	upstream, err := attach(r.Context(), id)
 	if err != nil {
 		httpError(w, 502, err.Error())
 		return
