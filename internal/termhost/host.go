@@ -66,6 +66,11 @@ type VersionInfo struct {
 	Hostname string `json:"hostname,omitempty"`
 	// Tailscale: it is reached through tailscale serve.
 	Tailscale bool `json:"tailscale"`
+	// StartedAt: when the host process started; Binary: BinaryID of the executable it
+	// runs (so the server can tell a host left running from an older build). Both
+	// empty from an older host.
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	Binary    string     `json:"binary,omitempty"`
 }
 
 // Placeholders the server puts in a remote host's spawn requests; the host
@@ -398,6 +403,9 @@ type Host struct {
 	PluginDir      string
 	ServerFile     string
 	Version        string
+	// StartedAt and Binary are what /version reports (see VersionInfo).
+	StartedAt time.Time
+	Binary    string
 	// The host's own Pi extension files (minbox.ts, subagent.ts) and OpenCode plugin folder.
 	PiExtension    string
 	PiSubagent     string
@@ -412,6 +420,7 @@ func New() *Host {
 		relay:          newRelayHub(),
 		Protocol:       ProtocolVersion,
 		RequiredServer: RequiredServerVersion,
+		StartedAt:      time.Now(),
 	}
 }
 
@@ -572,7 +581,11 @@ func (h *Host) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		v := VersionInfo{Protocol: h.Protocol, RequiredServerVersion: h.RequiredServer, PID: os.Getpid(),
-			Version: h.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Remote: h.FS != nil, Tailscale: h.TailscaleLogin != ""}
+			Version: h.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Remote: h.FS != nil, Tailscale: h.TailscaleLogin != "", Binary: h.Binary}
+		if !h.StartedAt.IsZero() {
+			t := h.StartedAt
+			v.StartedAt = &t
+		}
 		if h.FS != nil {
 			v.Hostname, _ = os.Hostname()
 			v.PID = 0 // not another machine's business
@@ -853,7 +866,8 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 }
 
 // Serve runs the host on a Unix socket until it is shut down or ctx ends.
-func Serve(ctx context.Context, socketPath string) error {
+// version is the minbox build it reports on /version.
+func Serve(ctx context.Context, socketPath, version string) error {
 	// A live host already owns the socket: refuse to replace it.
 	if c, err := net.DialTimeout("unix", socketPath, time.Second); err == nil {
 		c.Close()
@@ -866,6 +880,7 @@ func Serve(ctx context.Context, socketPath string) error {
 	}
 	_ = os.Chmod(socketPath, 0o600)
 	h := New()
+	h.Version, h.Binary = version, BinaryID()
 	srv := &http.Server{Handler: h.Handler()}
 	ctx, cancel := context.WithCancel(ctx)
 	h.shutdown = cancel
@@ -924,7 +939,7 @@ func ServeRemote(ctx context.Context, o RemoteOptions) error {
 	h.DataDir = o.DataDir
 	h.TailscaleLogin = o.TailscaleLogin
 	h.FS = hostfs.NewLocal(o.DataDir)
-	h.PluginDir, h.ServerFile, h.Version = o.PluginDir, o.ServerFile, o.Version
+	h.PluginDir, h.ServerFile, h.Version, h.Binary = o.PluginDir, o.ServerFile, o.Version, BinaryID()
 	h.PiExtension, h.PiSubagent, h.OpenCodePlugin = o.PiExtension, o.PiSubagent, o.OpenCodePlugin
 	srv := &http.Server{Handler: h.Handler()}
 	ctx, cancel := context.WithCancel(ctx)

@@ -66,12 +66,18 @@ func realRestartDeps() restartDeps {
 			}
 			return n, true
 		},
-		stopServer: stopServer,
-		stopHost: func(dataDir string) (int, bool, error) {
-			return termhost.Stop(context.Background(), socketPath(dataDir), server.ProtocolVersion, log.Printf)
-		},
+		stopServer:  stopServer,
+		stopHost:    stopLocalHost,
 		startServer: startCmd,
 	}
+}
+
+// stopLocalHost stops the terminal host of dataDir (`minbox host stop`,
+// `minbox restart --host`). The server's Settings › Hosts › Restart host
+// stops it with the same termhost.Stop, then lets its connection loop start
+// the new one (termhost.Ensure), as the server `minbox restart` starts does.
+func stopLocalHost(dataDir string) (int, bool, error) {
+	return termhost.Stop(context.Background(), socketPath(dataDir), server.ProtocolVersion, log.Printf)
 }
 
 // restartCmd stops the server and starts it again: with the flags given, or

@@ -553,6 +553,7 @@ POST   /api/hosts/{id}/repair          → {code}   pair again (new code)
 PATCH  /api/hosts/{id} {name?, url?}
 DELETE /api/hosts/{id}                 also DELETE /pair/self on the host when reachable; sessions → Ended
 POST   /api/hosts/{id}/retry
+POST   /api/hosts/{id}/restart {resume?: bool} → {old_pid, new_pid, started_at?, sessions: [{id, name, kind, agent?}], resumed}
 ```
 
 For method "tailscale" the url given may be a bare MagicDNS name; the server uses
@@ -1191,3 +1192,27 @@ every other route; the local socket host serves them too but the server does not
   sessions folder of the host's environment).
 
 A Pi or OpenCode session on a host older than protocol 5 is refused at create and at (re)start ("update minbox on that machine").
+
+## Restarting the local terminal host (Settings › Hosts)
+
+`POST /api/hosts/{id}/restart {resume?: bool}` (same guard as every browser route: loopback or a paired device, same
+origin). Only the built-in host (`id` "local"): 400 for a remote host, 404 for an unknown id, 409 while a restart is under
+way (one at a time). It does what `minbox restart --host` does, with the server kept running:
+
+1. the sessions not ended on the local host are listed (the answer's `sessions`);
+2. the server's connection loop is held back (it neither connects nor starts a host), and exits on the current
+   connection stop counting as session ends;
+3. the host is stopped with `termhost.Stop` (as `minbox host stop`: `POST /shutdown`, else SIGTERM; waits for the socket);
+4. `resume:false`: those sessions are marked ended (exit code -1);
+5. the loop goes on: `termhost.Ensure` starts a new host from the server's binary (`minbox host start --socket …`),
+   connects, and `Reconcile` resumes the open sessions (`resume:true`, the default) as after a reboot;
+6. it answers once that reconcile is done (at most 30 s; else 500 with the reason).
+
+SSE `hosts` is published when it starts and ends (host JSON `restarting: true` meanwhile), `sessions` as they change.
+
+Host JSON adds `pid` (the local host's), `started_at` (when the host process started), `version_status`
+(`current` | `outdated` | `unknown`) and `restartable` (the built-in host). The host's `GET /version` adds `started_at` and
+`binary` (`termhost.BinaryID`: the first 16 hex of the SHA-256 of its executable, read at start), both omitted by older hosts.
+The local host is `outdated` when its `binary` differs from the server's own, `unknown` when it does not say; a remote host
+compares its `version` with the server's (`unknown` when either is empty or both are "dev"). The local host's `version` is
+now its own (`minbox host start` reports the build's version), no longer the server's when the host does not say.

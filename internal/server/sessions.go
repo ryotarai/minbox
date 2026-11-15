@@ -52,6 +52,66 @@ type sessionManager struct {
 	// restarting holds sessions being restarted: the exit of their old
 	// terminal is not a close (see Restart).
 	restarting map[string]*restartState
+
+	// The local host's connections, for a restart of the host (hostrestart.go):
+	// localConn counts them; exits on connection localQuiet are not session
+	// ends (the host is being restarted); while localHold is set, Run does not
+	// connect (nor start a host); localReady is closed, and replaced, after each
+	// connection's Reconcile.
+	localConn  int
+	localQuiet int
+	localHold  chan struct{}
+	localReady chan struct{}
+	localDrop  context.CancelFunc // ends the current connection's event stream
+}
+
+// dropLocal ends the local host connection's event stream: Run reconnects.
+func (m *sessionManager) dropLocal() {
+	m.mu.Lock()
+	drop := m.localDrop
+	m.mu.Unlock()
+	if drop != nil {
+		drop()
+	}
+}
+
+// waitLocalHold waits while a host restart holds the connection back.
+func (m *sessionManager) waitLocalHold(ctx context.Context) {
+	m.mu.Lock()
+	hold := m.localHold
+	m.mu.Unlock()
+	if hold == nil {
+		return
+	}
+	select {
+	case <-hold:
+	case <-ctx.Done():
+	}
+}
+
+// localConnected numbers a new connection to the local host.
+func (m *sessionManager) localConnected() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.localConn++
+	return m.localConn
+}
+
+// localReconciled tells a host restart waiting for it that a connection is reconciled.
+func (m *sessionManager) localReconciled() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.localReady != nil {
+		close(m.localReady)
+	}
+	m.localReady = make(chan struct{})
+}
+
+// quietExit: an exit on this connection comes from a host being restarted.
+func (m *sessionManager) quietExit(conn int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return conn != 0 && conn == m.localQuiet
 }
 
 type restartState struct {
@@ -951,13 +1011,19 @@ func (m *sessionManager) reconcileHost(ctx context.Context, hostID string) error
 func (m *sessionManager) Run(ctx context.Context, connect func(context.Context) (*termhost.Client, error), ready chan<- error) {
 	first := true
 	for ctx.Err() == nil {
+		m.waitLocalHold(ctx)
 		client, err := connect(ctx)
+		conn := 0
 		if err == nil {
+			conn = m.localConnected()
 			m.hosts.local().setClient(client, nil)
 			if v, verr := client.Version(ctx); verr == nil {
 				m.hosts.local().setVersion(v, 0)
 			}
 			err = m.Reconcile(ctx)
+			if err == nil {
+				m.localReconciled()
+			}
 		} else {
 			m.hosts.local().setOffline(err)
 		}
@@ -974,11 +1040,21 @@ func (m *sessionManager) Run(ctx context.Context, connect func(context.Context) 
 			}
 			continue
 		}
-		err = client.Events(ctx, func(ev termhost.Event) {
+		// A host restart ends this connection itself (dropLocal) rather than wait
+		// for the old host's event stream to close.
+		ectx, drop := context.WithCancel(ctx)
+		m.mu.Lock()
+		m.localDrop = drop
+		m.mu.Unlock()
+		err = client.Events(ectx, func(ev termhost.Event) {
 			if ev.Type == "exit" {
+				if m.quietExit(conn) {
+					return // the host is being restarted: its sessions resume (or end) with the restart
+				}
 				m.onExit(ctx, ev.ID, ev.ExitCode)
 			}
 		})
+		drop()
 		if ctx.Err() != nil {
 			return
 		}
