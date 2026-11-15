@@ -71,10 +71,12 @@ type issuesState struct {
 	details map[string]detailEntry
 	status  map[string]statusEntry
 	picks   map[string]pickEntry
+	// searches: the link dialog's issue search, per lower-cased query (linearsearch.go).
+	searches map[string]searchEntry
 }
 
 func newIssuesState() issuesState {
-	return issuesState{lists: map[string]*issuesEntry{}, flights: map[string]*issuesFlight{}, details: map[string]detailEntry{}, status: map[string]statusEntry{}, picks: map[string]pickEntry{}}
+	return issuesState{lists: map[string]*issuesEntry{}, flights: map[string]*issuesFlight{}, details: map[string]detailEntry{}, status: map[string]statusEntry{}, picks: map[string]pickEntry{}, searches: map[string]searchEntry{}}
 }
 
 // ---- views ----
@@ -329,6 +331,7 @@ func (l *linearSvc) cachedAssigned(ctx context.Context) (*issuesEntry, error) {
 func (l *linearSvc) forgetLists() {
 	l.iss.mu.Lock()
 	l.iss.lists = map[string]*issuesEntry{}
+	l.iss.searches = map[string]searchEntry{}
 	l.iss.mu.Unlock()
 }
 

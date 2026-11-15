@@ -850,10 +850,11 @@ export async function ensureSession(): Promise<void> {
   await Promise.race([probe, new Promise((r) => setTimeout(r, 6000))])
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const send = () =>
     fetch(path, {
       method,
+      signal,
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
@@ -1008,6 +1009,8 @@ export const api = {
   createLinearIssue: (threadId: string, body: LinearDraft & { submission_id: string }) => call<ThreadLink>('POST', `/api/threads/${threadId}/linear/create`, body),
   issuesList: (opts: { closed?: boolean; refresh?: boolean; cached?: boolean } = {}) =>
     call<IssueListResult>('GET', `/api/linear/issues?assignee=me${opts.closed ? '&closed=1' : ''}${opts.refresh ? '&refresh=1' : ''}${opts.cached ? '&cached=1' : ''}`),
+  /** The link dialog's search: an exact identifier (or issue URL) first, then text matches. Empty q: no issues. */
+  issueSearch: (q: string, signal?: AbortSignal) => call<{ issues: IssueSummary[]; query: string }>('GET', `/api/linear/search?q=${encodeURIComponent(q)}`, undefined, signal),
   issueGet: (ident: string, refresh = false) => call<IssueDetailResult>('GET', `/api/linear/issues/${encodeURIComponent(ident)}${refresh ? '?refresh=1' : ''}`),
   issueThreadPreview: (ident: string, req: IssueThreadRequest) => call<IssueThreadPreview>('POST', `/api/linear/issues/${encodeURIComponent(ident)}/thread/preview`, req),
   issueStartThread: (ident: string, req: IssueThreadRequest) =>

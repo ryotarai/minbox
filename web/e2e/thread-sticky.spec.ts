@@ -6,6 +6,10 @@ import { createSession, expect, expectTerminal, test, typeInTerminal } from './f
 const para = Array.from({ length: 110 }, (_, i) => `word${i}`).join(' ')
 
 async function longThread(page: import('@playwright/test').Page, minbox: { url: string; dataDir: string }) {
+  // The "+ Linear" button shows only while Linear (the fake) is connected.
+  await page.goto(`${minbox.url}/#v=settings&ss=integrations`)
+  await page.getByTestId('linear-connect').click()
+  await expect(page.getByTestId('linear-status')).toHaveText('Connected', { timeout: 15_000 })
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'sticky')
   await expectTerminal(page, 'ready>')

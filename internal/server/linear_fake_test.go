@@ -477,6 +477,17 @@ func (f *fakeLinear) listIssues(args map[string]any, text func(any)) {
 	if f.ignoreAssignee {
 		items = append(append([]map[string]any{}, items...), map[string]any{"id": "iss-other", "identifier": "ENG-999", "title": "Someone else's", "status": "Todo", "assignee": "Bob", "assigneeId": "user-2", "team": "Engineering"})
 	}
+	if q, _ := args["query"].(string); q != "" { // a text search: identifier or title contains q
+		var hits []map[string]any
+		for _, it := range items {
+			id, _ := it["identifier"].(string)
+			title, _ := it["title"].(string)
+			if strings.Contains(strings.ToLower(id+" "+title), strings.ToLower(q)) {
+				hits = append(hits, it)
+			}
+		}
+		items = hits
+	}
 	start := 0
 	if c, _ := args["cursor"].(string); c != "" {
 		_, _ = fmt.Sscanf(c, "c%d", &start)

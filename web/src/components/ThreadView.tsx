@@ -36,6 +36,7 @@ import { ContextMenu, useContextMenu } from './ContextMenu'
 import { NewThreadDialog } from './NewThreadDialog'
 import { useLongPress } from '../lib/useLongPress'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
+import { LinearLinkButton } from './LinearLink'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { ModConnection } from './ModConnection'
 import { useMentions } from './Mentions'
@@ -520,7 +521,8 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
             <div className="flex flex-wrap items-center gap-2 text-[12px] text-subtle">
               <ThreadStatusBadge status={thread.status} />
               <ThreadName thread={thread} />
-              <span>
+              <LinearLinkButton thread={thread} />
+              <span data-testid="thread-meta">
                 {plural(thread.message_count ?? n, 'message')} · {span(thread.created_at, thread.updated_at)}
               </span>
               {newCount > 0 && <span className="font-semibold text-wait">· {newCount} new since you looked</span>}
@@ -529,7 +531,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
         )}
         {phone && <span data-testid="thread-subject" className="sr-only">{thread.subject}</span>}
         {thread.forked_from && <ForkBreadcrumb from={thread.forked_from} />}
-        <LinearBar thread={thread} />
+        <LinearBar thread={thread} phone={phone} />
         </div>
         {thread.forked_from?.handoff && !showArtifacts && <HandoffCard from={thread.forked_from} />}
 
