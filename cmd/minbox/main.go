@@ -172,7 +172,7 @@ func hostStart(args []string) error {
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return termhost.Serve(ctx, *socket)
+	return termhost.Serve(ctx, *socket, server.Version)
 }
 
 // hostListen runs a host for another machine's server: requests must be
@@ -440,7 +440,7 @@ func hostCmd(args []string) error {
 	dataDir := fs.String("data-dir", defaultDataDir(), "data directory")
 	_ = fs.Parse(args[1:])
 	sock := socketPath(*dataDir)
-	pid, running, err := termhost.Stop(context.Background(), sock, server.ProtocolVersion, log.Printf)
+	pid, running, err := stopLocalHost(*dataDir)
 	if err != nil {
 		return err
 	}

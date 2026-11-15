@@ -46,6 +46,11 @@ type hostConn struct {
 	version  string
 	protocol int // the host's protocol (termhost.ProtocolVersion of its minbox)
 	os, arch string
+	// The host process (the local one: remote hosts keep their pid to themselves),
+	// when it started and the build it runs (termhost.BinaryID); zero from an older host.
+	pid       int
+	startedAt *time.Time
+	binary    string
 	// agents: the coding agents found on that machine (hostAgents), and when.
 	agents   []agent.Info
 	agentsAt time.Time
@@ -103,6 +108,7 @@ func (c *hostConn) setVersion(v termhost.VersionInfo, latency time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.version, c.os, c.arch, c.protocol = v.Version, v.OS, v.Arch, v.Protocol
+	c.pid, c.startedAt, c.binary = v.PID, v.StartedAt, v.Binary
 	c.latency = latency.Milliseconds()
 	now := time.Now()
 	c.lastSeen = &now
@@ -415,6 +421,15 @@ type hostJSON struct {
 	LastSeen       *time.Time `json:"last_seen"`
 	Error          string     `json:"error,omitempty"`
 	Sessions       int        `json:"sessions"`
+	// The host process: its pid (the local host only), when it started, and whether
+	// its build is the server's: current | outdated | unknown (an older host that
+	// does not say). Restartable: Settings can restart it (the local host);
+	// Restarting: a restart is under way.
+	PID           int        `json:"pid,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	VersionStatus string     `json:"version_status"`
+	Restartable   bool       `json:"restartable"`
+	Restarting    bool       `json:"restarting,omitempty"`
 	// Agents: the coding agents of that machine as last found (nil before the first look).
 	Agents []agent.Info `json:"agents"`
 }
@@ -430,6 +445,8 @@ func (s *Server) hostView(ctx context.Context, h store.Host) hostJSON {
 	if c := s.sessions.hosts.get(h.ID); c != nil {
 		c.mu.Lock()
 		out.Status, out.Version, out.OS, out.Arch, out.LastSeen, out.Error = c.status, c.version, c.os, c.arch, c.lastSeen, c.err
+		out.PID, out.StartedAt = c.pid, c.startedAt
+		out.VersionStatus = hostVersionStatus(h.Builtin, c.version, c.binary, s.binary)
 		if out.Status == "" {
 			out.Status = "connecting"
 		}
@@ -442,8 +459,12 @@ func (s *Server) hostView(ctx context.Context, h store.Host) hostJSON {
 	if h.PairingCode != "" {
 		out.Status = "pairing"
 	}
-	if h.Builtin && out.Version == "" {
-		out.Version = Version
+	if out.VersionStatus == "" {
+		out.VersionStatus = "unknown"
+	}
+	if h.Builtin {
+		out.Restartable = true
+		out.Restarting = s.hostRestarting.Load()
 	}
 	out.Sessions, _ = s.store.SessionsOnHost(ctx, h.ID)
 	out.Agents = s.sessions.cachedHostAgents(h.ID)
