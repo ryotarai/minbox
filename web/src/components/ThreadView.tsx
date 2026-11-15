@@ -59,31 +59,26 @@ type Props = {
 export function TerminalButton({ session, onClick, shown }: { session: Session; onClick: () => void; shown?: boolean }) {
   if (shown === undefined)
     return (
-      <button
-        type="button"
+      <IconButton
         data-testid="tablet-terminal"
         aria-label={`Open ${session.name}'s terminal`}
-        title="Show the terminal next to this thread"
+        title="Terminal: show it next to this thread"
         onClick={onClick}
-        className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
       >
-        <IconTerminal size={14} />
-        Terminal
-      </button>
+        <IconTerminal size={15} />
+      </IconButton>
     )
   return (
-    <button
-      type="button"
+    <IconButton
       data-testid="terminal-toggle"
       aria-label={shown ? 'Hide terminal' : 'Show terminal'}
       title={shown ? 'Hide the terminal' : 'Show the terminal'}
       aria-pressed={shown}
       onClick={onClick}
-      className={cx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2 text-[12.5px] hover:bg-raised', shown ? 'text-wait' : 'text-fg2')}
+      className={shown ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
-      <IconTerminal size={14} />
-      Terminal
-    </button>
+      <IconTerminal size={15} />
+    </IconButton>
   )
 }
 
@@ -434,29 +429,20 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       {!phone && (
         <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
           {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
-          <button
-            type="button"
-            data-testid="mark-read"
-            onClick={markRead}
-            className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border-0 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
-          >
-            <IconCheck size={14} />
-            Mark read
-            <Kbd>E</Kbd>
-          </button>
+          <IconButton data-testid="mark-read" aria-label="Mark read" title="Mark read (E)" onClick={markRead}>
+            <IconCheck size={15} />
+          </IconButton>
           {attachments.length > 0 && (
-            <button
-              type="button"
+            <IconButton
               data-testid="artifacts-button"
               aria-label={`Artifacts, ${attachments.length}`}
               aria-pressed={showArtifacts}
-              title={showArtifacts ? 'Back to the thread' : 'Artifacts: every file, image and guided review in this thread'}
+              title={showArtifacts ? 'Back to the thread' : `Artifacts (${attachments.length}): every file, image and guided review in this thread`}
               onClick={() => setShowArtifacts((v) => !v)}
-              className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border-0 bg-transparent px-2 text-[12.5px] text-fg2 hover:bg-raised"
+              className={showArtifacts ? 'bg-raised! text-fg!' : undefined}
             >
-              <IconGrid size={14} />
-              Artifacts {attachments.length}
-            </button>
+              <IconGrid size={15} />
+            </IconButton>
           )}
           <IconButton aria-label={foldAll ? 'Unfold all' : 'Fold all'} title={foldAll ? 'Unfold all' : 'Fold all'} data-testid="fold-all" onClick={() => {
             setFoldAll((v) => !v)
