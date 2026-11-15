@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { Session } from '../api'
 import { useApp } from '../lib/app'
 import { IconInbox } from './icons'
-import { TerminalButton, ThreadView } from './ThreadView'
+import { ShellButton, TerminalButton, ThreadView } from './ThreadView'
 import { useVisibleThreads } from './ThreadsPane'
 
 /** The middle column: the open thread (of any session), or a quiet empty hint. */
@@ -26,7 +26,12 @@ function EmptyThread({ session, onTerminal, terminalShown }: { session: Session 
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" data-testid="thread-empty">
       <IconInbox size={36} className="text-faint" strokeWidth={1.2} />
       <span className="text-[14px] text-muted">Pick a thread to read it here.</span>
-      {onTerminal && session && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
+      {session && (onTerminal || session.kind !== 'shell') && (
+        <div className="flex items-center gap-1">
+          {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
+          <ShellButton session={session} />
+        </div>
+      )}
     </div>
   )
 }

@@ -142,6 +142,12 @@ export const IconTerminal = (p: P) => (
     <path d="m4.5 6.5 2 1.5-2 1.5M8.5 10h3" />
   </Svg>
 )
+/** A bare shell prompt (>_): the session's companion shell, apart from the agent's terminal (IconTerminal). */
+export const IconShell = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="m2.5 4 4 4-4 4M8 12.5h5.5" />
+  </Svg>
+)
 export const IconClaude = ({ size = 13, ...p }: P) => (
   <Svg strokeWidth={2} size={size} {...p}>
     <path d="M8 2v12M2 8h12M3.8 3.8l8.4 8.4M12.2 3.8l-8.4 8.4" />
