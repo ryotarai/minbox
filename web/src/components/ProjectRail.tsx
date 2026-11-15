@@ -7,7 +7,8 @@ import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconInbox, IconLinear, IconMore, IconPin, IconPlus, IconSlack } from './icons'
-import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
+import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx, type MenuAt } from './ui'
+import { useContextMenu } from './ContextMenu'
 
 /** The dot of a project: its busiest session. */
 export function ProjectDot({ stat, size = 8 }: { stat?: ProjectStat; size?: number }) {
@@ -77,7 +78,7 @@ export function ProjectBadges({ stat }: { stat?: ProjectStat }) {
 }
 
 /** Rename / edit folder / pin / archive / delete (a confirm dialog that warns what goes with it). */
-export function ProjectMenu({ project, anchor, onClose, onRename }: { project: Project; anchor: HTMLElement | null; onClose: () => void; onRename: () => void }) {
+export function ProjectMenu({ project, anchor, at, onClose, onRename }: { project: Project; anchor: HTMLElement | null; at?: MenuAt | null; onClose: () => void; onRename: () => void }) {
   const { error, setOverlay, reloadProjects, reloadSessions, toast } = useApp()
   const { id: selected } = useSelectedProject()
   const run = (fn: () => Promise<unknown>) => () => {
@@ -87,7 +88,7 @@ export function ProjectMenu({ project, anchor, onClose, onRename }: { project: P
       .catch(error)
   }
   return (
-    <Popover anchor={anchor} open={!!anchor} onClose={onClose} align="start" side="right" className="w-[220px]">
+    <Popover anchor={anchor} at={at} open={!!anchor || !!at} onClose={onClose} align="start" side="right" className="w-[220px]" testid={at ? 'project-context-menu' : undefined}>
       <MenuItem testid="project-rename" onClick={() => (onClose(), onRename())}>
         Rename
       </MenuItem>
@@ -292,6 +293,9 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
   }
   const stats = useProjectStats()
   const [menu, setMenu] = useState<{ project: Project; anchor: HTMLElement } | null>(null)
+  // Right-click / Shift+F10 / long press on a project: the same menu, at the pointer.
+  const ctx = useContextMenu()
+  const ctxProject = ctx.at ? projects?.find((p) => p.id === ctx.at!.el.dataset.projectId) : undefined
   const [renaming, setRenaming] = useState<Project | null>(null)
   const tiles = narrow
   const all = stats.get('')
@@ -363,10 +367,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
               data-testid="project-item"
               data-project-id={p.id}
               data-selected={on}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setMenu({ project: p, anchor: e.currentTarget })
-              }}
+              {...ctx.props}
               className={cx('group relative flex shrink-0 items-stretch rounded-lg', on ? 'bg-sel before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-fg' : 'hover:bg-raised')}
             >
               <button
@@ -462,6 +463,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
         </IconButton>
       </div>
       {menu && <ProjectMenu project={menu.project} anchor={menu.anchor} onClose={() => setMenu(null)} onRename={() => setRenaming(menu.project)} />}
+      {ctxProject && <ProjectMenu project={ctxProject} anchor={null} at={ctx.at} onClose={ctx.close} onRename={() => setRenaming(ctxProject)} />}
       {renaming && <RenameProject project={renaming} onClose={() => setRenaming(null)} />}
     </nav>
   )

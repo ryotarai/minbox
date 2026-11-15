@@ -96,6 +96,28 @@ function swallowNextClick(anchor: HTMLElement) {
   document.addEventListener('click', stop, true)
 }
 
+/** A context menu's position: at the pointer (x/y, viewport px), or under `el` when opened from the keyboard. */
+export type MenuAt = { el: HTMLElement; x?: number; y?: number }
+
+/** The context menu open now: opening another closes it (only one at a time). */
+let openContext: { close: () => void } | null = null
+
+/** A finger is on the screen (a context menu opened now came from a touch hold). */
+let fingerDown = false
+if (typeof window !== 'undefined') {
+  const set = (e: TouchEvent) => (fingerDown = e.touches.length > 0)
+  window.addEventListener('touchstart', set, { capture: true, passive: true })
+  window.addEventListener('touchend', set, { capture: true, passive: true })
+  window.addEventListener('touchcancel', set, { capture: true, passive: true })
+}
+
+const ITEM_SEL = '[role="menuitem"]:not(:disabled),[role="menuitemcheckbox"]:not(:disabled),[role="menuitemradio"]:not(:disabled)'
+
+/**
+ * A popover menu anchored to an element; closes on outside click or Esc. With `at` it is a context
+ * menu: placed at the pointer (flipped and clamped inside the visual viewport), focus moves to its
+ * first item, and it also closes on scroll, resize and window blur; Esc gives focus back to `at.el`.
+ */
 export function Popover({
   anchor,
   open,
@@ -104,6 +126,8 @@ export function Popover({
   align = 'end',
   className,
   side = 'bottom',
+  at,
+  testid,
 }: {
   anchor: HTMLElement | null
   open: boolean
@@ -112,13 +136,19 @@ export function Popover({
   align?: 'start' | 'end'
   side?: 'bottom' | 'top' | 'right'
   className?: string
+  /** Open as a context menu (see above); `anchor` is then ignored. */
+  at?: MenuAt | null
+  testid?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  if (at) anchor = at.el
+  const ctx = !!at
+  const atX = at?.x
+  const atY = at?.y
   useLayoutEffect(() => {
     if (!open || !anchor) return
     const place = () => {
-      const r = anchor.getBoundingClientRect()
       const el = ref.current
       const w = el?.offsetWidth ?? 200
       const zoom = parseFloat((document.getElementById('root') as HTMLElement).style.zoom || '1')
@@ -126,9 +156,18 @@ export function Popover({
       const vv = v
         ? { left: v.offsetLeft / zoom, top: v.offsetTop / zoom, width: v.width / zoom, height: v.height / zoom }
         : { left: 0, top: 0, width: window.innerWidth / zoom, height: window.innerHeight / zoom }
-      const ar = { left: r.left / zoom, right: r.right / zoom, top: r.top / zoom, bottom: r.bottom / zoom }
       const h = Math.max(el?.offsetHeight ?? 200, el?.scrollHeight ?? 0)
-      setPos(placePopover({ anchor: ar, width: w, height: h, vv, side, align }))
+      if (ctx && atX !== undefined && atY !== undefined) {
+        // At the pointer: below-right of it, flipped left / above when it does not fit.
+        const x = atX / zoom
+        const y = atY / zoom
+        const flipX = x + w + 8 > vv.left + vv.width
+        setPos(placePopover({ anchor: { left: x, right: x, top: y, bottom: y }, width: w, height: h, vv, side: 'bottom', align: flipX ? 'end' : 'start', gap: 0 }))
+        return
+      }
+      const r = anchor.getBoundingClientRect()
+      const ar = { left: r.left / zoom, right: r.right / zoom, top: r.top / zoom, bottom: r.bottom / zoom }
+      setPos(placePopover({ anchor: ar, width: w, height: h, vv, side: ctx ? 'bottom' : side, align: ctx ? 'start' : align }))
     }
     place()
     const raf = requestAnimationFrame(place)
@@ -141,13 +180,87 @@ export function Popover({
       vvp?.removeEventListener('resize', place)
       vvp?.removeEventListener('scroll', place)
     }
-  }, [open, anchor, align, side])
+  }, [open, anchor, align, side, ctx, atX, atY])
+  // Context menu: one at a time, focus on the first item, close on scroll / resize / blur.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  const openedAt = useRef(0)
+  // Opened by a touch hold: when that finger lifts, the browser may send a mouse press and click on the item.
+  const releasedAt = useRef(0)
+  useEffect(() => {
+    if (!open) return
+    openedAt.current = Date.now()
+    releasedAt.current = 0
+    if (!ctx || !fingerDown) return
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length > 0) return
+      releasedAt.current = Date.now()
+      window.removeEventListener('touchend', onEnd, true)
+    }
+    window.addEventListener('touchend', onEnd, true)
+    return () => window.removeEventListener('touchend', onEnd, true)
+  }, [open, ctx, atX, atY])
+  useEffect(() => {
+    if (!open || !ctx) return
+    const onClose = () => closeRef.current()
+    const me = { close: onClose }
+    if (openContext && openContext !== me) openContext.close()
+    openContext = me
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null
+      if (t instanceof Element && (ref.current?.contains(t) || t.closest('[role="menu"]'))) return
+      onClose()
+    }
+    const onResize = () => {
+      // An input in a menu (the snooze time picker) may open the on-screen keyboard: not a reason to close.
+      if ((document.activeElement as Element | null)?.closest?.('[role="menu"]') && document.activeElement instanceof HTMLInputElement) return
+      onClose()
+    }
+    const onBlur = () => onClose()
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      if (openContext === me) openContext = null
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [open, ctx])
+  // Focus moves to the first item at once (a key pressed right after the menu opens acts in it).
+  const focusBack = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    if (!open || !ctx || !anchor) return
+    // Where focus goes back to: the element focused when it opened (a button inside the item, from
+    // the keyboard), else the item.
+    const prev = document.activeElement
+    focusBack.current = prev instanceof HTMLElement && prev !== anchor && anchor.contains(prev) ? prev : anchor
+    ref.current?.querySelector<HTMLElement>(ITEM_SEL)?.focus({ preventScroll: true })
+  }, [open, ctx, anchor])
+  // A context menu closed while focus was in it (now gone): focus goes back to the element it was opened on.
+  useEffect(() => {
+    if (!open || !ctx || !anchor) return
+    const back = focusBack.current ?? anchor
+    return () => {
+      const a = document.activeElement
+      if ((!a || a === document.body) && back.isConnected) back.focus({ preventScroll: true })
+    }
+  }, [open, ctx, anchor])
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element
       // A submenu (another popover) is not outside.
       if (anchor?.contains(t)) {
+        // The press that opened a context menu (a touch hold), and the mouse events the browser makes
+        // when that finger lifts, are not a reason to close it, nor to open the item.
+        if (ctx && (Date.now() - openedAt.current < 400 || Date.now() - releasedAt.current < 600)) {
+          if (Date.now() - releasedAt.current < 600) {
+            e.preventDefault() // focus stays in the menu
+            swallowNextClick(anchor)
+          }
+          return
+        }
         // Pressing the button that opened the menu closes it, and the click that follows must not
         // run the button's own onClick (it would open the menu again).
         swallowNextClick(anchor)
@@ -162,6 +275,8 @@ export function Popover({
       if (!anchor?.contains(e.target as Node)) return
       e.stopPropagation()
       e.preventDefault()
+      // The click the browser makes when the finger of a touch hold lifts: the menu stays.
+      if (ctx && Date.now() - releasedAt.current < 600) return
       onClose()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -178,12 +293,44 @@ export function Popover({
       document.removeEventListener('click', onClick, true)
       window.removeEventListener('keydown', onKey, true)
     }
-  }, [open, onClose, anchor])
+  }, [open, onClose, anchor, ctx])
   if (!open) return null
+  // Arrow keys, Home and End move between the items; Enter / Space activate the focused one.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement
+    if (!ref.current?.contains(t) || !t.matches?.(ITEM_SEL)) return
+    const items = [...ref.current.querySelectorAll<HTMLElement>(ITEM_SEL)]
+    const i = items.indexOf(t)
+    let next: HTMLElement | undefined
+    if (e.key === 'ArrowDown') next = items[(i + 1) % items.length]
+    else if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length]
+    else if (e.key === 'Home') next = items[0]
+    else if (e.key === 'End') next = items[items.length - 1]
+    else if (e.key === 'Enter' || e.key === ' ') {
+      // Handled here so the page's own Enter shortcut (open the thread) does not run as well.
+      e.preventDefault()
+      t.click()
+      return
+    } else if (ctx && e.key === 'Tab') {
+      e.preventDefault()
+      onClose()
+      return
+    } else if (ctx && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Single-key shortcuts of the page underneath must not run while the menu has focus.
+      e.preventDefault()
+      return
+    } else return
+    e.preventDefault()
+    next?.focus()
+  }
   return createPortal(
     <div
       ref={ref}
       role="menu"
+      data-testid={testid}
+      data-context={ctx || undefined}
+      onKeyDown={onKeyDown}
+      onContextMenu={ctx ? (e) => e.preventDefault() : undefined}
       style={{ position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, maxHeight: pos?.maxHeight, overflowY: 'auto', overscrollBehavior: 'contain', zoom: (document.getElementById('root') as HTMLElement).style.zoom || undefined }}
       className={cx('z-[60] min-w-[190px] rounded-[10px] border border-linestrong bg-overlay p-[5px] text-[13px] shadow-pop', className)}
     >
@@ -203,7 +350,7 @@ export function MenuItem({
   disabled,
 }: {
   children: ReactNode
-  onClick: () => void
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   danger?: boolean
   hint?: ReactNode
   testid?: string

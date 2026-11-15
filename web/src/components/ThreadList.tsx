@@ -7,6 +7,8 @@ import { projectHueStyle } from '../lib/projectColor'
 import { IconFork, IconPin } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
 import { useSelectedProject } from '../lib/projects'
+import { useContextMenu } from './ContextMenu'
+import { ThreadRowMenu } from './ThreadMenu'
 
 export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
   queued: { icon: '◷', label: 'Queued', color: 'text-muted' },
@@ -99,19 +101,27 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
   const { id: scopedProject } = useSelectedProject()
   // Unread is shown by a bold subject only; no row background or border tint.
   const strong = t.unread > 0 && settings.list.highlight_subject
+  // Right-click / Shift+F10 / long press: the thread's actions (ThreadRowMenu).
+  const menu = useContextMenu()
   return (
+    <>
     <div
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onOpen()}
+      {...menu.props}
+      onKeyDown={(e) => {
+        menu.props.onKeyDown(e)
+        if (e.key === 'Enter' && e.target === e.currentTarget) onOpen()
+      }}
       data-testid="thread-row"
       data-thread-id={t.id}
       data-focused={focused ? 'true' : 'false'}
+      data-menu-open={menu.at ? 'true' : undefined}
       onClick={onOpen}
       className={cx(
         'flex w-full flex-col gap-1 rounded-[9px] border px-3 text-left',
         phone ? 'min-h-16 py-3' : 'py-2.5',
-        focused ? 'border-line2 bg-raised' : 'border-transparent hover:bg-raised/60',
+        focused ? 'border-line2 bg-raised' : menu.at ? 'border-line2 bg-raised/60' : 'border-transparent hover:bg-raised/60',
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -146,6 +156,8 @@ export function ThreadRow({ t, focused, onOpen, phone }: { t: Thread; focused: b
         {t.last_author === 'user' && t.last_delivery && <DeliveryTick d={t.last_delivery} />}
       </div>
     </div>
+    <ThreadRowMenu t={t} at={menu.at} onClose={menu.close} onOpen={onOpen} />
+    </>
   )
 }
 

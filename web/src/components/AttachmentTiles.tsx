@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes } from 'react'
 import { api, type Annotation, type Attachment, type AttachmentDetail, type Message } from '../api'
 import { changeState, formatBytes, kindLabel, opensBeside, sizeLine, typeOf, videoTime, viewsAsCode } from '../lib/attachments'
 import { plural, shortTime } from '../lib/format'
 import { Diagram } from './Diagram'
-import { Kbd, cx } from './ui'
+import { Kbd, MenuItem, cx } from './ui'
+import { ContextMenu, useContextMenu } from './ContextMenu'
+import { useApp } from '../lib/app'
 
 // Attachments at the foot of a message, and the thread's Artifacts grid
 // (Plannotator's AttachmentTiles and Artifacts view; spec §7).
@@ -27,6 +29,43 @@ export function useDetails(items: Attachment[]): Record<string, AttachmentDetail
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
   return d
+}
+
+/**
+ * An attachment tile that opens the attachment, with a right-click / long-press menu: Open, Download,
+ * Copy path. (Tiles that only download are links and keep the browser's own menu.)
+ */
+function TileButton({ a, onOpen, style, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { a: Attachment; onOpen: (a: Attachment) => void }) {
+  const { toast } = useApp()
+  const menu = useContextMenu()
+  return (
+    <>
+      <button type="button" {...rest} {...menu.props} style={{ ...style, ...menu.props.style }} onClick={() => onOpen(a)}>
+        {children}
+      </button>
+      <ContextMenu at={menu.at} onClose={menu.close} testid="attachment-context-menu">
+        <MenuItem testid="attachment-open" onClick={() => (menu.close(), onOpen(a))}>
+          {a.kind === 'review' ? 'Open guided review' : typeOf(a) === 'video' ? 'Play' : 'Open'}
+        </MenuItem>
+        {a.kind !== 'review' && (
+          <MenuItem testid="attachment-download" onClick={() => (menu.close(), window.open(api.attachmentDownloadUrl(a.id), '_blank'))}>
+            Download
+          </MenuItem>
+        )}
+        {a.kind !== 'review' && a.path && (
+          <MenuItem
+            testid="attachment-copy-path"
+            onClick={() => {
+              menu.close()
+              void navigator.clipboard?.writeText(a.path).then(() => toast('Path copied'))
+            }}
+          >
+            Copy path
+          </MenuItem>
+        )}
+      </ContextMenu>
+    </>
+  )
 }
 
 function Icon({ a }: { a: Attachment }) {
@@ -71,12 +110,11 @@ export function AttachmentTiles({
             const ratio = a.width && a.height ? Math.min(4, Math.max(0.62, a.width / a.height)) : 1.5
             const ch = changeState(details[a.id])
             return (
-              <button
+              <TileButton a={a} onOpen={onOpen}
                 key={a.id}
                 type="button"
                 data-testid="attachment-card"
                 aria-label={`View ${a.name}, ${kindLabel(a)}${ch ? `, ${ch.long}` : ''}${comments(a) ? `, ${plural(comments(a), 'comment')}` : ''}`}
-                onClick={() => onOpen(a)}
                 className={cx('relative flex min-w-0 flex-col overflow-hidden rounded-[10px] border bg-card text-left', a.id === openId ? 'border-accent' : 'border-line2')}
                 style={{ flex: `${ratio} 1 0`, maxWidth: 240 * ratio }}
               >
@@ -88,7 +126,7 @@ export function AttachmentTiles({
                     {comments(a) > 0 && `, ${plural(comments(a), 'annotation')}`}
                   </span>
                 </span>
-              </button>
+              </TileButton>
             )
           })}
         </div>
@@ -122,17 +160,16 @@ export function AttachmentTiles({
                 </a>
               )
             return (
-              <button
+              <TileButton a={a} onOpen={onOpen}
                 key={a.id}
                 type="button"
                 data-testid="attachment-card"
                 aria-current={open ? 'true' : undefined}
                 aria-label={open ? `${a.name}, open beside the thread` : `${typeOf(a) === 'video' ? 'Play' : 'Open'} ${a.name}`}
-                onClick={() => onOpen(a)}
                 className={base}
               >
                 {body}
-              </button>
+              </TileButton>
             )
           })}
         </div>
@@ -204,9 +241,9 @@ export function ArtifactsGrid({
               {inner}
             </a>
           ) : (
-            <button key={a.id} type="button" aria-label={label} className={cls} onClick={() => onOpen(a)} data-testid="artifact">
+            <TileButton a={a} onOpen={onOpen} key={a.id} aria-label={label} className={cls} data-testid="artifact">
               {inner}
-            </button>
+            </TileButton>
           )
         })}
       </div>

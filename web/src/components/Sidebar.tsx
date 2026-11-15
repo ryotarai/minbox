@@ -3,7 +3,7 @@ import { SECTION_ORDER, api, type Section, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
 import { IconInbox } from './icons'
-import { Button, MenuItem, MenuSep, Popover } from './ui'
+import { Button, MenuItem, MenuSep, Popover, type MenuAt } from './ui'
 
 export function sectionOf(s: Session): Section {
   if (s.archived_at) return 'archived'
@@ -68,11 +68,14 @@ export function SessionMenu({
   anchor,
   onClose,
   onRename,
+  at,
 }: {
   s: Session
   anchor: HTMLElement | null
   onClose: () => void
   onRename: () => void
+  /** Open as a context menu at this point instead of under `anchor`. */
+  at?: MenuAt | null
 }) {
   const { error, toast, setOverlay, reloadSessions, reloadProjects } = useApp()
   const act = (fn: () => Promise<unknown>) => () => {
@@ -82,7 +85,7 @@ export function SessionMenu({
       .catch(error)
   }
   return (
-    <Popover anchor={anchor} open={!!anchor} onClose={onClose}>
+    <Popover anchor={anchor} at={at} open={!!anchor || !!at} onClose={onClose} testid={at ? 'session-context-menu' : undefined}>
       <MenuItem
         testid="menu-rename"
         onClick={() => {
