@@ -55,9 +55,9 @@ swap places with **Settings → Swap terminal and thread**). The layout follows 
 
 | Width | Layout |
 | --- | --- |
-| 1100 px and up | Threads and thread next to the project column; the terminal is a third column you show with the **Terminal** button (it is hidden by default), plus the companion shell pane (Ctrl+`) beside the terminal. Column edges can be dragged. |
+| 1100 px and up | Threads and thread next to the project column; the terminal is a third column you show with the **Terminal** button (it is hidden by default), plus the companion shell pane beside it (the **Open shell** icon in the thread header, ⌘K Open shell or Ctrl+`; it opens with or without the terminal). Column edges can be dragged. |
 | 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
-| below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay. |
+| below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay (the shell icon in the thread or terminal header, or the `...` menu). |
 
 <p align="center"><img src="docs/img/readme/tablet.png" alt="minbox on a tablet: the threads list beside a finished thread with reply questions" width="480"></p>
 

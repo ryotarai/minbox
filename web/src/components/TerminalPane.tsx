@@ -2,16 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconBack, IconMore, IconTerminal } from './icons'
+import { IconBack, IconClose, IconMore, IconTerminal } from './icons'
 import { TerminalView, type TerminalHandle } from './Terminal'
 import { TerminalKeys, useTouchPrimary } from './TerminalKeys'
 import { Button, AgentTag, HostTag, IconButton, EndedTag, cx } from './ui'
 import { SessionMenu } from './Sidebar'
 import { ModConnection } from './ModConnection'
 
-/** The center column: the session's terminal with its header and the ended bar. */
-export function TerminalPane({ session, onThreads }: { session: Session | null; onThreads?: () => void }) {
-  const { layout, setLayout, toast, error, reloadSessions } = useApp()
+/**
+ * The center column: the session's terminal with its header and the ended bar. onClose hides the pane
+ * (the × in its top-right corner, like the shell pane's); the agent keeps running.
+ */
+export function TerminalPane({ session, onThreads, onClose }: { session: Session | null; onThreads?: () => void; onClose?: () => void }) {
+  const { layout, toast, error, reloadSessions } = useApp()
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
@@ -96,22 +99,15 @@ export function TerminalPane({ session, onThreads }: { session: Session | null; 
             {size.cols}×{size.rows}
           </span>
         )}
-        {session.kind !== 'shell' && (
-          <IconButton
-            aria-label={layout.shellPane ? 'Hide shell' : 'Show shell'}
-            title={layout.shellPane ? 'Hide shell (Ctrl+`)' : 'Show shell (Ctrl+`)'}
-            data-testid="shell-toggle"
-            aria-pressed={layout.shellPane}
-            onClick={() => setLayout({ shellPane: !layout.shellPane })}
-            className={cx('border border-line2', layout.shellPane && 'text-wait')}
-          >
-            <IconTerminal />
-          </IconButton>
-        )}
         <IconButton aria-label="Session actions" title="Session actions" data-testid="session-menu" onClick={(e) => setMenu(e.currentTarget)} className="border border-line2">
           <IconMore />
         </IconButton>
         <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(session.name)} />
+        {onClose && (
+          <IconButton aria-label="Close terminal" title="Close terminal (the session keeps running)" data-testid="terminal-close" onClick={onClose}>
+            <IconClose />
+          </IconButton>
+        )}
       </div>
       <div ref={wrap} className="relative mx-3 mb-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-line focus-within:border-accent bg-[var(--mb-term-bg)] px-[18px] py-4">
         {/* A resumed session is a new process: the key change reattaches. */}

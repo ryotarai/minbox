@@ -33,9 +33,14 @@ test('desktop: the shell pane is hidden, opens by button and Ctrl+`, runs in the
   await expectTerminal(page, 'ready>')
   await expect(page.getByTestId('shell-pane')).toHaveCount(0)
 
+  // The button is in the thread column, not in the agent terminal's header.
+  await expect(page.locator('main').getByTestId('shell-toggle')).toHaveCount(0)
+  await expect(page.locator('main').getByRole('button', { name: /shell/i })).toHaveCount(0)
+  await expect(page.getByTestId('thread-pane').getByTestId('shell-toggle')).toHaveAttribute('aria-label', 'Open shell')
   await page.getByTestId('shell-toggle').click()
   await expect(page.getByTestId('shell-pane')).toBeVisible()
   await expect(page.getByTestId('shell-toggle')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('shell-toggle')).toHaveAttribute('aria-label', 'Hide shell')
   await typeInShell(page, 'echo before-$((6*7)); pwd')
   await expectShell(page, 'before-42')
   await expectShell(page, basename(minbox.dataDir))
@@ -60,11 +65,60 @@ test('desktop: the shell pane is hidden, opens by button and Ctrl+`, runs in the
 
   // The close button of the pane.
   await page.keyboard.press('Control+`')
+  await expect(page.getByTestId('shell-close')).toHaveAttribute('aria-label', 'Close shell')
   await page.getByTestId('shell-close').click()
   await expect(page.getByTestId('shell-pane')).toHaveCount(0)
+  // Closing only hid it: the same shell comes back with its scrollback.
+  await page.getByTestId('shell-toggle').click()
+  await expectShell(page, 'after-49')
+  await page.getByTestId('shell-close').click()
 
   // It is not a session.
   expect(await (await page.request.get(minbox.url + '/api/sessions')).json()).toHaveLength(1)
+})
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
+
+test('desktop: the thread header and ⌘K open the shell without the agent terminal', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'head')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Hello thread')
+  await expectTerminal(page, /sent .*thr_/)
+  // Hide the agent terminal and open the thread.
+  await page.getByTestId('terminal-toggle').first().click()
+  await expect(page.locator('main')).toHaveCount(0)
+  await page.getByTestId('thread-row').first().click()
+  const header = page.getByTestId('thread-view')
+  const button = header.getByTestId('shell-toggle')
+  await expect(button).toHaveAttribute('aria-pressed', 'false')
+  await expect(button).toHaveAttribute('title', /Open shell/)
+  if (process.env.SCREENSHOTS === '1') await page.screenshot({ path: `${process.env.SCREENSHOT_DIR ?? 'test-results'}/header-shell.png`, clip: { x: 0, y: 0, width: 1500, height: 120 } })
+
+  await button.click()
+  await expect(page.getByTestId('shell-pane')).toBeVisible()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('main')).toHaveCount(0)
+  await expect.poll(() => terminalText(page, 'shell'), { timeout: 15_000 }).toMatch(/\S/)
+  await button.click()
+  await expect(page.getByTestId('shell-pane')).toHaveCount(0)
+
+  // ⌘K: "Open shell", then "Hide shell".
+  await page.getByTestId('thread-back').click()
+  await page.keyboard.press(`${MOD}+k`)
+  await page.getByTestId('palette-input').fill('>open shell')
+  const first = page.getByTestId('palette-item').first()
+  await expect(first).toHaveAttribute('data-id', 'shell-pane')
+  await expect(first).toContainText('Open shell')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('shell-pane')).toBeVisible()
+  await expect(page.locator('main')).toHaveCount(0)
+  await page.waitForTimeout(300)
+  await page.keyboard.press(`${MOD}+k`)
+  await page.getByTestId('palette-input').fill('>hide shell')
+  await expect(page.getByTestId('palette-item').first()).toContainText('Hide shell')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('shell-pane')).toHaveCount(0)
 })
 
 test('desktop: no shell pane or button for a shell session', async ({ page, minbox }) => {
@@ -74,6 +128,9 @@ test('desktop: no shell pane or button for a shell session', async ({ page, minb
   await page.getByTestId('terminal').click()
   await page.keyboard.press('Control+`')
   await expect(page.getByTestId('shell-pane')).toHaveCount(0)
+  await page.keyboard.press(`${MOD}+k`)
+  await page.getByTestId('palette-input').fill('>shell')
+  await expect(page.getByTestId('palette-item').filter({ hasText: /Open shell|Hide shell/ })).toHaveCount(0)
 })
 
 for (const width of [1500, 1920]) {
@@ -134,6 +191,11 @@ test('phone and tablet: the thread menu opens the shell without going to the ter
     await page.getByTestId('thread-row').first().click()
     await page.getByTestId('thread-more').first().click()
     await page.getByTestId('thread-open-shell').click()
+    await expect(page.getByTestId('phone-shell')).toBeVisible()
+    await page.getByTestId('shell-close').click()
+    await expect(page.getByTestId('phone-shell')).toHaveCount(0)
+    // The header's shell icon too.
+    await page.getByTestId('shell-toggle').first().click()
     await expect(page.getByTestId('phone-shell')).toBeVisible()
     await page.getByTestId('shell-close').click()
     await expect(page.getByTestId('phone-shell')).toHaveCount(0)
