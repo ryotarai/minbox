@@ -311,6 +311,21 @@ visible and sends it at once when shown again). A `resize` without `lease` never
 PTY returns to the size it was started with.
 A phone view does not send `resize` unless the person asks ("Fit to this screen").
 
+The replay is the last 2 MiB of output. An agent's TUI (OpenCode, Claude Code, Pi) draws its
+screen once and then only what changes, so after a while the replay holds only changes and a
+new view would draw a nearly empty screen. Two things fix that:
+- Repaint: the server attaches to an agent's terminal (`/terminal`, not `/shell/terminal`) with
+  `GET /terminals/{id}/attach?repaint=1`. Once that view has sent its first `resize` (or after
+  1 s), unless the PTY was resized since it attached, the host makes the PTY one row shorter
+  for 300 ms and then gives it its size back: the app repaints its whole screen, which every
+  view draws. No `size` frame is sent for it, so the views keep their size. One nudge at a time.
+  A host older than this ignores the query.
+- Modes: once the start of the output is cut off the replay, the host puts back what the app
+  set there: the alternate screen (`?1049h`/`?1047h`/`?47h`) before the replay if the sequence
+  that entered it was cut off, and after it the cursor keys, cursor visibility, mouse reporting,
+  focus events, bracketed paste and the kitty keyboard flags as the app left them. The cut is
+  made at an escape, not inside a sequence.
+
 ### Companion shell
 
 `GET /api/sessions/{id}/shell/terminal` (WebSocket, same frames as `/terminal`) attaches to a

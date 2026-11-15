@@ -9,6 +9,7 @@ Typed commands (one per line):
   mark <status> [text]  send a message that sets the thread's status (working|need_action|finished)
   work       status working: queued messages wait (idle ends it)
   nobeat     stop the heartbeat (beat starts it again); the poll carries on
+  tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
   exit       quit
 """
 import json, os, sys, threading, time, urllib.error, urllib.request, uuid
@@ -252,6 +253,11 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         r = api("POST", "/api/agent/messages", body)
         last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
+    elif line.startswith("tui "):
+        sys.dont_write_bytecode = True  # no __pycache__ in e2e/
+        import fake_tui  # next to this file
+        fake_tui.TUI(alt=False).run(int(line[4:]))
+        continue
     elif line:
         out(f"echo: {line}")
     out("ready> ")

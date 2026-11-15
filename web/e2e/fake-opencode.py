@@ -21,6 +21,8 @@ Typed commands in the TUI (one per line):
   args              print the command line it was started with
   paths             whether the plugin folder is under $FAKE_EXPECT_ROOT (a remote host's data dir)
   env               print the MINBOX_* / OPENCODE_* variables it got
+  tui <kb>          draw a screen on the alternate screen, then only what changes (kb KB of it), like
+                    OpenCode's renderer (fake_tui.py)
   exit              quit
 """
 import json, os, sys, threading, time, urllib.error, urllib.request, uuid
@@ -169,6 +171,11 @@ for raw in sys.stdin:
         out(f"paths under-root={'yes' if root and plugin.startswith(root) and has_entry else 'no'} keys={','.join(sorted(cfg))}")
     elif line == "env":
         out("env " + json.dumps({k: ("set" if v else "") for k, v in os.environ.items() if k.startswith("MINBOX_") or k.startswith("OPENCODE_")}, sort_keys=True))
+    elif line.startswith("tui "):
+        sys.dont_write_bytecode = True  # no __pycache__ in e2e/
+        import fake_tui  # next to this file
+        fake_tui.TUI(alt=True).run(int(line[4:]))
+        continue
     elif line:
         out(f"echo: {line}")
     out("ready> ")
