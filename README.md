@@ -89,6 +89,12 @@ up the list and shows the question.
 ./bin/minbox host stop     # stop the terminal host too: every session's claude ends
 ```
 
+**Settings → Hosts** shows the local terminal host's version, pid and start time, and marks it
+**Outdated** when it runs another build than the server (after `make build` and a plain
+`minbox restart`). Its **Restart** button does what `minbox restart --host` does without stopping
+the server: it lists the sessions whose processes will end, then starts a new host from the current
+binary; the sessions resume (or, if you untick that, end).
+
 `start` daemonizes. It returns once the server answers, and logs go to `<data-dir>/minbox.log`.
 
 ### Flags (`minbox start`)
@@ -120,7 +126,7 @@ up the list and shows the question.
   - The server starts it when none is running.
   - Restarting or upgrading the server leaves the running sessions alone.
   - The two check each other's protocol version and restart the host only when they must.
-  - When the host is gone (after a reboot, or `minbox restart --host`), the server starts a new
+  - When the host is gone (after a reboot, `minbox restart --host`, or Restart in Settings → Hosts), the server starts a new
     one and the sessions that were open resume with `claude --resume`. Sessions you stopped, or
     that Claude ended itself, stay stopped.
 - **The PTY** takes the size of the smallest screen attached to it, and grows back when that

@@ -173,6 +173,24 @@ export type Host = {
   sessions: number
   /** The coding agents found on that machine (null before the first look). */
   agents?: AgentInfo[] | null
+  /** The host process (this machine's host only). */
+  pid?: number
+  /** When the host process started (absent from an older host). */
+  started_at?: string
+  /** Whether the host runs the server's build; unknown: an older host that does not say. */
+  version_status?: 'current' | 'outdated' | 'unknown'
+  /** Settings can restart it (this machine's host). */
+  restartable?: boolean
+  /** A restart is under way. */
+  restarting?: boolean
+}
+
+export type HostRestartResult = {
+  old_pid: number
+  new_pid: number
+  started_at?: string
+  sessions: { id: string; name: string; kind: string; agent?: string }[]
+  resumed: boolean
 }
 
 export type HostProbe = { ok: boolean; version?: string; os?: string; arch?: string; hostname?: string; tailscale?: boolean; error?: string }
@@ -928,6 +946,7 @@ export const api = {
   tailscaleInfo: () => call<TailscaleInfo>('GET', '/api/hosts/tailscale'),
   repairHost: (id: string) => call<{ code: string }>('POST', `/api/hosts/${id}/repair`),
   retryHost: (id: string) => call<Ok>('POST', `/api/hosts/${id}/retry`),
+  restartHost: (id: string, resume: boolean) => call<HostRestartResult>('POST', `/api/hosts/${id}/restart`, { resume }),
   renameSession: (id: string, name: string) => call<Ok>('PATCH', `/api/sessions/${id}`, { name }),
   stopSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/stop`),
   sessionConnection: (id: string) => call<ModConnectionInfo>('GET', `/api/sessions/${id}/connection`),
