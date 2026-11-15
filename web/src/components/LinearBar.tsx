@@ -1,30 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { api, type LinearEvent, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
-import { LinearCreateDialog } from './LinearCreate'
+import { LinearLinkButton } from './LinearLink'
 import { IconLinear } from './icons'
-import { Button, cx } from './ui'
+import { cx } from './ui'
 
 // The Linear issue linked to a thread: a chip in the thread header (identifier, title, state,
-// link, unlink) or an input to link one. Opening a linked thread asks the server to sync the
-// issue in the background; the thread reloads by itself when Linear's news has been recorded.
+// link, unlink); linking one is the "+ Linear" button's dialog (LinearLink.tsx). Opening a linked
+// thread asks the server to sync the issue in the background; the thread reloads by itself when
+// Linear's news has been recorded.
 
-const actionCls =
-  'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line2 bg-transparent px-2.5 text-[12.5px] text-fg2 hover:border-linestrong hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:opacity-45 sm:h-8'
-
-const inputCls = 'h-8 w-56 rounded-md border border-linestrong bg-sunken px-2.5 text-[13px] text-fg outline-none focus:border-accent'
-
-export function LinearBar({ thread, compact = false }: { thread: Thread; compact?: boolean }) {
+export function LinearBar({ thread, compact = false, phone = false }: { thread: Thread; compact?: boolean; phone?: boolean }) {
   // `compact` is the copy in the sticky bar: same actions, shorter labels, no sync of its own.
+  // An unlinked thread links (or creates) an issue from the "+ Linear" button (LinearLink.tsx):
+  // left of the meta line on desktop, here on phones (no meta line) and in the sticky bar.
   const sx = compact ? '-sticky' : ''
-  const { error, toast, navigate } = useApp()
-  const [open, setOpen] = useState(false)
-  const [value, setValue] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [connected, setConnected] = useState(false)
+  const { error } = useApp()
   const link = thread.linear
   const linked = !!link
 
@@ -34,77 +26,11 @@ export function LinearBar({ thread, compact = false }: { thread: Thread; compact
     api.refreshLinear(thread.id).catch(() => {})
   }, [thread.id, linked, compact])
 
-  // Creating an issue needs a login: the button shows only while Linear is connected.
-  useEffect(() => {
-    if (linked) return
-    let live = true
-    const load = () => api.linearStatus().then((st) => live && setConnected(st.connected)).catch(() => {})
-    load()
-    window.addEventListener('minbox:linear', load)
-    return () => {
-      live = false
-      window.removeEventListener('minbox:linear', load)
-    }
-  }, [linked])
-
-  const submit = async () => {
-    if (!value.trim()) return
-    setBusy(true)
-    setErr('')
-    try {
-      await api.linkLinear(thread.id, value.trim())
-      setValue('')
-      setOpen(false)
-    } catch (e) {
-      const status = (e as { status?: number }).status
-      setErr(e instanceof Error ? e.message : String(e))
-      if (status === 409) toast('Connect Linear first: Settings › Integrations', { error: true, action: 'Open', onAction: () => navigate({ view: 'settings', ss: 'integrations' }) })
-    }
-    setBusy(false)
-  }
-
   if (!link) {
+    if (!compact && !phone) return null
     return (
-      <div className={cx('flex items-center gap-2 text-[12px]', compact ? 'min-w-0' : 'flex-wrap')} data-testid={`linear-bar${sx}`}>
-        {!open ? (
-          <button type="button" data-testid={`linear-link-open${sx}`} onClick={() => setOpen(true)} className={actionCls} title="Link Linear issue">
-            <IconLinear size={14} />
-            {compact ? 'Link' : 'Link Linear issue'}
-          </button>
-        ) : (
-          <>
-            <input
-              data-testid={`linear-link-input${sx}`}
-              autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit()
-                if (e.key === 'Escape') setOpen(false)
-              }}
-              placeholder="ENG-123 or issue URL"
-              className={cx(inputCls, compact && 'min-w-0 flex-1 sm:w-56 sm:flex-none')}
-            />
-            <Button size="sm" variant="primary" data-testid={`linear-link-submit${sx}`} disabled={busy || !value.trim()} onClick={submit}>
-              Link
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-          </>
-        )}
-        {!open && connected && (
-          <button type="button" data-testid={`linear-create-open${sx}`} onClick={() => setCreating(true)} className={actionCls} title="Create Linear issue">
-            <IconLinear size={14} />
-            {compact ? 'Create' : 'Create Linear issue'}
-          </button>
-        )}
-        {creating && <LinearCreateDialog thread={thread} onClose={() => setCreating(false)} />}
-        {err && (
-          <span data-testid={`linear-link-error${sx}`} className="text-danger">
-            {err}
-          </span>
-        )}
+      <div className={cx('flex items-center gap-2 text-[12px] text-subtle empty:hidden', compact ? 'min-w-0' : 'flex-wrap')} data-testid={`linear-bar${sx}`}>
+        <LinearLinkButton thread={thread} testSuffix={sx} />
       </div>
     )
   }

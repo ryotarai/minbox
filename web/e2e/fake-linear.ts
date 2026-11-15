@@ -210,6 +210,13 @@ export class FakeLinear {
           case 'list_issues': {
             if (this.failList) return sse({ isError: true, content: [{ type: 'text', text: 'issues are down' }] })
             if (this.listRaw) return sse({ content: this.listRaw.map((t) => ({ type: 'text', text: t })) })
+            if (a.query) {
+              // A text search (the link dialog): identifier or title contains the query, across the issues the fake knows.
+              const q = String(a.query).toLowerCase()
+              const all = [...this.assigned, ...this.created, ...(this.assigned.some((i) => i.identifier === this.issue.identifier) ? [] : [this.issue])]
+              const hits = all.filter((i) => `${i.identifier} ${i.title}`.toLowerCase().includes(q))
+              return text({ issues: a.assignee === 'me' ? hits.filter((i) => this.assigned.includes(i)) : hits, hasNextPage: false })
+            }
             return text({ issues: a.assignee === 'me' ? this.assigned : [], hasNextPage: false })
           }
           case 'get_issue': {
