@@ -195,9 +195,17 @@ export function LinearCreateDialog({
 
   // Plain-language mode: Generate asks the helper for a draft of what was written. It fills only the
   // fields the person has not touched, so regenerating never overwrites their edits.
+  // Asked for before Linear's lists have loaded (typed fast, ⌘/Ctrl+Enter at once): the request is kept
+  // and sent as soon as they arrive, instead of being dropped.
+  const [queued, setQueued] = useState(false)
   const generate = async () => {
     const text = plainRef.current.trim()
-    if (!text || drafting || !meta) return
+    if (!text || drafting) return
+    if (!metaRef.current) {
+      setQueued(true)
+      return
+    }
+    setQueued(false)
     setDrafting(true)
     setNote('')
     try {
@@ -213,6 +221,10 @@ export function LinearCreateDialog({
       if (!closed.current) setDrafting(false)
     }
   }
+  useEffect(() => {
+    if (meta && queued) void generate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- generate reads the latest text and form through refs
+  }, [meta, queued])
   // Whatever team is selected (by the person, the basic prefill or the draft) gets its lists. A
   // team only guessed while the draft is pending waits for the draft (which usually decides it).
   useEffect(() => {
@@ -349,8 +361,8 @@ export function LinearCreateDialog({
                 />
               </label>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="primary" data-testid="linear-create-generate" disabled={!plain.trim() || drafting || !meta || llmAvailable === false} onClick={() => void generate()}>
-                  {drafting ? 'Drafting…' : 'Generate'}
+                <Button size="sm" variant="primary" data-testid="linear-create-generate" disabled={!plain.trim() || drafting || queued || llmAvailable === false} onClick={() => void generate()}>
+                  {drafting || queued ? 'Drafting…' : 'Generate'}
                 </Button>
                 <span className="text-[11.5px] text-subtle">
                   {llmAvailable === false ? 'No coding agent is installed to draft this: fill in the fields yourself.' : '⌘/Ctrl+Enter generates a title, description and guesses; you can edit everything.'}
