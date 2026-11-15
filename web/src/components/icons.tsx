@@ -153,6 +153,37 @@ export const IconClaude = ({ size = 13, ...p }: P) => (
     <path d="M8 2v12M2 8h12M3.8 3.8l8.4 8.4M12.2 3.8l-8.4 8.4" />
   </Svg>
 )
+/** OpenCode's mark: a tall block with a smaller one sunk into its lower half. */
+export const IconOpenCode = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <rect x="3" y="1.75" width="10" height="12.5" rx="1" />
+    <rect x="5.75" y="7" width="4.5" height="4.5" fill="currentColor" stroke="none" opacity={0.55} />
+  </Svg>
+)
+/** Pi's mark: the letter π. */
+export const IconPi = (p: P) => (
+  <Svg strokeWidth={1.75} {...p}>
+    <path d="M2.5 5.5c.8-1 1.7-1.25 3-1.25h8" />
+    <path d="M6.25 4.5c0 3.5-.6 6-1.75 8" />
+    <path d="M10.5 4.5v6.25c0 1.1.5 1.75 1.5 1.75.6 0 1-.25 1.4-.7" />
+  </Svg>
+)
+/** A coding agent minbox does not know by name: a small robot head. */
+export const IconAgent = (p: P) => (
+  <Svg strokeWidth={1.4} {...p}>
+    <rect x="2.5" y="5" width="11" height="8.5" rx="2" />
+    <path d="M8 5V2.75" />
+    <circle cx="8" cy="2.25" r=".6" fill="currentColor" />
+    <path d="M6 8.5v1.25M10 8.5v1.25" />
+  </Svg>
+)
+/** The icon of a session's coding agent (sessions.agent; missing means Claude Code). */
+export function IconAgentKind({ kind, ...p }: P & { kind?: string }) {
+  if (!kind || kind === 'claude') return <IconClaude {...p} />
+  if (kind === 'opencode') return <IconOpenCode {...p} />
+  if (kind === 'pi') return <IconPi {...p} />
+  return <IconAgent {...p} />
+}
 export const IconClose = (p: P) => (
   <Svg strokeWidth={1.75} {...p}>
     <path d="M4 4l8 8M12 4l-8 8" />

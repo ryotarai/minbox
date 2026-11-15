@@ -16,7 +16,7 @@ test('desktop: the terminal is hidden by default, the toggle shows and hides it,
   const toggle = page.getByTestId('terminal-toggle')
   await expect(toggle).toBeVisible()
   await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  await expect(toggle).toHaveAttribute('aria-label', 'Show terminal')
+  await expect(toggle).toHaveAttribute('aria-label', 'Show Claude Code terminal')
   await expect(page.getByTestId('terminal')).toHaveCount(0)
   // The freed space goes to the thread pane.
   const thread = (await page.getByTestId('thread-pane').boundingBox())!
@@ -26,7 +26,7 @@ test('desktop: the terminal is hidden by default, the toggle shows and hides it,
   await toggle.click()
   await expect(page.getByTestId('terminal')).toBeVisible()
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-  await expect(toggle).toHaveAttribute('aria-label', 'Hide terminal')
+  await expect(toggle).toHaveAttribute('aria-label', 'Hide Claude Code terminal')
   await expectTerminal(page, 'echo: keepme-42') // the session output is intact after attaching again
 
   await page.reload()
