@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { THREAD_STATUS_ORDER, api, type Annotation, type Answer, type Attachment, type ForkChild, type Message, type Question, type Session, type Thread } from '../api'
-import { ALL_THREADS, threadLink, useApp } from '../lib/app'
+import { api, type Annotation, type Answer, type Attachment, type ForkChild, type Message, type Question, type Session, type Thread } from '../api'
+import { ALL_THREADS, useApp } from '../lib/app'
 import { clearReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
-import { splitQuestions } from '../lib/markdown'
+import { proseOf, splitQuestions } from '../lib/markdown'
 import { opensBeside, steppable, threadArtifacts } from '../lib/attachments'
 import { SketchButton } from './Sketch'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
@@ -31,13 +31,15 @@ import {
 import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
+import { ThreadMoreMenu } from './ThreadMenu'
+import { ContextMenu, useContextMenu } from './ContextMenu'
 import { NewThreadDialog } from './NewThreadDialog'
 import { useLongPress } from '../lib/useLongPress'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { ModConnection } from './ModConnection'
 import { useMentions } from './Mentions'
-import { Button, IconButton, Kbd, MenuItem, MenuLabel, MenuSep, Popover, ThreadStatusBadge, cx } from './ui'
+import { Button, IconButton, Kbd, MenuItem, Popover, ThreadStatusBadge, cx, type MenuAt } from './ui'
 
 type Props = {
   session: Session
@@ -689,184 +691,6 @@ function ThreadName({ thread }: { thread: Thread }) {
   )
 }
 
-export function ThreadMoreMenu({
-  thread,
-  anchor,
-  onClose,
-  onArchive,
-  onBack,
-  openQuestions,
-  onShell,
-}: {
-  thread: Thread
-  anchor: HTMLElement | null
-  onClose: () => void
-  onArchive: () => void
-  onBack: () => void
-  openQuestions: number
-  /** Open the session's companion shell (omitted when the session has none). */
-  onShell?: () => void
-}) {
-  const { toast, error } = useApp()
-  const [snooze, setSnooze] = useState<HTMLElement | null>(null)
-  const [pick, setPick] = useState(false)
-  const [pickValue, setPickValue] = useState('')
-  const close = () => {
-    setSnooze(null)
-    setPick(false)
-    onClose()
-  }
-  const doSnooze = (until: Date) => {
-    close()
-    api
-      .snoozeThread(thread.id, until)
-      .then(() => {
-        toast(`Snoozed until ${until.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`, {
-          action: 'Undo',
-          undo: true,
-          onAction: () => api.unsnoozeThread(thread.id).catch(error),
-        })
-        onBack()
-      })
-      .catch(error)
-  }
-  const at = (days: number, hour: number) => {
-    const d = new Date()
-    d.setDate(d.getDate() + days)
-    d.setHours(hour, 0, 0, 0)
-    return d
-  }
-  const laterToday = () => {
-    const d = at(0, 18)
-    return d.getTime() > Date.now() + 30 * 60_000 ? d : new Date(Date.now() + 3 * 3600_000)
-  }
-  const nextWeek = () => {
-    const d = at(0, 9)
-    d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7))
-    return d
-  }
-  return (
-    <>
-      <Popover anchor={anchor} open={!!anchor} onClose={close}>
-        {thread.snoozed_until ? (
-          <MenuItem testid="thread-unsnooze" onClick={() => (close(), api.unsnoozeThread(thread.id).catch(error))}>
-            Unsnooze
-          </MenuItem>
-        ) : (
-          <MenuItem testid="thread-snooze" active={!!snooze} onClick={() => setSnooze(anchor)}>
-            Snooze ›
-          </MenuItem>
-        )}
-        {onShell && (
-          <MenuItem testid="thread-open-shell" onClick={() => (close(), onShell())}>
-            Open shell
-          </MenuItem>
-        )}
-        <MenuItem
-          testid="thread-pin"
-          onClick={() => {
-            close()
-            ;(thread.pinned_at ? api.unpinThread(thread.id) : api.pinThread(thread.id)).catch(error)
-          }}
-        >
-          {thread.pinned_at ? 'Unpin thread' : 'Pin thread'}
-        </MenuItem>
-        {THREAD_STATUS_ORDER.filter((st) => st !== thread.status).map((st) => (
-          <MenuItem key={st} testid={`thread-mark-${st}`} onClick={() => (close(), api.setThreadStatus(thread.id, st).catch(error))}>
-            {st === 'finished' ? 'Mark as finished' : st === 'working' ? 'Mark as working' : st === 'blocked' ? 'Mark as blocked' : 'Mark as needs action'}
-          </MenuItem>
-        ))}
-        <MenuItem
-          testid="thread-unread"
-          onClick={() => {
-            close()
-            api
-              .markUnread(thread.id)
-              .then(onBack)
-              .catch(error)
-          }}
-        >
-          Mark unread
-        </MenuItem>
-        <MenuItem
-          testid="thread-copy-link"
-          onClick={() => {
-            close()
-            void navigator.clipboard?.writeText(threadLink(thread.session_id, thread.id))
-            toast('Link copied')
-          }}
-        >
-          Copy link
-        </MenuItem>
-        {openQuestions > 0 && (
-          <MenuItem
-            testid="thread-reask"
-            onClick={() => {
-              close()
-              api
-                .reask(thread.id)
-                .then(() => toast(`Asked Claude Code to ask the ${plural(openQuestions, 'open question')} again`))
-                .catch(error)
-            }}
-          >
-            Ask again
-          </MenuItem>
-        )}
-        <MenuSep />
-        {thread.archived_at ? (
-          <MenuItem testid="thread-unarchive" onClick={() => (close(), api.unarchiveThread(thread.id).catch(error))}>
-            Unarchive thread
-          </MenuItem>
-        ) : (
-          <MenuItem
-            testid="thread-archive"
-            hint={<Kbd>⇧E</Kbd>}
-            onClick={() => {
-              close()
-              onArchive()
-            }}
-          >
-            Archive thread
-          </MenuItem>
-        )}
-      </Popover>
-      <Popover anchor={snooze} open={!!snooze} onClose={close} side="right" align="start" className="w-[220px]">
-        <MenuLabel>Snooze until</MenuLabel>
-        <MenuItem hint={hm(laterToday())} onClick={() => doSnooze(laterToday())}>
-          Later today
-        </MenuItem>
-        <MenuItem hint="9:00" onClick={() => doSnooze(at(1, 9))}>
-          Tomorrow
-        </MenuItem>
-        <MenuItem onClick={() => doSnooze(at(3, 9))}>In 3 days</MenuItem>
-        <MenuItem onClick={() => doSnooze(nextWeek())}>Next week</MenuItem>
-        {pick ? (
-          <form
-            className="flex gap-1.5 p-1.5"
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (pickValue) doSnooze(new Date(pickValue))
-            }}
-          >
-            <input
-              type="datetime-local"
-              autoFocus
-              value={pickValue}
-              onChange={(e) => setPickValue(e.target.value)}
-              className="h-8 min-w-0 flex-1 rounded-md border border-linestrong bg-sunken px-1.5 text-[12px]"
-            />
-            <Button size="sm" variant="primary" type="submit">
-              OK
-            </Button>
-          </form>
-        ) : (
-          <MenuItem onClick={() => setPick(true)}>Pick a time…</MenuItem>
-        )}
-      </Popover>
-    </>
-  )
-}
-
 function ThreadNotices({ thread, target }: { thread: Thread; target: Message | null }) {
   const { error } = useApp()
   const notices: React.ReactNode[] = []
@@ -979,8 +803,10 @@ function AgentMessage({
     if (!answerable && !(m.answer_state?.[q.key] && !answerIsEmpty(m.answer_state[q.key]))) return 'moved_on' as const
     return null
   }
+  const menu = useContextMenu({ longPress: false })
   return (
-    <article data-testid="message" data-author="claude" data-message-id={m.id} className="group flex flex-col gap-2.5">
+    <article data-testid="message" data-author="claude" data-message-id={m.id} {...menu.props} className="group flex flex-col gap-2.5">
+      <MessageMenu at={menu.at} onClose={menu.close} text={proseOf(m.body)} onReply={onReply} onFork={onFork} />
       <div className="flex items-start gap-2.5">
         <span aria-hidden="true" className={cx('flex shrink-0 items-center justify-center bg-[#2a2116] text-wait', phone ? 'h-6 w-6 rounded-full' : 'h-7 w-7 rounded-lg')}>
           <IconClaude size={phone ? 13 : 15} />
@@ -1064,6 +890,7 @@ function UserMessage({
   openId: string | null
   newestId: string | null
 }) {
+  const menu = useContextMenu({ longPress: false })
   if (m.kind === 'command') return <CommandMessage m={m} phone={phone} />
   if (m.kind === 'note') {
     return (
@@ -1075,7 +902,8 @@ function UserMessage({
   const qs = m.answers_for ? questionsOf(m.answers_for) : []
   const words = m.words ?? (m.answers?.length ? '' : m.body)
   return (
-    <article data-testid="message" data-author="human" data-message-id={m.id} className="group flex flex-col gap-2 rounded-xl bg-[#1a1a1f] px-3.5 py-3 [[data-theme=light]_&]:bg-raised">
+    <article data-testid="message" data-author="human" data-message-id={m.id} {...menu.props} className="group flex flex-col gap-2 rounded-xl bg-[#1a1a1f] px-3.5 py-3 [[data-theme=light]_&]:bg-raised">
+      <MessageMenu at={menu.at} onClose={menu.close} text={words} onFork={onFork} />
       <div className="flex items-center gap-2">
         <span className="text-[13.5px] font-semibold">You</span>
         <span className="text-[12.5px] text-subtle">{hm(m.created_at)}</span>
@@ -1100,6 +928,36 @@ function UserMessage({
       )}
       {(m.annotations?.length ?? 0) > 0 && <div className="text-[12.5px] text-muted">💬 {plural(m.annotations!.length, 'annotation')}</div>}
     </article>
+  )
+}
+
+/**
+ * A message's right-click menu (desktop; on touch a long press selects text, as it should): Reply,
+ * Copy text, and Start new thread from here.
+ */
+function MessageMenu({ at, onClose, text, onReply, onFork }: { at: MenuAt | null; onClose: () => void; text: string; onReply?: () => void; onFork: () => void }) {
+  const { toast } = useApp()
+  return (
+    <ContextMenu at={at} onClose={onClose} testid="message-context-menu" className="w-[250px]">
+      {onReply && (
+        <MenuItem testid="message-reply" hint={<Kbd>R</Kbd>} onClick={() => (onClose(), onReply())}>
+          Reply
+        </MenuItem>
+      )}
+      <MenuItem
+        testid="message-copy"
+        disabled={!text.trim()}
+        onClick={() => {
+          onClose()
+          void navigator.clipboard?.writeText(text).then(() => toast('Copied'))
+        }}
+      >
+        Copy text
+      </MenuItem>
+      <MenuItem testid="message-fork-ctx" onClick={() => (onClose(), onFork())}>
+        <IconFork size={14} /> Start new thread from here
+      </MenuItem>
+    </ContextMenu>
   )
 }
 

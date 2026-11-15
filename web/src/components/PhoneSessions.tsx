@@ -6,6 +6,7 @@ import { setThreadFilter, useThreadFilter } from '../lib/threadFilter'
 import { useSelectedProject } from '../lib/projects'
 import { IconArchive, IconChevronRight, IconClose, IconMore, IconPlus, IconTerminal } from './icons'
 import { SessionMenu, groupSessions } from './Sidebar'
+import { useContextMenu } from './ContextMenu'
 import { EndedTag, AgentTag, HostTag, cx } from './ui'
 
 /**
@@ -96,9 +97,12 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
   const { error, reloadSessions } = useApp()
   const [name, setName] = useState(s.name)
   const ref = useRef<HTMLDivElement>(null)
+  // Long press / right-click on the row: the same menu as its "…" button.
+  const menu = useContextMenu()
   return (
     <div
       ref={ref}
+      {...menu.props}
       data-testid="session-row"
       data-session-id={s.id}
       className={cx('mx-2.5 flex min-h-16 items-center border-b border-[#1f1f24] [[data-theme=light]_&]:border-line', active && 'bg-sel')}
@@ -165,6 +169,7 @@ function PhoneSessionRow({ s, strong, active, onOpen, onTerminal }: { s: Session
         <IconMore size={18} />
       </button>
       <SessionMenu s={s} anchor={anchor} onClose={() => setAnchor(null)} onRename={() => setRenaming(true)} />
+      {menu.at && <SessionMenu s={s} anchor={null} at={menu.at} onClose={menu.close} onRename={() => setRenaming(true)} />}
     </div>
   )
 }

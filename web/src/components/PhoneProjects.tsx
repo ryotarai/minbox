@@ -8,6 +8,7 @@ import { useSlackStatus } from '../lib/slack'
 import { projectHueStyle } from '../lib/projectColor'
 import { ProjectBadges, ProjectDot, ProjectIcon, ProjectMenu, RenameProject } from './ProjectRail'
 import { HostTag, cx } from './ui'
+import { useContextMenu } from './ContextMenu'
 
 /** Phone home header: the selected project; tap opens the project sheet. */
 export function PhoneProjectButton() {
@@ -49,6 +50,9 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
   const linear = useLinearStatus()
   const slack = useSlackStatus()
   const [menu, setMenu] = useState<{ project: Project; anchor: HTMLElement } | null>(null)
+  // Long press / right-click on a project: the same menu as its "…" button, at the finger.
+  const ctx = useContextMenu()
+  const ctxProject = ctx.at ? projects?.find((p) => p.id === ctx.at!.el.dataset.projectId) : undefined
   const [renaming, setRenaming] = useState<Project | null>(null)
   const pick = (id: string) => {
     selectProject(id)
@@ -113,6 +117,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
               key={p.id}
               data-testid="project-item"
               data-project-id={p.id}
+              {...ctx.props}
               className={cx('mx-2.5 flex min-h-16 items-center border-b border-[#1f1f24] [[data-theme=light]_&]:border-line', selected === p.id && 'bg-sel')}
             >
               <button type="button" data-testid="project-select" onClick={() => pick(p.id)} className="flex min-w-0 flex-1 items-start gap-2.5 border-0 bg-transparent py-2.5 pl-3 pr-1 text-left">
@@ -150,6 +155,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
         {projects && projects.length === 0 && <span className="px-4 py-6 text-[13px] text-muted">No projects yet. Start a session or add a project with +.</span>}
       </div>
       {menu && <ProjectMenu project={menu.project} anchor={menu.anchor} onClose={() => setMenu(null)} onRename={() => setRenaming(menu.project)} />}
+      {ctxProject && <ProjectMenu project={ctxProject} anchor={null} at={ctx.at} onClose={ctx.close} onRename={() => setRenaming(ctxProject)} />}
       {renaming && <RenameProject project={renaming} onClose={() => setRenaming(null)} />}
     </div>
   )

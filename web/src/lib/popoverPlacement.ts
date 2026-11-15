@@ -13,10 +13,11 @@ export function placePopover(o: {
   vv: VisibleArea
   side: 'bottom' | 'top' | 'right'
   align: 'start' | 'end'
+  /** Space between the anchor and the popover (default 4). */
+  gap?: number
 }): { left: number; top: number; maxHeight: number } {
   const m = 8
-  const gap = 4
-  const { anchor: a, width: w, height: h, vv, side, align } = o
+  const { anchor: a, width: w, height: h, vv, side, align, gap = 4 } = o
   const vTop = vv.top
   const vBottom = vv.top + vv.height
   const full = Math.max(80, vv.height - 2 * m)

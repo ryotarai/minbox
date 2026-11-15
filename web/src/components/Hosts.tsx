@@ -4,6 +4,7 @@ import { useApp } from '../lib/app'
 import { agentsSummary } from '../lib/agents'
 import { IconMore } from './icons'
 import { Button, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
+import { useContextMenu } from './ContextMenu'
 
 // Settings › Hosts: the machines this minbox server runs sessions on. A host is
 // added by pairing: the server's public key gets accepted on that machine.
@@ -45,6 +46,14 @@ export function HostsSection() {
   const [editing, setEditing] = useState<{ host: Host; field: 'name' | 'url' } | null>(null)
   const [menu, setMenu] = useState<{ el: HTMLElement; host: Host } | null>(null)
   const [removing, setRemoving] = useState<Host | null>(null)
+  // Right-click / Shift+F10 / long press on a host row: the same menu as its "…" button, at the pointer.
+  const ctx = useContextMenu()
+  const ctxHost = ctx.at ? hosts.find((h) => h.id === ctx.at!.el.dataset.hostId) : undefined
+  const shown = ctxHost ? { host: ctxHost, at: ctx.at } : menu ? { host: menu.host, at: null } : null
+  const closeMenu = () => {
+    ctx.close()
+    setMenu(null)
+  }
   return (
     <>
       <div className="-mt-4 flex items-center justify-end">
@@ -61,7 +70,7 @@ export function HostsSection() {
         {hosts.map((h) => {
           const on = h.status === 'online'
           return (
-            <div key={h.id} data-testid="host-row" data-host-id={h.id} className="box-border flex min-h-16 items-center gap-3.5 border-b border-[#1d1d22] px-4 py-3.5 last:border-b-0 [[data-theme=light]_&]:border-line">
+            <div key={h.id} data-testid="host-row" data-host-id={h.id} {...ctx.props} className="box-border flex min-h-16 items-center gap-3.5 border-b border-[#1d1d22] px-4 py-3.5 last:border-b-0 [[data-theme=light]_&]:border-line">
               <span
                 aria-hidden="true"
                 className={cx('box-border h-[9px] w-[9px] shrink-0 rounded-full', on ? 'bg-ok' : h.status === 'pairing' || h.status === 'connecting' ? 'mb-pulse bg-wait' : 'border-[1.5px] border-danger')}
@@ -99,22 +108,22 @@ export function HostsSection() {
       </div>
       <span className="max-w-[860px] text-[12.5px] leading-[1.6] text-subtle">Removing a host also removes this server from that host. Its sessions stay as Ended; their threads stay readable.</span>
 
-      <Popover anchor={menu?.el ?? null} open={!!menu} onClose={() => setMenu(null)}>
-        {menu && (
+      <Popover anchor={shown?.at ? null : (menu?.el ?? null)} at={shown?.at} open={!!shown} onClose={closeMenu} testid={shown?.at ? 'host-context-menu' : undefined}>
+        {shown && (
           <>
-            <MenuItem testid="host-rename" onClick={() => (setEditing({ host: menu.host, field: 'name' }), setMenu(null))}>
+            <MenuItem testid="host-rename" onClick={() => (setEditing({ host: shown.host, field: 'name' }), closeMenu())}>
               Rename
             </MenuItem>
-            {!menu.host.builtin && (
+            {!shown.host.builtin && (
               <>
-                <MenuItem testid="host-edit" onClick={() => (setEditing({ host: menu.host, field: 'url' }), setMenu(null))}>
+                <MenuItem testid="host-edit" onClick={() => (setEditing({ host: shown.host, field: 'url' }), closeMenu())}>
                   Edit URL
                 </MenuItem>
-                <MenuItem testid="host-repair" onClick={() => (setWizard({ repair: menu.host }), setMenu(null))}>
+                <MenuItem testid="host-repair" onClick={() => (setWizard({ repair: shown.host }), closeMenu())}>
                   Re-pair
                 </MenuItem>
                 <MenuSep />
-                <MenuItem testid="host-remove" danger onClick={() => (setRemoving(menu.host), setMenu(null))}>
+                <MenuItem testid="host-remove" danger onClick={() => (setRemoving(shown.host), closeMenu())}>
                   Remove…
                 </MenuItem>
               </>
