@@ -141,15 +141,26 @@ test('desktop: entry above All projects only when connected; list, search, detai
   await page.getByTestId('issue-thread').click()
   await expect(page.getByTestId('thread-view')).toHaveAttribute('data-thread-id', /^thr_/)
 
-  // New issue from plain language.
+  // New issue from plain language. Linear's lists are held back until after ⌘/Ctrl+Enter, so the
+  // request made while they load must be kept and sent once they arrive (not dropped).
+  let releaseMeta!: () => void
+  const metaHeld = new Promise<void>((r) => (releaseMeta = r))
+  await page.route('**/api/linear/issues/draft', async (route) => {
+    if (route.request().postDataJSON()?.stage === 'meta') await metaHeld
+    await route.continue()
+  })
   await page.getByTestId('my-issues').click()
   await page.getByTestId('issues-new').click()
   await expect(page.getByTestId('linear-create-plain')).toBeVisible()
+  await expect(page.getByTestId('linear-create-loading')).toBeVisible()
   await expect(page.getByTestId('linear-create-generate')).toBeDisabled()
   await page.getByTestId('linear-create-plain').fill('Settings page crashes when the name is empty\nrepro: clear the name field and save')
   await page.getByTestId('linear-create-title').fill('My own title')
   await page.getByTestId('linear-create-plain').press('ControlOrMeta+Enter')
+  await expect(page.getByTestId('linear-create-generate')).toHaveText('Drafting…')
+  releaseMeta()
   await expect(page.getByTestId('linear-create-desc')).toHaveValue(/Drafted from the request/, { timeout: 15_000 })
+  await page.unroute('**/api/linear/issues/draft')
   await expect(page.getByTestId('linear-create-title')).toHaveValue('My own title') // touched fields are never overwritten
   await expect(page.getByTestId('linear-create-team')).toHaveValue('team-1')
   await expect(page.getByTestId('linear-create-assignee')).toHaveValue('u1')
