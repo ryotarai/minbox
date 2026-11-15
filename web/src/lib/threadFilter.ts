@@ -63,6 +63,28 @@ export function setComposeTarget(id: string, at: string | null) {
   tListeners.forEach((l) => l())
 }
 
+/**
+ * "New thread" (⌘K): asks the thread list's compose box to take the focus. A counter, so the box
+ * that mounts after the request (the phone shows the list only once it navigated there) still sees it.
+ */
+let focusAsk = 0
+const fListeners = new Set<() => void>()
+
+export function askQuickComposeFocus() {
+  focusAsk++
+  fListeners.forEach((l) => l())
+}
+
+export function useQuickComposeFocusAsk(): number {
+  return useSyncExternalStore(
+    (l) => {
+      fListeners.add(l)
+      return () => fListeners.delete(l)
+    },
+    () => focusAsk,
+  )
+}
+
 export function useComposeTargetPick(): { id: string; at: string | null } {
   return useSyncExternalStore(
     (l) => {

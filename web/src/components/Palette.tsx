@@ -4,6 +4,7 @@ import { useApp } from '../lib/app'
 import { homeRelative, isMac, shortTime } from '../lib/format'
 import { fuzzyFields } from '../lib/fuzzy'
 import { selectProject, shortDir, useProjectStats } from '../lib/projects'
+import { askQuickComposeFocus, setComposeTarget } from '../lib/threadFilter'
 import { ProjectDot } from './ProjectRail'
 import { IconSearch } from './icons'
 import { Kbd, Modal, cx } from './ui'
@@ -121,18 +122,20 @@ export function Palette({ onClose }: { onClose: () => void }) {
     const list: Item[] = []
     const act = (id: string, title: string, run: () => void, o: Partial<Item> = {}) => list.push({ kind: 'action', id, title, run, ...o })
     act('new-session', 'New session', () => setOverlay({ kind: 'new-session' }), { keywords: 'create start claude' })
-    if (isClaude) {
-      act(
-        'new-message',
-        'New message to current session',
-        () => {
-          const box = document.querySelector<HTMLElement>('[data-testid="quick-body"]')
-          if (box) box.focus()
-          else setOverlay({ kind: 'compose', sessionId: current!.id })
-        },
-        { keywords: `compose write reply send ${current!.name}`, shortcut: 'R' },
-      )
-    }
+    act(
+      'new-thread',
+      'New thread',
+      () => {
+        // The thread list's compose box, aimed at the current session; the phone (and the tablet's
+        // terminal view) first goes back to the list, where the box is.
+        if (isClaude) setComposeTarget(current!.id, current!.id)
+        if (isPhone) navigate({ view: 'main', tab: 'inbox', t: null, f: null })
+        else if (isTablet) navigate({ view: 'main', tab: 'inbox', f: null })
+        else if (route.view !== 'main' && route.view !== 'inbox') navigate({ view: 'main' })
+        askQuickComposeFocus()
+      },
+      { keywords: `compose write message start create ${isClaude ? current!.name : ''}`, detail: isClaude ? `in ${current!.name}` : undefined },
+    )
     act('all-projects', 'All projects', () => selectProject(''), { keywords: 'project scope everything show' })
     if (isClaude && current!.project_id && !current!.is_main)
       act('set-main', "Set current session as project's main session", () => void api.setMainSession(current!.project_id!, current!.id).then(() => (reloadProjects(), reloadSessions())).catch(error), { keywords: `main default thread target project ${current!.name}` })
@@ -183,7 +186,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (size > 12) act('text-down', 'Smaller text', () => saveSettings({ text_size: size - 1 }), { keywords: 'text size font zoom decrease' })
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
-  }, [current, isClaude, isPhone, isTablet, layout.shellPane, layout.terminalPane, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
+  }, [current, isClaude, isPhone, isTablet, route.view, layout.shellPane, layout.terminalPane, settings.board, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 

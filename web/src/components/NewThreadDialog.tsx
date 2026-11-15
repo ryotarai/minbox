@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { api, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
-import { CompletingTextarea } from './Compose'
+import { CompletingTextarea } from './CompletingTextarea'
 import { commandOf } from './CommandMessage'
 import { Button, Modal, cx } from './ui'
 

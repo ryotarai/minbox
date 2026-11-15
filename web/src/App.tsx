@@ -5,7 +5,6 @@ import { AttachmentViewer } from './components/AttachmentViewer'
 import { BoardPage } from './components/Board'
 import { IssuesScreen } from './components/Issues'
 import { SlackScreen } from './components/Slack'
-import { Compose } from './components/Compose'
 import { GuidedReview } from './components/GuidedReview'
 import { ThreadPane } from './components/ThreadPane'
 import { ThreadsPane } from './components/ThreadsPane'
@@ -112,7 +111,6 @@ function Root() {
       {overlay?.kind === 'palette' && <Palette onClose={close} />}
       {overlay?.kind === 'shortcuts' && <Shortcuts onClose={close} />}
       {overlay?.kind === 'decide' && <DecisionMode onClose={close} />}
-      {overlay?.kind === 'compose' && <Compose sessionId={overlay.sessionId} draftId={overlay.draftId} onClose={close} />}
       {overlay?.kind === 'delete-session' && <DeleteSession session={overlay.session} onClose={close} />}
       {overlay?.kind === 'drafts' && <DraftsList onClose={close} />}
       {overlay?.kind === 'new-session' && <NewSessionDialog projectId={overlay.projectId} onClose={close} />}
