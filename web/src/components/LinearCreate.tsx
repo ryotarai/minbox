@@ -36,7 +36,20 @@ function preferredState(t: LinearTeam | undefined, policy: DefaultStatePolicy): 
  * Generate button ask the helper agent for the title, description and guesses; Create makes the issue
  * and hands it to onCreated. Both share the lists, the team lazy loading and the never-overwrite-touched rule.
  */
-export function LinearCreateDialog({ thread, onClose, onCreated, defaultState: defaultStateProp }: { thread?: Thread; onClose: () => void; onCreated?: (issue: IssueSummary) => void; defaultState?: DefaultStatePolicy }) {
+export function LinearCreateDialog({
+  thread,
+  onClose,
+  onCreated,
+  defaultState: defaultStateProp,
+  title: initialTitle,
+}: {
+  thread?: Thread
+  onClose: () => void
+  onCreated?: (issue: IssueSummary) => void
+  defaultState?: DefaultStatePolicy
+  /** A title typed elsewhere (the link dialog's search text): kept as if the person had typed it, so no draft replaces it. */
+  title?: string
+}) {
   // Thread-bound issues start In Progress; a plain-language new issue (My issues) starts in the team's own default.
   const defaultState: DefaultStatePolicy = defaultStateProp ?? (thread ? 'started' : 'team_default')
   const { toast, navigate } = useApp()
@@ -46,10 +59,10 @@ export function LinearCreateDialog({ thread, onClose, onCreated, defaultState: d
   const plainRef = useRef(plain)
   plainRef.current = plain
   const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null)
-  const [form, setForm] = useState<LinearDraft>(EMPTY)
+  const [form, setForm] = useState<LinearDraft>(() => (initialTitle?.trim() ? { ...EMPTY, title: initialTitle.trim() } : EMPTY))
   const formRef = useRef(form)
   formRef.current = form
-  const touched = useRef(new Set<Field>())
+  const touched = useRef(new Set<Field>(initialTitle?.trim() ? ['title'] : []))
   const [meta, setMeta] = useState<LinearMeta | null>(null)
   const metaRef = useRef<LinearMeta | null>(null)
   const [teamInfo, setTeamInfoState] = useState<Record<string, TeamInfo>>({})

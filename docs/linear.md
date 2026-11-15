@@ -9,9 +9,16 @@ Linear tools and never sees a token: everything goes through the server.
 1. Settings → Integrations → Linear → **Connect**. Your browser goes to Linear's authorization page;
    after you approve, Linear sends it back to the minbox server (`/api/integrations/linear/callback`)
    and you land on Settings again, now "Connected as <you>". **Test** asks Linear who you are.
-2. Open a thread, press **+ Link Linear issue** in its header and type `ENG-123` or paste an issue URL
-   (`https://linear.app/<workspace>/issue/ENG-123/...`). The chip shows the identifier, title and state.
-   **Unlink** removes the link.
+2. Open a thread and press the small **+ (Linear icon)** button left of its meta line ("3 messages · 2 min";
+   on phones it is under the title, and in the sticky bar while scrolled). A dialog searches Linear as you type
+   (debounced ~200 ms, older requests cancelled): titles through `list_issues` with its text-query argument
+   (one page of 20, no assignee filter), and an identifier (`ENG-123`) or issue URL
+   (`https://linear.app/<workspace>/issue/ENG-123/...`) is read exactly with `get_issue` and comes first.
+   Answers are cached per query for 30 s. ↑↓ and Enter (or a click) pick an issue and link it; an empty query
+   shows a hint (Linear is not asked). **New issue** at the bottom of the dialog opens the Create dialog below
+   with the search text as the title. Once linked, the meta line shows the identifier (opens the issue in
+   Linear) with a small **+** to link a different one; the chip below the title shows the identifier, title and
+   state, and **Unlink** removes the link. The button shows only while Linear is connected.
 
 There is no workspace restriction: the workspace is whatever the login is authorised for. The workspace
 slug in a pasted URL is used only to read the identifier. An issue the login cannot see fails with the
@@ -19,8 +26,8 @@ error Linear's `get_issue` gives.
 
 ## Create an issue from a thread
 
-A thread that is not linked (with Linear connected) has **Create Linear issue** next to **+ Link Linear
-issue**. The dialog opens at once and fills in three steps; **nothing is written to Linear until you press
+**New issue** in the link dialog (above) opens the Create dialog; a title typed as the search text is kept
+(the draft does not replace it). The dialog opens at once and fills in three steps; **nothing is written to Linear until you press
 Create**.
 
 1. **Linear's global lists** (through the MCP client, adapting to `tools/list`): teams (paginated), projects
@@ -109,7 +116,7 @@ existing comments as seen, starts the first sync). A **submission id** makes it 
 a retried request gets the first one's answer; without one, simultaneous requests for a thread are coalesced
 and a thread that is already linked is refused (409). Linear's refusal is shown in the dialog (HTTP 422, code
 `linear_refused`) and nothing is linked; a retry is possible. If Linear answers but the new issue cannot be
-read from the answer, the dialog says it may have been created (look for it, then use Link Linear issue).
+read from the answer, the dialog says it may have been created (look for it, then link it with the + button).
 
 ## My issues
 
@@ -141,7 +148,7 @@ work and the selection survives a reload. Left: your issues; right: the selected
   decides, your last used project stays. The **session defaults to the project's main session** (marked "Main session"; a project without a usable one defaults to
   *New session*); other live sessions of the project and *New session* (agent picker when both agents are installed, optional name) are in the same list, and
   changing the project resets the session to that project's main session. You may add a request and change the title; the right side previews exactly what the
-  agent gets first. **Create and open** creates the thread, **links it to the issue at once** (as *Link Linear issue* does: the comments that exist are the baseline, a
+  agent gets first. **Create and open** creates the thread, **links it to the issue at once** (as linking from the thread does: the comments that exist are the baseline, a
   progress comment follows, the In Progress rule applies when work starts) and opens it.
 - **The handoff** (`linear_issue_handoff`) is composed once at creation and stored (`thread_handoffs`): like a fork's, it is put in front of that thread's first
   message when the message is delivered, repeated if the delivery is retried, marked delivered with it and never part of the stored message. It carries the issue
@@ -157,7 +164,7 @@ work and the selection survives a reload. Left: your issues; right: the selected
   uses the same path as the thread-based dialog (idempotent per submission), the new issue appears in the list and is selected, and Start thread is available at once.
   Nothing is written to Linear before Create; the only other writes of the feature are the usual In Progress move and progress comment of a linked thread.
 
-Endpoints: [api-contract.md](api-contract.md). Not done: linking an existing thread from the issue (use *Link Linear issue* in the thread), a server-side text query, background refresh.
+Endpoints: [api-contract.md](api-contract.md). Not done: linking an existing thread from the issue (use the + button in the thread), a text query for My issues, background refresh.
 
 ## What happens
 

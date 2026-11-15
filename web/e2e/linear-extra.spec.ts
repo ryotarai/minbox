@@ -38,7 +38,8 @@ test('Linear auto-fill extra prompt: edit, counter, reset, save, and its effect 
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'say Working on the login bug')
   await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
-  await page.getByTestId('linear-create-open').click()
+  await page.getByTestId('linear-link-open').click()
+  await page.getByTestId('linear-link-new').click()
   await expect(page.getByTestId('linear-create-desc')).toHaveValue(/Extra prompt seen: Always add label agent\./, { timeout: 15_000 })
 })
 
@@ -56,7 +57,8 @@ test('Create Linear issue: warning details are visible and Reload lists refetche
   await page.getByTestId('thread-row').filter({ hasText: 'Note' }).first().click()
 
   lin.failLabels = true
-  await page.getByTestId('linear-create-open').click()
+  await page.getByTestId('linear-link-open').click()
+  await page.getByTestId('linear-link-new').click()
   await expect(page.getByTestId('linear-create-counts')).toHaveText('2 teams loaded, 1 project', { timeout: 15_000 })
   const warnings = page.getByTestId('linear-create-warnings')
   await expect(warnings).toBeVisible({ timeout: 15_000 }) // open by default, no hover needed

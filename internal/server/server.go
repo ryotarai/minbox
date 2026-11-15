@@ -242,6 +242,7 @@ func (s *Server) routes() http.Handler {
 	// My issues: the issues assigned to the person, one issue, a thread started from it, and creating
 	// an issue from plain language (no thread).
 	mux.HandleFunc("GET /api/linear/issues", s.linearIssuesList)
+	mux.HandleFunc("GET /api/linear/search", s.linearSearch)
 	mux.HandleFunc("POST /api/linear/issues", s.linearIssueCreate)
 	mux.HandleFunc("POST /api/linear/issues/draft", s.linearIssueDraft)
 	mux.HandleFunc("POST /api/linear/issues/team/{teamId}/lists", s.linearIssueTeamLists)
