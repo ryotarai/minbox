@@ -147,7 +147,6 @@ export type Overlay =
   | { kind: 'palette' }
   | { kind: 'shortcuts' }
   | { kind: 'decide' }
-  | { kind: 'compose'; sessionId?: string; draftId?: string }
   | { kind: 'delete-session'; session: Session }
   | { kind: 'drafts' }
   | { kind: 'new-session'; projectId?: string }

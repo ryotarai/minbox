@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type Answer, type Message, type Project, type Question, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
-import { getComposeDrafts, getReplyDraft, deleteComposeDraft, replyDraftThreads, updateReplyDraft, useDraftsVersion } from '../lib/drafts'
+import { getReplyDraft, replyDraftThreads, updateReplyDraft, useDraftsVersion } from '../lib/drafts'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { isMac, plural, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
@@ -198,10 +198,9 @@ export function DeleteProject({ project, onClose }: { project: Project; onClose:
 // ---- drafts ----
 
 export function DraftsList({ onClose }: { onClose: () => void }) {
-  const { navigate, setOverlay, sessions } = useApp()
+  const { navigate, sessions } = useApp()
   useDraftsVersion()
   const replies = replyDraftThreads()
-  const composes = getComposeDrafts()
   const [threads, setThreads] = useState<Record<string, Thread>>({})
   useEffect(() => {
     for (const id of replies) api.thread(id).then((t) => setThreads((m) => ({ ...m, [id]: t }))).catch(() => {})
@@ -210,7 +209,7 @@ export function DraftsList({ onClose }: { onClose: () => void }) {
   return (
     <Modal label="Drafts" onClose={onClose} className="flex w-[min(520px,100%)] flex-col gap-2 p-4" top>
       <b className="text-[15px] font-[650]">Drafts</b>
-      {replies.length + composes.length === 0 && <span className="py-4 text-[13px] text-subtle">No drafts.</span>}
+      {replies.length === 0 && <span className="py-4 text-[13px] text-subtle">No drafts.</span>}
       {replies.map((id) => {
         const t = threads[id]
         const d = getReplyDraft(id)
@@ -232,23 +231,6 @@ export function DraftsList({ onClose }: { onClose: () => void }) {
           </button>
         )
       })}
-      {composes.map((c) => (
-        <div key={c.id} className="flex items-center gap-2 rounded-lg border border-line2 bg-raised px-3 py-2">
-          <button
-            type="button"
-            onClick={() => setOverlay({ kind: 'compose', draftId: c.id, sessionId: c.session_id })}
-            className="flex min-w-0 flex-1 flex-col gap-0.5 border-0 bg-transparent p-0 text-left"
-          >
-            <span className="text-[13px] font-semibold">New message · {c.subject || '(no subject)'}</span>
-            <span className="truncate text-[12px] text-muted">
-              {sessions?.find((s) => s.id === c.session_id)?.name ?? ''} · {c.body.slice(0, 80)}
-            </span>
-          </button>
-          <button type="button" aria-label="Delete draft" onClick={() => deleteComposeDraft(c.id)} className="border-0 bg-transparent text-subtle hover:text-fg">
-            ×
-          </button>
-        </div>
-      ))}
     </Modal>
   )
 }
