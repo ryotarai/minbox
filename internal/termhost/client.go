@@ -180,7 +180,19 @@ func (c *Client) Shutdown(ctx context.Context) error {
 
 // Attach opens the terminal's attach WebSocket.
 func (c *Client) Attach(ctx context.Context, id string) (*websocket.Conn, error) {
-	conn, err := c.dialWS(ctx, "/terminals/"+id+"/attach")
+	return c.attach(ctx, "/terminals/"+id+"/attach")
+}
+
+// AttachRepaint is Attach for a view that should get the app's whole screen: once
+// the view has told its size, the host makes the app repaint (an agent's TUI draws
+// only what changed, and the replay may not hold the rest). A host older than
+// this ignores the query and just attaches.
+func (c *Client) AttachRepaint(ctx context.Context, id string) (*websocket.Conn, error) {
+	return c.attach(ctx, "/terminals/"+id+"/attach?repaint=1")
+}
+
+func (c *Client) attach(ctx context.Context, path string) (*websocket.Conn, error) {
+	conn, err := c.dialWS(ctx, path)
 	if err != nil {
 		return nil, err
 	}
