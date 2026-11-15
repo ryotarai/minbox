@@ -19,8 +19,8 @@ of a thread (where it runs), shown as a chip and as the terminal on the right.
 
 ```
 +--------------------+----------------------------+-------------------------------+
-| [m] [search] [+New]| < Esc   Mark read  Artifacts| deploy-api  Fixing the CI   Idle|
-|          [...]     |  Thread subject            | ~/work/api     [shell] [...]  |
+| [m] [search] [+New]| < Esc [term][>_][ok][art]   | deploy-api  Fixing the CI   Idle|
+|          [...]     |  Thread subject            | ~/work/api           [...]  |
 | [All 7][Waiting 2] |  Claude Code in deploy-api |                               |
 | [Unread 3]         |  ...messages...            |   $ claude                    |
 | Session: All  v  G |  ...question card...       |   (terminal, ghostty-web)     |
@@ -120,7 +120,7 @@ and the composer use the desktop styling). The project column is always the 56 p
   returns to the list view (entering pushes a history entry). Leave: the **Threads** button in the terminal header or
   the thread header's back button (`< alpha`); both only drop `tab=terminal`, the thread stays selected.
   Three-column widths always show the terminal, so `tab=terminal` is cleared there.
-- Shell: the shell toggle (terminal header) or Ctrl+` opens the phone's full-screen overlay (`PhoneShell`) over both
+- Shell: the **Open shell** icon in the thread header (also in the empty thread pane), ⌘K **Open shell** or Ctrl+` opens the phone's full-screen overlay (`PhoneShell`) over both
   panes; it is mounted only while shown.
 Screenshots: `img/v2/tb-01-list-thread.png` (834 px), `tb-02-thread-terminal.png`, `tb-1000-01-list-thread.png`, `tb-1000-02-thread-terminal.png` (1000 px).
 
@@ -135,7 +135,11 @@ removed; an old `rail` value in `minbox:layout` is ignored.
 ## 2. Terminal pane (right) and session header
 
 Header: session name (double-click or menu > Rename), Claude's title, cwd, `Ended` label when the session ended; right side:
-shell toggle (Ctrl+`), `...` session menu (Rename, Stop / Resume, Archive, Delete). The ended bar with
+`...` session menu (Rename, Stop / Resume, Archive, Delete), × **Close terminal** (hides the pane, like the header's
+Terminal toggle; on tablet it goes back to the list view; the agent keeps running). The shell pane has the same × in its
+corner (**Close shell**; the shell keeps running). The companion shell is not opened from here: its
+**Open shell** icon button sits in the thread header (and the empty thread pane), so it opens without the terminal;
+⌘K **Open shell** / **Hide shell** and Ctrl+` do the same. The ended bar with
 `Resume` stays in the terminal. The `toggle-inbox` button is gone.
 
 The terminal element sits at a fixed position in the tree and is keyed by session id, so moving between
@@ -188,7 +192,8 @@ session filter opens a **session sheet** (the old session list: rows with an `En
 home list is it.
 
 Tap a thread: thread screen. Header: back (with badge = other threads with unread), subject, **session chip**
-(name; tap = flip to that session's terminal), mark unread, archive. Terminal screen (`tab=terminal`):
+(name; tap = flip to that session's terminal), terminal icon, **Open shell** icon (the full-screen shell overlay;
+also in the `...` menu and ⌘K), `...` menu. Terminal screen (`tab=terminal`):
 header back (to the thread if one is open, else home), session name (+ `Ended` when ended), shell button (the existing
 full-screen overlay); a `Thread | Terminal` segmented control shows when a thread is open.
 
