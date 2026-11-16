@@ -11,6 +11,14 @@ export function answerIsEmpty(a?: Answer): boolean {
 
 export type CardState = 'Open' | 'Draft' | 'Answered' | 'Skipped' | 'Closed'
 
+/** Closures that only note the question is old: it still takes answers. */
+export const SOFT_CLOSED: ReadonlySet<ClosedReason> = new Set<ClosedReason>(['moved_on', 'replaced'])
+
+const EARLIER_NOTE: Partial<Record<ClosedReason, string>> = {
+  moved_on: 'From an earlier message · you can still answer it.',
+  replaced: 'Claude Code asked this again later · an answer here still reaches it.',
+}
+
 const CLOSED_NOTE: Record<ClosedReason, string> = {
   moved_on: 'Closed: a newer message moved the thread on.',
   replaced: 'Closed: Claude Code replaced this question.',
@@ -28,6 +36,8 @@ type Props = {
   onDraft: (a: Answer) => void
   /** Why the question no longer takes answers, when it does not. */
   closed?: ClosedReason | null
+  /** Why the question is from an earlier step (it still takes answers). */
+  earlier?: ClosedReason | null
   compact?: boolean
   phone?: boolean
 }
@@ -43,7 +53,7 @@ function contextParts(ctx: string | undefined): { prose: string; meta: string[] 
   return { prose: prose.join('\n').trim(), meta }
 }
 
-export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, closed, phone }: Props) {
+export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, closed, earlier, phone }: Props) {
   const [noteOpen, setNoteOpen] = useState(!!draft?.note)
   const readOnly = !!sent || !!closed
   const a: Answer = sent ?? draft ?? { key: q.key }
@@ -250,6 +260,11 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
       )}
       {a.skipped && !sent && <div className="text-[12px] text-subtle">Will be sent as skipped.</div>}
       {state === 'Closed' && closed && <div className="text-[12px] leading-normal text-subtle">{CLOSED_NOTE[closed]}</div>}
+      {!readOnly && earlier && EARLIER_NOTE[earlier] && (
+        <div data-testid="question-earlier" className="text-[12px] leading-normal text-subtle">
+          {EARLIER_NOTE[earlier]}
+        </div>
+      )}
     </div>
   )
 }
