@@ -20,6 +20,13 @@ if prompt.startswith("Track the topics"):
         title, status, summary = m.group(1).strip(), m.group(2), m.group(3).strip()
         topics.pop(title, None)  # a moved topic goes to the end, as a model's answer would list it
         topics[title] = {"title": title, "status": status, "summary": summary}
+    # A card the person moved by hand (the current topics say so): keep that column, and say in the
+    # summary that the move was seen (tests check the prompt carried it).
+    for m in re.finditer(r"^- id: \S+ \| status: \S+ \| title: (.+?) \| summary: .*? \| moved by the PERSON by hand to (in_progress|waiting_on_you|done) at ", prompt, re.M):
+        title, status = m.group(1).strip(), m.group(2)
+        if title in topics:
+            topics[title]["status"] = status
+            topics[title]["summary"] += " (kept your move)"
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"topics": list(topics.values())}}))
     sys.exit(0)
 

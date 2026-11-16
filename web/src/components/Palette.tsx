@@ -142,7 +142,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (isClaude && current!.project_id && !current!.is_main)
       act('set-main', "Set current session as project's main session", () => void api.setMainSession(current!.project_id!, current!.id).then(() => (reloadProjects(), reloadSessions())).catch(error), { keywords: `main default thread target project ${current!.name}` })
     act('inbox', 'Open All inbox', () => navigate({ view: 'inbox' }), { keywords: 'threads messages everything' })
-    if (settings.topics) act('topics', 'Open Topics', () => navigate({ view: 'topics' }), { keywords: 'board kanban cards' })
+    if (settings.topics) act('topics', 'Open Topics', () => navigate({ view: 'topics' }), { keywords: 'board kanban cards', shortcut: '⇧T' })
     act('settings', 'Open Settings', () => navigate({ view: 'settings', ss: 'general' }), { keywords: 'preferences options' })
     act('devices', 'Open Devices', () => navigate({ view: 'settings', ss: 'devices' }), { keywords: 'paired browsers trust' })
     act('hosts', 'Open Hosts', () => navigate({ view: 'settings', ss: 'hosts' }), { keywords: 'remote machines servers' })

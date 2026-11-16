@@ -179,6 +179,8 @@ func (s *Server) topicsOn(ctx context.Context) bool {
 func (s *Server) refreshTopics(threadID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), topicsRunTimeout)
 	defer cancel()
+	// A card the person moves from now on (while the helper runs) keeps its move: see ReplaceTopics.
+	started := s.store.Now()
 	if !s.topicsOn(ctx) {
 		return
 	}
@@ -207,7 +209,7 @@ func (s *Server) refreshTopics(threadID string) {
 	if th2, err := s.store.GetThread(ctx, threadID); err != nil || th2.ArchivedAt != nil {
 		return
 	}
-	changed, err := s.store.ReplaceTopics(ctx, threadID, in)
+	changed, err := s.store.ReplaceTopics(ctx, threadID, in, started)
 	if err != nil {
 		log.Printf("topics: %s: %v", threadID, err)
 		return
@@ -234,8 +236,18 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 	if len(cur) == 0 {
 		b.WriteString("(none yet)\n")
 	}
+	manual := false
 	for _, t := range cur {
-		b.WriteString("- id: " + t.ID + " | status: " + t.Status + " | title: " + truncRunes(t.Title, topicsTitleLen) + " | summary: " + truncRunes(t.Summary, topicsSummaryLen) + "\n")
+		b.WriteString("- id: " + t.ID + " | status: " + t.Status + " | title: " + truncRunes(t.Title, topicsTitleLen) + " | summary: " + truncRunes(t.Summary, topicsSummaryLen))
+		if t.ManualStatus != "" && t.ManualAt != nil {
+			b.WriteString(" | moved by the PERSON by hand to " + t.ManualStatus + " at " + t.ManualAt.UTC().Format("2006-01-02 15:04") + " UTC")
+			manual = true
+		}
+		b.WriteString("\n")
+	}
+	if manual {
+		b.WriteString("A topic marked \"moved by the PERSON by hand\" has the status the person chose on the board: a strong signal. " +
+			"Keep that status unless messages written after that time clearly show it is now in a different state.\n")
 	}
 	// The newest messages that fit, shown oldest first.
 	var parts []string
@@ -351,6 +363,28 @@ func parseTopics(out []byte) ([]store.TopicInput, error) {
 }
 
 // ---- API ----
+
+// PATCH /api/topics/{id} {status}: the person moves a topic to another column by hand. The status
+// holds until the thread's next extraction, which is told about the move (see buildTopicsPrompt).
+func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Status string `json:"status"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	t, err := s.store.SetTopicStatus(r.Context(), r.PathValue("id"), body.Status)
+	if errors.Is(err, store.ErrInvalidTopicStatus) {
+		httpError(w, 400, err.Error())
+		return
+	}
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	s.hub.publish(Event{Type: "topics", SessionID: t.SessionID, ThreadID: t.ThreadID})
+	writeJSON(w, 200, t)
+}
 
 // GET /api/topics?project=<id>: the topics of every live thread (of one project), open ones by last
 // change, then the done ones of the last week (newest first, capped).

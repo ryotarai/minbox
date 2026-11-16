@@ -55,6 +55,8 @@ const KEYS: [string, string, boolean?][] = [
   ['Shortcuts', '?'],
   ['Shell pane', 'Ctrl+`'],
   ['Close layer', 'Esc'],
+  ['Topics', '⇧T'],
+  ['', ''],
   ['List', '', true],
   ['Thread', '', true],
   ['Move', '↑ ↓'],
@@ -75,6 +77,12 @@ const KEYS: [string, string, boolean?][] = [
   ['Full screen', 'F'],
   ['Latest file', 'O'],
   ['Paste image (term)', '⌘V'],
+  ['Topics', '', true],
+  ['', '', true],
+  ['Move between cards', '↑ ↓ ← →  HJKL'],
+  ['Open thread', '↵'],
+  ['Move to column', '1  2  3'],
+  ['Card menu', '⇧F10'],
 ]
 
 export function Shortcuts({ onClose }: { onClose: () => void }) {

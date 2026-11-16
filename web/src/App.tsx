@@ -83,6 +83,10 @@ function Root() {
     '/': () => setOverlay({ kind: 'palette' }),
     '?': () => setOverlay({ kind: 'shortcuts' }),
     z: () => undoLast(),
+    'shift+t': () => {
+      if (!settings.topics) return false
+      navigate({ view: 'topics' })
+    },
     'shift+d': () => {
       if (!settings.decision_mode) return false
       setOverlay({ kind: 'decide' })

@@ -68,7 +68,8 @@ export function useContextMenu({ longPress = true }: { longPress?: boolean } = {
         }
       : {}),
   }
-  return { at, close, props }
+  // open: from a "…" button of the item (under the button).
+  return { at, close, open: setAt, props }
 }
 
 /** A context menu at `at` (from useContextMenu); children are MenuItems that close it themselves. */
