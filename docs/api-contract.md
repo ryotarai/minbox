@@ -82,7 +82,7 @@ kind: "message" | "note"          // note: a person's note (re-ask, 👍); not a
 attachments: Attachment[]         // meta only
 annotations: Annotation[]         // on the person's messages
 urgent: bool                      // Send now
-closed: { [question_key]: "moved_on"|"replaced"|"marked_read"|"archived" }  // agent messages: open questions closed unanswered
+closed: { [question_key]: "moved_on"|"replaced"|"marked_read"|"archived" }  // agent messages: open questions closed unanswered (no longer counted as open; "moved_on" and "replaced" ones still take answers, which reach Claude headed with a note naming the earlier message)
 ```
 
 Attachment:

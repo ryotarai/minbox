@@ -115,6 +115,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         })
         last_thread = r["thread_id"]
         out(f"sent question in {r['thread_id']}")
+    elif line == "ask region":
+        # A second question in the last thread: it moves the thread on past the earlier one.
+        r = api("POST", "/api/agent/messages", {
+            "thread_id": last_thread,
+            "body": "One more while you decide.\n\n:::question\nWhich region?\n- [ ] Tokyo\n- [ ] Oregon\n:::",
+        })
+        out(f"sent region in {r['thread_id']}")
     elif line == "stop":
         r = api("POST", "/api/agent/messages", {
             "subject": "Archive rules",

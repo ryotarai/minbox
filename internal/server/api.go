@@ -442,12 +442,20 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	words := strings.TrimSpace(req.Words)
 	var questions []question.Question
 	var answers []question.Answer
+	var earlier *store.Message // the target, when a later agent message followed it
 	if req.AnswersFor != "" {
 		var target *store.Message
+		laterAgent := false
 		for i := range th.Messages {
 			if th.Messages[i].ID == req.AnswersFor && th.Messages[i].Author == store.AuthorAgent {
 				target = &th.Messages[i]
+				laterAgent = false
+			} else if target != nil && th.Messages[i].Author == store.AuthorAgent {
+				laterAgent = true
 			}
+		}
+		if laterAgent {
+			earlier = target
 		}
 		if target == nil {
 			httpError(w, 400, "answers_for is not an agent message of this thread")
@@ -479,6 +487,10 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		byKey[a.Key] = a
 	}
 	body := question.Compose(words, questions, byKey)
+	if earlier != nil && len(answers) > 0 {
+		// Name the message, so Claude reads these as answers to its earlier questions, not its latest.
+		body = earlierNote(earlier) + "\n\n" + body
+	}
 	if sec := s.feedbackFor(r, th, annotations); sec != "" {
 		if body != "" {
 			body += "\n\n"
@@ -538,6 +550,35 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 201, msg)
+}
+
+// earlierNote heads answers to the questions of an agent message that a later one followed.
+func earlierNote(m *store.Message) string {
+	note := "These answers are to questions in your earlier message (sent " + m.CreatedAt.Local().Format("15:04") + "), not your latest one."
+	if line := firstProseLine(m.Body); line != "" {
+		note += " That message began: \"" + line + "\""
+	}
+	return note
+}
+
+// firstProseLine is the first line of a message body outside its question blocks, cut short.
+func firstProseLine(body string) string {
+	inBlock := false
+	for _, l := range strings.Split(body, "\n") {
+		l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "#>"))
+		if strings.HasPrefix(l, ":::") {
+			inBlock = l != ":::" // ":::question…" opens a block, ":::" closes it
+			continue
+		}
+		if l == "" || inBlock {
+			continue
+		}
+		if r := []rune(l); len(r) > 120 {
+			l = string(r[:120]) + "…"
+		}
+		return l
+	}
+	return ""
 }
 
 const (

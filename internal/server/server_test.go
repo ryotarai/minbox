@@ -251,6 +251,36 @@ func TestQuestionReplyIsComposedAndDelivered(t *testing.T) {
 	}
 }
 
+func TestAnswerToAnEarlierMessageNamesIt(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	body := "Two ways to store it.\n\n:::question\nWhich DB?\n- [ ] SQLite\n- [ ] Postgres\n:::"
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": body, "subject": "DB"}, bearer(sess))
+	thread, msg := sent["thread_id"].(string), sent["message_id"].(string)
+	key := sent["questions"].([]any)[0].(map[string]any)["key"].(string)
+	// A later message moves the thread on; the earlier question still takes an answer.
+	e.do("POST", "/api/agent/messages", map[string]string{"body": "Meanwhile, the build is green.", "thread_id": thread}, bearer(sess))
+	code, _, _ := e.do("POST", "/api/threads/"+thread+"/reply", map[string]any{"words": "", "answers_for": msg,
+		"answers": []map[string]any{{"key": key, "selected": []string{"Postgres"}}}}, nil)
+	if code != 201 {
+		t.Fatalf("reply: %d", code)
+	}
+	_, _, pending := e.do("GET", "/api/agent/pending?owner=o", nil, bearer(sess))
+	if len(pending) != 1 {
+		t.Fatalf("pending = %v", pending)
+	}
+	got := pending[0].(map[string]any)["body"].(string)
+	for _, want := range []string{"your earlier message", `That message began: "Two ways to store it."`, "### Q1. Which DB?\nAnswer: Postgres"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	th, _ := e.st.GetThread(context.Background(), thread)
+	if a := th.Messages[0].AnswerState[key]; len(a.Selected) != 1 || a.Selected[0] != "Postgres" {
+		t.Fatalf("answer state = %+v", th.Messages[0].AnswerState)
+	}
+}
+
 func TestPendingLongPollWakesOnReply(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()

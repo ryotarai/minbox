@@ -31,7 +31,7 @@ import {
   IconPlus,
   IconSketch,
 } from './icons'
-import { ActionItems, QuestionCard, answerIsEmpty } from './QuestionCard'
+import { ActionItems, QuestionCard, SOFT_CLOSED, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
 import { ThreadMoreMenu } from './ThreadMenu'
@@ -138,6 +138,19 @@ export function useThread(threadId: string | null): [Thread | null, () => void] 
   return [thread, load]
 }
 
+/** Whether a question no longer takes answers. A question of an earlier message, or one Claude Code
+ * re-asked, still does: only marking the thread read or archiving it closes one for good. */
+function hardClosed(m: Message, key: string): boolean {
+  const r = m.closed?.[key]
+  return !!r && !SOFT_CLOSED.has(r)
+}
+
+/** The answers picked (not yet sent) for a message's questions that still take them. */
+function pickedAnswers(m: Message, picks: Record<string, Answer> | undefined): Answer[] {
+  const open = openKeys(m)
+  return (m.questions ?? []).filter((q) => open.has(q.key)).map((q) => picks?.[q.key]).filter((a): a is Answer => !!a && !answerIsEmpty(a))
+}
+
 /** The questions of a message that still take answers (by key). */
 function openKeysOf(m: Message | null): Set<string> {
   return m ? openKeys(m) : new Set()
@@ -146,7 +159,7 @@ function openKeysOf(m: Message | null): Set<string> {
 function openKeys(m: Message): Set<string> {
   const out = new Set<string>()
   for (const q of m.questions ?? []) {
-    if (m.closed?.[q.key]) continue
+    if (hardClosed(m, q.key)) continue
     const a = m.answer_state?.[q.key]
     if (a && !answerIsEmpty(a)) continue
     out.add(q.key)
@@ -358,6 +371,11 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   const picks = target ? (draft.picks[target.id] ?? {}) : {}
   const answers: Answer[] = openQs.map((q) => picks[q.key]).filter((a): a is Answer => !!a && !answerIsEmpty(a))
   const stayOpen = openQs.length - answers.length
+  // Picks on questions of earlier messages: sent with the reply, each as its own answer message.
+  const earlier: EarlierAnswers[] = messages
+    .filter((m) => m.author === 'agent' && m !== target && draft.picks[m.id])
+    .map((m) => ({ message: m, answers: pickedAnswers(m, draft.picks[m.id]) }))
+    .filter((e) => e.answers.length > 0)
   const attachments = threadArtifacts(messages)
   const stepFiles = steppable(messages)
   const newestId = stepFiles.length ? stepFiles[stepFiles.length - 1]!.id : null
@@ -599,7 +617,6 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
                 m={m}
                 session={session}
                 thread={thread}
-                answerable={m === target}
                 picks={draft.picks[m.id] ?? {}}
                 pickedAt={draft.pickedAt}
                 onPick={(a) => setPick(m, a)}
@@ -660,6 +677,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
         thread={thread}
         target={target}
         answers={answers}
+        earlier={earlier}
         openCount={openQs.length}
         stayOpen={stayOpen}
         replyRef={replyRef}
@@ -774,7 +792,7 @@ function ThreadNotices({ thread, target }: { thread: Thread; target: Message | n
   if (replaced.length > 0) {
     notices.push(
       <div key="rep" role="alert" className="rounded-[10px] border border-danger/35 bg-dangerstrong/10 px-3 py-2.5 text-[12.5px] text-dangerfg">
-        Claude Code replaced {replaced.length === 1 ? 'a question' : `${replaced.length} questions`} at {hm(target!.created_at)}. Your picks on the old one won't be sent.
+        Claude Code replaced {replaced.length === 1 ? 'a question' : `${replaced.length} questions`} at {hm(target!.created_at)}. The old one can still be answered.
       </div>,
     )
   }
@@ -814,7 +832,6 @@ function AgentMessage({
   m,
   session,
   thread,
-  answerable,
   picks,
   pickedAt,
   onPick,
@@ -831,7 +848,6 @@ function AgentMessage({
   thread: Thread
   openId: string | null
   newestId: string | null
-  answerable: boolean
   picks: Record<string, Answer>
   pickedAt: Record<string, number>
   onPick: (a: Answer) => void
@@ -852,11 +868,8 @@ function AgentMessage({
       if (!cancelled) api.reply(thread.id, { words: '👍 Looks good' }).catch(error)
     }, 5000)
   }
-  const closedOf = (q: Question) => {
-    if (m.closed?.[q.key]) return m.closed[q.key]!
-    if (!answerable && !(m.answer_state?.[q.key] && !answerIsEmpty(m.answer_state[q.key]))) return 'moved_on' as const
-    return null
-  }
+  const closedOf = (q: Question) => (hardClosed(m, q.key) ? m.closed![q.key]! : null)
+  const earlierOf = (q: Question) => (hardClosed(m, q.key) ? null : (m.closed?.[q.key] ?? null))
   const menu = useContextMenu({ longPress: false })
   return (
     <article data-testid="message" data-author="claude" data-message-id={m.id} {...menu.props} className="group flex flex-col gap-2.5">
@@ -898,7 +911,7 @@ function AgentMessage({
               answers={Object.fromEntries(items.map((q) => [q.key, m.answer_state?.[q.key]]))}
               drafts={picks}
               onDraft={onPick}
-              readOnly={!answerable}
+              readOnly={items.every((q) => hardClosed(m, q.key))}
             />
           )
         }
@@ -916,6 +929,7 @@ function AgentMessage({
             pickedAt={pickedAt[q.key]}
             onDraft={onPick}
             closed={closedOf(q)}
+            earlier={earlierOf(q)}
             phone={phone}
           />
         )
@@ -1240,11 +1254,14 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
   )
 }
 
+type EarlierAnswers = { message: Message; answers: Answer[] }
+
 function ReplyBox({
   session,
   thread,
   target,
   answers,
+  earlier,
   openCount,
   stayOpen,
   replyRef,
@@ -1257,6 +1274,7 @@ function ReplyBox({
   thread: Thread
   target: Message | null
   answers: Answer[]
+  earlier: EarlierAnswers[]
   openCount: number
   stayOpen: number
   replyRef: React.RefObject<HTMLTextAreaElement | null>
@@ -1275,7 +1293,7 @@ function ReplyBox({
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const sketchOpen = useRef<(() => void) | null>(null)
   const words = draft.words
-  const picksCount = answers.length
+  const picksCount = answers.length + earlier.reduce((n, e) => n + e.answers.length, 0)
   const annos = draft.annotations
   const compose = useComposeFiles(thread.id)
   const { files, addFiles, addPastedText, remove: removeFile } = compose
@@ -1351,7 +1369,17 @@ function ReplyBox({
     }
     setSending(true)
     try {
-      const res = await api.reply(thread.id, {
+      // Answers to earlier messages go first, each in its own message, so each names its questions.
+      for (const e of earlier) {
+        await api.reply(thread.id, { words: '', answers_for: e.message.id, answers: e.answers })
+        updateReplyDraft(thread.id, (d) => {
+          const picks = { ...d.picks }
+          delete picks[e.message.id]
+          return { ...d, picks }
+        })
+      }
+      const hasMain = !!withReplyHelp(helpText, words).trim() || answers.length > 0 || annos.length > 0 || uploadIds(thread.id).length > 0
+      const res = !hasMain && earlier.length > 0 ? null : await api.reply(thread.id, {
         words: withReplyHelp(helpText, words),
         answers_for: answers.length ? target?.id : undefined,
         answers,
@@ -1381,7 +1409,7 @@ function ReplyBox({
 
   const actionKeys = new Set((target?.questions ?? []).filter((q) => q.kind === 'action').map((q) => q.key))
   const qTotal = openCount - [...actionKeys].filter((k) => openKeysOf(target).has(k)).length
-  const qAnswered = picksCount - actionsDone
+  const qAnswered = answers.length - actionsDone
   const aTotal = openCount - qTotal
   const counter =
     openCount > 0 ? (

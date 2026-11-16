@@ -56,6 +56,59 @@ test('a question from Claude is answered in the inbox and delivered back', async
   await expect(page).toHaveTitle('minbox')
 })
 
+for (const [name, size] of [['desktop', null], ['phone', { width: 390, height: 844 }]] as const) {
+  test(`${name}: a question in an earlier message still takes an answer after Claude writes again`, async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await createSession(page, minbox.dataDir, `older-${name}`)
+    await expectTerminal(page, 'ready>')
+    await typeInTerminal(page, 'ask')
+    await expectTerminal(page, /sent question in thr_/)
+    await typeInTerminal(page, 'ask region')
+    await expectTerminal(page, /sent region in thr_/)
+    if (size) {
+      await page.setViewportSize(size)
+      await page.goto(minbox.url + '/#')
+      await expect(page.getByTestId('phone')).toBeVisible()
+    }
+    await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
+
+    const older = page.getByTestId('message').filter({ hasText: 'I need a decision.' })
+    const newer = page.getByTestId('message').filter({ hasText: 'One more while you decide.' })
+    const db = older.getByTestId('question-card').first()
+    // The earlier question is open, with a quiet note that it is from an earlier message.
+    await expect(db.getByTestId('question-state')).toHaveText('Open')
+    await expect(db.getByTestId('question-earlier')).toContainText('earlier message')
+    await db.getByRole('radio', { name: /Postgres/ }).click()
+    await expect(db.getByRole('radio', { name: /Postgres/ })).toHaveAttribute('aria-checked', 'true')
+    // The newest message's question still works alongside it.
+    const region = newer.getByTestId('question-card')
+    await expect(region.getByTestId('question-earlier')).toHaveCount(0)
+    await region.getByRole('radio', { name: /Oregon/ }).click()
+    if (!size) await expect(page.getByTestId('picks-chip')).toContainText('2 picks')
+    await page.getByTestId('reply-send').click()
+
+    await expect(region.getByTestId('question-state')).toHaveText('Answered')
+    await expect(db.getByTestId('question-state')).toHaveText('Answered')
+    // The earlier message's other question is still open.
+    await expect(older.getByTestId('question-card').nth(1).getByTestId('question-state')).toHaveText('Open')
+    await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
+    if (size) {
+      // The phone shows the terminal on its own screen.
+      await page.getByTestId('thread-open-terminal').click()
+      await expect(page.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
+    }
+    // Claude gets each answer with its question quoted; the earlier one names its message.
+    await expectTerminal(page, 'Answer: Oregon')
+    const text = (await terminalText(page)).replace(/\n/g, '') // undo the terminal's line wrapping
+    expect(text).toContain('These answers are to questions in your earlier message')
+    expect(text).toContain('That message began: "I need a decision."')
+    expect(text).toContain('Q1. Which database should we use?')
+    expect(text).toContain('Answer: Postgres')
+    expect(text).toContain('Q1. Which region?')
+    expect(text.indexOf('Answer: Postgres')).toBeLessThan(text.indexOf('Answer: Oregon'))
+  })
+}
+
 test('the person can start a thread; it reaches Claude', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'compose')
