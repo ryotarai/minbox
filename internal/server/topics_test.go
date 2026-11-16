@@ -305,3 +305,126 @@ func TestTopicsFlow(t *testing.T) {
 		t.Fatalf("archived thread's topics shown: %v", obj)
 	}
 }
+
+func TestParseTopicsDetailTasksMessages(t *testing.T) {
+	out := []byte(`{"structured_output":{"topics":[
+		{"title":"Search UI","summary":"s","status":"in_progress","detail":"  Building **the box**.\n\nNext: results. ",
+		 "tasks":[{"text":" Add  the field ","done":true},{"text":"","done":false},"junk",{"text":"Wire results","done":false}],
+		 "message_ids":["msg_1"," msg_2 ",3,""]},
+		{"title":"Old answer","summary":"s","status":"done"}
+	]}}`)
+	got, err := parseTopics(out)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %+v %v", got, err)
+	}
+	a := got[0]
+	if a.Detail != "Building **the box**.\n\nNext: results." || len(a.Tasks) != 2 || a.Tasks[0] != (store.TopicTask{Text: "Add the field", Done: true}) || a.Tasks[1].Done {
+		t.Fatalf("first = %+v", a)
+	}
+	if len(a.MessageIDs) != 2 || a.MessageIDs[0] != "msg_1" || a.MessageIDs[1] != "msg_2" {
+		t.Fatalf("ids = %v", a.MessageIDs)
+	}
+	// An answer without them (an older model): empty, never nil.
+	if got[1].Tasks == nil || got[1].MessageIDs == nil || got[1].Detail != "" {
+		t.Fatalf("second = %+v", got[1])
+	}
+	for _, want := range []string{`"detail"`, `"tasks"`, `"message_ids"`, `"required":["title","summary","status","detail","tasks","message_ids"]`} {
+		if !strings.Contains(topicsSchema, want) {
+			t.Errorf("schema lacks %s", want)
+		}
+	}
+}
+
+func TestBuildTopicsPromptIDsAndTasks(t *testing.T) {
+	th := &store.Thread{Subject: "Search", Messages: []store.Message{
+		{ID: "msg_a", Author: store.AuthorUser, Body: "add search", Words: "add search"},
+		{ID: "msg_b", Author: store.AuthorAgent, Body: "On it"},
+	}}
+	p := buildTopicsPrompt(th, []store.Topic{{ID: "tpc_1", Title: "Search UI", Summary: "Building", Status: store.TopicInProgress,
+		Detail: "Building the box.\nThen results.", Tasks: []store.TopicTask{{Text: "Add the field", Done: true}, {Text: "Wire results"}}}})
+	for _, want := range []string{"· id: msg_a]", "· id: msg_b]", "  detail: Building the box. Then results.\n", "  task [x] Add the field\n", "  task [ ] Wire results\n",
+		"- detail:", "- tasks:", "Keep the current tasks", "- message_ids:"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestTopicPaneFlow(t *testing.T) {
+	e := newEnv(t)
+	e.srv.topics.debounce = 20 * time.Millisecond
+	var mu sync.Mutex
+	var foreign string
+	// The answer names every message of the history it was shown, and one of another thread.
+	e.srv.topicsRun = func(_ context.Context, p string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		var ids []string
+		for _, part := range strings.Split(p, "· id: ")[1:] {
+			ids = append(ids, `"`+strings.SplitN(part, "]", 2)[0]+`"`)
+		}
+		if foreign != "" {
+			ids = append(ids, `"`+foreign+`"`)
+		}
+		return []byte(`{"structured_output":{"topics":[{"title":"Search UI","summary":"Building","status":"in_progress","detail":"The **box**.",` +
+			`"tasks":[{"text":"Add the field","done":true},{"text":"Wire results","done":false}],"message_ids":[` + strings.Join(ids, ",") + `]}]}}`), nil
+	}
+	ch := make(chan Event, 64)
+	e.srv.hub.mu.Lock()
+	e.srv.hub.subs[ch] = struct{}{}
+	e.srv.hub.mu.Unlock()
+	wait := func(thread string) {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case ev := <-ch:
+				if ev.Type == "topics" && ev.ThreadID == thread {
+					return
+				}
+			case <-deadline:
+				t.Fatal("no topics event")
+			}
+		}
+	}
+	sess := e.createSession()
+	other := e.send(sess, "", "Other", "Elsewhere", "working")
+	wait(other)
+	oth, _ := e.srv.store.GetThread(context.Background(), other)
+	mu.Lock()
+	foreign = oth.Messages[0].ID
+	mu.Unlock()
+
+	th := e.send(sess, "", "Search", "Shall I build   search?\nIt needs an index.", "need_action")
+	wait(th)
+	_, obj, _ := e.do("GET", "/api/topics", nil, nil)
+	var id string
+	for _, tp := range rows(t, obj, "topics") {
+		if tp["thread_id"] == th {
+			id = tp["id"].(string)
+			if tp["detail"] != "The **box**." || len(tp["tasks"].([]any)) != 2 || len(tp["message_ids"].([]any)) != 1 {
+				t.Fatalf("listed = %v", tp)
+			}
+		}
+	}
+	code, obj, _ := e.do("GET", "/api/topics/"+id, nil, nil)
+	if code != 200 {
+		t.Fatalf("get: %d %v", code, obj)
+	}
+	tp := obj["topic"].(map[string]any)
+	ms := rows(t, obj, "messages")
+	if tp["id"] != id || tp["session_id"] != sess.ID || len(ms) != 1 || ms[0]["author"] != "agent" || ms[0]["excerpt"] != "Shall I build search? It needs an index." {
+		t.Fatalf("topic = %v", obj)
+	}
+
+	// The next message: its id is added to the related ones (the foreign one never is).
+	e.send(sess, th, "Search", "Done with the field.", "working")
+	wait(th)
+	_, obj, _ = e.do("GET", "/api/topics/"+id, nil, nil)
+	if ms = rows(t, obj, "messages"); len(ms) != 2 || ms[1]["excerpt"] != "Done with the field." {
+		t.Fatalf("after = %v", obj)
+	}
+	if code, _, _ := e.do("GET", "/api/topics/tpc_nope", nil, nil); code != 404 {
+		t.Fatalf("missing: %d", code)
+	}
+}

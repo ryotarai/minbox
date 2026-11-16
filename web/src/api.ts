@@ -425,13 +425,23 @@ export type Topic = {
   /** The person moved it to this column by hand ("": not since the thread's last extraction). */
   manual_status?: TopicStatus | ''
   manual_at?: string | null
+  /** A fuller summary (a few sentences, Markdown) for the topic pane. */
+  detail?: string
+  /** Its steps, done as the helper judges them from the messages. */
+  tasks?: TopicTask[]
+  /** The thread's messages about it, oldest first. */
+  message_ids?: string[]
   thread_name?: string
   thread_subject?: string
   session_id?: string
   project_id?: string
   project_name?: string
 }
+export type TopicTask = { text: string; done: boolean }
 export type TopicsResult = { topics: Topic[]; enabled: boolean; done_days: number }
+/** A message a topic relates to (GET /api/topics/{id}). */
+export type TopicMessage = { id: string; author: 'user' | 'agent'; kind: string; created_at: string; excerpt: string }
+export type TopicDetail = { topic: Topic; messages: TopicMessage[] }
 
 export type ListOptions = {
   highlight_subject: boolean
@@ -1011,6 +1021,7 @@ export const api = {
 
   /** Move a topic to another column by hand (it holds until the thread's next extraction). */
   setTopicStatus: (id: string, status: TopicStatus) => call<Topic>('PATCH', `/api/topics/${encodeURIComponent(id)}`, { status }),
+  topic: (id: string) => call<TopicDetail>('GET', `/api/topics/${encodeURIComponent(id)}`),
   topics: (project = '') => call<TopicsResult>('GET', `/api/topics${project ? `?project=${encodeURIComponent(project)}` : ''}`),
 
   settings: () => call<Settings>('GET', '/api/settings'),
