@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,11 +26,13 @@ import (
 const (
 	topicsDebounce   = 4 * time.Second  // quiet time after a message before the run
 	topicsMaxDelay   = 30 * time.Second // a steady stream of messages still runs this often
-	topicsRunTimeout = 90 * time.Second
+	topicsRunTimeout = 5 * time.Minute  // 20 whole messages can make a long prompt, and the answer many topics
 	topicsParallel   = 2
-	topicsMaxTopics  = 6
-	topicsMsgBudget  = 12000 // runes of messages in the prompt, newest first
-	topicsMsgLen     = 1500  // runes per message
+	// No product limit on the number of topics: every separate subject is one. This only guards
+	// against a runaway answer.
+	topicsMaxTopics = 100
+	// The newest messages of the thread, each in full (the current topics carry what came before).
+	topicsMsgCount   = 20
 	topicsTitleLen   = 80
 	topicsSummaryLen = 160
 	// The board's Done column: topics done within this long, at most topicsDoneLimit of them.
@@ -40,7 +43,7 @@ const (
 const topicsSystemPrompt = "You track the topics of a conversation between a person and their coding agent for a kanban board. Output only JSON matching the schema."
 
 const topicsSchema = `{"type":"object","properties":{` +
-	`"topics":{"type":"array","minItems":0,"maxItems":6,"items":{"type":"object","properties":{` +
+	`"topics":{"type":"array","minItems":0,"items":{"type":"object","properties":{` +
 	`"id":{"type":"string"},` +
 	`"title":{"type":"string","maxLength":80},` +
 	`"summary":{"type":"string","maxLength":160},` +
@@ -224,8 +227,8 @@ func (s *Server) runTopicsHelper(ctx context.Context, prompt string) ([]byte, er
 	return s.runHelper(ctx, "haiku", topicsSystemPrompt, topicsSchema, prompt)
 }
 
-// buildTopicsPrompt: the thread's current topics and its recent messages (newest kept within the
-// budget), then the instruction. It starts with "Track the topics" (the e2e fake helper keys on it).
+// buildTopicsPrompt: the thread's current topics and its newest messages (in full), then the
+// instruction. It starts with "Track the topics" (the e2e fake helper keys on it).
 func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 	var b strings.Builder
 	b.WriteString("Track the topics of this conversation between a PERSON and their coding AGENT.\n")
@@ -249,11 +252,8 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 		b.WriteString("A topic marked \"moved by the PERSON by hand\" has the status the person chose on the board: a strong signal. " +
 			"Keep that status unless messages written after that time clearly show it is now in a different state.\n")
 	}
-	// The newest messages that fit, shown oldest first.
-	var parts []string
-	used := 0
-	for i := len(th.Messages) - 1; i >= 0; i-- {
-		m := th.Messages[i]
+	// The newest topicsMsgCount messages, in full, oldest first.
+	label := func(m store.Message) (string, string) {
 		who, body := "AGENT", m.Body
 		if m.Author == store.AuthorUser {
 			who = "PERSON"
@@ -264,45 +264,47 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 				who = "PERSON ran a command"
 			}
 		}
-		text := truncRunes(strings.TrimSpace(body), topicsMsgLen)
+		return "[" + who + " · " + m.CreatedAt.UTC().Format("2006-01-02 15:04") + "]", strings.TrimSpace(body)
+	}
+	start := max(0, len(th.Messages)-topicsMsgCount)
+	b.WriteString("\nMessages (oldest first")
+	if start > 0 {
+		b.WriteString("; only the newest " + strconv.Itoa(topicsMsgCount) + ", the earlier ones are behind the current topics above")
+	}
+	b.WriteString("):\n\n")
+	for i := start; i < len(th.Messages); i++ {
+		m := th.Messages[i]
+		head, text := label(m)
 		if i == len(th.Messages)-1 && m.Author == store.AuthorAgent {
 			for _, q := range m.Questions {
 				if _, answered := m.AnswerState[q.Key]; !answered {
-					text += "\nOpen question to the person: " + truncRunes(q.Prompt, 300)
+					text += "\nOpen question to the person: " + q.Prompt
 				}
 			}
 		}
-		part := "[" + who + " · " + m.CreatedAt.UTC().Format("2006-01-02 15:04") + "]\n" + text + "\n"
-		n := len([]rune(part))
-		if used+n > topicsMsgBudget && len(parts) > 0 {
-			break
-		}
-		used += n
-		parts = append(parts, part)
+		b.WriteString(head + "\n" + text + "\n\n")
 	}
-	b.WriteString("\nMessages (oldest first")
-	if len(parts) < len(th.Messages) {
-		b.WriteString("; earlier ones left out")
-	}
-	b.WriteString("):\n\n")
-	for i := len(parts) - 1; i >= 0; i-- {
-		b.WriteString(parts[i] + "\n")
-	}
-	b.WriteString("Task: list the topics of this thread for the person's board: the separate pieces of work or decisions it is about " +
-		"(a feature, a bug, an investigation, a question to settle, a review), not individual messages or steps. " +
-		"Usually 1 to 3, at most 6; fold small related items into one topic. For each topic give:\n" +
+	b.WriteString("Task: list the topics of this thread for the person's board. " +
+		"Every distinct subject, request, question, decision or piece of work in the thread is its own topic " +
+		"(a feature, a bug, an investigation, a question to settle, a review). " +
+		"Each separate request or question the PERSON made is its own topic: do not merge unrelated ones into one. " +
+		"Merge only true duplicates, or a later message that continues the same request. " +
+		"A request or question that is already finished or answered is still a topic, with status \"done\". " +
+		"There is no limit on the number of topics. Individual steps of one piece of work are not topics. For each topic give:\n" +
 		"- title: a short name (2 to 8 words), in the language the PERSON writes in (if they wrote nothing, the agent's). Keep the current title when a topic continues.\n" +
 		"- summary: one line (under 120 characters) saying where it stands now.\n" +
 		"- status: \"waiting_on_you\" when the agent is waiting for the person's decision, answer, review or action on it; " +
 		"\"done\" when it is finished, resolved or dropped; otherwise \"in_progress\" (the agent is working on it, or it is still open).\n" +
 		"- id: the id of the current topic it continues; leave it out for a new topic.\n" +
-		"Keep the current topics that still apply, including done ones, and update their status and summary from the newest messages. " +
+		"Keep the current topics, including done ones (with status \"done\"; do not drop a topic because it is finished), " +
+		"and update their status and summary from the newest messages. " +
 		"Drop a current topic only when it was a mistake or became part of another.\n")
 	return b.String()
 }
 
 // parseTopics reads the helper's answer (the envelope parseSuggestions reads): topics with a title
-// and a known status, deduplicated by title, lengths and count capped.
+// and a known status, deduplicated by title, lengths capped (and the count, only against a runaway
+// answer: topicsMaxTopics).
 func parseTopics(out []byte) ([]store.TopicInput, error) {
 	var env struct {
 		IsError          bool            `json:"is_error"`
