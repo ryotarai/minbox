@@ -910,8 +910,12 @@ func (l *linearSvc) updateLink(ctx context.Context, threadID string, fn func(k *
 		return nil
 	}
 	fn(k)
-	if err := l.s.store.PutThreadLink(ctx, k); err != nil {
+	// Only while still linked: deleteThreadLinear does not take linkMu, so the link may have gone
+	// since it was read; saving it back would link the thread again.
+	if ok, err := l.s.store.UpdateThreadLink(ctx, k); err != nil {
 		log.Printf("linear: saving link of %s: %v", threadID, err)
+	} else if !ok {
+		return nil
 	}
 	return k
 }

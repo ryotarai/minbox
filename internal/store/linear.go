@@ -211,6 +211,18 @@ func (s *Store) HasThreadLink(ctx context.Context, threadID string) bool {
 
 // PutThreadLink inserts or replaces a link.
 func (s *Store) PutThreadLink(ctx context.Context, l *ThreadLink) error {
+	_, err := s.putLink(ctx, l, false)
+	return err
+}
+
+// UpdateThreadLink saves a link read earlier only while the thread is still linked to the same
+// issue: a sync that read the link must not bring it back after the thread was unlinked (or
+// linked to another issue) meanwhile. false: nothing was saved.
+func (s *Store) UpdateThreadLink(ctx context.Context, l *ThreadLink) (bool, error) {
+	return s.putLink(ctx, l, true)
+}
+
+func (s *Store) putLink(ctx context.Context, l *ThreadLink, onlyIfLinked bool) (bool, error) {
 	ids := l.SeenCommentIDs
 	if len(ids) > MaxSeenCommentIDs {
 		ids = ids[len(ids)-MaxSeenCommentIDs:]
@@ -239,11 +251,20 @@ func (s *Store) PutThreadLink(ctx context.Context, l *ThreadLink) error {
 		}
 		return ms(*t)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO thread_links(`+linkCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		l.ThreadID, l.IssueID, l.Identifier, l.URL, l.Title, l.State, l.StateType, l.Assignee, l.TeamID, l.TeamName, l.Baselined,
+	q := `INSERT OR REPLACE INTO thread_links(` + linkCols + `) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
+	args := []any{l.ThreadID, l.IssueID, l.Identifier, l.URL, l.Title, l.State, l.StateType, l.Assignee, l.TeamID, l.TeamName, l.Baselined,
 		nm(l.LastSeenCommentAt), string(seen), l.ProgressCommentID, l.ProgressHash, nm(l.LastProgressAt), l.LastStatus,
-		np(l.LastSyncedAt), l.LastError, np(l.LastErrorAt), incl, ms(created))
-	return err
+		np(l.LastSyncedAt), l.LastError, np(l.LastErrorAt), incl, ms(created)}
+	if onlyIfLinked {
+		q += ` WHERE EXISTS (SELECT 1 FROM thread_links WHERE thread_id=? AND issue_id=?)`
+		args = append(args, l.ThreadID, l.IssueID)
+	}
+	res, err := s.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // DeleteThreadLink unlinks a thread (its recorded Linear events go with it).
