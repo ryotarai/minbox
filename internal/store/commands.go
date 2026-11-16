@@ -159,3 +159,13 @@ func (s *Store) markCommandsDelivered(ctx context.Context, messageID string) err
 	_, err := s.db.ExecContext(ctx, `UPDATE thread_commands SET delivered_at=COALESCE(delivered_at, ?) WHERE inject_message_id=? AND delivered_at IS NULL`, ms(s.now()), messageID)
 	return err
 }
+
+// HasQueuedUserMessage reports whether the thread has a message of the person that waits to be
+// delivered and is not being delivered right now (no claim, or a stale one): such a message will
+// carry a finished command's result when it goes out.
+func (s *Store) HasQueuedUserMessage(ctx context.Context, threadID string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE thread_id=? AND author='user' AND delivered_at IS NULL
+	  AND (claimed_at IS NULL OR claimed_at<?)`, threadID, ms(s.now().Add(-ClaimTimeout))).Scan(&n)
+	return n > 0, err
+}
