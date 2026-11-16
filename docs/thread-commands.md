@@ -1,13 +1,16 @@
 # Thread commands (`!`)
 
-A reply that starts with `!` is not sent to the agent as a message. minbox runs the rest as a shell command, shows the
-result in the thread, and tells the agent about it with your next message. It is like `!` bash mode in Claude Code.
+A reply that starts with `!` is not sent to the agent as it is. minbox runs the command itself (not in the agent's
+terminal), shows the result in the thread, and as soon as the command ends sends the result to the agent, which starts a
+turn with it. It works the same for every agent kind (Claude Code, Pi, OpenCode): the result goes out like any message.
 
 ## What counts as a command
 
 | You type | What happens |
 |---|---|
 | `!ls -la` | runs `ls -la` |
+| `!make test`, then more lines | runs `make test`; the lines below go to the agent with the result |
+| `!echo a \`, then `b` on the next line | a line ending in `\` continues the command: runs `echo a \⏎b` |
 | `\!ls -la` | sent as a normal message with the text `!ls -la` (the backslash is removed) |
 | ` !ls` (a space first) | a normal message |
 | `!` or `!   ` (nothing after it) | a normal message with that text (nothing is lost; no error) |
@@ -31,21 +34,30 @@ The composer shows "Runs as a command in <folder>" while the text starts with `!
 ## What the agent sees
 
 The command message is stored with the thread (so it is there after a reload) as `kind: "command"`. It is stored as
-delivered: it is never delivered as a message of its own and does not start a turn, does not change the thread's status
-and does not mark the thread as waiting on the agent.
+delivered: it is never delivered as a message of its own.
 
-When the command is done, its result is composed into a `<minbox_user_command>` block and put in front of the **next
+When the command ends (exit, failure or timeout), minbox adds a message of the person to the thread and delivers it the
+usual way (queued while the agent is busy, sent when it is idle), so the agent starts a turn with the result:
+
+- the lines you wrote below the command, if any;
+- else "I ran the command above myself; its result is above. Take it into account and carry on." — unless a message of
+  yours in this thread is already queued (not yet delivered, not being delivered): that one carries the result, and
+  nothing more is sent.
+
+This marks the thread as working, like a reply. While the command runs the command message says "Agent gets the result
+when it ends", then "Sending the result to the agent", then "Agent has the result". A command still running when the
+server stops sends nothing (its result is stored as interrupted and rides along with your next message).
+
+The result is composed into a `<minbox_user_command>` block and put in front of the **next
 message of this thread that is delivered to the agent**, exactly once, like the Linear updates and the fork handoff
 (`commandInject`, tied to the carrying message: a retried delivery carries the same text, and marking that message
-delivered marks the result as told). The stored body of the carrying message is not changed. The block says it is
-information from minbox, not a request; the command and the output are untrusted data (our closing tags are neutralised,
+delivered marks the result as told). The stored body of the carrying message is not changed. The block says the person
+ran the commands, not the agent; the command and the output are untrusted data (our closing tags are neutralised,
 secrets are redacted as in other injected blocks, output is cut at 16 KB). Several commands before one message ride along
 together, oldest first.
 
-If the agent is idle and you run a command, nothing is typed to it: it hears of the result with the next message you send in
-the thread (the command message says "Agent gets it with your next message", then "Agent has the result"). This was chosen
-over a note message of its own, which would start a turn (and cost tokens) for something you only wanted in its context.
-If you want it to react at once, add a message after the command.
+Commands need no input: stdin is empty and the 60 s limit applies. A command that waits for you (for example a sign-in
+that opens the browser) works while it finishes within the limit; the agent hears of it when it ends.
 
 ## Denied commands
 

@@ -1439,7 +1439,7 @@ function ReplyBox({
 
   const commandHint = cmd ? (
     <span data-testid="command-hint" className="min-w-0 truncate text-[12px] text-subtle" title={session.cwd}>
-      Runs as a command in {session.cwd}. Start with \! to send the text instead.
+      Runs as a command in {session.cwd}, then the agent gets the result and any lines below it. Start with \! to send the text instead.
     </span>
   ) : null
 

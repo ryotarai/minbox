@@ -39,7 +39,7 @@ export function CommandMessage({ m, phone }: { m: Message; phone?: boolean }) {
         <span className="min-w-0 flex-1 truncate" title={c.cwd}>
           in {c.cwd}
         </span>
-        <span>{c.told ? 'Agent has the result' : 'Agent gets it with your next message'}</span>
+        <span>{c.told ? 'Agent has the result' : running ? 'Agent gets the result when it ends' : 'Sending the result to the agent'}</span>
       </div>
       <pre data-testid="command-line" className={cx('m-0 whitespace-pre-wrap break-all font-mono text-fg', phone ? 'text-[13px]' : 'text-[12.5px]')}>
         <span className="text-subtle">$ </span>

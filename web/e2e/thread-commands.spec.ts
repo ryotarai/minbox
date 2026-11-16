@@ -2,10 +2,11 @@ import type { Page } from '@playwright/test'
 import { createSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
 
 // "!" in a reply runs a shell command in the session's folder (docs/thread-commands.md). The
-// result is a message in the thread and rides along with the agent's next delivered message.
+// result is a message in the thread; when the command ends, minbox sends it to the agent at once
+// (with the lines written below the command, or a short follow-up), so the agent starts a turn.
 
-async function openThread(page: Page, dir: string) {
-  await createSession(page, dir, 'alpha')
+async function openThread(page: Page, dir: string, agent?: 'claude' | 'pi' | 'opencode') {
+  await createSession(page, dir, 'alpha', agent)
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, 'ask')
   await expectTerminal(page, /sent question in thr_/)
@@ -31,18 +32,24 @@ async function walk(page: Page, dir: string, phone: boolean) {
   await expect(block.getByTestId('command-output')).toContainText('oops')
   await expect(block.getByTestId('command-output')).toContainText(dir.split('/').pop()!)
   await expect(block.getByTestId('command-status')).toContainText('Exit 0')
-  await expect(block).toContainText('Agent gets it with your next message')
   await expect(box).toHaveValue('')
+  // Nothing more to send: minbox sends the result with a follow-up, and the agent gets it.
+  if (!phone) await expectTerminal(page, /<<< inbox \[Pick a database\] <minbox_user_command[\s\S]*\$ echo hi[\s\S]*I ran the command above myself/)
+  await expect(block).toContainText('Agent has the result')
 
-  // A failing command, and long output collapsed.
-  await box.fill('!seq 1 40; exit 7')
+  // A failing command with words below it: the words go to the agent with the result.
+  await box.fill('!seq 1 40; exit 7\nwhy did it fail?')
   await page.getByTestId('reply-send').click()
-  const second = block.nth(1)
+  const second = block.filter({ hasText: 'seq 1 40' })
+  await expect(second.getByTestId('command-line')).not.toContainText('why did it fail')
   await expect(second.getByTestId('command-status')).toContainText('Exit 7')
   await expect(second.getByTestId('command-toggle')).toHaveText('Show all 40 lines')
   await expect(second.getByTestId('command-output')).not.toContainText('40')
   await second.getByTestId('command-toggle').click()
   await expect(second.getByTestId('command-output')).toContainText('40')
+  if (!phone) await expectTerminal(page, /<<< inbox \[Pick a database\] <minbox_user_command[\s\S]*\$ seq 1 40; exit 7[\s\S]*exit code 7[\s\S]*why did it fail\?/)
+  await expect(second).toContainText('Agent has the result')
+  await expect(page.getByTestId('thread-view')).toContainText('why did it fail?')
 
   // Still there after a reload.
   await page.reload()
@@ -53,14 +60,9 @@ async function walk(page: Page, dir: string, phone: boolean) {
     await expect(view.or(row).first()).toBeVisible()
     if (!(await view.isVisible())) await row.click()
   }
-  await expect(block).toHaveCount(2)
-  await expect(block.first().getByTestId('command-status')).toContainText('Exit 0')
-
-  // Nothing went to the agent yet; the next message carries both results, once.
-  await box.fill('go on')
-  await page.getByTestId('reply-send').click()
-  if (!phone) await expectTerminal(page, /<<< inbox \[Pick a database\] <minbox_user_command[\s\S]*\$ echo hi[\s\S]*go on/)
-  await expect(block.first()).toContainText('Agent has the result')
+  // (older messages fold away; the latest command is shown)
+  await expect(block.last().getByTestId('command-status')).toContainText('Exit 7')
+  await expect(block.last()).toContainText('Agent has the result')
 
   // "\!" sends the text as a normal message.
   await box.fill('\\!bang')
@@ -87,3 +89,14 @@ test('! runs a command in the thread (phone, dark theme)', async ({ page, minbox
   const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }))
   expect(m.scroll).toBeLessThanOrEqual(m.inner)
 })
+
+for (const agent of ['pi', 'opencode'] as const) {
+  test(`! sends the result to the agent when the command ends (${agent})`, async ({ page, allAgentsMinbox: minbox }) => {
+    await page.goto(minbox.url)
+    await openThread(page, minbox.dataDir, agent)
+    await page.getByTestId('reply-box').fill('!echo from-' + agent + '\nthanks, go on')
+    await page.getByTestId('reply-send').click()
+    await expectTerminal(page, new RegExp(`<<< inbox \\[Pick a database\\] <minbox_user_command[\\s\\S]*from-${agent}[\\s\\S]*thanks, go on`))
+    await expect(page.locator('[data-testid="message"][data-kind="command"]')).toContainText('Agent has the result')
+  })
+}

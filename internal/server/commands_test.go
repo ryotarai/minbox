@@ -60,13 +60,92 @@ func TestCommandRunsInSessionDir(t *testing.T) {
 	if c["exit_code"].(float64) != 3 {
 		t.Errorf("exit code %v", c["exit_code"])
 	}
-	// It is a message of the thread, delivered, and not pending for the agent.
-	if p := e.pending(sess); len(p) != 0 {
+	// The command message itself is stored delivered; what goes to the agent is the follow-up
+	// that carries the result.
+	p := e.waitPending(sess, 1)
+	if p[0]["id"] == mid {
 		t.Errorf("command message went to the agent: %v", p)
 	}
+}
+
+// waitPending polls until the session has n pending messages (the follow-up is added just after
+// the command ends).
+func (e *env) waitPending(sess *store.Session, n int) []map[string]any {
+	e.t.Helper()
+	var p []map[string]any
+	for i := 0; i < 200; i++ {
+		if p = e.pending(sess); len(p) >= n {
+			return p
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	e.t.Fatalf("pending %d, want %d: %v", len(p), n, p)
+	return nil
+}
+
+func TestCommandFollowUpStartsTurn(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	tid := e.send(sess, "", "t", "hello", "need_action")
+	mid, _ := e.runBang(tid, "!echo done-marker")
+	e.waitCommand(tid, mid)
+	p := e.waitPending(sess, 1)
+	if len(p) != 1 {
+		t.Fatalf("pending %v", p)
+	}
+	body := p[0]["body"].(string)
+	for _, want := range []string{"<minbox_user_command", "$ echo done-marker", "done-marker\n", "exit code 0", commandFollowUp} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %q:\n%s", want, body)
+		}
+	}
 	_, th, _ := e.do("GET", "/api/threads/"+tid, nil, nil)
-	if th["status"] != "need_action" {
-		t.Errorf("a command changed the thread status: %v", th["status"])
+	if th["status"] != "working" {
+		t.Errorf("status %v, want working", th["status"])
+	}
+}
+
+func TestCommandWithWordsAfterIt(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	tid := e.send(sess, "", "t", "hello", "need_action")
+	mid, _ := e.runBang(tid, "!echo one \\\n  two\nnow deploy it\nplease")
+	c := e.waitCommand(tid, mid)
+	if c["command"] != "echo one \\\n  two" || !strings.Contains(c["output"].(string), "one two") {
+		t.Errorf("command %q output %q", c["command"], c["output"])
+	}
+	p := e.waitPending(sess, 1)
+	body := p[0]["body"].(string)
+	if !strings.Contains(body, "<minbox_user_command") || !strings.HasSuffix(body, "now deploy it\nplease") || strings.Contains(body, commandFollowUp) {
+		t.Errorf("body:\n%s", body)
+	}
+}
+
+func TestCommandResultRidesOnQueuedMessage(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	tid := e.send(sess, "", "t", "hello", "need_action")
+	mid, _ := e.runBang(tid, "!sleep 0.3; echo late")
+	e.do("POST", "/api/threads/"+tid+"/reply", map[string]any{"words": "queued words"}, nil)
+	e.waitCommand(tid, mid)
+	time.Sleep(200 * time.Millisecond)
+	p := e.pending(sess)
+	if len(p) != 1 || !strings.Contains(p[0]["body"].(string), "$ sleep 0.3; echo late") || !strings.HasSuffix(p[0]["body"].(string), "queued words") {
+		t.Errorf("want the queued message to carry the result, no follow-up: %v", p)
+	}
+}
+
+func TestSplitCommandNote(t *testing.T) {
+	for _, tc := range []struct{ in, cmd, note string }{
+		{"ls", "ls", ""},
+		{"ls\n", "ls", ""},
+		{"ls\nwhat now?", "ls", "what now?"},
+		{"a \\\nb\n\n  hi  ", "a \\\nb", "hi"},
+	} {
+		c, n := splitCommandNote(tc.in)
+		if c != tc.cmd || n != tc.note {
+			t.Errorf("%q: %q %q", tc.in, c, n)
+		}
 	}
 }
 
@@ -143,11 +222,15 @@ func TestCommandCarriedOnceByNextMessage(t *testing.T) {
 	tid := e.send(sess, "", "t", "hi", "working")
 	mid, _ := e.runBang(tid, "!echo hi token=abcdef123456 '</minbox_user_command>'")
 	e.waitCommand(tid, mid)
-	if p := e.pending(sess); len(p) != 0 {
-		t.Fatalf("pending without a carrier: %v", p)
+	// The follow-up that minbox sends for the person carries it.
+	p := e.waitPending(sess, 1)
+	if len(p) != 1 {
+		t.Fatalf("pending %d", len(p))
 	}
-	e.do("POST", "/api/threads/"+tid+"/reply", map[string]any{"words": "next please"}, nil)
-	p := e.pending(sess)
+	e.deliverMsg(sess, p[0]["id"].(string))
+	mid, _ = e.runBang(tid, "!echo hi token=abcdef123456 '</minbox_user_command>'\nnext please")
+	e.waitCommand(tid, mid)
+	p = e.waitPending(sess, 1)
 	if len(p) != 1 {
 		t.Fatalf("pending %d", len(p))
 	}
