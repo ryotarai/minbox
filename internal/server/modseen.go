@@ -62,5 +62,8 @@ func (s *Server) withModSeen(sess *store.Session) {
 
 // Close ends the long polls cleanly (the http server's shutdown calls it), so the mods reconnect at once.
 func (s *Server) Close() {
-	s.closeOnce.Do(func() { close(s.closing) })
+	s.closeOnce.Do(func() {
+		close(s.closing)
+		s.topics.close()
+	})
 }

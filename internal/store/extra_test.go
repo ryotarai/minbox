@@ -154,7 +154,7 @@ func TestUrgentPending(t *testing.T) {
 	}
 }
 
-func TestSearchCardsSettings(t *testing.T) {
+func TestSearchSettings(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 	a, _ := s.CreateSession(ctx, "alpha", "/tmp", "u")
@@ -185,23 +185,9 @@ func TestSearchCardsSettings(t *testing.T) {
 		t.Fatalf("attachments = %+v", th.Messages[0].Attachments)
 	}
 
-	c := &Card{Title: "Search UI", Column: "designing", CreatedBy: "agent"}
-	if err := s.CreateCard(ctx, c); err != nil {
-		t.Fatal(err)
-	}
-	col := "dropped"
-	got, err := s.UpdateCard(ctx, c.ID, CardPatch{Column: &col}, "agent")
-	if err != nil || got.DroppedBy != "agent" {
-		t.Fatalf("card = %+v %v", got, err)
-	}
-	cards, _ := s.ListCards(ctx, "")
-	if len(cards) != 1 {
-		t.Fatal(cards)
-	}
-
-	_ = s.PutSettings(ctx, map[string]json.RawMessage{"board": json.RawMessage("true")})
+	_ = s.PutSettings(ctx, map[string]json.RawMessage{"topics": json.RawMessage("false")})
 	st, _ := s.Settings(ctx)
-	if string(st["board"]) != "true" {
+	if string(st["topics"]) != "false" {
 		t.Fatal(st)
 	}
 }

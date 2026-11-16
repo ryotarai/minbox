@@ -51,9 +51,6 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
       if (opts.failHello) return { value: { status: 500, ok: false, headers: {}, text: '{"error":"x"}' } }
       return ok({ session_id: 's', name: 'n', instructions: opts.instructions ?? '' })
     }
-    if (url.pathname === '/api/agent/cards' && method === 'POST') {
-      return { value: { status: 201, ok: true, headers: {}, text: JSON.stringify({ id: 'card_1', title: body.title, column: body.column ?? 'backlog', note: '' }) } }
-    }
     if (url.pathname === '/api/agent/messages') {
       return ok({ thread_id: 'thr_1', message_id: 'msg_1', new_thread: true, questions: [{ key: 'q-1', kind: 'single', prompt: 'A or B?' }] })
     }
@@ -317,7 +314,7 @@ test('empty instructions from the hello fall back to the short reminder', async 
   expect((res.context?.join('\n') ?? '')).not.toContain('standing instructions')
 })
 
-test('send_message passes attachments and a review; card creates a card', async ($, on) => {
+test('send_message passes attachments and a review', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
@@ -327,11 +324,6 @@ test('send_message passes attachments and a review; card creates a card', async 
   expect(post?.body.attachments).toEqual(['plan.md'])
   expect(post?.body.review.title).toBe('R')
   expect(post?.body.name).toBe('tag')
-
-  const res: any = await $.tool.call({ tool: 'mcp__minbox__card', action: 'create', title: 'Search UI', column: 'designing' } as any)
-  expect(res.result).toContain('Created card card_1 [designing] Search UI')
-  const bad: any = await $.tool.call({ tool: 'mcp__minbox__card', action: 'update' } as any)
-  expect(bad.deny).toContain('card id')
 })
 
 test('send_message tells Claude what it attached and which images will not show', () => {

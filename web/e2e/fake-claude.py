@@ -223,9 +223,6 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         sys.stdout.write("\x1b[?1002l\x1b[?1006l\x1b[?1000l\x1b[?1049l")
         out("mouse got: " + repr(got))
-    elif line.startswith("card "):
-        r = api("POST", "/api/agent/cards", {"title": line[5:], "column": "building", "note": "working on it"})
-        out(f"card {r.get('id', r)}")
     elif line.startswith("retitle "):
         r = api("POST", "/api/agent/messages", {"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
         out(f"retitled {r['thread_id']}")

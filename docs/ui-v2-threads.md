@@ -60,7 +60,7 @@ and *Single-column navigation* below. There is no collapsed rail any more.
 ## 1. Threads pane (far left)
 
 **Top bar** (48 px): logo, search (Cmd+K), `+ New` (new session),
-`...` menu. The menu holds everything the old sidebar footer/options had: Settings, Board (if enabled),
+`...` menu. The menu holds everything the old sidebar footer/options had: Settings, Topics (if enabled),
 Decide (if enabled), Drafts n, list options, Devices/Hosts are reached through Settings as before.
 
 **Filter row**: chips `All n`, `Waiting n` (stopped + holding + waiting sections: threads needing the person),
@@ -223,7 +223,7 @@ the selected session) since the list is global.
 | Per-session inbox column (`InboxPane`) and its thread list | Replaced by the global Threads pane; `InboxPane`, `PhoneInbox` removed |
 | All inbox page (`open-all-inbox`, `v=inbox`) | Merged into the home list; `v=inbox` links open the main screen |
 | `New` button on the session list | `+ New` in the threads top bar, `+ New session...` in the target selector |
-| Sidebar footer (Settings, Board, Decide, Drafts) and list options | `...` menu in the threads top bar |
+| Sidebar footer (Settings, Topics, Decide, Drafts) and list options | `...` menu in the threads top bar |
 | Session `...` menu on a row (Rename, Stop, Archive, Delete) | Session header `...` over the terminal; phone session sheet rows |
 | `toggle-inbox` button | Removed |
 | `layout.inboxW` | Unused; `sidebarW` = threads width, `threadW` = thread width |

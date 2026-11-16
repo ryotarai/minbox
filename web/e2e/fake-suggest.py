@@ -11,6 +11,18 @@ import time
 
 prompt = sys.stdin.read()
 
+if prompt.startswith("Track the topics"):
+    # The Topics board: every line "TOPIC: <title> | <status> | <summary>" in the thread's messages is a
+    # topic; a later line with the same title replaces the earlier one (that is how a test moves a card).
+    import re
+    topics = {}
+    for m in re.finditer(r"^TOPIC: (.+?) \| (in_progress|waiting_on_you|done) \| (.*)$", prompt, re.M):
+        title, status, summary = m.group(1).strip(), m.group(2), m.group(3).strip()
+        topics.pop(title, None)  # a moved topic goes to the end, as a model's answer would list it
+        topics[title] = {"title": title, "status": status, "summary": summary}
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"topics": list(topics.values())}}))
+    sys.exit(0)
+
 if prompt.startswith("Choose the workflow state"):
     # Step two of the Create-Linear-issue draft: the team's state and labels.
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"state_id": "st-3", "label_ids": ["lab-1"]}}))

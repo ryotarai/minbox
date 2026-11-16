@@ -463,8 +463,7 @@ func (s *Store) SetProjectArchived(ctx context.Context, id string, archived bool
 
 // DeleteProject deletes a project with all its sessions, threads, messages, annotations and
 // attachments (the rows cascade; attachment content lives in the database) in one transaction.
-// Notification thread mappings of those threads go too; cards that pointed at them stay,
-// unlinked. Nothing on the host's disk is touched. The caller stops running sessions first.
+// Notification thread mappings of those threads go too (their topics cascade). Nothing on the host's disk is touched. The caller stops running sessions first.
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -477,12 +476,9 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	} else if err != nil {
 		return err
 	}
-	const inProject = `(SELECT s.id FROM sessions s WHERE s.project_id=?)`
 	const threadsOf = `(SELECT t.id FROM threads t JOIN sessions s ON s.id=t.session_id WHERE s.project_id=?)`
 	for _, q := range []string{
 		`DELETE FROM notification_slack_threads WHERE minbox_thread_id IN ` + threadsOf,
-		`UPDATE cards SET thread_id=NULL WHERE thread_id IN ` + threadsOf,
-		`UPDATE cards SET session_id=NULL WHERE session_id IN ` + inProject,
 		`DELETE FROM sessions WHERE project_id=?`,
 		`DELETE FROM projects WHERE id=?`,
 	} {

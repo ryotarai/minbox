@@ -132,6 +132,7 @@ func (s *Store) CreateThreadWith(ctx context.Context, sessionID, subject string,
 	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
+	s.messageAdded(th.ID)
 	return th, msg, nil
 }
 

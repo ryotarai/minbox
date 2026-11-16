@@ -117,14 +117,12 @@ Annotation (sent with a reply, stored on the message):
 The reply body Claude reads gets a `## Annotations` section:
 `- <name> · "quote" (line N): comment` and `Image: <image_path>` when set.
 
-Card (Board):
+Topic (the Topics board; see "Topics"):
 
 ```
-{ id, title, column: "backlog"|"designing"|"look"|"building"|"review"|"shipped"|"icebox"|"dropped",
-  note, session_id: string|null, thread_id: string|null,
-  pr_url, pr_state: ""|"draft"|"open"|"merged"|"closed", pr_number: number,
-  created_by: "agent"|"user", dropped_by: ""|"agent"|"user", position: number,
-  created_at, updated_at }
+{ id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
+  created_at, updated_at, done_at: string|null,
+  thread_name, thread_subject, session_id, project_id, project_name }   (the thread's fields: GET /api/topics only)
 ```
 
 Settings (one JSON object; PUT merges top-level keys):
@@ -132,7 +130,8 @@ Settings (one JSON object; PUT merges top-level keys):
 ```
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
-  board: bool, decision_mode: bool, prompt_extra: string,
+  decision_mode: bool, prompt_extra: string,
+  topics: bool,               (default true; the helper reads each thread's topics after new messages, see "Topics")
   reply_suggestions: bool,     (default true; the reply questions, see "Reply suggestions")
   default_agent: ""|"claude"|"pi"|"opencode",  (default ""; the agent of a new session when neither the request nor the project says;
                                 "" = Claude Code if installed, else the installed one; see "Coding agents")
@@ -141,7 +140,8 @@ Settings (one JSON object; PUT merges top-level keys):
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
 ```
 
-Defaults: system, 13, true, true, true, true, false, false, "", {true,false,false,false,false}.
+Defaults: system, 13, true, true, true, true, true (topics), false, "", {true,false,false,false,false}.
+Stored keys that are no longer settings (the Board's `board`) are left out of `GET`; `PUT` refuses them (400).
 
 ## Thread commands
 
@@ -155,6 +155,29 @@ thread's next delivered message in `/api/agent/pending` as a `<minbox_user_comma
 that message is marked delivered). `422` for answers, markups, files or `forward_to` together with a command, a command
 over 4000 characters, a session on another host, and `!cmd` as the body of a new thread (`POST /api/sessions/{id}/threads`).
 `\!text` (in a reply or a new thread) is the text `!text`; a lone `!` is a normal message. Same auth as any reply.
+
+## Topics
+
+The Topics board (global nav entry "Topics", route `#v=topics`; the old `#v=board` opens it) shows the topics being
+worked on inside threads, across all threads: one thread can have several, each with its own status, independent of the
+thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/agent/cards`, setting `board`) is gone.
+
+- Extraction (`internal/server/topics.go`): every message added to a thread (agent, person, command; the store's
+  `OnMessage` hook) kicks a per-thread timer. The run starts 4 s after the last message of a burst (at most 30 s after the
+  first), never twice at once for one thread (a message during a run runs it again after), at most 2 threads at a time.
+  Skipped when setting `topics` is off, for archived threads, and without a coding agent to run the helper. Existing
+  threads are not read until they get a new message (no backfill).
+- The helper (the same `runHelper` as reply suggestions: Haiku through `claude -p --json-schema`, or the default agent's
+  helper run) gets the thread's current topics (id, status, title, summary) and its newest messages (12 000 characters,
+  1 500 per message) and answers `{topics: [{id?, title, summary, status}]}` (at most 6). The prompt starts with
+  `Track the topics` (the e2e fake helper keys on it).
+- Store (`topics` table, cascades with the thread): replaced per thread on each run. A topic that continues a current one
+  (the same `id`, else the same title ignoring case and spacing) keeps its id and `created_at`, and its `updated_at` when
+  nothing changed; `done_at` is set when it turns done. Current topics left out of the answer are deleted, except done
+  ones. A failed run (no JSON, an error) keeps the topics as they were.
+- `GET /api/topics?project=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live thread (not
+  archived, in a live session and project), open ones by `updated_at` newest first, then done ones done within the last
+  7 days, newest first, at most 30. When a thread's topics change, SSE `topics` (`session_id`, `thread_id`) is published.
 
 ## Reply suggestions
 
@@ -264,14 +287,14 @@ GET   /api/search?q=&session_id=&status=&from=agent|user&limit=
       Case-insensitive; every space-separated word must match (AND); LIKE. threads: subject or name;
       messages: body; files: attachment name or text content. Newest first.
 
-GET/POST /api/cards, PATCH/DELETE /api/cards/{id}
+GET   /api/topics?project=                  {topics, enabled, done_days} (see "Topics")
 GET/PUT  /api/settings
 GET   /api/storage                          {data_dir, db_path, db_bytes, scratch_dir, scratch_bytes, scratch_files}
 POST  /api/storage/clear-scratch            {removed}
 GET   /api/about                            {version, server_protocol, required_host, host: {protocol, required_server, pid}|null, data_dir}
 ```
 
-SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
+SSE event types: `sessions`, `threads`, `thread`, `topics`, `settings`.
 
 ## Mod / agent API (added)
 
@@ -289,8 +312,6 @@ SSE event types: `sessions`, `threads`, `thread`, `cards`, `settings`.
   `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
   own turn never reminds again.
 - `hello` answers `instructions`: the one instructions text, built by the same server function as `--append-system-prompt` (`AgentSystemPrompt`, plus the orchestration prompt while `orchestrator_prompt` is on, plus `The person adds: <prompt_extra>` when set). The mod injects it (wrapped as "minbox: standing instructions (still in force)") on the first prompt after each hello, on the first prompt after a compaction (with the open-threads list) and on every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` overrides), never twice in one prompt; without instructions it falls back to a short reminder. `prompt_extra` and `orchestrator` are still answered, for older mods only; the current mod ignores them.
-- New tool `card` → `GET/POST /api/agent/cards`, `PATCH /api/agent/cards/{id}`;
-  403 `the Board is off in minbox settings` unless settings.board.
 
 ## Navigation tools (read-only agent API)
 
@@ -773,7 +794,7 @@ GET    /api/projects/{id}/icon        the image icon as image/png, `Cache-Contro
 GET    /api/projects/{id}/delete-preview → {sessions, running_sessions, threads, messages}: what a delete takes with it (404 unknown)
 DELETE /api/projects/{id}             deletes the project with ALL its sessions (running ones are stopped first: claude process,
                                       terminal pane, companion shell), threads, messages, annotations, attachments and notification
-                                      thread mappings in one store transaction; cards that pointed at them are unlinked, not deleted.
+                                      thread mappings in one store transaction (their topics go with the threads).
                                       The main-session 409 does not apply. Nothing on the host disk (the folder) is touched.
                                       SSE projects + sessions + threads.
 POST   /api/projects/{id}/archive     409 while it has a live session; archives its ended sessions with it

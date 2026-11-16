@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("HOME", tmp)
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(tmp, ".claude"))
+	noHelperRuns = true // topic extraction never runs a real claude in tests
 	code := m.Run()
 	os.RemoveAll(tmp)
 	os.Exit(code)

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { chooseFolder, createSession, createShellSession, expect, expectTerminal, phoneSelectSession, selectSession, sessionEnded, showTerminal, terminalText, test, typeInTerminal } from './fixtures'
 
 // The features of the redesigned UI: sections, archive, mark read, actions,
-// attachments and reviews, search, settings, Board, Decision mode, phone.
+// attachments and reviews, search, settings, Topics, Decision mode, phone.
 
 /** Moves focus out of the terminal, so single-key shortcuts work. */
 async function blurTerminal(page: Page) {
@@ -14,8 +14,8 @@ async function openThread(page: Page, subject: string) {
   await expect(page.getByTestId('thread-subject')).toHaveText(subject)
 }
 
-/** The project rail's footer holds Settings, Board, Decide and Drafts. */
-async function fromMenu(page: Page, testid: 'open-settings' | 'open-board' | 'open-decide' | 'drafts') {
+/** The project rail's footer holds Settings, Topics, Decide and Drafts. */
+async function fromMenu(page: Page, testid: 'open-settings' | 'open-topics' | 'open-decide' | 'drafts') {
   await page.getByTestId('project-rail').getByTestId(testid).click()
 }
 
@@ -228,7 +228,7 @@ test('rename in the session header; delete through a dialog', async ({ page, min
   expect(await (await page.request.get(minbox.url + '/api/sessions')).json()).toHaveLength(0)
 })
 
-test('settings: the theme and the Board persist on the server; Claude can add cards', async ({ page, minbox }) => {
+test('settings: the theme and the Topics switch persist on the server', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'cfg')
   await expectTerminal(page, 'ready>')
@@ -238,12 +238,19 @@ test('settings: the theme and the Board persist on the server; Claude can add ca
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByTestId('settings-nav-capabilities').click()
-  await page.getByRole('switch', { name: 'Board' }).click()
+  // Topics is on by default; turned off (it stays off after a reload), its entry leaves the rail.
+  await page.getByRole('switch', { name: 'Topics' }).click()
+  await page.reload()
+  await expect(page.getByRole('switch', { name: 'Topics' })).toHaveAttribute('aria-checked', 'false')
   await page.getByTestId('settings-back').click()
-  await typeInTerminal(page, 'card Ship the archive')
-  await expectTerminal(page, /card card_/)
-  await fromMenu(page, 'open-board')
-  await expect(page.getByTestId('board-col-building').getByTestId('board-card')).toContainText('Ship the archive')
+  await expect(page.getByTestId('project-rail').getByTestId('open-settings')).toBeVisible()
+  await expect(page.getByTestId('project-rail').getByTestId('open-topics')).toHaveCount(0)
+  await fromMenu(page, 'open-settings')
+  await page.getByTestId('settings-nav-capabilities').click()
+  await page.getByRole('switch', { name: 'Topics' }).click()
+  await page.getByTestId('settings-back').click()
+  await fromMenu(page, 'open-topics')
+  await expect(page.getByTestId('topics')).toBeVisible()
 })
 
 test('Decision mode answers open questions by number and sends per thread', async ({ page, minbox }) => {

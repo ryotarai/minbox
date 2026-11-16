@@ -70,7 +70,7 @@ test('does nothing without the minbox environment', () => {
 
 test('registers the minbox tools under Pi names', () => {
   const t = setup()
-  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'card', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
+  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
   assert.equal(t.tools.get('minbox_send_message').parameters.required.includes('thread_title'), true)
   t.ext!.stop()
 })

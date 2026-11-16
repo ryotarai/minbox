@@ -15,7 +15,7 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'board' | 'review' | 'inbox' | 'issues' | 'slack'
+export type View = 'main' | 'settings' | 'topics' | 'review' | 'inbox' | 'issues' | 'slack'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -38,12 +38,13 @@ export type Route = {
 
 function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1))
-  const view = (p.get('v') as View) || 'main'
+  // The Board was replaced by Topics: an old link opens Topics.
+  const view = ((p.get('v') === 'board' ? 'topics' : p.get('v')) as View) || 'main'
   return {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'board', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'topics', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
@@ -173,7 +174,8 @@ type AppState = {
   conn: ConnectionState
   threadsVersion: number
   threadVersion: Record<string, number>
-  cardsVersion: number
+  /** Bumped when some thread's topics changed (the Topics board reloads). */
+  topicsVersion: number
   devicesVersion: number
   toasts: Toast[]
   toast: (text: string, opts?: Partial<Omit<Toast, 'id' | 'text'>>) => void
@@ -212,7 +214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<ConnectionState>({ connected: true, attempts: 0, since: null })
   const [threadsVersion, setThreadsVersion] = useState(0)
   const [threadVersion, setThreadVersion] = useState<Record<string, number>>({})
-  const [cardsVersion, setCardsVersion] = useState(0)
+  const [topicsVersion, setTopicsVersion] = useState(0)
   const [devicesVersion, setDevicesVersion] = useState(0)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [layout, setLayoutState] = useState<Layout>(readLayout)
@@ -330,7 +332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (ev.type === 'projects') reloadProjects()
         if (ev.type === 'threads') setThreadsVersion((v) => v + 1)
         if (ev.type === 'thread' && ev.thread_id) setThreadVersion((m) => ({ ...m, [ev.thread_id!]: (m[ev.thread_id!] ?? 0) + 1 }))
-        if (ev.type === 'cards') setCardsVersion((v) => v + 1)
+        if (ev.type === 'topics') setTopicsVersion((v) => v + 1)
         if (ev.type === 'settings') loadSettings()
         if (ev.type === 'hosts') reloadHosts()
         if (ev.type === 'notifications') window.dispatchEvent(new Event('minbox:notifications'))
@@ -346,7 +348,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reloadProjects()
         setThreadsVersion((v) => v + 1)
         setThreadVersion((m) => ({ ...m, [ALL_THREADS]: (m[ALL_THREADS] ?? 0) + 1 })) // events were missed: the open thread too
-        setCardsVersion((v) => v + 1)
+        setTopicsVersion((v) => v + 1)
       },
       setConn,
     )
@@ -461,7 +463,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       conn,
       threadsVersion,
       threadVersion,
-      cardsVersion,
+      topicsVersion,
       devicesVersion,
       toasts,
       toast,
@@ -475,7 +477,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isPhone,
       isTablet,
     }),
-    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, cardsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone, isTablet],
+    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, topicsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone, isTablet],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

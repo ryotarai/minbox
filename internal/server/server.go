@@ -77,8 +77,12 @@ type Server struct {
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
 	pickRun func(ctx context.Context, prompt string) ([]byte, error)
-	web     fs.FS
-	handler http.Handler
+	// topics re-extracts a thread's topics after its new messages (topics.go); topicsRun runs the
+	// helper model for it (replaced in tests).
+	topics    *topicer
+	topicsRun func(ctx context.Context, prompt string) ([]byte, error)
+	web       fs.FS
+	handler   http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}
@@ -130,6 +134,10 @@ type Server struct {
 	stopLocalHost  func(ctx context.Context) (pid int, running bool, err error)
 }
 
+// noHelperRuns: helper-model runs that start on their own (topics) never run a real agent (set by
+// the package's tests).
+var noHelperRuns bool
+
 // New builds a server. web holds the built frontend (index.html at its root).
 func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	h := newHub()
@@ -166,6 +174,12 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runSuggest)
 	s.pickRun = s.runPick
+	s.topicsRun = s.runTopicsHelper
+	if noHelperRuns {
+		s.topicsRun = func(context.Context, string) ([]byte, error) { return nil, agent.ErrNoneInstalled }
+	}
+	s.topics = newTopicer(s.refreshTopics)
+	st.OnMessage(s.topics.kick)
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)
@@ -315,10 +329,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/markups", s.postMarkup)
 	mux.HandleFunc("GET /api/markups/{name}", s.getMarkup)
 	mux.HandleFunc("GET /api/search", s.search)
-	mux.HandleFunc("GET /api/cards", s.listCards)
-	mux.HandleFunc("POST /api/cards", s.createCard)
-	mux.HandleFunc("PATCH /api/cards/{id}", s.patchCard)
-	mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
+	mux.HandleFunc("GET /api/topics", s.listTopics)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/notifications", s.listNotifications)
@@ -370,9 +381,6 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/pending/{id}/claim", s.agent(s.agentClaim))
 	mux.HandleFunc("POST /api/agent/pending/{id}/release", s.agent(s.agentRelease))
 	mux.HandleFunc("POST /api/agent/pending/{id}/delivered", s.agent(s.agentDelivered))
-	mux.HandleFunc("GET /api/agent/cards", s.agent(s.agentListCards))
-	mux.HandleFunc("POST /api/agent/cards", s.agent(s.agentCreateCard))
-	mux.HandleFunc("PATCH /api/agent/cards/{id}", s.agent(s.agentPatchCard))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { httpError(w, 404, "not found") })
 	mux.Handle("/", s.static())

@@ -12,6 +12,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ryotarai/minbox/internal/question"
@@ -296,6 +297,18 @@ type Region struct {
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+	// onMessage is called (outside any transaction) after a message was added to a thread.
+	onMessage atomic.Pointer[func(threadID string)]
+}
+
+// OnMessage sets the function called after each message added to a thread (the new message is
+// committed by then). It must not block.
+func (s *Store) OnMessage(fn func(threadID string)) { s.onMessage.Store(&fn) }
+
+func (s *Store) messageAdded(threadID string) {
+	if fn := s.onMessage.Load(); fn != nil && *fn != nil {
+		(*fn)(threadID)
+	}
 }
 
 const schema = `
@@ -350,22 +363,6 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_thread ON attachments(thread_id, created_at);
-CREATE TABLE IF NOT EXISTS cards (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  col TEXT NOT NULL,
-  note TEXT NOT NULL DEFAULT '',
-  session_id TEXT,
-  thread_id TEXT,
-  pr_url TEXT NOT NULL DEFAULT '',
-  pr_state TEXT NOT NULL DEFAULT '',
-  pr_number INTEGER NOT NULL DEFAULT 0,
-  created_by TEXT NOT NULL,
-  dropped_by TEXT NOT NULL DEFAULT '',
-  position REAL NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS uploads (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -506,6 +503,9 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(commandSchema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(topicSchema); err != nil {
 		return err
 	}
 	for _, c := range addedColumns {
@@ -917,6 +917,7 @@ func (s *Store) CreateThread(ctx context.Context, sessionID, subject string, m N
 	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
+	s.messageAdded(th.ID)
 	return th, msg, nil
 }
 
@@ -981,7 +982,11 @@ func (s *Store) AddMessage(ctx context.Context, threadID string, m NewMessage) (
 	if err != nil {
 		return nil, err
 	}
-	return msg, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.messageAdded(threadID)
+	return msg, nil
 }
 
 const messageCols = `id, thread_id, author, body, words, questions, answers, answers_for, created_at, read_at, claimed_at, claim_owner, delivered_at, kind, urgent, annotations`
