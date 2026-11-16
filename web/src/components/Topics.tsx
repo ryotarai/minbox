@@ -291,6 +291,7 @@ export function TopicsPage() {
       onDraft={(v) => setDrafts((d) => ({ ...d, [selected.id]: v }))}
       replyRef={replyRef}
       onClose={closePane}
+      onMove={(st) => move(selected.id, st)}
       onOpenThread={(messageId) => {
         open(selected)
         if (messageId) jumpToMessage(messageId)
@@ -566,6 +567,7 @@ function TopicPane({
   onDraft,
   replyRef,
   onClose,
+  onMove,
   onOpenThread,
 }: {
   t: Topic
@@ -575,6 +577,7 @@ function TopicPane({
   onDraft: (v: string) => void
   replyRef: React.RefObject<HTMLTextAreaElement | null>
   onClose: () => void
+  onMove: (s: TopicStatus) => void
   onOpenThread: (messageId?: string) => void
 }) {
   const { topicsVersion, threadVersion, sessions, toast, error } = useApp()
@@ -651,6 +654,17 @@ function TopicPane({
             </button>
           </div>
         </div>
+        {/* Done, or Reopen once it is: the same move as a drag or the 3 / 1 keys (a manual mark). */}
+        {t.status === 'done' ? (
+          <Button size="sm" className="shrink-0" data-testid="topic-pane-reopen" title="Move back to In progress (1)" onClick={() => onMove('in_progress')}>
+            Reopen
+          </Button>
+        ) : (
+          <Button size="sm" className="shrink-0 gap-1" data-testid="topic-pane-done" title="Move to Done (3)" onClick={() => onMove('done')}>
+            <IconCheck size={12} />
+            Done
+          </Button>
+        )}
         {!phone && (
           <IconButton aria-label="Close (Esc)" title="Close (Esc)" data-testid="topic-pane-close" size={28} onClick={onClose}>
             <IconClose size={14} />
