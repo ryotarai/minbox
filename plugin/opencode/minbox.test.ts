@@ -144,7 +144,7 @@ test('does nothing on OpenCode 1.x (or an unknown version), with a clear log lin
 test('registers the minbox tools as direct tools under OpenCode names', async () => {
   const t = setup()
   const cleanup = await setupLocation(t.oc.ctx, t.core)
-  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'card', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) {
+  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) {
     const tool = t.oc.tools.get(TOOL_PREFIX + n)
     assert.ok(tool, n)
     assert.deepEqual(tool.options, { codemode: false }, n)

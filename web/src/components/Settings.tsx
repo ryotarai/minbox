@@ -35,7 +35,7 @@ export function SettingsPage() {
   useHotkeys({ escape: () => navigate({ view: 'main' }) })
   const archivedCount = (sessions ?? []).filter((s) => s.archived_at).length
   const section = route.ss
-  const meta: Record<string, string> = { hosts: hosts.length ? String(hosts.length) : '', capabilities: 'Board · Decision mode', archived: archivedCount ? String(archivedCount) : '' }
+  const meta: Record<string, string> = { hosts: hosts.length ? String(hosts.length) : '', capabilities: 'Topics · Decision mode', archived: archivedCount ? String(archivedCount) : '' }
   return (
     <div className={cx('flex h-full bg-bg', isPhone && 'flex-col')} data-testid="settings">
       <nav aria-label="Settings" className={cx('flex shrink-0 gap-0.5 bg-surface', isPhone ? 'overflow-x-auto border-b border-line px-2 pb-2 pt-[max(8px,env(safe-area-inset-top))]' : 'w-60 flex-col border-r border-line px-2 py-3.5')}>
@@ -254,8 +254,11 @@ function Capabilities() {
     <>
       <AgentsGroup />
       <Group title="Optional parts of minbox">
-      <Row label="Board" desc="Lay work out as cards (Backlog → Shipped). Claude Code can add cards with its card tool.">
-        <Switch label="Board" on={settings.board} onChange={(v) => saveSettings({ board: v })} />
+      <Row
+        label="Topics"
+        desc="A board of what each thread is working on (In progress · Waiting on you · Done). A few seconds after a new message, sends the thread's recent messages to claude (Haiku) to read its topics. Runs on this machine; costs a little per burst of messages."
+      >
+        <Switch label="Topics" on={settings.topics} onChange={(v) => saveSettings({ topics: v })} />
       </Row>
       <Row label="Decision mode (Experimental)" desc="Every waiting question across sessions, one at a time. Pick with 1–9; answers are sent per thread.">
         <Switch label="Decision mode" on={settings.decision_mode} onChange={(v) => saveSettings({ decision_mode: v })} />

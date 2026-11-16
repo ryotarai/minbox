@@ -95,7 +95,11 @@ func (s *Store) CreateCommandMessage(ctx context.Context, threadID, command, cwd
 		msg.ID, threadID, command, cwd, CommandRunning, ms(now)); err != nil {
 		return nil, err
 	}
-	return msg, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.messageAdded(threadID)
+	return msg, nil
 }
 
 // FinishCommand records the result of a command.

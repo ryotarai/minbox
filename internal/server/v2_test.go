@@ -197,7 +197,7 @@ func TestThreadOpsReplyExtrasAndSearch(t *testing.T) {
 	}
 }
 
-func TestSessionArchiveSettingsCards(t *testing.T) {
+func TestSessionArchiveSettings(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	if code, _, _ := e.do("POST", "/api/sessions/"+sess.ID+"/archive", nil, nil); code != 409 {
@@ -219,26 +219,24 @@ func TestSessionArchiveSettingsCards(t *testing.T) {
 	}
 
 	_, st, _ := e.do("GET", "/api/settings", nil, nil)
-	if st["theme"] != "system" || st["text_size"].(float64) != 13 || st["board"] != false {
+	if st["theme"] != "system" || st["text_size"].(float64) != 13 || st["topics"] != true {
 		t.Fatalf("defaults = %v", st)
 	}
-	if code, _, _ := e.do("POST", "/api/agent/cards", map[string]any{"title": "x"}, bearer(sess)); code != 403 {
-		t.Fatalf("board off: %d", code)
+	if _, had := st["board"]; had {
+		t.Fatalf("the retired board setting is still listed: %v", st)
 	}
-	_, st, _ = e.do("PUT", "/api/settings", map[string]any{"board": true, "prompt_extra": "be brief"}, nil)
-	if st["board"] != true || st["theme"] != "system" {
+	_, st, _ = e.do("PUT", "/api/settings", map[string]any{"topics": false, "prompt_extra": "be brief"}, nil)
+	if st["topics"] != false || st["theme"] != "system" {
 		t.Fatalf("put = %v", st)
 	}
 	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"nope": 1}, nil); code != 400 {
 		t.Fatal("unknown setting")
 	}
-	code, card, _ := e.do("POST", "/api/agent/cards", map[string]any{"title": "Search UI", "column": "designing"}, bearer(sess))
-	if code != 201 || card["created_by"] != "agent" || card["session_id"] != sess.ID {
-		t.Fatalf("card: %d %v", code, card)
+	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"board": true}, nil); code != 400 {
+		t.Fatal("the board setting is gone")
 	}
-	code, card, _ = e.do("PATCH", "/api/cards/"+card["id"].(string), map[string]any{"column": "shipped", "pr_state": "merged", "pr_number": 205}, nil)
-	if code != 200 || card["column"] != "shipped" {
-		t.Fatalf("patch card: %d %v", code, card)
+	if code, _, _ := e.do("POST", "/api/agent/cards", map[string]any{"title": "x"}, bearer(sess)); code != 404 {
+		t.Fatalf("agent cards: %d", code)
 	}
 	_, hello, _ := e.do("POST", "/api/agent/hello", map[string]any{}, bearer(sess))
 	if hello["prompt_extra"] != "be brief" {

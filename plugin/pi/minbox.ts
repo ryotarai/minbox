@@ -5,8 +5,8 @@
  * the Claude Code mod (plugin/minbox/hooks/register.ts) and talks to the same /api/agent/* API;
  * the text of the tools and of the delivered replies is shared (../minbox/hooks/text.ts).
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
- *   minbox_card and the read-only navigation tools (minbox_list_projects, minbox_get_project,
+ * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url
+ *   and the read-only navigation tools (minbox_list_projects, minbox_get_project,
  *   minbox_list_sessions, minbox_list_threads, minbox_search; nav.ts). A failing call throws (Pi turns that into a failed tool result).
  * - Reports whether Pi is working or idle (agent_start -> working, agent_settled -> idle).
  * - Long-polls the server for the person's messages. Once Pi has been idle for a moment each is
@@ -32,10 +32,6 @@
 import { readFileSync } from 'node:fs'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
 import {
-  CARD_DESCRIPTION,
-  CARD_SCHEMA,
-  CARD_TOOL,
-  cardText,
   openDeny,
   opensBrowser,
   OPEN_DESCRIPTION,
@@ -136,7 +132,6 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     read: TOOL_PREFIX + READ_TOOL,
     title: TOOL_PREFIX + TITLE_TOOL,
     open: TOOL_PREFIX + OPEN_TOOL,
-    card: TOOL_PREFIX + CARD_TOOL,
   }
 
   function readBaseUrl(force: boolean): string | null {
@@ -315,28 +310,6 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       const res = await api('POST', '/api/agent/open', { url })
       if (!res.ok) fail(res)
       return textResult(`Opened ${res.json?.url ?? url} in the person's browser.`)
-    },
-  })
-
-  pi.registerTool({
-    name: names.card,
-    label: 'minbox: board card',
-    description: CARD_DESCRIPTION,
-    parameters: CARD_SCHEMA,
-    async execute(_id: string, e: any) {
-      const fields: Record<string, unknown> = {}
-      for (const k of ['title', 'column', 'note', 'thread_id', 'pr_url', 'pr_state', 'pr_number']) {
-        if (e[k] !== undefined) fields[k] = e[k]
-      }
-      let res: ApiResult
-      if (e.action === 'list') res = await api('GET', '/api/agent/cards')
-      else if (e.action === 'create') res = await api('POST', '/api/agent/cards', fields)
-      else if (e.action === 'update') {
-        if (typeof e.id !== 'string' || !e.id) throw new Error('update needs the card id.')
-        res = await api('PATCH', `/api/agent/cards/${encodeURIComponent(e.id)}`, fields)
-      } else throw new Error('action must be list, create or update.')
-      if (!res.ok) fail(res)
-      return textResult(cardText(e.action, res.json))
     },
   })
 

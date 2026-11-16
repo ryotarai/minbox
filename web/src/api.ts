@@ -410,23 +410,25 @@ export type ForkRequest = {
 
 export type ForkPreview = { handoff: string; message: string; text: string; bytes: number; subject: string; seq: number; agent: string; same_session: boolean; warnings: string[] }
 
-export type Card = {
+/** A topic of a thread, as the helper model reads it from the messages (GET /api/topics). */
+export type TopicStatus = 'in_progress' | 'waiting_on_you' | 'done'
+export type Topic = {
   id: string
+  thread_id: string
   title: string
-  column: CardColumn
-  note: string
-  session_id: string | null
-  thread_id: string | null
-  pr_url: string
-  pr_state: '' | 'draft' | 'open' | 'merged' | 'closed'
-  pr_number: number
-  created_by: 'agent' | 'user'
-  dropped_by: '' | 'agent' | 'user'
+  summary: string
+  status: TopicStatus
   position: number
   created_at: string
   updated_at: string
+  done_at: string | null
+  thread_name?: string
+  thread_subject?: string
+  session_id?: string
+  project_id?: string
+  project_name?: string
 }
-export type CardColumn = 'backlog' | 'designing' | 'look' | 'building' | 'review' | 'shipped' | 'icebox' | 'dropped'
+export type TopicsResult = { topics: Topic[]; enabled: boolean; done_days: number }
 
 export type ListOptions = {
   highlight_subject: boolean
@@ -443,7 +445,8 @@ export type Settings = {
   sound: boolean
   tab_count: boolean
   single_key: boolean
-  board: boolean
+  /** Topics: the helper model reads each thread's topics after its new messages (the Topics board). */
+  topics: boolean
   decision_mode: boolean
   /** The inbox pane left of the terminal (the default) instead of right of it. */
   swap_panes: boolean
@@ -746,7 +749,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   tab_count: true,
   single_key: true,
-  board: false,
+  topics: true,
   decision_mode: false,
   swap_panes: true,
   prompt_extra: '',
@@ -841,7 +844,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'cards' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'slack' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'topics' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'slack' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -1003,10 +1006,7 @@ export const api = {
     return call<SearchResult>('GET', `/api/search?${p}`)
   },
 
-  cards: () => call<Card[]>('GET', '/api/cards'),
-  createCard: (c: Partial<Card>) => call<Card>('POST', '/api/cards', c),
-  updateCard: (id: string, c: Partial<Card>) => call<Card>('PATCH', `/api/cards/${id}`, c),
-  deleteCard: (id: string) => call<Ok>('DELETE', `/api/cards/${id}`),
+  topics: (project = '') => call<TopicsResult>('GET', `/api/topics${project ? `?project=${encodeURIComponent(project)}` : ''}`),
 
   settings: () => call<Settings>('GET', '/api/settings'),
   saveSettings: (patch: Partial<Settings>) => call<Settings>('PUT', '/api/settings', patch),

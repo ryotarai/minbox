@@ -438,7 +438,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 func defaultSettings() map[string]any {
 	return map[string]any{
 		"theme": "system", "text_size": 13, "notifications": true, "sound": true, "tab_count": true, "single_key": true,
-		"board": false, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "claude_trust_folders": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
+		"topics": true, "decision_mode": false, "swap_panes": true, "prompt_extra": "", "orchestrator_prompt": true, "claude_trust_folders": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
 		"linear": defaultLinearSettings(),
 		"list":   map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
 	}
@@ -451,21 +451,15 @@ func (s *Server) settings(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	for k, raw := range stored {
+		if _, ok := out[k]; !ok {
+			continue // a retired setting (such as the Board's "board")
+		}
 		var v any
 		if json.Unmarshal(raw, &v) == nil {
 			out[k] = v
 		}
 	}
 	return out, nil
-}
-
-func (s *Server) boardOn(ctx context.Context) bool {
-	st, err := s.settings(ctx)
-	if err != nil {
-		return false
-	}
-	on, _ := st["board"].(bool)
-	return on
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -521,157 +515,6 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.publish(Event{Type: "settings"})
 	s.getSettings(w, r)
-}
-
-// ---- cards ----
-
-func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
-	cards, err := s.store.ListCards(r.Context(), r.URL.Query().Get("session_id"))
-	if err != nil {
-		storeError(w, err)
-		return
-	}
-	writeJSON(w, 200, cards)
-}
-
-func validPRState(v string) bool {
-	switch v {
-	case "", "draft", "open", "merged", "closed":
-		return true
-	}
-	return false
-}
-
-func (s *Server) createCardAs(ctx context.Context, w http.ResponseWriter, p store.CardPatch, by string, defaultSession *string) {
-	c := &store.Card{Column: "backlog", CreatedBy: by, SessionID: defaultSession}
-	if p.Title == nil || strings.TrimSpace(*p.Title) == "" {
-		httpError(w, 400, "title is required")
-		return
-	}
-	c.Title = strings.TrimSpace(*p.Title)
-	if p.Column != nil {
-		c.Column = *p.Column
-	}
-	if !store.ValidColumn(c.Column) {
-		httpError(w, 400, "column must be one of "+strings.Join(store.CardColumns, ", "))
-		return
-	}
-	if p.Note != nil {
-		c.Note = *p.Note
-	}
-	if p.SessionID != nil {
-		c.SessionID = p.SessionID
-	}
-	if p.ThreadID != nil {
-		c.ThreadID = p.ThreadID
-	}
-	if p.PRURL != nil {
-		c.PRURL = *p.PRURL
-	}
-	if p.PRState != nil {
-		if !validPRState(*p.PRState) {
-			httpError(w, 400, "pr_state must be draft, open, merged or closed")
-			return
-		}
-		c.PRState = *p.PRState
-	}
-	if p.PRNumber != nil {
-		c.PRNumber = *p.PRNumber
-	}
-	if p.Position != nil {
-		c.Position = *p.Position
-	}
-	if c.Column == "dropped" {
-		c.DroppedBy = by
-	}
-	if err := s.store.CreateCard(ctx, c); err != nil {
-		storeError(w, err)
-		return
-	}
-	s.hub.publish(Event{Type: "cards"})
-	writeJSON(w, 201, c)
-}
-
-func (s *Server) updateCardAs(ctx context.Context, w http.ResponseWriter, id string, p store.CardPatch, by string) {
-	if p.Column != nil && !store.ValidColumn(*p.Column) {
-		httpError(w, 400, "column must be one of "+strings.Join(store.CardColumns, ", "))
-		return
-	}
-	if p.PRState != nil && !validPRState(*p.PRState) {
-		httpError(w, 400, "pr_state must be draft, open, merged or closed")
-		return
-	}
-	if p.Title != nil && strings.TrimSpace(*p.Title) == "" {
-		httpError(w, 400, "title is required")
-		return
-	}
-	c, err := s.store.UpdateCard(ctx, id, p, by)
-	if err != nil {
-		storeError(w, err)
-		return
-	}
-	s.hub.publish(Event{Type: "cards"})
-	writeJSON(w, 200, c)
-}
-
-func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
-	var p store.CardPatch
-	if !decode(w, r, &p) {
-		return
-	}
-	s.createCardAs(r.Context(), w, p, "user", nil)
-}
-
-func (s *Server) patchCard(w http.ResponseWriter, r *http.Request) {
-	var p store.CardPatch
-	if !decode(w, r, &p) {
-		return
-	}
-	s.updateCardAs(r.Context(), w, r.PathValue("id"), p, "user")
-}
-
-func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteCard(r.Context(), r.PathValue("id")); err != nil {
-		storeError(w, err)
-		return
-	}
-	s.hub.publish(Event{Type: "cards"})
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-const boardOff = "the Board is off in minbox settings"
-
-func (s *Server) agentListCards(w http.ResponseWriter, r *http.Request, sess *store.Session) {
-	if !s.boardOn(r.Context()) {
-		httpError(w, 403, boardOff)
-		return
-	}
-	s.listCards(w, r)
-}
-
-func (s *Server) agentCreateCard(w http.ResponseWriter, r *http.Request, sess *store.Session) {
-	if !s.boardOn(r.Context()) {
-		httpError(w, 403, boardOff)
-		return
-	}
-	var p store.CardPatch
-	if !decode(w, r, &p) {
-		return
-	}
-	id := sess.ID
-	s.createCardAs(r.Context(), w, p, "agent", &id)
-}
-
-func (s *Server) agentPatchCard(w http.ResponseWriter, r *http.Request, sess *store.Session) {
-	if !s.boardOn(r.Context()) {
-		httpError(w, 403, boardOff)
-		return
-	}
-	var p store.CardPatch
-	if !decode(w, r, &p) {
-		return
-	}
-	s.updateCardAs(r.Context(), w, r.PathValue("id"), p, "agent")
 }
 
 // ---- storage & about ----

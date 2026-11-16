@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
-import { BoardPage } from './components/Board'
+import { TopicsPage } from './components/Topics'
 import { IssuesScreen } from './components/Issues'
 import { SlackScreen } from './components/Slack'
 import { GuidedReview } from './components/GuidedReview'
@@ -94,8 +94,8 @@ function Root() {
     <>
       {route.view === 'settings' ? (
         <SettingsPage />
-      ) : route.view === 'board' ? (
-        <BoardPage />
+      ) : route.view === 'topics' ? (
+        <TopicsPage />
       ) : route.view === 'issues' ? (
         <IssuesScreen />
       ) : route.view === 'slack' ? (

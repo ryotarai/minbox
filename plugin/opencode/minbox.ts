@@ -7,8 +7,8 @@
  * the OpenCode counterpart of the Pi extension (plugin/pi/minbox.ts) and speaks the same /api/agent/*
  * protocol; the wording of tools and delivered messages is shared (../minbox/hooks/text.ts, nav.ts).
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
- *   minbox_card and the read-only navigation tools as direct tools (codemode: false; OpenCode puts plugin
+ * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url
+ *   and the read-only navigation tools as direct tools (codemode: false; OpenCode puts plugin
  *   tools behind its Code Mode `execute` tool otherwise).
  * - Adds minbox's instructions (from the hello answer) to the system prompt of every model request of
  *   the session (session hook "context"), so they survive compaction.
@@ -33,10 +33,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
 import {
-  CARD_DESCRIPTION,
-  CARD_SCHEMA,
-  CARD_TOOL,
-  cardText,
   openDeny,
   opensBrowser,
   OPEN_DESCRIPTION,
@@ -165,7 +161,6 @@ export function createCore(deps: Deps) {
     read: TOOL_PREFIX + READ_TOOL,
     title: TOOL_PREFIX + TITLE_TOOL,
     open: TOOL_PREFIX + OPEN_TOOL,
-    card: TOOL_PREFIX + CARD_TOOL,
   }
 
   function readBaseUrl(force: boolean): string | null {
@@ -472,27 +467,6 @@ export function createCore(deps: Deps) {
         const res = await api('POST', '/api/agent/open', { url })
         if (!res.ok) fail(res)
         return ok(`Opened ${res.json?.url ?? url} in the person's browser.`)
-      },
-    },
-    {
-      name: names.card,
-      description: CARD_DESCRIPTION,
-      input: CARD_SCHEMA,
-      async execute(e: any) {
-        e = e ?? {}
-        const fields: Record<string, unknown> = {}
-        for (const k of ['title', 'column', 'note', 'thread_id', 'pr_url', 'pr_state', 'pr_number']) {
-          if (e[k] !== undefined) fields[k] = e[k]
-        }
-        let res: ApiResult
-        if (e.action === 'list') res = await api('GET', '/api/agent/cards')
-        else if (e.action === 'create') res = await api('POST', '/api/agent/cards', fields)
-        else if (e.action === 'update') {
-          if (typeof e.id !== 'string' || !e.id) throw new Error('update needs the card id.')
-          res = await api('PATCH', `/api/agent/cards/${encodeURIComponent(e.id)}`, fields)
-        } else throw new Error('action must be list, create or update.')
-        if (!res.ok) fail(res)
-        return ok(cardText(e.action, res.json))
       },
     },
   ]

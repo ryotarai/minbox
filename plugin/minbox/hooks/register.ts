@@ -3,7 +3,7 @@
  * and the environment MINBOX_TOKEN (this session's bearer token) and
  * MINBOX_SERVER_FILE (a JSON file holding the server's current URL).
  *
- * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url`, `card` and the
+ * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url` and the
  *   read-only navigation tools of nav.ts (list_projects, get_project, list_sessions, list_threads,
  *   search), served over minbox's HTTP API, and system prompt sections asking Claude to
  *   keep the session's title (shown in the session list) current and to open
@@ -24,10 +24,6 @@
 import type { Register } from 'claude-code'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from './nav'
 import {
-  CARD_DESCRIPTION,
-  CARD_SCHEMA,
-  CARD_TOOL,
-  cardText,
   READ_DESCRIPTION,
   READ_SCHEMA,
   READ_TOOL,
@@ -423,7 +419,6 @@ export const register: Register = (on) => {
     titleToolName = title?.tool ?? titleToolName
     const open = await $.tool.register({ name: OPEN_TOOL, description: OPEN_DESCRIPTION, inputSchema: OPEN_SCHEMA, isDeferred: false })
     openToolName = open?.tool ?? openToolName
-    await $.tool.register({ name: CARD_TOOL, description: CARD_DESCRIPTION, inputSchema: CARD_SCHEMA, isDeferred: true })
     // Read-only navigation (projects, sessions, threads, search): deferred, found with ToolSearch.
     for (const name of NAV_TOOLS) {
       await $.tool.register({ name, description: NAV_DESCRIPTION[name], inputSchema: NAV_SCHEMA[name] as any, isDeferred: true })
@@ -596,22 +591,4 @@ export const register: Register = (on) => {
       return { result: navText(name, res.json) }
     })
   }
-
-  on('tool.call', { tool: `mcp__minbox__${CARD_TOOL}` }, async ($, e: any) => {
-    if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const action = e.action
-    const fields: Record<string, unknown> = {}
-    for (const k of ['title', 'column', 'note', 'thread_id', 'pr_url', 'pr_state', 'pr_number']) {
-      if (e[k] !== undefined) fields[k] = e[k]
-    }
-    let res
-    if (action === 'list') res = await api($, 'GET', '/api/agent/cards')
-    else if (action === 'create') res = await api($, 'POST', '/api/agent/cards', fields)
-    else if (action === 'update') {
-      if (typeof e.id !== 'string' || !e.id) return { deny: 'update needs the card id.' }
-      res = await api($, 'PATCH', `/api/agent/cards/${encodeURIComponent(e.id)}`, fields)
-    } else return { deny: 'action must be list, create or update.' }
-    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    return { result: cardText(action, res.json) }
-  })
 }

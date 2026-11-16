@@ -213,50 +213,6 @@ export function openDeny(openTool: string): string {
   return `minbox: this would open the page on the host machine, not in the person's browser. Call ${openTool} with the page's URL instead (with gh, get it with e.g. \`gh pr view --json url -q .url\`).`
 }
 
-export const CARD_TOOL = 'card'
-
-export const CARD_DESCRIPTION = [
-  "Keep the person's minbox Board up to date: one card per piece of work, across sessions.",
-  'action "list" shows the cards; "create" adds one (title, column, note); "update" changes one by id (move it with column, link a PR with pr_url / pr_state / pr_number).',
-  'Columns: backlog, designing, look (waits on the person), building, review (the person reviews), shipped, icebox, dropped.',
-  'Only works when the person turned the Board on in minbox settings.',
-].join(' ')
-
-export const CARD_SCHEMA = {
-  type: 'object',
-  properties: {
-    action: { type: 'string', enum: ['list', 'create', 'update'] },
-    id: { type: 'string', description: 'The card to update.' },
-    title: { type: 'string' },
-    column: { type: 'string', enum: ['backlog', 'designing', 'look', 'building', 'review', 'shipped', 'icebox', 'dropped'] },
-    note: { type: 'string', description: 'One line: where it stands.' },
-    thread_id: { type: 'string', description: 'The minbox thread about this card.' },
-    pr_url: { type: 'string' },
-    pr_state: { type: 'string', enum: ['draft', 'open', 'merged', 'closed'] },
-    pr_number: { type: 'number' },
-  },
-  required: ['action'],
-  additionalProperties: false,
-} as const
-
-export type Card = {
-  id: string
-  title: string
-  column: string
-  note: string
-  pr_number?: number
-  pr_state?: string
-}
-
-/** The card tool's answer. */
-export function cardText(action: string, v: Card | Card[]): string {
-  if (Array.isArray(v)) {
-    if (v.length === 0) return 'The Board has no cards yet.'
-    return v.map((c) => `- ${c.id} [${c.column}] ${c.title}${c.note ? ` · ${c.note}` : ''}${c.pr_number ? ` · PR #${c.pr_number} ${c.pr_state ?? ''}`.trimEnd() : ''}`).join('\n')
-  }
-  return `${action === 'create' ? 'Created' : 'Updated'} card ${v.id} [${v.column}] ${v.title}.`
-}
-
 export type AttachmentRecord = { id: string; name: string; type?: string; kind?: string; path: string; author?: string; ref?: string }
 
 export type Message = {
