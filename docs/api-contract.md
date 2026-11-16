@@ -123,7 +123,10 @@ Topic (the Topics board; see "Topics"):
 { id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
   created_at, updated_at, done_at: string|null,
   manual_status: ""|status, manual_at: string|null,   (moved by hand since the thread's last extraction; see "Topics")
-  thread_name, thread_subject, session_id, project_id, project_name }   (the thread's fields: GET /api/topics only)
+  detail: string,                       (a fuller summary, a few sentences, Markdown; "" until extracted)
+  tasks: [{text, done: bool}],          (its steps, done as judged from the messages; [] when none)
+  message_ids: [string],                (the thread's messages about it, oldest first, merged across extractions)
+  thread_name, thread_subject, session_id, project_id, project_name }   (the thread's fields: GET /api/topics and /api/topics/{id} only)
 ```
 
 Settings (one JSON object; PUT merges top-level keys):
@@ -169,17 +172,30 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   Skipped when setting `topics` is off, for archived threads, and without a coding agent to run the helper. Existing
   threads are not read until they get a new message (no backfill).
 - The helper (the same `runHelper` as reply suggestions: Haiku through `claude -p --json-schema`, or the default agent's
-  helper run) gets the thread's current topics (id, status, title, summary) and its newest 20 messages, each in full (no
-  character budget; earlier messages are carried by the current topics), and answers
-  `{topics: [{id?, title, summary, status}]}`. There is no limit on the number of topics: the prompt asks for every
+  helper run) gets the thread's current topics (id, status, title, summary, then `detail:` and one `task [x]|[ ] <text>`
+  line per step) and its newest 20 messages, each in full with its id in the header (`[PERSON · <time> · id: <msg id>]`;
+  no character budget; earlier messages are carried by the current topics), and answers
+  `{topics: [{id?, title, summary, status, detail, tasks: [{text, done}], message_ids: [string]}]}` (detail, tasks and
+  message_ids required by the schema; an answer without them reads as empty). The prompt asks to keep the current tasks,
+  their order and wording, marking them done as they finish. There is no limit on the number of topics: the prompt asks for every
   distinct subject, request, question, decision or piece of work as its own topic (each separate request or question of
   the person; only true duplicates or continuations merged), done ones kept with status `done`. Only a runaway answer is
-  cut, at 100 topics; titles at 80 characters, summaries at 160. The run times out after 5 minutes. The prompt starts
+  cut, at 100 topics; titles at 80 characters, summaries at 160, details at 1200, 20 tasks of 200 characters, 50
+  message ids per topic per answer. The run times out after 5 minutes. The prompt starts
   with `Track the topics` (the e2e fake helper keys on it).
 - Store (`topics` table, cascades with the thread): replaced per thread on each run. A topic that continues a current one
   (the same `id`, else the same title ignoring case and spacing) keeps its id and `created_at`, and its `updated_at` when
   nothing changed; `done_at` is set when it turns done. Current topics left out of the answer are deleted, except done
-  ones. A failed run (no JSON, an error) keeps the topics as they were.
+  ones. A failed run (no JSON, an error) keeps the topics as they were. `detail` and `tasks` are replaced by the answer
+  (a change bumps `updated_at`). `message_ids` are merged, not replaced (the helper sees only the newest 20 messages):
+  the answer's ids are kept only when they are messages of the history it was shown, then added to the topic's stored
+  ids; ids that are no longer messages of the thread are dropped; kept in the thread's order, at most the newest 200.
+  New related messages alone do not bump `updated_at`. Columns `detail`, `tasks` (JSON), `message_ids` (JSON) were added
+  to older databases on open.
+- `GET /api/topics/{id}` -> `{topic: Topic, messages: [{id, author: "user"|"agent", kind, created_at, excerpt}]}` (`404`
+  unknown topic): the topic with its thread's fields, and its related messages, oldest first; `excerpt` is the agent's
+  body or the person's own words, spacing collapsed, cut at 240 characters. The topic pane loads it on selection and
+  again on SSE `topics` / `thread`.
 - `GET /api/topics?project=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live thread (not
   archived, in a live session and project), open ones by `updated_at` newest first, then done ones done within the last
   7 days, newest first, at most 30. When a thread's topics change, SSE `topics` (`session_id`, `thread_id`) is published.
@@ -193,6 +209,15 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
 - UI: drag a card to another column (desktop), or its menu (right-click, long press, the "…" button, Shift+F10: Move to);
   `⇧T` opens Topics; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
   move it to In progress / Waiting on you / Done.
+- The topic pane: a click / tap on a card, or `Space` on the focused card, selects it (highlighted) and opens its pane:
+  beside the board on a desktop, full screen on a phone (Back returns to the board). It shows the title, status, the
+  thread (a link that opens it), `detail` as Markdown (else the summary), the tasks as read-only checkboxes with "n/m
+  done" and a progress bar, and the related messages (author, relative time, excerpt; a click opens the thread and
+  scrolls to that message, flashing it). While it is open, moving the focus moves the selection; `Esc` closes it (a
+  second `Esc` leaves Topics), `R` focuses its message box. The box sends with `POST /api/threads/{thread}/reply`
+  `{words: "[Topic: <title>]\n<text>"}` (Send or ⌘/Ctrl+Enter; the same queueing and delivery as the thread's own
+  composer); the `[Topic: <title>]` prefix shows as a fixed chip above the box. Unsent text is kept per topic while the
+  board is open.
 
 ## Reply suggestions
 
@@ -303,6 +328,8 @@ GET   /api/search?q=&session_id=&status=&from=agent|user&limit=
       messages: body; files: attachment name or text content. Newest first.
 
 GET   /api/topics?project=                  {topics, enabled, done_days} (see "Topics")
+GET   /api/topics/{id}                      {topic, messages: [{id, author, kind, created_at, excerpt}]} (see "Topics")
+PATCH /api/topics/{id}                      {status} -> Topic (see "Topics")
 GET/PUT  /api/settings
 GET   /api/storage                          {data_dir, db_path, db_bytes, scratch_dir, scratch_bytes, scratch_files}
 POST  /api/storage/clear-scratch            {removed}

@@ -81,8 +81,12 @@ const KEYS: [string, string, boolean?][] = [
   ['', '', true],
   ['Move between cards', '↑ ↓ ← →  HJKL'],
   ['Open thread', '↵'],
+  ['Show topic pane', 'Space'],
+  ['Message the thread', 'R'],
   ['Move to column', '1  2  3'],
   ['Card menu', '⇧F10'],
+  ['Close topic pane', 'Esc'],
+  ['', ''],
 ]
 
 export function Shortcuts({ onClose }: { onClose: () => void }) {

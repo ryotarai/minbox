@@ -140,14 +140,88 @@ func TestTopicsMigrationAddsManualColumns(t *testing.T) {
 	  status TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, done_at INTEGER)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO topics VALUES('tpc_old','thr_x','Old','s','in_progress',0,1,1,NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	db.Close()
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.ThreadTopics(context.Background(), "thr_x"); err != nil {
+	ts, err := s.ThreadTopics(context.Background(), "thr_x")
+	if err != nil {
 		t.Fatalf("after the migration: %v", err)
+	}
+	// The pane's columns too: no detail, no tasks, no related messages.
+	if len(ts) != 1 || ts[0].Detail != "" || ts[0].Tasks == nil || len(ts[0].Tasks) != 0 || ts[0].MessageIDs == nil || len(ts[0].MessageIDs) != 0 {
+		t.Fatalf("old topic = %+v", ts)
+	}
+}
+
+func TestReplaceTopicsDetailTasksAndMessages(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	sess, _ := s.CreateSession(ctx, "alpha", "/tmp/a", "u")
+	th, _, _ := s.CreateThread(ctx, sess.ID, "Search", agentMsg("one"))
+	other, _, _ := s.CreateThread(ctx, sess.ID, "Other", agentMsg("elsewhere"))
+	full, _ := s.GetThread(ctx, th.ID)
+	m1 := full.Messages[0].ID
+	m2, _ := s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "two", Words: "two"})
+	m3, _ := s.AddMessage(ctx, th.ID, agentMsg("three"))
+	of, _ := s.GetThread(ctx, other.ID)
+	foreign := of.Messages[0].ID
+
+	// A new topic: detail, tasks (blank ones dropped), only this thread's messages, in its order.
+	changed, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{Title: "Search UI", Status: "in_progress", Detail: " Building **the box**. ",
+		Tasks:      []TopicTask{{Text: "Add the  field"}, {Text: " "}, {Text: "Wire results", Done: true}},
+		MessageIDs: []string{m3.ID, foreign, "msg_nope", m1}}}, time.Time{})
+	if err != nil || !changed {
+		t.Fatalf("first: %v %v", changed, err)
+	}
+	cur, _ := s.ThreadTopics(ctx, th.ID)
+	tp := cur[0]
+	if tp.Detail != "Building **the box**." || len(tp.Tasks) != 2 || tp.Tasks[0].Text != "Add the field" || tp.Tasks[0].Done || !tp.Tasks[1].Done {
+		t.Fatalf("topic = %+v", tp)
+	}
+	if len(tp.MessageIDs) != 2 || tp.MessageIDs[0] != m1 || tp.MessageIDs[1] != m3.ID {
+		t.Fatalf("message ids = %v", tp.MessageIDs)
+	}
+	updated := tp.UpdatedAt
+
+	// The next answer names other messages: they are added to the ones it had (merged, in order);
+	// more related messages alone keep updated_at.
+	s.now = func() time.Time { return updated.Add(time.Minute) }
+	changed, _ = s.ReplaceTopics(ctx, th.ID, []TopicInput{{Title: "Search UI", Status: "in_progress", Detail: "Building **the box**.",
+		Tasks: []TopicTask{{Text: "Add the field"}, {Text: "Wire results", Done: true}}, MessageIDs: []string{m2.ID}}}, time.Time{})
+	cur, _ = s.ThreadTopics(ctx, th.ID)
+	tp = cur[0]
+	if !changed || len(tp.MessageIDs) != 3 || tp.MessageIDs[1] != m2.ID || !tp.UpdatedAt.Equal(updated) {
+		t.Fatalf("merge: changed=%v %+v", changed, tp)
+	}
+	// The same answer again: no change. A task done: a change.
+	if changed, _ = s.ReplaceTopics(ctx, th.ID, []TopicInput{{Title: "Search UI", Status: "in_progress", Detail: "Building **the box**.",
+		Tasks: []TopicTask{{Text: "Add the field"}, {Text: "Wire results", Done: true}}}}, time.Time{}); changed {
+		t.Fatal("unchanged answer reported a change")
+	}
+	changed, _ = s.ReplaceTopics(ctx, th.ID, []TopicInput{{Title: "Search UI", Status: "in_progress", Detail: "Building **the box**.",
+		Tasks: []TopicTask{{Text: "Add the field", Done: true}, {Text: "Wire results", Done: true}}}}, time.Time{})
+	cur, _ = s.ThreadTopics(ctx, th.ID)
+	if !changed || !cur[0].Tasks[0].Done || !cur[0].UpdatedAt.After(updated) || len(cur[0].MessageIDs) != 3 {
+		t.Fatalf("task done: %+v", cur[0])
+	}
+
+	// One topic with its thread's fields; its messages (a gone or foreign id left out).
+	got, err := s.GetTopic(ctx, tp.ID)
+	if err != nil || got.SessionID != sess.ID || got.ThreadSubject != "Search" || len(got.Tasks) != 2 {
+		t.Fatalf("get = %+v %v", got, err)
+	}
+	if _, err := s.GetTopic(ctx, "tpc_nope"); err != ErrNotFound {
+		t.Fatalf("missing = %v", err)
+	}
+	ms, err := s.TopicMessages(ctx, th.ID, []string{m3.ID, m2.ID, foreign})
+	if err != nil || len(ms) != 2 || ms[0].ID != m2.ID || ms[0].Text != "two" || ms[0].Author != AuthorUser || ms[1].Text != "three" {
+		t.Fatalf("messages = %+v %v", ms, err)
 	}
 }
 

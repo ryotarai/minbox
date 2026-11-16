@@ -27,6 +27,32 @@ if prompt.startswith("Track the topics"):
         if title in topics:
             topics[title]["status"] = status
             topics[title]["summary"] += " (kept your move)"
+    # The pane: "TOPIC-DETAIL: <title> | <markdown>" is its detail (\n in it is a new line);
+    # "TOPIC-TASK: <title> | [x] <text>" (or "[ ] ") one of its steps, a later line for the same
+    # text marking it again; the related messages are the ones whose text names the topic's title.
+    for t in topics.values():
+        t["detail"], t["tasks"], t["message_ids"] = "", [], []
+    for m in re.finditer(r"^TOPIC-DETAIL: (.+?) \| (.*)$", prompt, re.M):
+        if m.group(1).strip() in topics:
+            topics[m.group(1).strip()]["detail"] = m.group(2).strip().replace("\\n", "\n")
+    for m in re.finditer(r"^TOPIC-TASK: (.+?) \| \[([ x])\] (.*)$", prompt, re.M):
+        t = topics.get(m.group(1).strip())
+        if t is None:
+            continue
+        text, done = m.group(3).strip(), m.group(2) == "x"
+        for k in t["tasks"]:
+            if k["text"] == text:
+                k["done"] = done
+                break
+        else:
+            t["tasks"].append({"text": text, "done": done})
+    heads = list(re.finditer(r"^\[[^\]\n]* · id: (\S+)\]$", prompt, re.M))
+    for i, h in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else prompt.find("\nTask: list the topics")
+        text = prompt[h.end():end]
+        for title, t in topics.items():
+            if title in text:
+                t["message_ids"].append(h.group(1))
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"topics": list(topics.values())}}))
     sys.exit(0)
 

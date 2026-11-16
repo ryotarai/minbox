@@ -330,6 +330,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/markups/{name}", s.getMarkup)
 	mux.HandleFunc("GET /api/search", s.search)
 	mux.HandleFunc("GET /api/topics", s.listTopics)
+	mux.HandleFunc("GET /api/topics/{id}", s.getTopic)
 	mux.HandleFunc("PATCH /api/topics/{id}", s.patchTopic)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)

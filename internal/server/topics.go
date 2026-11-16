@@ -35,6 +35,13 @@ const (
 	topicsMsgCount   = 20
 	topicsTitleLen   = 80
 	topicsSummaryLen = 160
+	// The topic pane: the fuller summary, its steps, the related messages of one answer.
+	topicsDetailLen    = 1200
+	topicsMaxTasks     = 20
+	topicsTaskLen      = 200
+	topicsMaxMsgIDs    = 50
+	topicsExcerptLen   = 240
+	topicsPromptDetail = 600 // the current topic's detail, in the prompt
 	// The board's Done column: topics done within this long, at most topicsDoneLimit of them.
 	topicsDoneWindow = 7 * 24 * time.Hour
 	topicsDoneLimit  = 30
@@ -47,8 +54,13 @@ const topicsSchema = `{"type":"object","properties":{` +
 	`"id":{"type":"string"},` +
 	`"title":{"type":"string","maxLength":80},` +
 	`"summary":{"type":"string","maxLength":160},` +
-	`"status":{"type":"string","enum":["in_progress","waiting_on_you","done"]}},` +
-	`"required":["title","summary","status"],"additionalProperties":false}}},` +
+	`"status":{"type":"string","enum":["in_progress","waiting_on_you","done"]},` +
+	`"detail":{"type":"string","maxLength":1200},` +
+	`"tasks":{"type":"array","items":{"type":"object","properties":{` +
+	`"text":{"type":"string","maxLength":200},"done":{"type":"boolean"}},` +
+	`"required":["text","done"],"additionalProperties":false}},` +
+	`"message_ids":{"type":"array","items":{"type":"string"}}},` +
+	`"required":["title","summary","status","detail","tasks","message_ids"],"additionalProperties":false}}},` +
 	`"required":["topics"],"additionalProperties":false}`
 
 // ---- scheduling ----
@@ -208,6 +220,21 @@ func (s *Server) refreshTopics(threadID string) {
 		log.Printf("topics: %s: %v", threadID, err)
 		return
 	}
+	// Related messages: only ids of the history the helper was shown (ReplaceTopics also checks
+	// them against the thread, and adds them to the ones the topic has).
+	shown := map[string]bool{}
+	for _, m := range th.Messages[max(0, len(th.Messages)-topicsMsgCount):] {
+		shown[m.ID] = true
+	}
+	for i := range in {
+		ids := in[i].MessageIDs[:0]
+		for _, id := range in[i].MessageIDs {
+			if shown[id] {
+				ids = append(ids, id)
+			}
+		}
+		in[i].MessageIDs = ids
+	}
 	// The thread may have been archived or turned off while the helper ran.
 	if th2, err := s.store.GetThread(ctx, threadID); err != nil || th2.ArchivedAt != nil {
 		return
@@ -247,6 +274,16 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 			manual = true
 		}
 		b.WriteString("\n")
+		if d := strings.Join(strings.Fields(t.Detail), " "); d != "" {
+			b.WriteString("  detail: " + truncRunes(d, topicsPromptDetail) + "\n")
+		}
+		for _, k := range t.Tasks {
+			box := "[ ]"
+			if k.Done {
+				box = "[x]"
+			}
+			b.WriteString("  task " + box + " " + truncRunes(k.Text, topicsTaskLen) + "\n")
+		}
 	}
 	if manual {
 		b.WriteString("A topic marked \"moved by the PERSON by hand\" has the status the person chose on the board: a strong signal. " +
@@ -264,7 +301,7 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 				who = "PERSON ran a command"
 			}
 		}
-		return "[" + who + " · " + m.CreatedAt.UTC().Format("2006-01-02 15:04") + "]", strings.TrimSpace(body)
+		return "[" + who + " · " + m.CreatedAt.UTC().Format("2006-01-02 15:04") + " · id: " + m.ID + "]", strings.TrimSpace(body)
 	}
 	start := max(0, len(th.Messages)-topicsMsgCount)
 	b.WriteString("\nMessages (oldest first")
@@ -296,6 +333,10 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 		"- status: \"waiting_on_you\" when the agent is waiting for the person's decision, answer, review or action on it; " +
 		"\"done\" when it is finished, resolved or dropped; otherwise \"in_progress\" (the agent is working on it, or it is still open).\n" +
 		"- id: the id of the current topic it continues; leave it out for a new topic.\n" +
+		"- detail: a fuller summary for the topic's pane: a few sentences (Markdown allowed) on what it is about, what was decided or done, and what is left. Update the current detail; do not start over.\n" +
+		"- tasks: the concrete steps or sub-tasks of the topic (short, imperative; usually 0 to 8), each with done true when the messages show it finished. " +
+		"Keep the current tasks and their order and wording (mark them done as they finish; add new ones at the end); an empty list when the topic has no separate steps.\n" +
+		"- message_ids: the ids (from the message headers above) of the messages that are about this topic; an empty list when none of the messages above is.\n" +
 		"Keep the current topics, including done ones (with status \"done\"; do not drop a topic because it is finished), " +
 		"and update their status and summary from the newest messages. " +
 		"Drop a current topic only when it was a mistake or became part of another.\n")
@@ -337,10 +378,13 @@ func parseTopics(out []byte) ([]store.TopicInput, error) {
 	seen := map[string]bool{}
 	for _, rt := range body.Topics {
 		var t struct {
-			ID      string `json:"id"`
-			Title   string `json:"title"`
-			Summary string `json:"summary"`
-			Status  string `json:"status"`
+			ID         string            `json:"id"`
+			Title      string            `json:"title"`
+			Summary    string            `json:"summary"`
+			Status     string            `json:"status"`
+			Detail     string            `json:"detail"`
+			Tasks      []json.RawMessage `json:"tasks"`
+			MessageIDs []any             `json:"message_ids"`
 		}
 		if json.Unmarshal(rt, &t) != nil {
 			continue
@@ -351,12 +395,30 @@ func parseTopics(out []byte) ([]store.TopicInput, error) {
 			continue
 		}
 		seen[strings.ToLower(title)] = true
-		res = append(res, store.TopicInput{
-			ID:      strings.TrimSpace(t.ID),
-			Title:   truncRunes(title, topicsTitleLen),
-			Summary: truncRunes(strings.Join(strings.Fields(t.Summary), " "), topicsSummaryLen),
-			Status:  status,
-		})
+		in := store.TopicInput{
+			ID:         strings.TrimSpace(t.ID),
+			Title:      truncRunes(title, topicsTitleLen),
+			Summary:    truncRunes(strings.Join(strings.Fields(t.Summary), " "), topicsSummaryLen),
+			Status:     status,
+			Detail:     truncRunes(strings.TrimSpace(t.Detail), topicsDetailLen),
+			Tasks:      []store.TopicTask{},
+			MessageIDs: []string{},
+		}
+		for _, rk := range t.Tasks {
+			var k store.TopicTask
+			if json.Unmarshal(rk, &k) != nil {
+				continue
+			}
+			if text := strings.Join(strings.Fields(k.Text), " "); text != "" && len(in.Tasks) < topicsMaxTasks {
+				in.Tasks = append(in.Tasks, store.TopicTask{Text: truncRunes(text, topicsTaskLen), Done: k.Done})
+			}
+		}
+		for _, v := range t.MessageIDs {
+			if id, ok := v.(string); ok && strings.TrimSpace(id) != "" && len(in.MessageIDs) < topicsMaxMsgIDs {
+				in.MessageIDs = append(in.MessageIDs, strings.TrimSpace(id))
+			}
+		}
+		res = append(res, in)
 		if len(res) == topicsMaxTopics {
 			break
 		}
@@ -386,6 +448,33 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.publish(Event{Type: "topics", SessionID: t.SessionID, ThreadID: t.ThreadID})
 	writeJSON(w, 200, t)
+}
+
+// GET /api/topics/{id}: one topic (as the list gives it) and its related messages, oldest first,
+// each with an excerpt (the topic pane).
+func (s *Server) getTopic(w http.ResponseWriter, r *http.Request) {
+	t, err := s.store.GetTopic(r.Context(), r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	ms, err := s.store.TopicMessages(r.Context(), t.ThreadID, t.MessageIDs)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	type msg struct {
+		ID        string    `json:"id"`
+		Author    string    `json:"author"`
+		Kind      string    `json:"kind"`
+		CreatedAt time.Time `json:"created_at"`
+		Excerpt   string    `json:"excerpt"`
+	}
+	out := make([]msg, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, msg{ID: m.ID, Author: m.Author, Kind: m.Kind, CreatedAt: m.CreatedAt, Excerpt: truncRunes(strings.Join(strings.Fields(m.Text), " "), topicsExcerptLen)})
+	}
+	writeJSON(w, 200, map[string]any{"topic": t, "messages": out})
 }
 
 // GET /api/topics?project=<id>: the topics of every live thread (of one project), open ones by last

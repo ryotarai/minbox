@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { api, type Topic, type TopicStatus, type TopicsResult } from '../api'
+import { api, type Topic, type TopicDetail, type TopicStatus, type TopicsResult } from '../api'
 import { useApp } from '../lib/app'
+import { isMac } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
+import { renderMarkdown } from '../lib/markdown'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { ContextMenu, useContextMenu } from './ContextMenu'
-import { IconBack, IconMore } from './icons'
+import { IconBack, IconCheck, IconClose, IconMore, IconSend } from './icons'
 import { ThreadProjectBadge } from './ThreadList'
 import { Button, IconButton, MenuItem, MenuLabel, MenuSep, Popover, Segmented, cx } from './ui'
 
@@ -44,6 +46,12 @@ function movedTopic(t: Topic, status: TopicStatus): Topic {
  * press, "…", Shift+F10: Move to), or 1 / 2 / 3 on the focused card. The move holds until the
  * thread's next message, whose extraction is told about it. Arrows / HJKL move the focus between
  * cards, Enter opens the focused card's thread.
+ *
+ * Selecting a card (a click, a tap, or Space on the focused card) opens its pane: on the right of
+ * the board on a desktop, full screen on a phone. The pane shows the topic's fuller summary, its
+ * steps as a read-only checklist, the thread's messages about it, and a box that sends a message
+ * to the thread, headed with the topic's name ("[Topic: …]"). While the pane is open the keyboard
+ * focus moves the selection along; R writes, Esc closes it.
  */
 export function TopicsPage() {
   const { topicsVersion, threadsVersion, error, navigate, projects, isPhone } = useApp()
@@ -57,6 +65,10 @@ export function TopicsPage() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overCol, setOverCol] = useState<TopicStatus | null>(null)
   const [reload, setReload] = useState(0)
+  // The topic whose pane is open, and the unsent text of each topic's message box.
+  const [selId, setSelId] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const replyRef = useRef<HTMLTextAreaElement | null>(null)
   const seq = useRef(0)
   useEffect(() => {
     const n = ++seq.current
@@ -78,6 +90,21 @@ export function TopicsPage() {
   }, [res])
   const doneDays = res?.done_days ?? 7
   const open = (t: Topic) => t.session_id && navigate({ view: 'main', s: t.session_id, t: t.thread_id, f: null }, { push: true })
+  const selected = res?.topics.find((x) => x.id === selId) ?? null
+  // A topic gone from the board (dropped, or another project chosen) closes its pane.
+  useEffect(() => {
+    if (res && selId && !res.topics.some((x) => x.id === selId)) setSelId(null)
+  }, [res, selId])
+  const select = (id: string) => {
+    setSelId(id)
+    setFocusId(id)
+  }
+  const closePane = () => {
+    const id = selId
+    setSelId(null)
+    // Back on the card it was about (the keys go on from there).
+    if (id && !isPhone) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="topic-card"][data-topic-id="${CSS.escape(id)}"]`)?.focus())
+  }
 
   /** Move a topic to another column: at once on the board, then on the server (a failure reloads). */
   const move = useCallback(
@@ -102,6 +129,8 @@ export function TopicsPage() {
   const cols = isPhone ? COLUMNS.filter((c) => c.id === tab) : COLUMNS
   const focusCard = (id: string) => {
     setFocusId(id)
+    // An open pane follows the focus.
+    if (selId) setSelId(id)
     // DOM focus too (Enter and Shift+F10 act on it): now, and again once a moved card is rendered in its new column.
     const el = () => document.querySelector<HTMLElement>(`[data-testid="topic-card"][data-topic-id="${CSS.escape(id)}"]`)
     el()?.focus()
@@ -139,8 +168,23 @@ export function TopicsPage() {
     }
   }
   const focused = res?.topics.find((x) => x.id === focusId)
+  // Enter and Space act on the focused card only while no other control (a button in the pane)
+  // has the DOM focus: there they press that control.
+  const onControl = () => {
+    const a = document.activeElement as HTMLElement | null
+    return !!a && a !== document.body && !a.matches('[data-testid="topic-card"]')
+  }
   useHotkeys({
-    escape: () => navigate({ view: 'main' }),
+    escape: () => (selId ? closePane() : navigate({ view: 'main' })),
+    space: () => {
+      if (!focused || onControl()) return false
+      if (selId === focused.id && !isPhone) closePane()
+      else select(focused.id)
+    },
+    r: () => {
+      if (!selected || !replyRef.current) return false
+      replyRef.current.focus()
+    },
     j: () => vert(1),
     arrowdown: () => vert(1),
     k: () => vert(-1),
@@ -150,7 +194,7 @@ export function TopicsPage() {
     l: () => horiz(1),
     arrowright: () => horiz(1),
     enter: () => {
-      if (!focused) return false
+      if (!focused || onControl()) return false
       open(focused)
     },
     1: () => (focused ? move(focused.id, 'in_progress') : false),
@@ -215,9 +259,11 @@ export function TopicsPage() {
             now={now}
             phone={isPhone}
             focused={focusId === t.id}
+            selected={selId === t.id}
             dragging={dragId === t.id}
             showProject={!projectId}
             onOpen={() => open(t)}
+            onSelect={() => select(t.id)}
             onMove={(s) => move(t.id, s)}
             onFocus={() => setFocusId(t.id)}
             onDragStart={(e) => {
@@ -232,6 +278,30 @@ export function TopicsPage() {
           />
         ))}
       </section>
+    )
+  }
+
+  const pane = selected && (
+    <TopicPane
+      key={selected.id}
+      t={selected}
+      now={now}
+      phone={isPhone}
+      draft={drafts[selected.id] ?? ''}
+      onDraft={(v) => setDrafts((d) => ({ ...d, [selected.id]: v }))}
+      replyRef={replyRef}
+      onClose={closePane}
+      onOpenThread={(messageId) => {
+        open(selected)
+        if (messageId) jumpToMessage(messageId)
+      }}
+    />
+  )
+  if (isPhone && pane) {
+    return (
+      <div className="flex h-full flex-col bg-bg" data-testid="topics">
+        {pane}
+      </div>
     )
   }
 
@@ -296,7 +366,10 @@ export function TopicsPage() {
           <div className="flex min-h-0 flex-1 flex-col pt-2">{column(COLUMNS.find((c) => c.id === tab)!)}</div>
         </>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[repeat(3,minmax(240px,1fr))] gap-3 overflow-x-auto px-5 py-4">{COLUMNS.map(column)}</div>
+        <div className="flex min-h-0 flex-1">
+          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[repeat(3,minmax(220px,1fr))] gap-3 overflow-x-auto px-5 py-4">{COLUMNS.map(column)}</div>
+          {pane}
+        </div>
       )}
     </div>
   )
@@ -307,9 +380,11 @@ function TopicCard({
   now,
   phone,
   focused,
+  selected,
   dragging,
   showProject,
   onOpen,
+  onSelect,
   onMove,
   onFocus,
   onDragStart,
@@ -319,9 +394,11 @@ function TopicCard({
   now: number
   phone: boolean
   focused: boolean
+  selected: boolean
   dragging: boolean
   showProject: boolean
   onOpen: () => void
+  onSelect: () => void
   onMove: (s: TopicStatus) => void
   onFocus: () => void
   onDragStart: (e: DragEvent<HTMLElement>) => void
@@ -344,7 +421,7 @@ function TopicCard({
         onFocus={(e) => e.target === e.currentTarget && onFocus()}
         onKeyDown={(e) => {
           menu.props.onKeyDown(e)
-          if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+          if (e.key === 'Enter' && e.target === e.currentTarget) {
             e.preventDefault()
             onOpen()
           }
@@ -353,14 +430,17 @@ function TopicCard({
         data-status={t.status}
         data-topic-id={t.id}
         data-focused={focused ? 'true' : undefined}
+        data-selected={selected ? 'true' : undefined}
+        aria-pressed={selected}
         data-manual={t.manual_status ? 'true' : undefined}
         data-menu-open={menu.at ? 'true' : undefined}
-        onClick={onOpen}
-        title={`Open the thread “${thread}”`}
+        onClick={onSelect}
+        title={phone ? undefined : 'Show the topic (↵ opens the thread)'}
         className={cx(
           'group relative flex w-full shrink-0 cursor-pointer flex-col gap-1.5 rounded-[10px] border bg-raised px-3 py-2.5 text-left outline-none hover:border-linestrong focus-visible:ring-2 focus-visible:ring-accent',
           waiting ? 'border-wait/50' : 'border-line2',
           t.status === 'done' && 'opacity-80',
+          selected && 'border-accent bg-accent/8',
           focused && 'ring-2 ring-accent',
           dragging && 'opacity-40',
           menu.at && 'border-linestrong',
@@ -431,5 +511,285 @@ function TopicCard({
         </MenuItem>
       </ContextMenu>
     </>
+  )
+}
+
+const STATUS_LABEL: Record<TopicStatus, string> = { in_progress: 'In progress', waiting_on_you: 'Waiting on you', done: 'Done' }
+
+/** The message prefix that says which topic a message from the pane is about. */
+export function topicPrefix(title: string): string {
+  return `[Topic: ${title}]`
+}
+
+/**
+ * After a jump to a thread: once the message is on screen, bring it into view and flash it (the
+ * thread view first scrolls to its end; this comes after). Gives up quietly after a few seconds
+ * (an old message the view does not show).
+ */
+function jumpToMessage(id: string) {
+  const sel = `[data-testid="message"][data-message-id="${CSS.escape(id)}"]`
+  const started = Date.now()
+  const tick = () => {
+    const el = document.querySelector<HTMLElement>(sel)
+    if (!el) {
+      if (Date.now() - started < 5000) setTimeout(tick, 100)
+      return
+    }
+    setTimeout(() => {
+      const now = document.querySelector<HTMLElement>(sel) ?? el
+      now.scrollIntoView({ block: 'center' })
+      now.dataset.jumped = 'true'
+      now.style.outline = '2px solid var(--mb-accent)'
+      now.style.outlineOffset = '4px'
+      now.style.borderRadius = '12px'
+      setTimeout(() => {
+        now.style.outline = ''
+        now.style.outlineOffset = ''
+        now.style.borderRadius = ''
+      }, 2000)
+    }, 250)
+  }
+  tick()
+}
+
+/**
+ * A topic's pane: the fuller summary (Markdown), its steps as a read-only checklist with the
+ * progress, the thread's messages about it (a click opens the thread at that message), and a box
+ * that sends a message to the thread headed with the topic's name. Beside the board on a desktop,
+ * the whole screen on a phone.
+ */
+function TopicPane({
+  t,
+  now,
+  phone,
+  draft,
+  onDraft,
+  replyRef,
+  onClose,
+  onOpenThread,
+}: {
+  t: Topic
+  now: number
+  phone: boolean
+  draft: string
+  onDraft: (v: string) => void
+  replyRef: React.RefObject<HTMLTextAreaElement | null>
+  onClose: () => void
+  onOpenThread: (messageId?: string) => void
+}) {
+  const { topicsVersion, threadVersion, sessions, toast, error } = useApp()
+  const [detail, setDetail] = useState<TopicDetail | null>(null)
+  const [sending, setSending] = useState(false)
+  const bump = threadVersion[t.thread_id] ?? 0
+  useEffect(() => {
+    let live = true
+    // A topic that is gone closes the pane (the board's list says so): nothing to report here.
+    api
+      .topic(t.id)
+      .then((d) => live && setDetail(d))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [t.id, topicsVersion, bump])
+  const thread = t.thread_name || t.thread_subject || 'Untitled thread'
+  const tasks = t.tasks ?? []
+  const done = tasks.filter((x) => x.done).length
+  const body = (t.detail || t.summary || '').trim()
+  const html = useMemo(() => (body ? renderMarkdown(body) : ''), [body])
+  const msgs = detail?.topic.id === t.id ? detail.messages : null
+  const session = sessions?.find((s) => s.id === t.session_id)
+  const prefix = topicPrefix(t.title)
+  const mod = isMac() ? '⌘' : 'Ctrl+'
+
+  const send = async () => {
+    const text = draft.trim()
+    if (!text || sending) return
+    setSending(true)
+    try {
+      await api.reply(t.thread_id, { words: `${prefix}\n${text}` })
+      onDraft('')
+      toast(`Sent to “${thread}”`)
+    } catch (e) {
+      error(e)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const statusTone = t.status === 'waiting_on_you' ? 'border-wait/60 text-wait' : t.status === 'done' ? 'border-line2 text-subtle' : 'border-accent/50 text-accent'
+  return (
+    <aside
+      data-testid="topic-pane"
+      data-topic-id={t.id}
+      aria-label={`Topic: ${t.title}`}
+      className={cx('flex min-h-0 flex-col bg-bg', phone ? 'h-full' : 'w-[min(420px,40vw)] shrink-0 border-l border-line')}
+    >
+      <div className={cx('flex shrink-0 items-start gap-2 border-b border-line py-3', phone ? 'px-2' : 'px-4')}>
+        {phone && (
+          <IconButton aria-label="Back to the board" data-testid="topic-pane-back" onClick={onClose}>
+            <IconBack />
+          </IconButton>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <h2 data-testid="topic-pane-title" className="m-0 text-[16px] font-[650] leading-[1.35] text-fg">
+            {t.title}
+          </h2>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+            <span data-testid="topic-pane-status" data-status={t.status} className={cx('rounded-full border px-2 py-px text-[11.5px] font-semibold', statusTone)}>
+              {STATUS_LABEL[t.status]}
+            </span>
+            <button
+              type="button"
+              data-testid="topic-pane-thread"
+              title="Open the thread"
+              onClick={() => onOpenThread()}
+              className="min-w-0 max-w-full truncate border-0 bg-transparent p-0 text-left text-accent hover:underline"
+            >
+              {thread}
+              {t.project_name && <span className="text-subtle"> · {t.project_name}</span>}
+            </button>
+          </div>
+        </div>
+        {!phone && (
+          <IconButton aria-label="Close (Esc)" title="Close (Esc)" data-testid="topic-pane-close" size={28} onClick={onClose}>
+            <IconClose size={14} />
+          </IconButton>
+        )}
+      </div>
+
+      <div className={cx('flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto py-4', phone ? 'px-4' : 'px-4')}>
+        <section aria-label="Summary">
+          {html ? (
+            <div data-testid="topic-pane-detail" className="md text-[13.5px] text-body" dangerouslySetInnerHTML={{ __html: html }} />
+          ) : (
+            <span className="text-[12.5px] text-subtle">No summary yet.</span>
+          )}
+        </section>
+
+        <section aria-label="Tasks" data-testid="topic-pane-tasks" className="flex flex-col gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[12px] font-bold uppercase tracking-wide text-subtle">Tasks</span>
+            {tasks.length > 0 && (
+              <span data-testid="topic-pane-progress" className="text-[12px] text-muted">
+                {done}/{tasks.length} done
+              </span>
+            )}
+          </div>
+          {tasks.length > 0 ? (
+            <>
+              <div className="h-1.5 overflow-hidden rounded-full bg-raised" role="progressbar" aria-valuemin={0} aria-valuemax={tasks.length} aria-valuenow={done} aria-label="Tasks done">
+                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${(done / tasks.length) * 100}%` }} />
+              </div>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0" title="As the helper reads the thread">
+                {tasks.map((k, i) => (
+                  <li key={i} data-testid="topic-task" data-done={k.done ? 'true' : 'false'} className="flex items-start gap-2 text-[13px] leading-[1.45]">
+                    <span
+                      role="checkbox"
+                      aria-checked={k.done}
+                      aria-readonly="true"
+                      aria-label={k.text}
+                      className={cx(
+                        'mt-[2px] flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border',
+                        k.done ? 'border-accent bg-accent text-onaccent' : 'border-linestrong',
+                      )}
+                    >
+                      {k.done && <IconCheck size={11} />}
+                    </span>
+                    <span className={cx('min-w-0 flex-1', k.done ? 'text-muted line-through decoration-subtle' : 'text-fg')}>{k.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <span className="text-[12.5px] text-subtle">No separate steps.</span>
+          )}
+        </section>
+
+        <section aria-label="Related messages" className="flex flex-col gap-2">
+          <span className="text-[12px] font-bold uppercase tracking-wide text-subtle">
+            Messages {msgs && msgs.length > 0 && <span className="font-normal normal-case tracking-normal">{msgs.length}</span>}
+          </span>
+          {msgs === null ? (
+            <span className="text-[12.5px] text-subtle">Loading…</span>
+          ) : msgs.length === 0 ? (
+            <span className="text-[12.5px] text-subtle">No messages linked yet.</span>
+          ) : (
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {msgs.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    data-testid="topic-message"
+                    data-message-id={m.id}
+                    title="Show it in the thread"
+                    onClick={() => onOpenThread(m.id)}
+                    className="flex w-full flex-col gap-1 rounded-lg border border-line2 bg-raised px-2.5 py-2 text-left hover:border-linestrong"
+                  >
+                    <span className="flex items-center gap-1.5 text-[11.5px]">
+                      <span className={cx('font-semibold', m.author === 'user' ? 'text-fg2' : 'text-wait')}>
+                        {m.author === 'user' ? (m.kind === 'command' ? 'You ran' : 'You') : 'Agent'}
+                      </span>
+                      <time dateTime={m.created_at} title={new Date(m.created_at).toLocaleString()} className="text-subtle">
+                        {relTime(m.created_at, now)}
+                      </time>
+                    </span>
+                    <span data-testid="topic-message-excerpt" className="line-clamp-3 text-[12.5px] leading-[1.45] text-body">
+                      {m.excerpt || '(no text)'}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <form
+        data-testid="topic-pane-compose"
+        className={cx('flex shrink-0 flex-col gap-2 border-t border-line py-3', phone ? 'px-3 pb-[max(12px,env(safe-area-inset-bottom))]' : 'px-4')}
+        onSubmit={(e) => {
+          e.preventDefault()
+          void send()
+        }}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            data-testid="topic-pane-prefix"
+            title="Added at the start of your message, so the agent knows which topic it is about"
+            className="min-w-0 max-w-full truncate rounded-full border border-accent/50 bg-accent/10 px-2 py-px text-[11.5px] text-fg2 select-none"
+          >
+            {prefix}
+          </span>
+          {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
+        </div>
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={replyRef}
+            data-testid="topic-pane-input"
+            value={draft}
+            rows={phone ? 2 : 3}
+            placeholder={phone ? 'Message the thread…' : `Message the thread about this topic… (R)`}
+            onChange={(e) => onDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {
+                e.preventDefault()
+                void send()
+              } else if (e.key === 'Escape') {
+                // Esc leaves the box first; a second one closes the pane.
+                e.preventDefault()
+                e.stopPropagation()
+                e.currentTarget.blur()
+              }
+            }}
+            className="min-h-0 flex-1 resize-none rounded-lg border border-linestrong bg-surface px-2.5 py-2 text-[13.5px] text-fg outline-none placeholder:text-subtle focus:border-accent"
+          />
+          <Button type="submit" variant="primary" size="sm" data-testid="topic-pane-send" disabled={!draft.trim() || sending} title={`Send (${mod}↵)`} className="h-9">
+            <IconSend size={14} />
+            Send
+          </Button>
+        </div>
+      </form>
+    </aside>
   )
 }

@@ -29,7 +29,9 @@ async function seed(page: Page, minbox: Minbox) {
   const search = await thread(
     'web-app',
     'Search for the inbox',
-    'Add search to the inbox.\nTOPIC: Search box UI | in_progress | Building the search field and results list\nTOPIC: Index format | waiting_on_you | Pick SQLite FTS5 or plain LIKE before indexing',
+    'Add search to the inbox.\nTOPIC: Search box UI | in_progress | Building the search field and results list\nTOPIC: Index format | waiting_on_you | Pick SQLite FTS5 or plain LIKE before indexing' +
+      '\nTOPIC-DETAIL: Search box UI | The **search field** sits above the thread list.\\nResults narrow as you type.' +
+      '\nTOPIC-TASK: Search box UI | [x] Add the field\nTOPIC-TASK: Search box UI | [ ] Show the results\nTOPIC-TASK: Search box UI | [ ] Keyboard shortcut',
   )
   const billing = await thread(
     'billing-svc',
@@ -81,8 +83,10 @@ test('topics from several threads land in their columns, move live and open thei
   await page.getByRole('menuitem', { name: 'All projects' }).click()
   await expect(page.getByTestId('topic-card')).toHaveCount(4)
 
-  // A card opens its thread.
+  // A card opens its pane; the pane's thread link opens the thread.
   await card(page, 'in_progress', 'Search box UI').click()
+  await expect(page.getByTestId('topic-pane')).toBeVisible()
+  await page.getByTestId('topic-pane-thread').click()
   await expect(page.getByTestId('topics')).toHaveCount(0)
   await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
 
@@ -91,7 +95,7 @@ test('topics from several threads land in their columns, move live and open thei
   await expect(page.getByTestId('topics')).toBeVisible()
 })
 
-test('phone: the columns are tabs; a card opens its thread', async ({ page, minbox }) => {
+test('phone: the columns are tabs; a card opens its topic full screen, then its thread', async ({ page, minbox }) => {
   await seed(page, minbox)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(minbox.url + '/#')
@@ -114,7 +118,20 @@ test('phone: the columns are tabs; a card opens its thread', async ({ page, minb
   // No horizontal scroll at phone width.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
+  // A tap: the topic full screen (no board behind it), Back returns to the board.
   await card(page, 'done', 'Release notes v1.4').click()
+  const pane = page.getByTestId('topic-pane')
+  await expect(pane).toBeVisible()
+  await expect(page.getByTestId('topics-col-done')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Release notes v1.4')
+  await expect(page.getByTestId('topic-pane-status')).toHaveText('Done')
+  await expect(page.getByTestId('topic-pane-prefix')).toHaveText('[Topic: Release notes v1.4]')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByTestId('topic-pane-back').click()
+  await expect(pane).toHaveCount(0)
+  await expect(card(page, 'done', 'Release notes v1.4')).toBeVisible()
+  await card(page, 'done', 'Release notes v1.4').click()
+  await page.getByTestId('topic-pane-thread').click()
   await expect(page.getByTestId('thread-subject')).toHaveText('Invoices are off by a cent')
 })
 
@@ -269,6 +286,118 @@ test('keyboard: ⇧T opens Topics; arrows and HJKL move the focus, 1 2 3 move th
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('topics')).toHaveCount(0)
   await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
+})
+
+test('the topic pane: summary, checklist, related messages; a message from it reaches the thread with the topic named', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  const { search } = await seed(page, minbox)
+  await page.goto(minbox.url + '/#v=topics')
+  const ui = card(page, 'in_progress', 'Search box UI')
+  await expect(ui).toBeVisible(SLOW)
+  await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+
+  // A click selects the card and opens its pane beside the board (the thread does not open).
+  await ui.click()
+  const pane = page.getByTestId('topic-pane')
+  await expect(pane).toBeVisible()
+  await expect(page.getByTestId('topics-col-in_progress')).toBeVisible()
+  await expect(ui).toHaveAttribute('data-selected', 'true')
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
+  await expect(page.getByTestId('topic-pane-status')).toHaveText('In progress')
+  await expect(page.getByTestId('topic-pane-thread')).toContainText('Search for the inbox')
+  // The detail, as Markdown.
+  await expect(page.getByTestId('topic-pane-detail').locator('strong')).toHaveText('search field')
+  await expect(page.getByTestId('topic-pane-detail')).toContainText('Results narrow as you type.')
+  // The steps: read-only checkboxes and the progress.
+  await expect(page.getByTestId('topic-pane-progress')).toHaveText('1/3 done')
+  const tasks = page.getByTestId('topic-task')
+  await expect(tasks).toHaveCount(3)
+  await expect(tasks.nth(0)).toHaveAttribute('data-done', 'true')
+  await expect(tasks.nth(0).getByRole('checkbox')).toHaveAttribute('aria-checked', 'true')
+  await expect(tasks.nth(1)).toHaveAttribute('data-done', 'false')
+  await expect(tasks.nth(1)).toHaveText('Show the results')
+  // The related messages: the one that names the topic.
+  const related = page.getByTestId('topic-message')
+  await expect(related).toHaveCount(1)
+  await expect(related.first().getByTestId('topic-message-excerpt')).toContainText('Add search to the inbox.')
+  // The message box: the prefix shows as a chip.
+  await expect(page.getByTestId('topic-pane-prefix')).toHaveText('[Topic: Search box UI]')
+  await expect(page.getByTestId('topic-pane-send')).toBeDisabled()
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/topics-pane.png` })
+
+  // Another card: the pane follows. Esc closes it; the board stays.
+  await card(page, 'waiting_on_you', 'Index format').click()
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Index format')
+  await expect(page.getByTestId('topic-pane-progress')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-tasks')).toContainText('No separate steps')
+  await page.keyboard.press('Escape')
+  await expect(pane).toHaveCount(0)
+  await expect(page.getByTestId('topics')).toBeVisible()
+  // Space on the focused card opens it again; j moves the selection along; Enter still opens the thread (below).
+  await expect(card(page, 'waiting_on_you', 'Index format')).toBeFocused()
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Index format')
+  await page.keyboard.press('h')
+  const sel = col(page, 'in_progress').locator('[data-testid="topic-card"][data-selected="true"]')
+  await expect(sel).toHaveCount(1)
+  await expect(page.getByTestId('topic-pane-title')).toHaveText((await sel.getByTestId('topic-title').textContent())!)
+  await ui.click()
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
+  await expect(ui).toHaveAttribute('data-selected', 'true')
+
+  // R: the message box. Send: the thread gets "[Topic: …]" then the text, and the agent takes it.
+  await page.keyboard.press('r')
+  const input = page.getByTestId('topic-pane-input')
+  await expect(input).toBeFocused()
+  await input.fill('Debounce the search by 200 ms.')
+  await page.getByTestId('topic-pane-send').click()
+  await expect(input).toHaveValue('')
+  const want = '[Topic: Search box UI]\nDebounce the search by 200 ms.'
+  type Msg = { author: string; words?: string; body: string; delivery?: string }
+  const sent = async () => {
+    const th: { messages: Msg[] } = await (await page.request.get(`${minbox.url}/api/threads/${search}`)).json()
+    return th.messages.find((m) => m.author === 'user' && (m.words || m.body) === want)
+  }
+  await expect.poll(async () => (await sent())?.delivery, SLOW).toBe('delivered')
+  // The new message names the topic: the next extraction links it, and the pane shows it.
+  await expect(related).toHaveCount(2, SLOW)
+  await expect(related.nth(1).getByTestId('topic-message-excerpt')).toContainText('[Topic: Search box UI] Debounce the search by 200 ms.')
+
+  // A related message opens the thread at it.
+  await related.first().click()
+  await expect(page.getByTestId('topics')).toHaveCount(0)
+  await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
+  await expect(page.locator('[data-testid="message"][data-jumped="true"]')).toContainText('Add search to the inbox.')
+  await expect(page.locator('[data-testid="message"]').filter({ hasText: 'Debounce the search by 200 ms.' })).toContainText('[Topic: Search box UI]')
+
+  // Enter on the focused card still opens the thread.
+  await page.goto(minbox.url + '/#v=topics')
+  await expect(ui).toBeVisible(SLOW)
+  await page.keyboard.press('j')
+  await expect(col(page, 'in_progress').getByTestId('topic-card').first()).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('topics')).toHaveCount(0)
+
+  // The shortcuts list has the pane's keys.
+  await page.keyboard.press('?')
+  await expect(page.getByTestId('shortcuts')).toContainText('Show topic pane')
+  await expect(page.getByTestId('shortcuts')).toContainText('Message the thread')
+})
+
+test('phone: the topic pane is a full screen with its message box', async ({ page, minbox }) => {
+  await seed(page, minbox)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#v=topics')
+  await page.getByTestId('topics-tab-in_progress').click()
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
+  await card(page, 'in_progress', 'Search box UI').click()
+  await expect(page.getByTestId('topic-pane')).toBeVisible()
+  await expect(page.getByTestId('topic-pane-progress')).toHaveText('1/3 done')
+  await expect(page.getByTestId('topic-message')).toHaveCount(1)
+  await expect(page.getByTestId('topic-pane-input')).toBeVisible()
+  await expect(page.getByTestId('topic-pane-back')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/topics-pane-phone.png` })
 })
 
 test.describe('phone moves', () => {
