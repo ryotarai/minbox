@@ -422,6 +422,9 @@ export type Topic = {
   created_at: string
   updated_at: string
   done_at: string | null
+  /** The person moved it to this column by hand ("": not since the thread's last extraction). */
+  manual_status?: TopicStatus | ''
+  manual_at?: string | null
   thread_name?: string
   thread_subject?: string
   session_id?: string
@@ -1006,6 +1009,8 @@ export const api = {
     return call<SearchResult>('GET', `/api/search?${p}`)
   },
 
+  /** Move a topic to another column by hand (it holds until the thread's next extraction). */
+  setTopicStatus: (id: string, status: TopicStatus) => call<Topic>('PATCH', `/api/topics/${encodeURIComponent(id)}`, { status }),
   topics: (project = '') => call<TopicsResult>('GET', `/api/topics${project ? `?project=${encodeURIComponent(project)}` : ''}`),
 
   settings: () => call<Settings>('GET', '/api/settings'),

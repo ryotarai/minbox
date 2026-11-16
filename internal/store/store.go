@@ -508,7 +508,7 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(topicSchema); err != nil {
 		return err
 	}
-	for _, c := range addedColumns {
+	for _, c := range append(addedColumns[:len(addedColumns):len(addedColumns)], topicAddedColumns...) {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
 		if err != nil {
 			return err

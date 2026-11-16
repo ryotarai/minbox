@@ -122,6 +122,7 @@ Topic (the Topics board; see "Topics"):
 ```
 { id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
   created_at, updated_at, done_at: string|null,
+  manual_status: ""|status, manual_at: string|null,   (moved by hand since the thread's last extraction; see "Topics")
   thread_name, thread_subject, session_id, project_id, project_name }   (the thread's fields: GET /api/topics only)
 ```
 
@@ -178,6 +179,16 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
 - `GET /api/topics?project=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live thread (not
   archived, in a live session and project), open ones by `updated_at` newest first, then done ones done within the last
   7 days, newest first, at most 30. When a thread's topics change, SSE `topics` (`session_id`, `thread_id`) is published.
+- Moving a card by hand: `PATCH /api/topics/{id}` `{status}` -> `200` Topic (`400` unknown status, `404` unknown topic).
+  Sets the status, sets `done_at` when it turns done (kept when it already was) or clears it, bumps `updated_at`, records
+  `manual_status` + `manual_at`, and publishes SSE `topics`. It does not start an extraction: the move holds until the
+  thread's next message. That extraction's prompt marks the topic "moved by the PERSON by hand to <status> at <time> UTC"
+  with an instruction to keep it unless later messages clearly show otherwise; its answer then becomes the status and the
+  marker is cleared. A run that started before the move (`manual_at` >= the run's start) keeps the manual status and its
+  marker for that topic (and does not delete it when left out).
+- UI: drag a card to another column (desktop), or its menu (right-click, long press, the "…" button, Shift+F10: Move to);
+  `⇧T` opens Topics; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
+  move it to In progress / Waiting on you / Done.
 
 ## Reply suggestions
 
