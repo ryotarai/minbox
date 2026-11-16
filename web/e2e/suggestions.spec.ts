@@ -1,4 +1,6 @@
 import type { Page } from '@playwright/test'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createSession, expect, expectTerminal, test, typeInTerminal } from './fixtures'
 
 // Reply help: when the agent spoke last, questions with options above the reply box; the answers go
@@ -84,6 +86,56 @@ test('nothing answered: a plain send; answers only: the answers are the reply', 
   await q(page, 2).getByTestId('reply-q-other-input').fill('Nothing more')
   await page.getByTestId('reply-send').click()
   await expect.poll(() => lastWords(minbox.url)).toBe('Q: Anything else to tell it? → A: Nothing more')
+})
+
+test('a new agent message keeps the picks and typed answers; only the untouched questions refresh', async ({ page, minbox }) => {
+  writeFileSync(join(minbox.dataDir, 'suggest.agents'), '') // the multi question names the agent message count
+  await page.goto(minbox.url)
+  await seed(page, minbox.dataDir)
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(q(page, 1)).toContainText('What should it check? (1)')
+  await q(page, 0).getByRole('radio', { name: /Wait for me/ }).click()
+  await q(page, 1).getByRole('checkbox', { name: 'Docs' }).click()
+  await q(page, 2).getByTestId('reply-q-other-input').fill('use the staging db')
+  await page.getByTestId('reply-box').fill('My own words')
+
+  await typeInTerminal(page, 'say Second update')
+  // The answered questions stay as they were; the new suggestion's question is added.
+  await expect(page.locator('[data-testid="reply-q"]', { hasText: 'What should it check? (2)' })).toHaveCount(1)
+  await expect(page.getByTestId('reply-q')).toHaveCount(4)
+  const old = page.locator('[data-testid="reply-q"]', { hasText: 'What should it check? (1)' })
+  await expect(old.getByRole('checkbox', { name: 'Docs' })).toHaveAttribute('aria-checked', 'true')
+  const cont = page.locator('[data-testid="reply-q"]', { hasText: 'How should it continue?' })
+  await expect(cont.getByRole('radio', { name: /Wait for me/ })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('[data-testid="reply-q"]', { hasText: 'Anything else' }).getByTestId('reply-q-other-input')).toHaveValue('use the staging db')
+  await expect(page.getByTestId('reply-box')).toHaveValue('My own words')
+  await expect(page.getByTestId('reply-qa-toggle')).toContainText('3 answered')
+
+  // A reload keeps them too.
+  await page.reload()
+  await expect(page.getByTestId('reply-q')).toHaveCount(4)
+  await expect(page.getByTestId('reply-qa-toggle')).toContainText('3 answered')
+
+  await page.getByTestId('reply-send').click()
+  await expect
+    .poll(() => lastWords(minbox.url))
+    .toBe('Q: What should it check? (1) → A: Docs\nQ: How should it continue? (0) → A: Wait for me\nQ: Anything else to tell it? → A: use the staging db\n\nMy own words')
+  // Sent: the answers are gone; the next message starts fresh.
+  await typeInTerminal(page, 'say Third update')
+  await expect(page.locator('[data-testid="reply-q"]', { hasText: 'What should it check? (3)' })).toHaveCount(1)
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(page.getByTestId('reply-qa-toggle')).not.toContainText('answered')
+})
+
+test('untouched questions refresh on a new agent message', async ({ page, minbox }) => {
+  writeFileSync(join(minbox.dataDir, 'suggest.agents'), '')
+  await page.goto(minbox.url)
+  await seed(page, minbox.dataDir)
+  await expect(q(page, 1)).toContainText('What should it check? (1)')
+  await typeInTerminal(page, 'say Second update')
+  await expect(q(page, 1)).toContainText('What should it check? (2)')
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(page.getByText('What should it check? (1)')).toHaveCount(0)
 })
 
 test('collapse and dismiss', async ({ page, minbox }) => {

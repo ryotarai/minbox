@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { api, type ReplyQuestion, type SuggestResult } from '../api'
 import { useApp } from '../lib/app'
+import { getReplyHelpDraft, setReplyHelpDraft, useDraftsVersion, type ReplyHelpAnswer, type ReplyHelpDraft } from '../lib/drafts'
 import { IconChevronDown, IconChevronRight, IconClose, IconPencil, IconSparkle, IconTerminal } from './icons'
 import { cx } from './ui'
 
@@ -8,17 +9,16 @@ import { cx } from './ui'
 // that help them decide how to answer the agent's latest message. Picked options and "Other" text are
 // put into the reply when it is sent (composeReplyHelp).
 
-/** One question's answer: the picked option labels, and the "Other" free text (other: chosen). */
-export type ReplyHelpAnswer = { picked: string[]; other: boolean; text: string }
+export type { ReplyHelpAnswer }
 
 type HelpState = {
   data: SuggestResult | null // null: still drafting
-  answers: Record<number, ReplyHelpAnswer>
   dismissed: boolean
   commandSent: boolean
 }
 
-// Per (thread, last message): survives switching threads and remounts.
+// Per (thread, last message): survives switching threads and remounts. The answers are kept apart,
+// per thread (drafts.ts), so the agent's next message does not wipe them.
 const store = new Map<string, HelpState>()
 const COLLAPSED = 'minbox.replyHelp.collapsed'
 
@@ -26,6 +26,11 @@ const NONE: ReplyHelpAnswer = { picked: [], other: false, text: '' }
 
 function freeOnly(q: ReplyQuestion) {
   return q.options.length === 0
+}
+
+/** Has the person done anything with this answer (a pick, Other, or typed text)? */
+function touched(a: ReplyHelpAnswer | undefined) {
+  return !!a && (a.picked.length > 0 || a.other || !!a.text.trim())
 }
 
 /** The parts of one answer, in option order; "Other" text last. */
@@ -37,12 +42,12 @@ function answerParts(q: ReplyQuestion, a: ReplyHelpAnswer | undefined): string[]
 }
 
 /** The answered questions as reply text: one "Q: … → A: …" line each; unanswered ones are left out. */
-export function composeReplyHelp(qs: ReplyQuestion[], answers: Record<number, ReplyHelpAnswer>): string {
+export function composeReplyHelp(qs: ReplyQuestion[], answers: Record<string, ReplyHelpAnswer>): string {
   const lines: string[] = []
-  qs.forEach((q, i) => {
-    const parts = answerParts(q, answers[i])
+  for (const q of qs) {
+    const parts = answerParts(q, answers[q.question])
     if (parts.length) lines.push(`Q: ${q.question} → A: ${parts.join(', ')}`)
-  })
+  }
   return lines.join('\n')
 }
 
@@ -53,15 +58,27 @@ export function withReplyHelp(help: string, words: string): string {
   return w ? `${help}\n\n${w}` : help
 }
 
+/** The questions to show: the ones the person already worked on stay as they were (first, when the
+ *  new suggestions no longer ask them); the rest are the latest suggestions. */
+function visibleQuestions(fresh: ReplyQuestion[], saved: ReplyHelpDraft): ReplyQuestion[] {
+  const freshText = new Set(fresh.map((q) => q.question))
+  const kept = Object.values(saved)
+    .filter((k) => touched(k.a) && !freshText.has(k.q.question))
+    .map((k) => k.q)
+  return [...kept, ...fresh.map((q) => (touched(saved[q.question]?.a) ? saved[q.question].q : q))]
+}
+
 /** State of the reply help for the thread's last message; fetches when enabled. */
 export function useReplyHelp(threadId: string, lastId: string | undefined, enabled: boolean) {
   const key = `${threadId}:${lastId ?? ''}`
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((n) => n + 1), [])
+  useDraftsVersion()
+  const saved = getReplyHelpDraft(threadId)
   const get = (): HelpState => {
     let s = store.get(key)
     if (!s) {
-      s = { data: null, answers: {}, dismissed: false, commandSent: false }
+      s = { data: null, dismissed: false, commandSent: false }
       store.set(key, s)
     }
     return s
@@ -76,7 +93,7 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     if (s?.data) return
     let live = true
     const fill = (data: SuggestResult) => {
-      store.set(key, { ...(store.get(key) ?? { answers: {}, dismissed: false, commandSent: false }), data })
+      store.set(key, { ...(store.get(key) ?? { dismissed: false, commandSent: false }), data })
       if (live) bump()
     }
     api
@@ -88,16 +105,27 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     }
   }, [enabled, key, threadId, lastId, bump])
   const s = enabled && lastId ? get() : null
-  const questions = s?.data?.questions ?? []
-  const text = s && !s.dismissed ? composeReplyHelp(questions, s.answers) : ''
+  const questions = s && !s.dismissed ? visibleQuestions(s.data?.questions ?? [], saved) : []
+  const answers: Record<string, ReplyHelpAnswer> = {}
+  for (const [k, v] of Object.entries(saved)) answers[k] = v.a
+  const text = s && !s.dismissed ? composeReplyHelp(questions, answers) : ''
   return {
     state: s,
     questions,
+    answers,
     /** The answers as reply text ('' when none or dismissed). */
     text,
-    setAnswer: (i: number, a: ReplyHelpAnswer) => set((st) => ({ ...st, answers: { ...st.answers, [i]: a } })),
-    dismiss: () => set((st) => ({ ...st, dismissed: true, answers: {} })),
-    clear: () => s && set((st) => ({ ...st, answers: {} })),
+    setAnswer: (q: ReplyQuestion, a: ReplyHelpAnswer) => {
+      const d = { ...getReplyHelpDraft(threadId) }
+      if (touched(a)) d[q.question] = { q, a }
+      else delete d[q.question]
+      setReplyHelpDraft(threadId, d)
+    },
+    dismiss: () => {
+      setReplyHelpDraft(threadId, {})
+      set((st) => ({ ...st, dismissed: true }))
+    },
+    clear: () => setReplyHelpDraft(threadId, {}),
     commandSent: (v: boolean) => set((st) => ({ ...st, commandSent: v })),
   }
 }
@@ -128,7 +156,8 @@ export function ReplyHelpPanel({
   }
   const s = help.state
   if (!s || s.dismissed) return null
-  if (!s.data)
+  const qs = help.questions
+  if (!s.data && qs.length === 0)
     return (
       <div data-testid="reply-qa-loading" className="flex items-center gap-2 text-[12px] text-subtle" aria-live="polite">
         <IconSparkle size={13} />
@@ -137,8 +166,8 @@ export function ReplyHelpPanel({
         <span aria-hidden className="h-5 w-12 animate-pulse rounded-full bg-chip" />
       </div>
     )
-  const cmd = s.commandSent ? '' : (s.data.command ?? '')
-  const qs = help.questions
+  const drafting = !s.data
+  const cmd = s.commandSent || !s.data ? '' : (s.data.command ?? '')
   if (!cmd && qs.length === 0) return null
 
   const runCommand = () => {
@@ -148,7 +177,7 @@ export function ReplyHelpPanel({
       error(err)
     })
   }
-  const answered = qs.filter((q, i) => answerParts(q, s.answers[i]).length > 0).length
+  const answered = qs.filter((q) => answerParts(q, help.answers[q.question]).length > 0).length
   const commandChip = cmd ? (
     <span className="inline-flex max-w-full items-center overflow-hidden rounded-full border border-accent/60 bg-wait/8 text-[12.5px] text-fg2">
       <button
@@ -193,6 +222,7 @@ export function ReplyHelpPanel({
               <span className="min-w-0 truncate">
                 {qs.length === 1 ? '1 question' : `${qs.length} questions`} to help you reply
                 {answered > 0 && ` · ${answered} answered`}
+                {drafting && <span data-testid="reply-qa-refreshing"> · drafting new questions…</span>}
               </span>
             </button>
             <button
@@ -209,7 +239,7 @@ export function ReplyHelpPanel({
           {!collapsed && (
             <div className={cx('flex flex-col gap-2.5', phone && 'max-h-[36vh] overflow-y-auto')}>
               {qs.map((q, i) => (
-                <HelpQuestion key={i} q={q} index={i} a={s.answers[i] ?? NONE} phone={phone} onChange={(a) => help.setAnswer(i, a)} onSubmit={onSubmit} />
+                <HelpQuestion key={q.question} q={q} index={i} a={help.answers[q.question] ?? NONE} phone={phone} onChange={(a) => help.setAnswer(q, a)} onSubmit={onSubmit} />
               ))}
             </div>
           )}

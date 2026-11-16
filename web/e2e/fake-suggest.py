@@ -90,6 +90,12 @@ if prompt.startswith("Draft a Linear issue"):
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": draft}))
     sys.exit(0)
 n = prompt.count("[PERSON]")
+# FAKE_SUGGEST_AGENTS: while that file exists, the multi question carries the number of AGENT
+# messages, so each new agent message brings a new question (tests of the refresh).
+check = "What should it check?"
+fa = os.environ.get("FAKE_SUGGEST_AGENTS")
+if fa and os.path.exists(fa):
+    check = "What should it check? (%d)" % prompt.count("[AGENT]")
 out = {
     "type": "result",
     "subtype": "success",
@@ -101,7 +107,7 @@ out = {
                 {"label": "Go ahead", "description": "Continue with the plan"},
                 {"label": "Wait for me"},
             ]},
-            {"question": "What should it check?", "kind": "multi", "options": [
+            {"question": check, "kind": "multi", "options": [
                 {"label": "Tests"}, {"label": "Docs"}, {"label": "Lint"},
             ]},
             {"question": "Anything else to tell it?", "kind": "single", "options": []},

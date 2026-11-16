@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { Annotation, Answer } from '../api'
+import type { Annotation, Answer, ReplyQuestion } from '../api'
 
 // Drafts live in localStorage: the reply being written in a thread (words,
 // question picks and annotations).
@@ -90,6 +90,34 @@ export function useDraftsVersion(): number {
     },
     () => version,
   )
+}
+
+// The reply help's answers in a thread (picks and typed text, by question text), with the questions
+// they answer: kept across the agent's new messages until the reply is sent or the help dismissed.
+
+const REPLY_HELP = 'minbox:replyhelp:'
+
+export type ReplyHelpAnswer = { picked: string[]; other: boolean; text: string }
+export type ReplyHelpDraft = Record<string, { q: ReplyQuestion; a: ReplyHelpAnswer }>
+
+export function getReplyHelpDraft(threadId: string): ReplyHelpDraft {
+  try {
+    const v = localStorage.getItem(REPLY_HELP + threadId)
+    if (v) return JSON.parse(v) as ReplyHelpDraft
+  } catch {
+    /* ignore */
+  }
+  return {}
+}
+
+export function setReplyHelpDraft(threadId: string, d: ReplyHelpDraft) {
+  try {
+    if (Object.keys(d).length === 0) localStorage.removeItem(REPLY_HELP + threadId)
+    else localStorage.setItem(REPLY_HELP + threadId, JSON.stringify(d))
+  } catch {
+    /* storage off */
+  }
+  changed()
 }
 
 export function useReplyDraft(threadId: string): ReplyDraft {
