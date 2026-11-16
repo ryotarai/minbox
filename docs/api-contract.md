@@ -169,9 +169,13 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   Skipped when setting `topics` is off, for archived threads, and without a coding agent to run the helper. Existing
   threads are not read until they get a new message (no backfill).
 - The helper (the same `runHelper` as reply suggestions: Haiku through `claude -p --json-schema`, or the default agent's
-  helper run) gets the thread's current topics (id, status, title, summary) and its newest messages (12 000 characters,
-  1 500 per message) and answers `{topics: [{id?, title, summary, status}]}` (at most 6). The prompt starts with
-  `Track the topics` (the e2e fake helper keys on it).
+  helper run) gets the thread's current topics (id, status, title, summary) and its newest 20 messages, each in full (no
+  character budget; earlier messages are carried by the current topics), and answers
+  `{topics: [{id?, title, summary, status}]}`. There is no limit on the number of topics: the prompt asks for every
+  distinct subject, request, question, decision or piece of work as its own topic (each separate request or question of
+  the person; only true duplicates or continuations merged), done ones kept with status `done`. Only a runaway answer is
+  cut, at 100 topics; titles at 80 characters, summaries at 160. The run times out after 5 minutes. The prompt starts
+  with `Track the topics` (the e2e fake helper keys on it).
 - Store (`topics` table, cascades with the thread): replaced per thread on each run. A topic that continues a current one
   (the same `id`, else the same title ignoring case and spacing) keeps its id and `created_at`, and its `updated_at` when
   nothing changed; `done_at` is set when it turns done. Current topics left out of the answer are deleted, except done
