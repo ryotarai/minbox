@@ -444,3 +444,72 @@ test.describe('phone moves', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 })
+
+test('the topic pane: Done moves the topic to Done (it holds), Reopen brings it back', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1400, height: 820 })
+  await seed(page, minbox)
+  await page.goto(minbox.url + '/#v=topics')
+  const ui = card(page, 'in_progress', 'Search box UI')
+  await expect(ui).toBeVisible(SLOW)
+  await ui.click()
+  const pane = page.getByTestId('topic-pane')
+  await expect(page.getByTestId('topic-pane-reopen')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-done')).toHaveAttribute('title', /\(3\)/)
+
+  // Done: the card goes to Done, the pane stays open on it with the new status.
+  await page.getByTestId('topic-pane-done').click()
+  await expect(card(page, 'done', 'Search box UI')).toBeVisible()
+  await expect(card(page, 'in_progress', 'Search box UI')).toHaveCount(0)
+  await expect(pane).toBeVisible()
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
+  await expect(page.getByTestId('topic-pane-status')).toHaveAttribute('data-status', 'done')
+  await expect(page.getByTestId('topic-pane-done')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-reopen')).toBeVisible()
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('done')
+
+  // It holds after a reload.
+  await page.reload()
+  await expect(card(page, 'done', 'Search box UI')).toBeVisible(SLOW)
+  await expect(card(page, 'in_progress', 'Search box UI')).toHaveCount(0)
+
+  // Reopen: back to In progress.
+  await card(page, 'done', 'Search box UI').click()
+  await page.getByTestId('topic-pane-reopen').click()
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
+  await expect(page.getByTestId('topic-pane-status')).toHaveAttribute('data-status', 'in_progress')
+  await expect(page.getByTestId('topic-pane-done')).toBeVisible()
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('in_progress')
+})
+
+test('phone: the topic pane has Done and Reopen; the board follows', async ({ page, minbox }) => {
+  await seed(page, minbox)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#v=topics')
+  await page.getByTestId('topics-tab-in_progress').click()
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
+  await card(page, 'in_progress', 'Search box UI').click()
+  await expect(page.getByTestId('topic-pane')).toBeVisible()
+  await page.getByTestId('topic-pane-done').click()
+  await expect(page.getByTestId('topic-pane')).toBeVisible()
+  await expect(page.getByTestId('topic-pane-status')).toHaveAttribute('data-status', 'done')
+  await expect(page.getByTestId('topic-pane-reopen')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('done')
+
+  // Back on the board: the card is in Done, and stays there after a reload.
+  await page.getByTestId('topic-pane-back').click()
+  await page.getByTestId('topics-tab-done').click()
+  await expect(card(page, 'done', 'Search box UI')).toBeVisible()
+  await page.reload()
+  await page.getByTestId('topics-tab-done').click()
+  await expect(card(page, 'done', 'Search box UI')).toBeVisible(SLOW)
+
+  // Reopen from the pane.
+  await card(page, 'done', 'Search box UI').click()
+  await page.getByTestId('topic-pane-reopen').click()
+  await expect(page.getByTestId('topic-pane-status')).toHaveAttribute('data-status', 'in_progress')
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('in_progress')
+  await page.getByTestId('topic-pane-back').click()
+  await page.getByTestId('topics-tab-in_progress').click()
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
+})
