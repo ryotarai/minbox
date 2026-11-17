@@ -282,7 +282,7 @@ type IconC = typeof IconSettings
 /** An entry that is not about a project: Settings, Tasks, Decide, Drafts. The rail's footer and the phone's project sheet list them. */
 export type GlobalEntry = { id: string; testid: string; label: string; title: string; icon: IconC; active: boolean; count?: number; run: () => void }
 
-/** Settings always; Tasks and Decide when they are turned on; Drafts with its count. */
+/** Settings and Tasks always; Decide when it is turned on; Drafts with its count. */
 export function useGlobalEntries(): GlobalEntry[] {
   const { settings, setOverlay, navigate, route } = useApp()
   useDraftsVersion()
@@ -290,7 +290,7 @@ export function useGlobalEntries(): GlobalEntry[] {
   const out: GlobalEntry[] = [
     { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
   ]
-  if (settings.topics) out.push({ id: 'tasks', testid: 'open-tasks', label: 'Tasks', title: 'Tasks: what each thread is working on (Shift+T)', icon: IconBoard, active: route.view === 'tasks', run: () => navigate({ view: route.view === 'tasks' ? 'main' : 'tasks' }) })
+  out.push({ id: 'tasks', testid: 'open-tasks', label: 'Tasks', title: 'Tasks: what each thread is working on (Shift+T)', icon: IconBoard, active: route.view === 'tasks', run: () => navigate({ view: route.view === 'tasks' ? 'main' : 'tasks' }) })
   if (settings.decision_mode) out.push({ id: 'decide', testid: 'open-decide', label: 'Decide', title: 'Decide (Shift+D)', icon: IconBolt, active: false, run: () => setOverlay({ kind: 'decide' }) })
   out.push({ id: 'drafts', testid: 'drafts', label: 'Drafts', title: drafts ? `Drafts (${drafts})` : 'Drafts', icon: IconPencil, active: false, count: drafts, run: () => setOverlay({ kind: 'drafts' }) })
   return out

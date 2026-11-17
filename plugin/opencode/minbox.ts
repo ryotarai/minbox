@@ -5,10 +5,11 @@
  * token), MINBOX_SERVER_FILE (a JSON file holding the server's URL), MINBOX_OPENCODE_SESSION (the
  * OpenCode session minbox created for this minbox session) and MINBOX_OPENCODE_DIR (its folder). It is
  * the OpenCode counterpart of the Pi extension (plugin/pi/minbox.ts) and speaks the same /api/agent/*
- * protocol; the wording of tools and delivered messages is shared (../minbox/hooks/text.ts, nav.ts).
+ * protocol; the wording of tools and delivered messages is shared (../minbox/hooks/text.ts, nav.ts, tasks.ts).
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url
- *   and the read-only navigation tools as direct tools (codemode: false; OpenCode puts plugin
+ * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
+ *   the task tools (minbox_create_task, minbox_update_task, minbox_list_tasks; tasks.ts) and the
+ *   read-only navigation tools as direct tools (codemode: false; OpenCode puts plugin
  *   tools behind its Code Mode `execute` tool otherwise).
  * - Adds minbox's instructions (from the hello answer) to the system prompt of every model request of
  *   the session (session hook "context"), so they survive compaction.
@@ -36,6 +37,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { DENIED_MAX, normCommand, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
+import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from '../minbox/hooks/tasks.ts'
 import {
   openDeny,
   opensBrowser,
@@ -118,7 +120,7 @@ export function realDeps(): Deps {
 type ApiResult = { ok: boolean; status: number; json: any }
 
 /** Tool names in a shared description, as OpenCode sees them. */
-const ocNames = (text: string) => text.replace(/\b(read_thread|list_threads)\b/g, TOOL_PREFIX + '$1')
+const ocNames = (text: string) => text.replace(/\b(read_thread|list_threads|send_message|create_task|update_task|list_tasks)\b/g, TOOL_PREFIX + '$1')
 
 /** The major version of OpenCode from ctx.app.version ("2.1.4"); 0 when unknown. */
 export function majorVersion(v: unknown): number {
@@ -479,6 +481,20 @@ export function createCore(deps: Deps) {
         return ok(id ? threadText(res.json as Thread, names.read) : threadListText(res.json as Thread[]))
       },
     },
+    ...TASK_TOOLS.map(
+      (tool): ToolDef => ({
+        name: TOOL_PREFIX + tool,
+        description: ocNames(TASK_DESCRIPTION[tool]),
+        input: TASK_SCHEMA[tool],
+        async execute(e: any) {
+          const req = taskRequest(tool, e ?? {}, turnThreads.length === 1 ? turnThreads[0] : undefined)
+          if ('error' in req) throw new Error(req.error)
+          const res = await api(req.method, req.path, req.body)
+          if (!res.ok) fail(res)
+          return ok(taskText(tool, res.json))
+        },
+      }),
+    ),
     ...NAV_TOOLS.map(
       (tool): ToolDef => ({
         name: TOOL_PREFIX + tool,

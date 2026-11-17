@@ -88,7 +88,6 @@ function Root() {
     '?': () => setOverlay({ kind: 'shortcuts' }),
     z: () => undoLast(),
     'shift+t': () => {
-      if (!settings.topics) return false
       navigate({ view: 'tasks' })
     },
     'shift+d': () => {

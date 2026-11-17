@@ -40,13 +40,13 @@ function movedTopic(t: Topic, status: TopicStatus): Topic {
 }
 
 /**
- * Tasks (topics in the API and the store): what each thread is working on, across threads. The helper model reads every thread's
- * topics from its messages (a few seconds after each new one); a thread can have several, each in
- * its own column. Scoped to the selected project, like the threads list.
+ * Tasks (topics in the API and the store): what each thread is working on, across threads. The
+ * agent of each thread keeps its tasks itself (its create_task / update_task tools); a thread can
+ * have several, each in its own column. Scoped to the selected project, like the threads list.
  *
  * The person can move a card to another column: drag it (desktop), its menu (right-click, long
- * press, "…", Shift+F10: Move to), or 1 / 2 / 3 on the focused card. The move holds until the
- * thread's next message, whose extraction is told about it. Arrows / HJKL move the focus between
+ * press, "…", Shift+F10: Move to), or 1 / 2 / 3 on the focused card. The agent may set the status
+ * again later (its list_tasks shows the move). Arrows / HJKL move the focus between
  * cards, Enter opens the focused card's thread.
  *
  * Selecting a card (a click, a tap, or Space on the focused card) opens its pane: on the right of
@@ -335,17 +335,9 @@ export function TopicsPage() {
           </MenuItem>
         ))}
       </Popover>
-      {res && !res.enabled && (
-        <div data-testid="topics-off" className="mx-5 mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-muted">
-          Tasks are turned off, so threads are not read for new tasks.{' '}
-          <button type="button" className="border-0 bg-transparent p-0 text-accent underline" onClick={() => navigate({ view: 'settings', ss: 'capabilities' })}>
-            Turn them on in Settings
-          </button>
-        </div>
-      )}
-      {res && res.enabled && res.topics.length === 0 && (
+      {res && res.topics.length === 0 && (
         <div data-testid="topics-empty" className="mx-5 mt-3 text-[12.5px] text-subtle">
-          No tasks yet. A thread's tasks appear here a few seconds after it gets a new message.
+          No tasks yet. Agents add a task here when they start a piece of work you asked for, and keep it current.
         </div>
       )}
       {isPhone ? (
@@ -706,7 +698,7 @@ function TopicPane({
               <div className="h-1.5 overflow-hidden rounded-full bg-raised" role="progressbar" aria-valuemin={0} aria-valuemax={tasks.length} aria-valuenow={done} aria-label="Steps done">
                 <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${(done / tasks.length) * 100}%` }} />
               </div>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0" title="As the helper reads the thread">
+              <ul className="m-0 flex list-none flex-col gap-1 p-0" title="As the agent keeps it">
                 {tasks.map((k, i) => (
                   <li key={i} data-testid="topic-task" data-done={k.done ? 'true' : 'false'} className="flex items-start gap-2 text-[13px] leading-[1.45]">
                     <span
@@ -898,7 +890,7 @@ export function useThreadTasksOverlay(): boolean {
  * box as the board's pane (a draft per task; the message shows up in the thread beside it).
  */
 export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; phone?: boolean; onClose: () => void }) {
-  const { topicsVersion, error, navigate } = useApp()
+  const { topicsVersion, error } = useApp()
   const [res, setRes] = useState<TopicsResult | null>(null)
   const [selId, setSelId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -997,17 +989,9 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
         />
       ) : (
         <div className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto', phone ? 'px-3 py-3' : 'px-2.5 py-3')}>
-          {res && !res.enabled && (
-            <div data-testid="thread-tasks-off" className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-muted">
-              Tasks are turned off, so threads are not read for tasks.{' '}
-              <button type="button" className="border-0 bg-transparent p-0 text-accent underline" onClick={() => navigate({ view: 'settings', ss: 'capabilities' })}>
-                Turn them on in Settings
-              </button>
-            </div>
-          )}
-          {res && res.enabled && topics.length === 0 && (
+          {res && topics.length === 0 && (
             <div data-testid="thread-tasks-empty" className="px-1 text-[12.5px] leading-[1.5] text-subtle">
-              No tasks yet — they appear after the next message.
+              No tasks yet — the agent adds them when it starts work in this thread.
             </div>
           )}
           {!res && <span className="px-1 text-[12.5px] text-subtle">Loading…</span>}

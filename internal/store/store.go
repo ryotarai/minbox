@@ -12,7 +12,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/ryotarai/minbox/internal/question"
@@ -297,18 +296,6 @@ type Region struct {
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
-	// onMessage is called (outside any transaction) after a message was added to a thread.
-	onMessage atomic.Pointer[func(threadID string)]
-}
-
-// OnMessage sets the function called after each message added to a thread (the new message is
-// committed by then). It must not block.
-func (s *Store) OnMessage(fn func(threadID string)) { s.onMessage.Store(&fn) }
-
-func (s *Store) messageAdded(threadID string) {
-	if fn := s.onMessage.Load(); fn != nil && *fn != nil {
-		(*fn)(threadID)
-	}
 }
 
 const schema = `
@@ -917,7 +904,6 @@ func (s *Store) CreateThread(ctx context.Context, sessionID, subject string, m N
 	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
-	s.messageAdded(th.ID)
 	return th, msg, nil
 }
 
@@ -985,7 +971,6 @@ func (s *Store) AddMessage(ctx context.Context, threadID string, m NewMessage) (
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	s.messageAdded(threadID)
 	return msg, nil
 }
 

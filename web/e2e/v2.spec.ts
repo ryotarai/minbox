@@ -228,7 +228,7 @@ test('rename in the session header; delete through a dialog', async ({ page, min
   expect(await (await page.request.get(minbox.url + '/api/sessions')).json()).toHaveLength(0)
 })
 
-test('settings: the theme and the Topics switch persist on the server', async ({ page, minbox }) => {
+test('settings: the theme and the Decision mode switch persist on the server; Tasks has no switch', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'cfg')
   await expectTerminal(page, 'ready>')
@@ -238,17 +238,15 @@ test('settings: the theme and the Topics switch persist on the server', async ({
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByTestId('settings-nav-capabilities').click()
-  // Topics is on by default; turned off (it stays off after a reload), its entry leaves the rail.
-  await page.getByRole('switch', { name: 'Tasks' }).click()
+  // Tasks are kept by the agents and always on: no switch. Decision mode is off by default; turned
+  // on (it stays on after a reload), its entry joins the rail.
+  await expect(page.getByRole('switch', { name: 'Tasks' })).toHaveCount(0)
+  await page.getByRole('switch', { name: 'Decision mode' }).click()
   await page.reload()
-  await expect(page.getByRole('switch', { name: 'Tasks' })).toHaveAttribute('aria-checked', 'false')
+  await expect(page.getByRole('switch', { name: 'Decision mode' })).toHaveAttribute('aria-checked', 'true')
   await page.getByTestId('settings-back').click()
   await expect(page.getByTestId('project-rail').getByTestId('open-settings')).toBeVisible()
-  await expect(page.getByTestId('project-rail').getByTestId('open-tasks')).toHaveCount(0)
-  await fromMenu(page, 'open-settings')
-  await page.getByTestId('settings-nav-capabilities').click()
-  await page.getByRole('switch', { name: 'Tasks' }).click()
-  await page.getByTestId('settings-back').click()
+  await expect(page.getByTestId('project-rail').getByTestId('open-decide')).toBeVisible()
   await fromMenu(page, 'open-tasks')
   await expect(page.getByTestId('topics')).toBeVisible()
 })
@@ -829,6 +827,8 @@ test('R with text selected in a message quotes it into the reply box, as the Rep
 })
 
 test('R right after a real mouse selection (double-click, drag) quotes it, before the Reply bubble has caught up', async ({ page, minbox }) => {
+  // No reply questions under the message: a drag past the text's end must not reach into them.
+  await page.request.put(minbox.url + '/api/settings', { data: { reply_suggestions: false }, headers: { Origin: minbox.url } })
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'quote-fast')
   await expectTerminal(page, 'ready>')

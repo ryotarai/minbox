@@ -12,7 +12,7 @@ Typed commands (one per line):
   tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
   exit       quit
 """
-import json, os, sys, threading, time, urllib.error, urllib.request, uuid
+import json, os, re, sys, threading, time, urllib.error, urllib.request, uuid
 
 token = os.environ["MINBOX_TOKEN"]
 server_file = os.environ["MINBOX_SERVER_FILE"]
@@ -48,6 +48,51 @@ def out(s):
     sys.stdout.flush()
 
 
+def keep_tasks(p):
+    """The Tasks board, as an agent keeps it with create_task / update_task: every line
+    "TOPIC: <title> | <status> | <summary>" of a delivered message creates that task in the thread, or
+    updates the one with that title. "TOPIC-DETAIL: <title> | <markdown>" is its detail (\\n in it is a
+    new line); "TOPIC-TASK: <title> | [x] <text>" (or "[ ] ") one of its steps, a later line for the
+    same text marking it again. A message whose text names a task's title is linked to it."""
+    body = p.get("body") or ""
+    lines = re.findall(r"^TOPIC: (.+?) \| (in_progress|waiting_on_you|done) \| (.*)$", body, re.M)
+    details = {m[0].strip(): m[1].strip().replace("\\n", "\n") for m in re.findall(r"^TOPIC-DETAIL: (.+?) \| (.*)$", body, re.M)}
+    steps = {}
+    for title, box, text in re.findall(r"^TOPIC-TASK: (.+?) \| \[([ x])\] (.*)$", body, re.M):
+        steps.setdefault(title.strip(), []).append({"text": text.strip(), "done": box == "x"})
+    have = {}
+    res = api("GET", "/api/agent/tasks?thread_id=" + p["thread_id"])
+    for th in (res or {}).get("threads") or []:
+        for t in th.get("tasks") or []:
+            have[t["title"]] = t
+    named = set()
+    for title, status, summary in lines:
+        title = title.strip()
+        named.add(title)
+        fields = {"status": status, "summary": summary.strip(), "message_ids": [p["id"]]}
+        if title in details:
+            fields["detail"] = details[title]
+        cur = have.get(title)
+        if title in steps:
+            merged = [dict(k) for k in (cur or {}).get("tasks") or []]
+            for k in steps[title]:
+                for m in merged:
+                    if m["text"] == k["text"]:
+                        m["done"] = k["done"]
+                        break
+                else:
+                    merged.append(k)
+            fields["steps"] = merged
+        if cur:
+            api("PATCH", "/api/agent/tasks/" + cur["id"], fields)
+        else:
+            fields.update({"thread_id": p["thread_id"], "title": title})
+            api("POST", "/api/agent/tasks", fields)
+    for title, t in have.items():
+        if title not in named and title in body:
+            api("PATCH", "/api/agent/tasks/" + t["id"], {"message_ids": [p["id"]]})
+
+
 def poll():
     global last_thread
     while True:
@@ -63,6 +108,10 @@ def poll():
                     last_thread = p["thread_id"]
                     out(f"<<< inbox [{p['subject']}] {p['body']}")
                     api("POST", f"/api/agent/pending/{p['id']}/delivered?owner={owner}")
+                    try:
+                        keep_tasks(p)
+                    except Exception as e:
+                        out(f"tasks: {e}")
         except Exception as e:  # server restarting
             time.sleep(1)
 

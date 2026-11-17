@@ -64,6 +64,5 @@ func (s *Server) withModSeen(sess *store.Session) {
 func (s *Server) Close() {
 	s.closeOnce.Do(func() {
 		close(s.closing)
-		s.topics.close()
 	})
 }

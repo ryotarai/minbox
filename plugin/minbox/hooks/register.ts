@@ -3,7 +3,8 @@
  * and the environment MINBOX_TOKEN (this session's bearer token) and
  * MINBOX_SERVER_FILE (a JSON file holding the server's current URL).
  *
- * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url` and the
+ * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url`, the task tools of
+ *   tasks.ts (create_task, update_task, list_tasks: the agent keeps the person's Tasks board) and the
  *   read-only navigation tools of nav.ts (list_projects, get_project, list_sessions, list_threads,
  *   search), served over minbox's HTTP API, and system prompt sections asking Claude to
  *   keep the session's title (shown in the session list) current and to open
@@ -28,6 +29,7 @@
 import type { Register } from 'claude-code'
 import { claudeRanOk, claudeRefusal, DENIED_MAX, normCommand, shortReason, type DeniedReport } from './denied'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from './nav'
+import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from './tasks'
 import {
   READ_DESCRIPTION,
   READ_SCHEMA,
@@ -456,6 +458,10 @@ export const register: Register = (on) => {
     titleToolName = title?.tool ?? titleToolName
     const open = await $.tool.register({ name: OPEN_TOOL, description: OPEN_DESCRIPTION, inputSchema: OPEN_SCHEMA, isDeferred: false })
     openToolName = open?.tool ?? openToolName
+    // The Tasks board: the agent keeps its tasks itself (always loaded, so it uses them unprompted).
+    for (const name of TASK_TOOLS) {
+      await $.tool.register({ name, description: TASK_DESCRIPTION[name], inputSchema: TASK_SCHEMA[name] as any, isDeferred: false })
+    }
     // Read-only navigation (projects, sessions, threads, search): deferred, found with ToolSearch.
     for (const name of NAV_TOOLS) {
       await $.tool.register({ name, description: NAV_DESCRIPTION[name], inputSchema: NAV_SCHEMA[name] as any, isDeferred: true })
@@ -642,6 +648,17 @@ export const register: Register = (on) => {
     if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
     return { result: id ? threadText(res.json as Thread, readToolName) : threadListText(res.json as Thread[]) }
   })
+
+  for (const name of TASK_TOOLS) {
+    on('tool.call', { tool: `mcp__minbox__${name}` }, async ($, e: any) => {
+      if (!conn) return { deny: 'minbox is not connected in this session.' }
+      const req = taskRequest(name, e ?? {}, currentThread())
+      if ('error' in req) return { deny: req.error }
+      const res = await api($, req.method, req.path, req.body)
+      if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
+      return { result: taskText(name, res.json) }
+    })
+  }
 
   for (const name of NAV_TOOLS) {
     on('tool.call', { tool: `mcp__minbox__${name}` }, async ($, e: any) => {

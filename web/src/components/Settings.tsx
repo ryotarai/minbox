@@ -254,12 +254,6 @@ function Capabilities() {
     <>
       <AgentsGroup />
       <Group title="Optional parts of minbox">
-      <Row
-        label="Tasks"
-        desc="A board of what each thread is working on (In progress · Waiting on you · Done), and each thread's Tasks pane. A few seconds after a new message, sends the thread's recent messages to claude (Haiku) to read its tasks. Runs on this machine; costs a little per burst of messages."
-      >
-        <Switch label="Tasks" on={settings.topics} onChange={(v) => saveSettings({ topics: v })} />
-      </Row>
       <Row label="Decision mode (Experimental)" desc="Every waiting question across sessions, one at a time. Pick with 1–9; answers are sent per thread.">
         <Switch label="Decision mode" on={settings.decision_mode} onChange={(v) => saveSettings({ decision_mode: v })} />
       </Row>

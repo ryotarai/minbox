@@ -79,15 +79,8 @@ type Server struct {
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
 	pickRun func(ctx context.Context, prompt string) ([]byte, error)
-	// topics re-extracts a thread's topics after its new messages (topics.go); topicsRun runs the
-	// helper model for it (replaced in tests).
-	topics    *topicer
-	topicsRun func(ctx context.Context, prompt string) ([]byte, error)
-	// agentSince: when each session's agent state (working / idle) last changed, as this server saw
-	// it (the topics prompt says it; unknown after a restart).
-	agentSince sync.Map // session id -> time.Time
-	web        fs.FS
-	handler    http.Handler
+	web     fs.FS
+	handler http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}
@@ -139,10 +132,6 @@ type Server struct {
 	stopLocalHost  func(ctx context.Context) (pid int, running bool, err error)
 }
 
-// noHelperRuns: helper-model runs that start on their own (topics) never run a real agent (set by
-// the package's tests).
-var noHelperRuns bool
-
 // New builds a server. web holds the built frontend (index.html at its root).
 func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	h := newHub()
@@ -180,12 +169,6 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.suggest = newSuggester(s.runSuggest)
 	s.denied = newDeniedStore()
 	s.pickRun = s.runPick
-	s.topicsRun = s.runTopicsHelper
-	if noHelperRuns {
-		s.topicsRun = func(context.Context, string) ([]byte, error) { return nil, agent.ErrNoneInstalled }
-	}
-	s.topics = newTopicer(s.refreshTopics)
-	st.OnMessage(s.topics.kick)
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)
@@ -380,6 +363,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/open", s.agent(s.agentOpen))
 	mux.HandleFunc("POST /api/agent/denied-commands", s.agent(s.agentDeniedCommand))
 	mux.HandleFunc("POST /api/agent/denied-commands/ran", s.agent(s.agentRanCommand))
+	mux.HandleFunc("GET /api/agent/tasks", s.agent(s.agentListTasks))
+	mux.HandleFunc("POST /api/agent/tasks", s.agent(s.agentCreateTask))
+	mux.HandleFunc("PATCH /api/agent/tasks/{id}", s.agent(s.agentUpdateTask))
 	mux.HandleFunc("POST /api/agent/messages", s.agent(s.agentSend))
 	mux.HandleFunc("GET /api/agent/threads", s.agent(s.agentListThreads))
 	mux.HandleFunc("GET /api/agent/threads/{id}", s.agent(s.agentReadThread))

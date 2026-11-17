@@ -122,10 +122,10 @@ Topic (a task of the Tasks board; see "Topics"):
 ```
 { id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
   created_at, updated_at, done_at: string|null,
-  manual_status: ""|status, manual_at: string|null,   (moved by hand, held until new information about it; see "Topics")
-  detail: string,                       (a fuller summary, a few sentences, Markdown; "" until extracted)
-  tasks: [{text, done: bool}],          (its steps, done as judged from the messages; [] when none)
-  message_ids: [string],                (the thread's messages about it, oldest first, merged across extractions)
+  manual_status: ""|status, manual_at: string|null,   (moved by hand, until the agent sets the status again; see "Topics")
+  detail: string,                       (a fuller summary, a few sentences, Markdown; "" when the agent gave none)
+  tasks: [{text, done: bool}],          (its steps, ticked by the agent; [] when none)
+  message_ids: [string],                (the thread's messages about it, oldest first)
   thread_name, thread_subject, session_id, project_id, project_name }   (the thread's fields: GET /api/topics and /api/topics/{id} only)
 ```
 
@@ -135,7 +135,6 @@ Settings (one JSON object; PUT merges top-level keys):
 { theme: "system"|"light"|"dark", text_size: 12|13|14|15,
   notifications: bool, sound: bool, tab_count: bool, single_key: bool,
   decision_mode: bool, prompt_extra: string,
-  topics: bool,               (default true; the helper reads each thread's topics after new messages, see "Topics")
   reply_suggestions: bool,     (default true; the reply questions, see "Reply suggestions")
   default_agent: ""|"claude"|"pi"|"opencode",  (default ""; the agent of a new session when neither the request nor the project says;
                                 "" = Claude Code if installed, else the installed one; see "Coding agents")
@@ -144,8 +143,8 @@ Settings (one JSON object; PUT merges top-level keys):
   list: { highlight_subject: bool, compact: bool, hide_icons: bool, small_names: bool, keep_panel: bool } }
 ```
 
-Defaults: system, 13, true, true, true, true, true (topics), false, "", {true,false,false,false,false}.
-Stored keys that are no longer settings (the Board's `board`) are left out of `GET`; `PUT` refuses them (400).
+Defaults: system, 13, true, true, true, true, false, "", {true,false,false,false,false}.
+Stored keys that are no longer settings (the Board's `board`, the Tasks extraction's `topics`) are left out of `GET`; `PUT` refuses them (400).
 
 ## Thread commands
 
@@ -162,73 +161,59 @@ over 4000 characters, a session on another host, and `!cmd` as the body of a new
 
 ## Topics
 
-Topics are called **Tasks** in the UI; the API paths, the `topics` table and the `topics` setting keep the old name.
+Topics are called **Tasks** in the UI; the API paths and the `topics` table keep the old name.
 The Tasks board (global nav entry "Tasks", route `#v=tasks`; the old `#v=topics` and `#v=board` open it and the hash is
 rewritten to `#v=tasks`) shows the topics being worked on inside threads, across all threads: one thread can have several, each with its own status, independent of the
 thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/agent/cards`, setting `board`) is gone.
 
-- Extraction (`internal/server/topics.go`): every message added to a thread (agent, person, command; the store's
-  `OnMessage` hook) kicks a per-thread timer. The run starts 4 s after the last message of a burst (at most 30 s after the
-  first), never twice at once for one thread (a message during a run runs it again after), at most 2 threads at a time.
-  Skipped when setting `topics` is off, for archived threads, and without a coding agent to run the helper. Existing
-  threads are not read until they get a new message (no backfill). Two more kicks, through the same debounce, let work
-  that ended leave In progress without a new message: the session going idle (`POST /api/agent/status` `idle`, the end of
-  the agent's turn) kicks each live thread of that session with an `in_progress` topic, and the person marking a thread
-  `finished` (`POST /api/threads/{id}/status`) kicks it when it has an `in_progress` topic. An extraction adds no message
-  and changes no session or thread status, so it never kicks itself.
-- The helper (the same `runHelper` as reply suggestions: Haiku through `claude -p --json-schema`, or the default agent's
-  helper run) gets the thread's current topics (id, status, title, summary, then `detail:` and one `task [x]|[ ] <text>`
-  line per step) and its newest 20 messages, each in full with its id in the header (`[PERSON · <time> · id: <msg id>]`;
-  no character budget; earlier messages are carried by the current topics), and answers
-  `{topics: [{id?, title, summary, status, detail, tasks: [{text, done}], message_ids: [string]}]}` (detail, tasks and
-  message_ids required by the schema; an answer without them reads as empty). Before the messages it says
-  `Agent state now: working | idle (…) [since <time> UTC]` (the session's status: `starting` and `ended` read as idle;
-  the time is when this server last saw it change, left out when unknown) and `Thread status now: <status>`. Status
-  rules in the prompt: `in_progress` ONLY when the agent is actively working on the topic right now (the latest messages
-  show the work started or continuing, no result reported yet) AND the agent state is working; `waiting_on_you` when a
-  question, decision, review or action asked of the person is unanswered, or the agent reported and awaits their input;
-  `done` when the result was reported or delivered, nothing is pending, or it went quiet with nobody working on it
-  (answered questions are done). Unsure between in_progress and done: done (or waiting_on_you if a request to the person
-  is open). Every topic is judged again each run (never kept in_progress because it was). Agent idle: nothing is
-  in_progress unless the latest message clearly says work continues in the background (a subagent running), and then
-  only that topic; thread finished: nothing is in_progress unless a later message starts new work. The prompt asks to keep the current tasks,
-  their order and wording, marking them done as they finish. There is no limit on the number of topics: the prompt asks for every
-  distinct subject, request, question, decision or piece of work as its own topic (each separate request or question of
-  the person; only true duplicates or continuations merged), done ones kept with status `done`. Only a runaway answer is
-  cut, at 100 topics; titles at 80 characters, summaries at 160, details at 1200, 20 tasks of 200 characters, 50
-  message ids per topic per answer. The run times out after 5 minutes. The prompt starts
-  with `Track the topics` (the e2e fake helper keys on it).
-- Store (`topics` table, cascades with the thread): replaced per thread on each run. A topic that continues a current one
-  (the same `id`, else the same title ignoring case and spacing) keeps its id and `created_at`, and its `updated_at` when
-  nothing changed; `done_at` is set when it turns done (to the run's start). Current topics left out of the answer are
-  deleted, except done ones and ones moved by hand. No new information, no move: a done topic keeps `done` unless the
-  answer links it (`message_ids`) to a message written after its `done_at` that it was not linked to before; otherwise
-  the answer's other fields apply but the status stays done. So a re-run on idle / finished (no new message) never
-  reopens a done topic. A failed run (no JSON, an error) keeps the topics as they were. `detail` and `tasks` are replaced by the answer
-  (a change bumps `updated_at`). `message_ids` are merged, not replaced (the helper sees only the newest 20 messages):
-  the answer's ids are kept only when they are messages of the history it was shown, then added to the topic's stored
-  ids; ids that are no longer messages of the thread are dropped; kept in the thread's order, at most the newest 200.
-  New related messages alone do not bump `updated_at`. Columns `detail`, `tasks` (JSON), `message_ids` (JSON) were added
-  to older databases on open.
+- Who fills it: the agent of the thread's session, through its tools `create_task`, `update_task` and `list_tasks`
+  (Claude Code: `mcp__minbox__*`, always loaded; Pi and OpenCode: `minbox_*`; text, schemas and the request of a call
+  in `plugin/minbox/hooks/tasks.ts`, shared by the mod, the Pi extension and the OpenCode plugin). The system prompt's
+  `# minbox: tasks` section tells it when: a task per distinct piece of work the person asked for, its steps as a
+  checklist ticked as it goes, `waiting_on_you` only while blocked on the person, `done` when finished. Nothing is
+  read from the messages: the earlier helper-model extraction (Haiku re-reading each thread after its messages, on idle
+  and on finished; the `topics` setting) is gone. A stored `topics` setting is ignored and `PUT` refuses it (400).
+- Agent API (`internal/server/topics.go`; bearer token of the session, 401 without; the same identification as the
+  other `/api/agent/*` endpoints). A task belongs to one thread of the caller's session.
+  - `POST /api/agent/tasks {thread_id?, title, summary?, detail?, status?, steps?: [{text, done?}], message_ids?}` ->
+    `200` Topic. `title` is required (400). `status` in_progress (default) | waiting_on_you | done (aliases as for the
+    board; else 400). `thread_id` must be a thread of the caller's session (else 404); without it, the session's live
+    thread with the newest activity (400 when the session has none). The integrations pass the thread of the delivered
+    message the running turn answers when the agent leaves it out and there is exactly one. Without `message_ids` the
+    thread's newest message is linked. At most 100 tasks per thread (400).
+  - `PATCH /api/agent/tasks/{id} {title?, summary?, detail?, status?, steps?, check_steps?: [n], uncheck_steps?: [n],
+    message_ids?, thread_id?}` -> `200` Topic. Only the fields given change. `steps` replaces the checklist; then
+    `check_steps` / `uncheck_steps` tick or untick steps by number (from 1; a number out of range: 400). `message_ids`
+    are added to the related ones. A task of another session's thread, or unknown: 404; a `thread_id` that is not the
+    task's: 400. A status set here clears the person's manual move (`manual_status`, `manual_at`): the agent is
+    authoritative, the person can move the card again.
+  - `GET /api/agent/tasks?thread_id=` -> `{threads: [{id, subject, tasks: Topic[]}]}`: the caller's live threads that
+    have tasks (newest activity first), or the one thread asked for (also when it has none; another session's: 404);
+    done tasks included, each thread's in their order.
+  - Limits: titles 120 characters (one line), summaries 300 (one line), details 4000, 30 steps of 200 characters, 50
+    message ids per call. Each change publishes SSE `topics` (`session_id`, `thread_id`) and a mod log line
+    (`task-create` / `task-update`: ids and status only).
+- Store (`topics` table, cascades with the thread; `internal/store/topics.go`): `CreateTopic` puts a new topic after
+  the thread's others (`position`); `UpdateTopic` changes the given fields. `done_at` is set when a topic turns done
+  (kept when it already was) and cleared when it leaves done. `updated_at` is bumped by a change of anything but the
+  related messages. `message_ids` keep only messages of the topic's thread, in the thread's order, at most the newest 200.
+  Columns `manual_status`, `manual_at`, `detail`, `tasks` (JSON), `message_ids` (JSON) were added to older databases on
+  open; rows written by the old extraction stay.
 - `GET /api/topics/{id}` -> `{topic: Topic, messages: [{id, author: "user"|"agent", kind, created_at, excerpt}]}` (`404`
   unknown topic): the topic with its thread's fields, and its related messages, oldest first; `excerpt` is the agent's
   body or the person's own words, spacing collapsed, cut at 240 characters. The topic pane loads it on selection and
   again on SSE `topics` / `thread`.
-- `GET /api/topics?project=<id>&thread=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live
+- `GET /api/topics?project=<id>&thread=<id>` -> `{topics: Topic[], done_days: 7}`: topics of every live
   thread (not archived, in a live session and project; `thread` narrows it to one thread, for the thread's Tasks pane), open ones by `updated_at` newest first, then done ones done within the last
   7 days, newest first, at most 30. When a thread's topics change, SSE `topics` (`session_id`, `thread_id`) is published.
 - Moving a card by hand: `PATCH /api/topics/{id}` `{status}` -> `200` Topic (`400` unknown status, `404` unknown topic).
   Sets the status, sets `done_at` when it turns done (kept when it already was) or clears it, bumps `updated_at`, records
-  `manual_status` + `manual_at`, and publishes SSE `topics`. It does not start an extraction: the move holds until the
-  thread's next message. Each extraction's prompt marks the topic "moved by the PERSON by hand to <status> at <time> UTC"
-  with an instruction to change it only when messages written after that time are about it and clearly show a different
-  state (and to list them in `message_ids`). The server enforces it: the manual status and its marker hold until an
-  answer gives another status AND links the topic to a message written after `manual_at` that it was not linked to
-  before; only then does the status change and the marker clear. A run that started before the move (`manual_at` >= the
-  run's start) always keeps it. A topic with a marker is not deleted when left out.
+  `manual_status` + `manual_at` (the card shows it was moved; `list_tasks` tells the agent), and publishes SSE `topics`.
+  The move lasts until the agent sets the task's status again.
 - UI: drag a card to another column (desktop), or its menu (right-click, long press, the "…" button, Shift+F10: Move to);
   `⇧T` opens Tasks; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
-  move it to In progress / Waiting on you / Done.
+  move it to In progress / Waiting on you / Done. Empty board: "No tasks yet. Agents add a task here when they start a
+  piece of work you asked for, and keep it current."
 - The topic pane: a click / tap on a card, or `Space` on the focused card, selects it (highlighted) and opens its pane:
   beside the board on a desktop, full screen on a phone (Back returns to the board). It shows the title, status, the
   thread (a link that opens it), `detail` as Markdown (else the summary), the tasks as read-only checkboxes with "n/m
@@ -246,8 +231,11 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   hides it after the shell. On a tablet or phone it opens full screen with Back. The list groups the thread's topics by
   status (compact cards, the "…" menu moves them); selecting one shows the topic pane's contents in place (Back to the
   list; no thread link and no message box: the thread's own box is beside it); Done / Reopen move it; a related message
-  is revealed in the thread (on a phone the full-screen view closes first). Empty: "No tasks yet — they appear after the
-  next message"; with the setting off it says Tasks are turned off, with a link to Settings.
+  is revealed in the thread (on a phone the full-screen view closes first). Empty: "No tasks yet — the agent adds them
+  when it starts work in this thread."
+- e2e: the fake agent (`web/e2e/fake-claude.py`) keeps tasks through the agent API for every
+  `TOPIC: <title> | <status> | <summary>` line (and `TOPIC-DETAIL:` / `TOPIC-TASK:` lines) of a message delivered to it,
+  and links a delivered message that names a task's title.
 
 ## Reply suggestions
 
@@ -360,7 +348,7 @@ GET   /api/search?q=&session_id=&status=&from=agent|user&limit=
       Case-insensitive; every space-separated word must match (AND); LIKE. threads: subject or name;
       messages: body; files: attachment name or text content. Newest first.
 
-GET   /api/topics?project=                  {topics, enabled, done_days} (see "Topics")
+GET   /api/topics?project=                  {topics, done_days} (see "Topics")
 GET   /api/topics/{id}                      {topic, messages: [{id, author, kind, created_at, excerpt}]} (see "Topics")
 PATCH /api/topics/{id}                      {status} -> Topic (see "Topics")
 GET/PUT  /api/settings
@@ -387,6 +375,14 @@ SSE event types: `sessions`, `threads`, `thread`, `topics`, `settings`.
   `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
   own turn never reminds again.
 - `hello` answers `instructions`: the one instructions text, built by the same server function as `--append-system-prompt` (`AgentSystemPrompt`, plus the orchestration prompt while `orchestrator_prompt` is on, plus `The person adds: <prompt_extra>` when set). The mod injects it (wrapped as "minbox: standing instructions (still in force)") on the first prompt after each hello, on the first prompt after a compaction (with the open-threads list) and on every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` overrides), never twice in one prompt; without instructions it falls back to a short reminder. `prompt_extra` and `orchestrator` are still answered, for older mods only; the current mod ignores them.
+
+## Task tools (the agent keeps the Tasks board)
+
+Tools `create_task`, `update_task`, `list_tasks` (Claude: `mcp__minbox__*`, loaded up front; Pi and OpenCode:
+`minbox_*`) call `POST /api/agent/tasks`, `PATCH /api/agent/tasks/{id}` and `GET /api/agent/tasks`; see "Topics".
+Schemas: `create_task {thread_id?, title, summary?, detail?, status?, steps?: [{text, done?}], message_ids?}`,
+`update_task {task_id, title?, summary?, detail?, status?, steps?, check_steps?: [n], uncheck_steps?: [n], message_ids?}`,
+`list_tasks {thread_id?}`. Each answers a short text with the task id, status, title, summary and numbered steps.
 
 ## Navigation tools (read-only agent API)
 
@@ -799,13 +795,14 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 The inbox (`send_message` every time the person's opinion, decision, approval or action is
 needed, and a summary when work is done), session title and `open_url` guidance is one text,
 `server.AgentSystemPrompt` (headings `# minbox: inbox`, `# minbox: replying to inbox messages`,
-`# minbox: session title` and `# minbox: opening pages`), extended by `buildInstructions` with the
+`# minbox: session title`, `# minbox: tasks` and `# minbox: opening pages`), extended by `buildInstructions` with the
 orchestration prompt (setting `orchestrator_prompt`) and `prompt_extra`. It reaches Claude two ways:
 - the server starts Claude with `--append-system-prompt` set to it;
 - `hello` returns it as `instructions`, and the mod injects it into prompts (first, after a
   compaction, every 20th). The mod has no `prompt.compose` hook and no copy of the text.
 
-The text names the tools `mcp__minbox__send_message`, `mcp__minbox__set_session_title` and
+The text names the tools `mcp__minbox__send_message`, `mcp__minbox__set_session_title`,
+`mcp__minbox__create_task`, `mcp__minbox__update_task`, `mcp__minbox__list_tasks` and
 `mcp__minbox__open_url`, which is what the mod's tools are called when registered through
 `$.tool.register` (the mod's wake and nudge texts use the registered name, which could differ).
 

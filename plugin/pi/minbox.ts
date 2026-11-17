@@ -5,8 +5,9 @@
  * the Claude Code mod (plugin/minbox/hooks/register.ts) and talks to the same /api/agent/* API;
  * the text of the tools and of the delivered replies is shared (../minbox/hooks/text.ts).
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url
- *   and the read-only navigation tools (minbox_list_projects, minbox_get_project,
+ * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
+ *   the task tools (minbox_create_task, minbox_update_task, minbox_list_tasks; tasks.ts) and the
+ *   read-only navigation tools (minbox_list_projects, minbox_get_project,
  *   minbox_list_sessions, minbox_list_threads, minbox_search; nav.ts). A failing call throws (Pi turns that into a failed tool result).
  * - Reports whether Pi is working or idle (agent_start -> working, agent_settled -> idle).
  * - Long-polls the server for the person's messages. Once Pi has been idle for a moment each is
@@ -34,6 +35,7 @@
 import { readFileSync } from 'node:fs'
 import { DENIED_MAX, normCommand, piBlocked, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
+import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from '../minbox/hooks/tasks.ts'
 import {
   openDeny,
   opensBrowser,
@@ -104,7 +106,7 @@ export function realDeps(): Deps {
 type ApiResult = { ok: boolean; status: number; json: any }
 
 /** Tool names in a shared description, as Pi names them. */
-const piNames = (text: string) => text.replace(/\b(read_thread|list_threads)\b/g, TOOL_PREFIX + '$1')
+const piNames = (text: string) => text.replace(/\b(read_thread|list_threads|send_message|create_task|update_task|list_tasks)\b/g, TOOL_PREFIX + '$1')
 
 const textResult = (text: string) => ({ content: [{ type: 'text', text }], details: undefined })
 
@@ -284,6 +286,23 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
         const res = await api('GET', req.path)
         if (!res.ok) fail(res)
         return textResult(navText(tool, res.json))
+      },
+    })
+  }
+
+  // The Tasks board: the agent keeps its tasks itself (../minbox/hooks/tasks.ts).
+  for (const tool of TASK_TOOLS) {
+    pi.registerTool({
+      name: TOOL_PREFIX + tool,
+      label: `minbox: ${tool.replace('_', ' ')}`,
+      description: piNames(TASK_DESCRIPTION[tool]),
+      parameters: TASK_SCHEMA[tool],
+      async execute(_id: string, e: any) {
+        const req = taskRequest(tool, e ?? {}, turnThreads.length === 1 ? turnThreads[0] : undefined)
+        if ('error' in req) throw new Error(req.error)
+        const res = await api(req.method, req.path, req.body)
+        if (!res.ok) fail(res)
+        return textResult(taskText(tool, res.json))
       },
     })
   }

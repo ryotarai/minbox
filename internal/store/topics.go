@@ -10,16 +10,13 @@ import (
 	"time"
 )
 
-// Topics: the pieces of work a thread is about, as the helper model reads them from the thread's
-// messages (see internal/server/topics.go). One thread can have several at once, each with its own
-// status, independent of the thread's status. They are replaced per thread on each extraction;
-// a topic that continues keeps its id (matched by id, else by title), so the board's cards stay put.
+// Topics (Tasks in the UI): the pieces of work a thread is about. The agent of the thread's session
+// keeps them itself through its create_task / update_task tools (POST and PATCH /api/agent/tasks,
+// see internal/server/topics.go): one thread can have several at once, each with its own status,
+// independent of the thread's status.
 //
-// The person can move a topic to another column by hand (SetTopicStatus). Every extraction is told
-// about the move (manual_status, manual_at), and the status holds until there is new information
-// about the topic: an extraction may change it only when it links the topic to a message written
-// after the move that the topic was not linked to before (see ReplaceTopics). A done topic holds the
-// same way against messages older than its done_at: no new information, no move.
+// The person can move a topic to another column by hand (SetTopicStatus); the move is marked
+// (manual_status, manual_at) until the agent sets the status again (UpdateTopic).
 
 const topicSchema = `
 CREATE TABLE IF NOT EXISTS topics (
@@ -56,7 +53,7 @@ var topicAddedColumns = []struct{ table, column, def string }{
 // TopicMaxMessages: at most this many related messages are kept per topic (the newest).
 const TopicMaxMessages = 200
 
-// TopicTask is one step of a topic, done or not as the helper judges it from the messages.
+// TopicTask is one step of a topic (the agent's checklist), done or not.
 type TopicTask struct {
 	Text string `json:"text"`
 	Done bool   `json:"done"`
@@ -93,11 +90,11 @@ type Topic struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	DoneAt    *time.Time `json:"done_at"`
-	// The person moved it to ManualStatus by hand at ManualAt ("" / nil: no move held); held until new information.
+	// The person moved it to ManualStatus by hand at ManualAt ("" / nil: not moved since the agent last set it).
 	ManualStatus string     `json:"manual_status"`
 	ManualAt     *time.Time `json:"manual_at"`
 	// Detail: a fuller summary (a few sentences, Markdown). Tasks: its steps. MessageIDs: the
-	// thread's messages about it, oldest first (merged across extractions).
+	// thread's messages about it, oldest first.
 	Detail     string      `json:"detail"`
 	Tasks      []TopicTask `json:"tasks"`
 	MessageIDs []string    `json:"message_ids"`
@@ -107,22 +104,6 @@ type Topic struct {
 	SessionID     string `json:"session_id,omitempty"`
 	ProjectID     string `json:"project_id,omitempty"`
 	ProjectName   string `json:"project_name,omitempty"`
-}
-
-// TopicInput is a topic as an extraction gives it. ID, when set, names the thread's current topic
-// it continues.
-//
-// MessageIDs are the messages of the extraction's history that are about it: they are added to the
-// ones the topic already has (the history holds only the newest messages); ids that are not
-// messages of the thread are left out.
-type TopicInput struct {
-	ID         string
-	Title      string
-	Summary    string
-	Status     string
-	Detail     string
-	Tasks      []TopicTask
-	MessageIDs []string
 }
 
 const topicCols = `id, thread_id, title, summary, status, position, created_at, updated_at, done_at, manual_status, manual_at, detail, tasks, message_ids`
@@ -180,6 +161,206 @@ func mergeMessageIDs(order map[string]int, old, add []string) []string {
 	return out
 }
 
+// threadMessageOrder: the ids of the thread's messages, each with its place in the thread.
+func threadMessageOrder(ctx context.Context, tx *sql.Tx, threadID string) (map[string]int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM messages WHERE thread_id=? ORDER BY created_at, rowid`, threadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = len(out)
+	}
+	return out, rows.Err()
+}
+
+// ThreadTopics lists a thread's topics in their order.
+func (s *Store) ThreadTopics(ctx context.Context, threadID string) ([]Topic, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+topicCols+` FROM topics WHERE thread_id=? ORDER BY position, created_at`, threadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Topic{}
+	for rows.Next() {
+		t, err := scanTopic(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// TopicFields are the fields of a topic the agent sets (CreateTopic, UpdateTopic). A nil field is
+// left as it is (on create: empty; Status: in progress). AddMessageIDs are added to the topic's
+// related messages; ids that are not messages of its thread are left out.
+type TopicFields struct {
+	Title         *string
+	Summary       *string
+	Detail        *string
+	Status        *string
+	Tasks         *[]TopicTask
+	AddMessageIDs []string
+}
+
+// ErrTopicTitle: a topic needs a title.
+var ErrTopicTitle = errors.New("title is required")
+
+// CreateTopic adds a topic to the thread, after its others. Status defaults to in progress.
+func (s *Store) CreateTopic(ctx context.Context, threadID string, f TopicFields) (*Topic, error) {
+	title := ""
+	if f.Title != nil {
+		title = strings.Join(strings.Fields(*f.Title), " ")
+	}
+	if title == "" {
+		return nil, ErrTopicTitle
+	}
+	status := TopicInProgress
+	if f.Status != nil && strings.TrimSpace(*f.Status) != "" {
+		st, ok := NormalizeTopicStatus(*f.Status)
+		if !ok {
+			return nil, ErrInvalidTopicStatus
+		}
+		status = st
+	}
+	str := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return strings.TrimSpace(*p)
+	}
+	tasks := []TopicTask{}
+	if f.Tasks != nil {
+		tasks = cleanTasks(*f.Tasks)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM threads WHERE id=?`, threadID).Scan(&n); err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	order, err := threadMessageOrder(ctx, tx, threadID)
+	if err != nil {
+		return nil, err
+	}
+	var pos int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position)+1, 0) FROM topics WHERE thread_id=?`, threadID).Scan(&pos); err != nil {
+		return nil, err
+	}
+	now := ms(s.now())
+	var done any
+	if status == TopicDone {
+		done = now
+	}
+	id := NewID("tpc")
+	if _, err := tx.ExecContext(ctx, `INSERT INTO topics(`+topicCols+`) VALUES(?,?,?,?,?,?,?,?,?,'',NULL,?,?,?)`,
+		id, threadID, title, str(f.Summary), status, pos, now, now, done, str(f.Detail), jsonText(tasks), jsonText(mergeMessageIDs(order, nil, f.AddMessageIDs))); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetTopic(ctx, id)
+}
+
+// UpdateTopic changes the fields of f that are set. A status the agent sets replaces any move the
+// person made by hand (the marker goes); done_at is set when it turns done (kept when it already
+// was) and cleared otherwise. updated_at is bumped when anything but the related messages changed.
+func (s *Store) UpdateTopic(ctx context.Context, id string, f TopicFields) (*Topic, error) {
+	cur, err := s.GetTopic(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	t := *cur
+	manual := t.ManualStatus != "" && t.ManualAt != nil
+	if f.Title != nil {
+		if t.Title = strings.Join(strings.Fields(*f.Title), " "); t.Title == "" {
+			return nil, ErrTopicTitle
+		}
+	}
+	if f.Summary != nil {
+		t.Summary = strings.TrimSpace(*f.Summary)
+	}
+	if f.Detail != nil {
+		t.Detail = strings.TrimSpace(*f.Detail)
+	}
+	if f.Tasks != nil {
+		t.Tasks = cleanTasks(*f.Tasks)
+	}
+	now := s.now()
+	if f.Status != nil && strings.TrimSpace(*f.Status) != "" {
+		st, ok := NormalizeTopicStatus(*f.Status)
+		if !ok {
+			return nil, ErrInvalidTopicStatus
+		}
+		switch {
+		case st == TopicDone && t.Status == TopicDone && t.DoneAt != nil:
+		case st == TopicDone:
+			t.DoneAt = &now
+		default:
+			t.DoneAt = nil
+		}
+		t.Status, manual = st, false
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	order, err := threadMessageOrder(ctx, tx, t.ThreadID)
+	if err != nil {
+		return nil, err
+	}
+	msgs := mergeMessageIDs(order, t.MessageIDs, f.AddMessageIDs)
+	same := t.Title == cur.Title && t.Summary == cur.Summary && t.Detail == cur.Detail && t.Status == cur.Status && sameTasks(t.Tasks, cur.Tasks) &&
+		manual == (cur.ManualStatus != "" && cur.ManualAt != nil)
+	if same && sameStrings(msgs, cur.MessageIDs) {
+		return cur, nil
+	}
+	updated := ms(cur.UpdatedAt)
+	if !same {
+		updated = ms(now)
+	}
+	var done, manualAt any
+	if t.DoneAt != nil {
+		done = ms(*t.DoneAt)
+	}
+	manualStatus := ""
+	if manual {
+		manualStatus, manualAt = t.ManualStatus, ms(*t.ManualAt)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE topics SET title=?, summary=?, status=?, updated_at=?, done_at=?, manual_status=?, manual_at=?, detail=?, tasks=?, message_ids=? WHERE id=?`,
+		t.Title, t.Summary, t.Status, updated, done, manualStatus, manualAt, t.Detail, jsonText(t.Tasks), jsonText(msgs), id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetTopic(ctx, id)
+}
+
+// LatestMessageID is the id of the thread's newest message ("" when it has none).
+func (s *Store) LatestMessageID(ctx context.Context, threadID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM messages WHERE thread_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`, threadID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 func sameTasks(a, b []TopicTask) bool {
 	if len(a) != len(b) {
 		return false
@@ -204,213 +385,10 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
-// threadMessageOrder: the ids of the thread's messages, each with its place in the thread, and
-// each one's created_at (ms).
-func threadMessageOrder(ctx context.Context, tx *sql.Tx, threadID string) (map[string]int, map[string]int64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, created_at FROM messages WHERE thread_id=? ORDER BY created_at, rowid`, threadID)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	created := map[string]int64{}
-	for rows.Next() {
-		var id string
-		var at int64
-		if err := rows.Scan(&id, &at); err != nil {
-			return nil, nil, err
-		}
-		out[id] = len(out)
-		created[id] = at
-	}
-	return out, created, rows.Err()
-}
-
-// newInfo: whether ids (an extraction's related messages of a topic) name a message of the thread
-// written after since (ms) that the topic was not linked to before (old): something the status the
-// topic holds since then did not take into account.
-func newInfo(created map[string]int64, old, ids []string, since int64) bool {
-	had := map[string]bool{}
-	for _, id := range old {
-		had[id] = true
-	}
-	for _, id := range ids {
-		if at, ok := created[id]; ok && at > since && !had[id] {
-			return true
-		}
-	}
-	return false
-}
-
-// ThreadTopics lists a thread's topics in their order.
-func (s *Store) ThreadTopics(ctx context.Context, threadID string) ([]Topic, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+topicCols+` FROM topics WHERE thread_id=? ORDER BY position, created_at`, threadID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Topic{}
-	for rows.Next() {
-		t, err := scanTopic(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *t)
-	}
-	return out, rows.Err()
-}
-
-// topicKey is how titles are matched: case, spacing and trailing punctuation do not count.
-func topicKey(title string) string {
-	return strings.Trim(strings.Join(strings.Fields(strings.ToLower(title)), " "), ".。!?")
-}
-
-// ReplaceTopics makes in the thread's topics. A topic in in that continues a current one (same id,
-// else same title) keeps its id, created_at and, when nothing about it changed, updated_at. Current
-// topics left out are deleted, except done ones: they stay (the board shows recent done work). It
-// reports whether anything changed.
-//
-// started is when the extraction began (zero: now); a topic it turns done is done since then.
-//
-// No new information, no move: a topic the person moved by hand (manual marker) keeps that status
-// and its marker unless the answer gives it another status AND links it to new information (a
-// message of the thread written after the move that the topic was not linked to before: newInfo);
-// only then does the status change and the marker go. A move made at or after started always holds
-// (the extraction did not know of it). A done topic without a marker likewise stays done unless the
-// answer links it to a new message written after its done_at. A topic with a manual marker is not
-// deleted when left out (nor is a done one).
-func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicInput, started time.Time) (bool, error) {
-	cur, err := s.ThreadTopics(ctx, threadID)
-	if err != nil {
-		return false, err
-	}
-	byID := map[string]*Topic{}
-	byKey := map[string]*Topic{}
-	for i := range cur {
-		byID[cur[i].ID] = &cur[i]
-		if _, ok := byKey[topicKey(cur[i].Title)]; !ok {
-			byKey[topicKey(cur[i].Title)] = &cur[i]
-		}
-	}
-	now := s.now()
-	if started.IsZero() {
-		started = now
-	}
-	// fresh: moved by hand after the extraction started.
-	fresh := func(t *Topic) bool { return t.ManualAt != nil && ms(*t.ManualAt) >= ms(started) }
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	order, created, err := threadMessageOrder(ctx, tx, threadID)
-	if err != nil {
-		return false, err
-	}
-	changed := false
-	kept := map[string]bool{}
-	pos := 0
-	for _, t := range in {
-		title := strings.TrimSpace(t.Title)
-		status, ok := NormalizeTopicStatus(t.Status)
-		if title == "" || !ok {
-			continue
-		}
-		summary := strings.TrimSpace(t.Summary)
-		detail := strings.TrimSpace(t.Detail)
-		tasks := cleanTasks(t.Tasks)
-		old := byID[t.ID]
-		if old == nil || kept[old.ID] {
-			old = byKey[topicKey(title)]
-		}
-		if old != nil && kept[old.ID] {
-			continue // two answers for one topic: the first wins
-		}
-		if old == nil {
-			var done any
-			if status == TopicDone {
-				done = ms(started)
-			}
-			id := NewID("tpc")
-			if _, err := tx.ExecContext(ctx, `INSERT INTO topics(`+topicCols+`) VALUES(?,?,?,?,?,?,?,?,?,'',NULL,?,?,?)`,
-				id, threadID, title, summary, status, pos, ms(now), ms(now), done, detail, jsonText(tasks), jsonText(mergeMessageIDs(order, nil, t.MessageIDs))); err != nil {
-				return false, err
-			}
-			kept[id] = true
-			changed = true
-			pos++
-			continue
-		}
-		kept[old.ID] = true
-		// The status holds without new information (see the doc comment).
-		manualStatus, manualAt := "", any(nil)
-		switch {
-		case old.ManualStatus != "" && old.ManualAt != nil:
-			if fresh(old) || status == old.Status || !newInfo(created, old.MessageIDs, t.MessageIDs, ms(*old.ManualAt)) {
-				status, manualStatus, manualAt = old.Status, old.ManualStatus, ms(*old.ManualAt)
-			}
-		case old.Status == TopicDone && status != TopicDone && old.DoneAt != nil:
-			if !newInfo(created, old.MessageIDs, t.MessageIDs, ms(*old.DoneAt)) {
-				status = old.Status
-			}
-		}
-		msgs := mergeMessageIDs(order, old.MessageIDs, t.MessageIDs)
-		// More related messages alone are no change of the topic (updated_at stays).
-		same := old.Title == title && old.Summary == summary && old.Status == status && old.Detail == detail && sameTasks(old.Tasks, tasks)
-		if same && old.Position == pos && old.ManualStatus == manualStatus && sameStrings(old.MessageIDs, msgs) {
-			pos++
-			continue
-		}
-		updated := ms(old.UpdatedAt)
-		if !same {
-			updated = ms(now)
-		}
-		var done any
-		switch {
-		case status == TopicDone && old.Status == TopicDone && old.DoneAt != nil:
-			done = ms(*old.DoneAt)
-		case status == TopicDone:
-			done = ms(started)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE topics SET title=?, summary=?, status=?, position=?, updated_at=?, done_at=?, manual_status=?, manual_at=?, detail=?, tasks=?, message_ids=? WHERE id=?`,
-			title, summary, status, pos, updated, done, manualStatus, manualAt, detail, jsonText(tasks), jsonText(msgs), old.ID); err != nil {
-			return false, err
-		}
-		changed = true
-		pos++
-	}
-	for i := range cur {
-		t := &cur[i]
-		if kept[t.ID] {
-			continue
-		}
-		if t.Status == TopicDone || (t.ManualStatus != "" && t.ManualAt != nil) {
-			if t.Position != pos {
-				if _, err := tx.ExecContext(ctx, `UPDATE topics SET position=? WHERE id=?`, pos, t.ID); err != nil {
-					return false, err
-				}
-			}
-			pos++
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM topics WHERE id=?`, t.ID); err != nil {
-			return false, err
-		}
-		changed = true
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return changed, nil
-}
-
-// Now is the store's clock (an extraction's start, for ReplaceTopics).
-func (s *Store) Now() time.Time { return s.now() }
-
-// SetTopicStatus moves a topic to status by hand (the person dragged its card): the status holds
-// until an extraction finds new information about the topic (see ReplaceTopics). done_at is set when it turns
-// done (kept when it already was) and cleared otherwise; updated_at is bumped. It returns the topic
-// with its thread's session id.
+// SetTopicStatus moves a topic to status by hand (the person dragged its card): the move is marked
+// (manual_status, manual_at) until the agent sets the status again (UpdateTopic). done_at is set when
+// it turns done (kept when it already was) and cleared otherwise; updated_at is bumped. It returns
+// the topic with its thread's session id.
 func (s *Store) SetTopicStatus(ctx context.Context, id, status string) (*Topic, error) {
 	st, ok := NormalizeTopicStatus(status)
 	if !ok {
@@ -556,26 +534,6 @@ func (s *Store) TopicMessages(ctx context.Context, threadID string, ids []string
 			m.Text = words
 		}
 		out = append(out, m)
-	}
-	return out, rows.Err()
-}
-
-// ThreadsWithTopicStatus lists the live (not archived) threads of a session that have a topic with
-// the given status.
-func (s *Store) ThreadsWithTopicStatus(ctx context.Context, sessionID, status string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT tp.thread_id FROM topics tp JOIN threads t ON t.id=tp.thread_id
-	  WHERE t.session_id=? AND t.archived_at IS NULL AND tp.status=?`, sessionID, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
 	}
 	return out, rows.Err()
 }
