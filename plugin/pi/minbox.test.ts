@@ -265,3 +265,55 @@ test('a heartbeat goes out with the loop (every 15 s) carrying state, version an
   assert.match(JSON.stringify(last.body.events), /api-error/)
   t.ext!.stop()
 })
+
+test('a bash call another extension blocked is reported with its thread; a later run clears it', async () => {
+  let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: deploy', body: 'go', new_thread: false, urgent: true }]
+  const t = setup({ pending: () => pending })
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
+  await settle()
+  pending = []
+  assert.equal(t.sent.length, 1, 'the message in thr_9 is delivered')
+  await t.handlers.get('agent_start')!({})
+  const start = t.handlers.get('tool_execution_start')!
+  const end = t.handlers.get('tool_execution_end')!
+  const text = (s: string) => ({ content: [{ type: 'text', text: s }] })
+  const reports = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands')
+  const ran = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands/ran')
+
+  // Blocked by another extension: ended in error, never ran (no durationMs).
+  await start({ toolCallId: 'c1', toolName: 'bash', args: { command: ' npm publish ' } })
+  await end({ toolCallId: 'c1', toolName: 'bash', isError: true, result: text('Blocked by permission-gate: publishing needs approval') })
+  await settle()
+  assert.equal(reports().length, 1)
+  assert.deepEqual([reports()[0].body.command, reports()[0].body.reason, reports()[0].body.thread_id], ['npm publish', 'Blocked by permission-gate: publishing needs approval', 'thr_9'])
+
+  // A command that ran and failed, an abort, bad arguments: not denials.
+  await start({ toolCallId: 'c2', toolName: 'bash', args: { command: 'false' } })
+  await end({ toolCallId: 'c2', toolName: 'bash', isError: true, durationMs: 3, result: text('exit code 1') })
+  await start({ toolCallId: 'c3', toolName: 'bash', args: { command: 'sleep 100' } })
+  await end({ toolCallId: 'c3', toolName: 'bash', isError: true, result: text('Operation aborted') })
+  // The extension's own refusal (a page opened on the host) is not reported either.
+  await t.handlers.get('tool_call')!({ toolCallId: 'c4', toolName: 'bash', input: { command: 'open https://example.com' } })
+  await start({ toolCallId: 'c4', toolName: 'bash', args: { command: 'open https://example.com' } })
+  await end({ toolCallId: 'c4', toolName: 'bash', isError: true, result: text('minbox: this would open the page on the host machine') })
+  await settle()
+  assert.equal(reports().length, 1)
+
+  // The denied command runs later (allowed this time): cleared once.
+  await start({ toolCallId: 'c5', toolName: 'bash', args: { command: 'npm publish' } })
+  await end({ toolCallId: 'c5', toolName: 'bash', isError: false, durationMs: 900, result: text('published') })
+  await start({ toolCallId: 'c6', toolName: 'bash', args: { command: 'npm publish' } })
+  await end({ toolCallId: 'c6', toolName: 'bash', isError: false, durationMs: 900, result: text('published') })
+  await settle()
+  assert.equal(ran().length, 1)
+  assert.deepEqual(ran()[0].body, { command: 'npm publish' })
+
+  // After the turn, a block has no thread (the server gives it the agent's next message's).
+  await t.handlers.get('agent_settled')!({})
+  await start({ toolCallId: 'c7', toolName: 'bash', args: { command: 'rm -rf dist' } })
+  await end({ toolCallId: 'c7', toolName: 'bash', isError: true, result: text('blocked') })
+  await settle()
+  assert.equal(reports().length, 2)
+  assert.equal(reports()[1].body.thread_id, undefined)
+  t.ext!.stop()
+})

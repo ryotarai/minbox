@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { asksPerson, replyNudgeText, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCRIPTION, sentText, threadText } from './text'
+import { claudeRanOk, claudeRefusal, piBlocked } from './denied'
+import { asksPerson,replyNudgeText, ATTACHMENTS_GUIDE, opensBrowser, SEND_DESCRIPTION, sentText, threadText } from './text'
 
 const SERVER_FILE = '/data/server.json'
 
@@ -636,3 +637,123 @@ for (const restart of [false, true]) {
     expect([...server.delivered]).toEqual(['msg_r1'])
   })
 }
+
+// ---- denied Bash commands (denied.ts) ----
+
+/** Claude Code's own wording of refused calls, as the model reads them (tool.call result fixtures). */
+const USER_REJECTED = {
+  isError: true,
+  result: undefined,
+  text: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+}
+const RULE_DENIED = { isError: true, result: undefined, text: 'Permission to use Bash with command git push origin main has been denied.' }
+const FAILED_RUN = { isError: true, result: undefined, text: 'Exit code 1\nrm: /etc/hosts: Permission denied' }
+
+test('claudeRefusal reads denials, not failed runs', () => {
+  expect(claudeRefusal(USER_REJECTED)).toContain("The user doesn't want to proceed")
+  expect(claudeRefusal({ ...USER_REJECTED, text: USER_REJECTED.text + ' To tell you how to proceed, the user said:\nuse make' })).not.toBe(null)
+  expect(claudeRefusal(RULE_DENIED)).toContain('has been denied')
+  expect(claudeRefusal({ isError: true, text: "Permission to use Bash has been denied because Claude Code is running in don't ask mode." })).not.toBe(null)
+  expect(claudeRefusal({ isError: true, text: 'Permission for this action has been denied. Reason: pushes to main' })).not.toBe(null)
+  expect(claudeRefusal({ deny: 'blocked by a plugin' })).toBe('blocked by a plugin')
+  expect(claudeRefusal(FAILED_RUN)).toBe(null)
+  expect(claudeRefusal({ isError: true, text: '[Request interrupted by user for tool use]' })).toBe(null)
+  expect(claudeRefusal({ result: { stdout: "The user doesn't want to proceed with this tool use" }, text: "The user doesn't want to proceed with this tool use" })).toBe(null)
+  expect(claudeRanOk({ result: { stdout: 'ok' }, text: 'ok' })).toBe(true)
+  expect(claudeRanOk(FAILED_RUN)).toBe(false)
+})
+
+test('piBlocked: a bash call blocked by an extension, not an abort or bad arguments', () => {
+  const end = (text: string, extra: object = {}) => ({ isError: true, result: { content: [{ type: 'text', text }] }, ...extra })
+  expect(piBlocked(end('Blocked by the permission extension'))).toBe('Blocked by the permission extension')
+  expect(piBlocked({ isError: true, result: { content: [] } })).toBe('Tool execution was blocked')
+  expect(piBlocked(end('exit 1', { durationMs: 12 }))).toBe(null) // it ran
+  expect(piBlocked(end('Operation aborted'))).toBe(null)
+  expect(piBlocked(end('Tool bash not found'))).toBe(null)
+  expect(piBlocked(end('Validation failed for tool "bash": command: must be string'))).toBe(null)
+  expect(piBlocked({ isError: false, result: { content: [] } })).toBe(null)
+})
+
+test('a Bash call the person rejected is reported with its thread; a later successful run clears it', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [REPLY])
+  let reject = true
+  on('tool.call', { tool: 'Bash' }, () => (reject ? USER_REJECTED : { result: { stdout: 'ok' }, text: 'ok' }) as any)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000) // the reply in thr_1 is delivered
+  await $.turn.start({ turnId: 't1', prompt: 'p' } as any)
+
+  const res: any = await $.tool.call({ tool: 'Bash', command: '  npm run deploy-a ' } as any)
+  expect(res.text).toContain("The user doesn't want to proceed") // passed on unchanged
+  const reports = () => server.calls.filter((c) => c.path === '/api/agent/denied-commands')
+  expect(reports().length).toBe(1)
+  expect(reports()[0]!.body.command).toBe('npm run deploy-a')
+  expect(reports()[0]!.body.thread_id).toBe('thr_1')
+  expect(reports()[0]!.body.reason).toContain("The user doesn't want to proceed")
+  expect(typeof reports()[0]!.body.at).toBe('string')
+
+  // A command never denied is not reported as ran.
+  reject = false
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as any)
+  expect(server.calls.some((c) => c.path === '/api/agent/denied-commands/ran')).toBe(false)
+  // The denied command runs later: cleared on the server, once.
+  await $.tool.call({ tool: 'Bash', command: 'npm run deploy-a' } as any)
+  await $.tool.call({ tool: 'Bash', command: 'npm run deploy-a' } as any)
+  const ran = server.calls.filter((c) => c.path === '/api/agent/denied-commands/ran')
+  expect(ran.length).toBe(1)
+  expect(ran[0]!.body).toEqual({ command: 'npm run deploy-a' })
+})
+
+test('a Bash command that only fails is not reported', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  on('tool.call', { tool: 'Bash' }, () => FAILED_RUN as any)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'rm /etc/hosts' } as any)
+  expect(server.calls.some((c) => c.path.startsWith('/api/agent/denied-commands'))).toBe(false)
+})
+
+test('a deny verdict of the permission check (a rule) is reported once, without a thread outside a delivered turn', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  let ran = false
+  on('tool.check', { tool: 'Bash' }, () => ({ decision: 'deny', rule: 'Bash(git push:*)', reason: 'a deny rule' }) as any)
+  on('tool.call', { tool: 'Bash' }, () => {
+    ran = true
+    return { result: { stdout: '' }, text: '' } as any
+  })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'git push origin main-b' } as any)
+  expect(ran).toBe(false)
+  const reports = server.calls.filter((c) => c.path === '/api/agent/denied-commands')
+  expect(reports.length).toBe(1)
+  expect(reports[0]!.body.command).toBe('git push origin main-b')
+  expect(reports[0]!.body.reason).toBe('denied by the rule Bash(git push:*)')
+  expect(reports[0]!.body.thread_id).toBe(undefined)
+})
+
+test("auto mode's classifier denial (PermissionDenied) is reported; other tools are not", async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  on('classic.PermissionDenied', () => ({}) as any) // the settings hooks beneath: none
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.classic.PermissionDenied({ tool_name: 'Bash', tool_input: { command: 'curl -X DELETE https://api.example.com/c' }, tool_use_id: 'tu_c1', reason: 'deletes remote data' } as any)
+  await $.classic.PermissionDenied({ tool_name: 'Edit', tool_input: { file_path: '/etc/hosts' }, tool_use_id: 'tu_c2', reason: 'outside the project' } as any)
+  const reports = server.calls.filter((c) => c.path === '/api/agent/denied-commands')
+  expect(reports.length).toBe(1)
+  expect(reports[0]!.body.command).toBe('curl -X DELETE https://api.example.com/c')
+  expect(reports[0]!.body.reason).toBe('deletes remote data')
+})
+
+test("minbox's own refusal of a browser-opening command is not reported", async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'open https://example.com/d' } as any)
+  expect(server.calls.some((c) => c.path.startsWith('/api/agent/denied-commands'))).toBe(false)
+})

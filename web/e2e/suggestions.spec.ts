@@ -8,11 +8,19 @@ import { createSession, expect, expectTerminal, test, typeInTerminal } from './f
 // (MINBOX_SUGGEST_COMMAND); it always asks: "How should it continue? (n)" (single: Go ahead / Wait
 // for me), "What should it check?" (multi: Tests / Docs / Lint), "Anything else to tell it?" (free text).
 
-async function seed(page: Page, dir: string, say = 'Finished the migration') {
+/** A session whose agent said `say`; with `denied`, its integration then reports that Bash command as
+ *  denied (fake-claude's `denied`, as the mod does) and the agent says so in a second message. */
+async function seed(page: Page, dir: string, say = 'Finished the migration', denied?: string) {
   await createSession(page, dir, 'sg')
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, `say ${say}`)
   await expectTerminal(page, /sent .*thr_/)
+  if (denied) {
+    await typeInTerminal(page, `denied ${denied}`)
+    await expectTerminal(page, /denied reported thr_/)
+    await typeInTerminal(page, 'say I could not run it. Should I continue?')
+    await expectTerminal(page, /denied reported thr_[\s\S]*sent in thr_/)
+  }
   await page.getByTestId('thread-row').first().click()
   await expect(page.getByTestId('thread-subject')).toBeVisible()
 }
@@ -164,9 +172,9 @@ test('the setting turns the questions off', async ({ page, minbox }) => {
   await expect(page.getByTestId('reply-box')).toBeVisible()
 })
 
-test('a denied command is offered as a one-tap !command', async ({ page, minbox }) => {
+test('a denied command the agent reported is offered as a one-tap !command; running it clears it', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await seed(page, minbox.dataDir, 'Running `echo hi-from-denied` was denied. Should I continue?')
+  await seed(page, minbox.dataDir, 'Trying the deploy.', 'echo hi-from-denied')
   const chip = page.getByTestId('reply-command')
   await expect(chip).toContainText('!echo hi-from-denied')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
@@ -179,22 +187,32 @@ test('a denied command is offered as a one-tap !command', async ({ page, minbox 
   const block = page.locator('[data-testid="message"][data-kind="command"]')
   await expect(block).toHaveCount(1)
   await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
+  // Run, it is no longer offered.
+  const threads: { id: string }[] = await (await fetch(minbox.url + '/api/threads')).json()
+  const sug = await (await fetch(`${minbox.url}/api/threads/${threads[0].id}/suggestions`)).json()
+  expect(sug.command).toBeUndefined()
 })
 
-test('a path in inline code, with `deny` only in code, is not offered as a command', async ({ page, minbox }) => {
+test('a message that only talks about denied commands offers no command', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await seed(
-    page,
-    minbox.dataDir,
-    '了解です。Pi extension（TypeScript、`extensions/auto-permission/`）として実装を始めました。\n\n- `allow` / `deny` / `ask` を判定します\n- ログは `~/.okaka/state/logs/` に残します\n\n違っていたら言ってください。',
-  )
+  await seed(page, minbox.dataDir, 'Running `echo hi-from-denied` was denied. Please run `make lint` yourself.')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
   await expect(page.getByTestId('reply-command')).toHaveCount(0)
 })
 
+test('dismissing the help also drops the denied command', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox.dataDir, 'Trying the deploy.', 'echo dismissed-one')
+  await expect(page.getByTestId('reply-command')).toContainText('!echo dismissed-one')
+  await page.getByTestId('reply-qa-dismiss').click()
+  await expect(page.getByTestId('reply-command')).toHaveCount(0)
+  const threads: { id: string }[] = await (await fetch(minbox.url + '/api/threads')).json()
+  await expect.poll(async () => (await (await fetch(`${minbox.url}/api/threads/${threads[0].id}/suggestions`)).json()).command).toBeUndefined()
+})
+
 test('a !command sent from the box goes alone, without the answers', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await seed(page, minbox.dataDir, 'Running `echo hi-from-denied` was denied. Should I continue?')
+  await seed(page, minbox.dataDir, 'Trying the deploy.', 'echo hi-from-denied')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
   await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
   await page.getByTestId('reply-command-edit').click()

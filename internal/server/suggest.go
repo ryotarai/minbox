@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,7 @@ import (
 const (
 	suggestMaxQuestions = 8
 	suggestMaxOptions   = 5
-	suggestMaxLen       = 200  // runes per question text and per command
+	suggestMaxLen       = 200  // runes per question text
 	suggestLabelLen     = 80   // runes per option label
 	suggestDescLen      = 160  // runes per option description
 	suggestMsgCount     = 12   // messages of the thread in the prompt
@@ -50,8 +49,7 @@ const suggestSchema = `{"type":"object","properties":{` +
 	`"options":{"type":"array","minItems":0,"maxItems":5,"items":{"type":"object","properties":{` +
 	`"label":{"type":"string","maxLength":80},"description":{"type":"string","maxLength":160}},` +
 	`"required":["label"],"additionalProperties":false}}},` +
-	`"required":["question","kind","options"],"additionalProperties":false}},` +
-	`"command":{"type":"string","maxLength":200}},` +
+	`"required":["question","kind","options"],"additionalProperties":false}}},` +
 	`"required":["questions"],"additionalProperties":false}`
 
 // ReplyOption is one answer the person can pick.
@@ -71,13 +69,12 @@ type ReplyQuestion struct {
 // replyHelp is one helper run's result (what is cached).
 type replyHelp struct {
 	Questions []ReplyQuestion
-	Command   string // "!command" the person may run themselves, or ""
 }
 
 // SuggestResult is the endpoint's answer.
 type SuggestResult struct {
 	Questions []ReplyQuestion `json:"questions"`
-	Command   string          `json:"command,omitempty"` // "!command": a command the agent was denied, to run yourself
+	Command   string          `json:"command,omitempty"` // "!command": a shell command the agent tried and was denied (denied.go), to run yourself
 	Reason    string          `json:"reason,omitempty"`  // not_needed | disabled | no_agent (no coding agent is installed)
 	Error     string          `json:"error,omitempty"`
 }
@@ -239,117 +236,8 @@ func buildSuggestPrompt(th *store.Thread) string {
 		"Write questions and options in the language the PERSON used above (if they wrote nothing, the agent's language). " +
 		"If the agent asked a question with options, ask it with those options. " +
 		"If the agent reports completion, ask about the next step (a concrete follow-up, a check, a detail to request). " +
-		"Never ask about thanks, praise, greetings or acknowledgements, and do not ask what the agent already knows. " +
-		"If the agent's last message says a command it wanted to run was denied or rejected and quotes that command, set command to exactly that command " +
-		"(the person can then run it themselves); otherwise leave command out. " +
-		"Never set command to a file or directory path, a lone word or name quoted in the message, or a command the agent did not say was denied: " +
-		"a message that only mentions code, paths or settings (such as allow / deny / ask) has no command.\n")
+		"Never ask about thanks, praise, greetings or acknowledgements, and do not ask what the agent already knows.\n")
 	return b.String()
-}
-
-// ---- denied commands ----
-
-var deniedRe = regexp.MustCompile(`(?i)\b(denied|deny|denies|rejected|reject|declined|refused|not allowed|not approved|disallowed)\b|拒否|許可されな|承認されな|却下`)
-var fencedRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\\n(.*?)\\n?```")
-var inlineCodeRe = regexp.MustCompile("`([^`\\n]{2,})`")
-
-// deniedCommandSuggestion: the command the agent's message says was denied, as "!command" for the
-// composer, or "". It needs a denial word in the prose (a word inside code, such as `deny` in a list
-// of permission modes, does not count) and a quoted command: the first one-line code block, else the
-// first inline code span, that reads as a shell command (a bare path or a lone name does not). A
-// command that does not fit is not offered cut.
-func deniedCommandSuggestion(body string) string {
-	if !deniedRe.MatchString(withoutCode(body)) {
-		return ""
-	}
-	var cands []string
-	for _, m := range fencedRe.FindAllStringSubmatch(body, -1) {
-		cands = append(cands, m[1])
-	}
-	for _, m := range inlineCodeRe.FindAllStringSubmatch(withoutFenced(body), -1) {
-		cands = append(cands, m[1])
-	}
-	for _, c := range cands {
-		if cmd := bangCommand(c); cmd != "" {
-			return cmd
-		}
-	}
-	return ""
-}
-
-// withoutFenced is body with its fenced code blocks taken out; withoutCode also takes out inline code.
-func withoutFenced(body string) string { return fencedRe.ReplaceAllString(body, " ") }
-func withoutCode(body string) string   { return inlineCodeRe.ReplaceAllString(withoutFenced(body), " ") }
-
-// bangCommand: "!command" for a single-line command (a leading "$ " or "!" dropped), or "" when it is
-// empty, spans lines, does not fit in suggestMaxLen or does not read as a shell command.
-func bangCommand(cmd string) string {
-	cmd = strings.TrimSpace(cmd)
-	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "!"))
-	cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
-	if cmd == "" || strings.ContainsAny(cmd, "\r\n") || utf8.RuneCountInString(cmd)+1 > suggestMaxLen || !looksLikeCommand(cmd) {
-		return ""
-	}
-	return "!" + cmd
-}
-
-var (
-	envAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=\S*$`)
-	execNameRe  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]*$`)
-	execPathRe  = regexp.MustCompile(`^(\./|\.\./|/|~/)\S*[^/\s]$`)
-)
-
-// loneCommands are the commands taken as one when they stand alone, without arguments: any other lone
-// word, such as `allow` or `extension_ui_request`, is more likely a name the agent mentioned.
-var loneCommands = map[string]bool{
-	"make": true, "ls": true, "pwd": true, "whoami": true, "date": true, "env": true, "top": true,
-	"htop": true, "uptime": true, "id": true, "df": true, "ps": true, "history": true, "reboot": true,
-}
-
-// looksLikeCommand: cmd reads as a shell command to run. Its first word (after any VAR=value) is an
-// executable: a plain name, or a path such as ./run.sh or /usr/bin/env that is not a directory (no
-// trailing "/"); a relative path such as dir/sub/ is not. A command of one word must be a ./script or
-// a known argument-less command, so a bare path (extensions/auto-permission/, ~/.okaka/state/logs/,
-// /etc/hosts) or a lone identifier is not one.
-func looksLikeCommand(cmd string) bool {
-	words := strings.Fields(cmd)
-	i := 0
-	for i < len(words)-1 && envAssignRe.MatchString(words[i]) {
-		i++
-	}
-	exe, alone := words[i], len(words)-i == 1
-	switch {
-	case execPathRe.MatchString(exe):
-		return !alone || strings.HasPrefix(exe, "./") || strings.HasPrefix(exe, "../")
-	case execNameRe.MatchString(exe):
-		return !alone || loneCommands[exe]
-	}
-	return false
-}
-
-// withDeniedCommand makes denied the command of the result and drops options that only repeat it
-// (and questions left without options by that).
-func withDeniedCommand(denied string, h replyHelp) replyHelp {
-	out := replyHelp{Command: denied, Questions: []ReplyQuestion{}}
-	same := func(s string) bool {
-		s = strings.TrimSpace(s)
-		return strings.EqualFold(s, denied) || strings.EqualFold("!"+s, denied)
-	}
-	for _, q := range h.Questions {
-		had := len(q.Options) > 0
-		opts := []ReplyOption{}
-		for _, o := range q.Options {
-			if !same(o.Label) {
-				opts = append(opts, o)
-			}
-		}
-		if had && len(opts) == 0 {
-			continue
-		}
-		q.Options = opts
-		out.Questions = append(out.Questions, q)
-	}
-	return out
 }
 
 // ---- result parsing ----
@@ -372,7 +260,6 @@ func parseSuggestions(out []byte) (replyHelp, error) {
 	}
 	var body struct {
 		Questions []json.RawMessage `json:"questions"`
-		Command   any               `json:"command"`
 	}
 	raw := []byte(env.StructuredOutput)
 	if len(raw) == 0 || string(raw) == "null" {
@@ -382,9 +269,6 @@ func parseSuggestions(out []byte) (replyHelp, error) {
 		return replyHelp{}, errors.New("claude's answer was not the expected JSON")
 	}
 	res := replyHelp{Questions: []ReplyQuestion{}}
-	if c, ok := body.Command.(string); ok {
-		res.Command = bangCommand(c)
-	}
 	seenQ := map[string]bool{}
 	for _, rq := range body.Questions {
 		var q struct {
@@ -575,19 +459,24 @@ func runHelperEnv(ctx context.Context, name string, argv, env []string, prompt s
 	return out.Bytes(), nil
 }
 
-// GET /api/threads/{id}/suggestions
+// GET /api/threads/{id}/suggestions: the helper's questions, and the latest shell command the agent
+// tried in this thread and was denied (reported by its integration, denied.go) as "!command". The
+// command never comes from the helper or the message text; it rides every answer, also when the
+// questions are off, not needed or failed.
 func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
-	empty := func(res SuggestResult) {
-		if res.Questions == nil {
-			res.Questions = []ReplyQuestion{}
-		}
-		writeJSON(w, 200, res)
-	}
 	id := r.PathValue("id")
 	th, err := s.store.GetThread(r.Context(), id)
 	if err != nil {
 		storeError(w, err)
 		return
+	}
+	command := s.denied.offer(id)
+	empty := func(res SuggestResult) {
+		if res.Questions == nil {
+			res.Questions = []ReplyQuestion{}
+		}
+		res.Command = command
+		writeJSON(w, 200, res)
 	}
 	st, err := s.settings(r.Context())
 	if err != nil {
@@ -607,14 +496,6 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), suggestWait)
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
-	res.Command = bangCommand(res.Command) // the helper's command only when it reads as one
-	// A command the person denied the agent: offered as "!command" without asking the helper.
-	if denied := deniedCommandSuggestion(th.Messages[n-1].Body); denied != "" {
-		if err != nil {
-			res, err = replyHelp{}, nil
-		}
-		res = withDeniedCommand(denied, res)
-	}
 	if err != nil {
 		if errors.Is(err, agent.ErrNoneInstalled) {
 			// No coding agent on this machine: the feature is off, not broken.
@@ -627,5 +508,5 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	if fresh {
 		s.hub.publish(Event{Type: "suggestions", SessionID: th.SessionID, ThreadID: id})
 	}
-	empty(SuggestResult{Questions: res.Questions, Command: res.Command})
+	empty(SuggestResult{Questions: res.Questions})
 }
