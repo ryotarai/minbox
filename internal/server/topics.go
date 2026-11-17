@@ -364,7 +364,9 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic, ag topicsAgent) stri
 	}
 	if manual {
 		b.WriteString("A topic marked \"moved by the PERSON by hand\" has the status the person chose on the board: a strong signal. " +
-			"Keep that status unless messages written after that time clearly show it is now in a different state.\n")
+			"Keep that status. Change it only when messages written after that time are about that topic and clearly show it is now in a different state " +
+			"(for a topic moved to done: only when new work or a new problem on it clearly appears in those messages); " +
+			"then include the ids of those newer messages in its message_ids. With no such newer message about it, keep the status the person chose.\n")
 	}
 	// The newest topicsMsgCount messages, in full, oldest first.
 	label := func(m store.Message) (string, string) {
@@ -441,7 +443,9 @@ const topicsStatusRules = "\nStatus rules (judge every topic again, current ones
 	"When unsure between \"waiting_on_you\" and \"done\", choose \"done\".\n" +
 	"- When the agent state now is idle, no topic can be \"in_progress\", unless the latest message clearly says work continues " +
 	"in the background (e.g. a subagent still running), and then only that specific topic.\n" +
-	"- When the thread status now is finished, the agent reported its work done: no topic is \"in_progress\" unless a later message clearly starts new work.\n"
+	"- When the thread status now is finished, the agent reported its work done: no topic is \"in_progress\" unless a later message clearly starts new work.\n" +
+	"- A current topic that is \"done\" stays \"done\" unless a message written after it was done is about it and clearly shows new work or a new problem on it; " +
+	"then include that message's id in its message_ids. No new message about it, no change.\n"
 
 // parseTopics reads the helper's answer (the envelope parseSuggestions reads): topics with a title
 // and a known status, deduplicated by title, lengths capped (and the count, only against a runaway
@@ -529,7 +533,7 @@ func parseTopics(out []byte) ([]store.TopicInput, error) {
 // ---- API ----
 
 // PATCH /api/topics/{id} {status}: the person moves a topic to another column by hand. The status
-// holds until the thread's next extraction, which is told about the move (see buildTopicsPrompt).
+// holds until an extraction finds new information about the topic (see store.ReplaceTopics).
 func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status string `json:"status"`

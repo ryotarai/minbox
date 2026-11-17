@@ -122,7 +122,7 @@ Topic (a task of the Tasks board; see "Topics"):
 ```
 { id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
   created_at, updated_at, done_at: string|null,
-  manual_status: ""|status, manual_at: string|null,   (moved by hand since the thread's last extraction; see "Topics")
+  manual_status: ""|status, manual_at: string|null,   (moved by hand, held until new information about it; see "Topics")
   detail: string,                       (a fuller summary, a few sentences, Markdown; "" until extracted)
   tasks: [{text, done: bool}],          (its steps, done as judged from the messages; [] when none)
   message_ids: [string],                (the thread's messages about it, oldest first, merged across extractions)
@@ -200,8 +200,11 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   with `Track the topics` (the e2e fake helper keys on it).
 - Store (`topics` table, cascades with the thread): replaced per thread on each run. A topic that continues a current one
   (the same `id`, else the same title ignoring case and spacing) keeps its id and `created_at`, and its `updated_at` when
-  nothing changed; `done_at` is set when it turns done. Current topics left out of the answer are deleted, except done
-  ones. A failed run (no JSON, an error) keeps the topics as they were. `detail` and `tasks` are replaced by the answer
+  nothing changed; `done_at` is set when it turns done (to the run's start). Current topics left out of the answer are
+  deleted, except done ones and ones moved by hand. No new information, no move: a done topic keeps `done` unless the
+  answer links it (`message_ids`) to a message written after its `done_at` that it was not linked to before; otherwise
+  the answer's other fields apply but the status stays done. So a re-run on idle / finished (no new message) never
+  reopens a done topic. A failed run (no JSON, an error) keeps the topics as they were. `detail` and `tasks` are replaced by the answer
   (a change bumps `updated_at`). `message_ids` are merged, not replaced (the helper sees only the newest 20 messages):
   the answer's ids are kept only when they are messages of the history it was shown, then added to the topic's stored
   ids; ids that are no longer messages of the thread are dropped; kept in the thread's order, at most the newest 200.
@@ -217,10 +220,12 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
 - Moving a card by hand: `PATCH /api/topics/{id}` `{status}` -> `200` Topic (`400` unknown status, `404` unknown topic).
   Sets the status, sets `done_at` when it turns done (kept when it already was) or clears it, bumps `updated_at`, records
   `manual_status` + `manual_at`, and publishes SSE `topics`. It does not start an extraction: the move holds until the
-  thread's next message. That extraction's prompt marks the topic "moved by the PERSON by hand to <status> at <time> UTC"
-  with an instruction to keep it unless later messages clearly show otherwise; its answer then becomes the status and the
-  marker is cleared. A run that started before the move (`manual_at` >= the run's start) keeps the manual status and its
-  marker for that topic (and does not delete it when left out).
+  thread's next message. Each extraction's prompt marks the topic "moved by the PERSON by hand to <status> at <time> UTC"
+  with an instruction to change it only when messages written after that time are about it and clearly show a different
+  state (and to list them in `message_ids`). The server enforces it: the manual status and its marker hold until an
+  answer gives another status AND links the topic to a message written after `manual_at` that it was not linked to
+  before; only then does the status change and the marker clear. A run that started before the move (`manual_at` >= the
+  run's start) always keeps it. A topic with a marker is not deleted when left out.
 - UI: drag a card to another column (desktop), or its menu (right-click, long press, the "…" button, Shift+F10: Move to);
   `⇧T` opens Tasks; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
   move it to In progress / Waiting on you / Done.

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -73,7 +74,9 @@ func TestTopicsRerunOnIdleAndFinished(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		prompts = append(prompts, p)
-		return []byte(`{"structured_output":{"topics":[{"title":"Search UI","summary":"s","status":"` + status + `"}]}}`), nil
+		// Every message shown is about the one topic (a done topic reopens only on a new one).
+		ids, _ := json.Marshal(promptMessageIDs(p))
+		return []byte(`{"structured_output":{"topics":[{"title":"Search UI","summary":"s","status":"` + status + `","message_ids":` + string(ids) + `}]}}`), nil
 	}
 	runs := func() int { mu.Lock(); defer mu.Unlock(); return len(prompts) }
 	last := func() string { mu.Lock(); defer mu.Unlock(); return prompts[len(prompts)-1] }

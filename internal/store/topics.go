@@ -15,9 +15,11 @@ import (
 // status, independent of the thread's status. They are replaced per thread on each extraction;
 // a topic that continues keeps its id (matched by id, else by title), so the board's cards stay put.
 //
-// The person can move a topic to another column by hand (SetTopicStatus): that status holds until
-// the thread's next extraction, which is told about the move (manual_status, manual_at) and whose
-// answer then replaces it; an extraction that started before the move keeps the move.
+// The person can move a topic to another column by hand (SetTopicStatus). Every extraction is told
+// about the move (manual_status, manual_at), and the status holds until there is new information
+// about the topic: an extraction may change it only when it links the topic to a message written
+// after the move that the topic was not linked to before (see ReplaceTopics). A done topic holds the
+// same way against messages older than its done_at: no new information, no move.
 
 const topicSchema = `
 CREATE TABLE IF NOT EXISTS topics (
@@ -91,7 +93,7 @@ type Topic struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	DoneAt    *time.Time `json:"done_at"`
-	// The person moved it to ManualStatus by hand at ManualAt ("" / nil: not since the last extraction).
+	// The person moved it to ManualStatus by hand at ManualAt ("" / nil: no move held); held until new information.
 	ManualStatus string     `json:"manual_status"`
 	ManualAt     *time.Time `json:"manual_at"`
 	// Detail: a fuller summary (a few sentences, Markdown). Tasks: its steps. MessageIDs: the
@@ -202,22 +204,42 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
-// threadMessageOrder: the ids of the thread's messages, each with its place in the thread.
-func threadMessageOrder(ctx context.Context, tx *sql.Tx, threadID string) (map[string]int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM messages WHERE thread_id=? ORDER BY created_at, rowid`, threadID)
+// threadMessageOrder: the ids of the thread's messages, each with its place in the thread, and
+// each one's created_at (ms).
+func threadMessageOrder(ctx context.Context, tx *sql.Tx, threadID string) (map[string]int, map[string]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, created_at FROM messages WHERE thread_id=? ORDER BY created_at, rowid`, threadID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	out := map[string]int{}
+	created := map[string]int64{}
 	for rows.Next() {
 		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+		var at int64
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, nil, err
 		}
 		out[id] = len(out)
+		created[id] = at
 	}
-	return out, rows.Err()
+	return out, created, rows.Err()
+}
+
+// newInfo: whether ids (an extraction's related messages of a topic) name a message of the thread
+// written after since (ms) that the topic was not linked to before (old): something the status the
+// topic holds since then did not take into account.
+func newInfo(created map[string]int64, old, ids []string, since int64) bool {
+	had := map[string]bool{}
+	for _, id := range old {
+		had[id] = true
+	}
+	for _, id := range ids {
+		if at, ok := created[id]; ok && at > since && !had[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // ThreadTopics lists a thread's topics in their order.
@@ -248,9 +270,15 @@ func topicKey(title string) string {
 // topics left out are deleted, except done ones: they stay (the board shows recent done work). It
 // reports whether anything changed.
 //
-// started is when the extraction began (zero: now). A topic the person moved by hand at or after
-// started keeps that status and its manual marker (the extraction did not know of the move), and is
-// not deleted when left out; every other manual marker is cleared: the answer took it into account.
+// started is when the extraction began (zero: now); a topic it turns done is done since then.
+//
+// No new information, no move: a topic the person moved by hand (manual marker) keeps that status
+// and its marker unless the answer gives it another status AND links it to new information (a
+// message of the thread written after the move that the topic was not linked to before: newInfo);
+// only then does the status change and the marker go. A move made at or after started always holds
+// (the extraction did not know of it). A done topic without a marker likewise stays done unless the
+// answer links it to a new message written after its done_at. A topic with a manual marker is not
+// deleted when left out (nor is a done one).
 func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicInput, started time.Time) (bool, error) {
 	cur, err := s.ThreadTopics(ctx, threadID)
 	if err != nil {
@@ -275,7 +303,7 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 		return false, err
 	}
 	defer tx.Rollback()
-	order, err := threadMessageOrder(ctx, tx, threadID)
+	order, created, err := threadMessageOrder(ctx, tx, threadID)
 	if err != nil {
 		return false, err
 	}
@@ -301,7 +329,7 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 		if old == nil {
 			var done any
 			if status == TopicDone {
-				done = ms(now)
+				done = ms(started)
 			}
 			id := NewID("tpc")
 			if _, err := tx.ExecContext(ctx, `INSERT INTO topics(`+topicCols+`) VALUES(?,?,?,?,?,?,?,?,?,'',NULL,?,?,?)`,
@@ -314,9 +342,17 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 			continue
 		}
 		kept[old.ID] = true
+		// The status holds without new information (see the doc comment).
 		manualStatus, manualAt := "", any(nil)
-		if fresh(old) {
-			status, manualStatus, manualAt = old.Status, old.ManualStatus, ms(*old.ManualAt)
+		switch {
+		case old.ManualStatus != "" && old.ManualAt != nil:
+			if fresh(old) || status == old.Status || !newInfo(created, old.MessageIDs, t.MessageIDs, ms(*old.ManualAt)) {
+				status, manualStatus, manualAt = old.Status, old.ManualStatus, ms(*old.ManualAt)
+			}
+		case old.Status == TopicDone && status != TopicDone && old.DoneAt != nil:
+			if !newInfo(created, old.MessageIDs, t.MessageIDs, ms(*old.DoneAt)) {
+				status = old.Status
+			}
 		}
 		msgs := mergeMessageIDs(order, old.MessageIDs, t.MessageIDs)
 		// More related messages alone are no change of the topic (updated_at stays).
@@ -334,7 +370,7 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 		case status == TopicDone && old.Status == TopicDone && old.DoneAt != nil:
 			done = ms(*old.DoneAt)
 		case status == TopicDone:
-			done = ms(now)
+			done = ms(started)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE topics SET title=?, summary=?, status=?, position=?, updated_at=?, done_at=?, manual_status=?, manual_at=?, detail=?, tasks=?, message_ids=? WHERE id=?`,
 			title, summary, status, pos, updated, done, manualStatus, manualAt, detail, jsonText(tasks), jsonText(msgs), old.ID); err != nil {
@@ -348,13 +384,9 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 		if kept[t.ID] {
 			continue
 		}
-		if t.Status == TopicDone || fresh(t) {
-			manualStatus, manualAt := "", any(nil)
-			if fresh(t) {
-				manualStatus, manualAt = t.ManualStatus, ms(*t.ManualAt)
-			}
-			if t.Position != pos || t.ManualStatus != manualStatus {
-				if _, err := tx.ExecContext(ctx, `UPDATE topics SET position=?, manual_status=?, manual_at=? WHERE id=?`, pos, manualStatus, manualAt, t.ID); err != nil {
+		if t.Status == TopicDone || (t.ManualStatus != "" && t.ManualAt != nil) {
+			if t.Position != pos {
+				if _, err := tx.ExecContext(ctx, `UPDATE topics SET position=? WHERE id=?`, pos, t.ID); err != nil {
 					return false, err
 				}
 			}
@@ -376,7 +408,7 @@ func (s *Store) ReplaceTopics(ctx context.Context, threadID string, in []TopicIn
 func (s *Store) Now() time.Time { return s.now() }
 
 // SetTopicStatus moves a topic to status by hand (the person dragged its card): the status holds
-// until the thread's next extraction, which is told about the move. done_at is set when it turns
+// until an extraction finds new information about the topic (see ReplaceTopics). done_at is set when it turns
 // done (kept when it already was) and cleared otherwise; updated_at is bumped. It returns the topic
 // with its thread's session id.
 func (s *Store) SetTopicStatus(ctx context.Context, id, status string) (*Topic, error) {
