@@ -199,6 +199,8 @@ type Thread struct {
 	MarkedReadAt *time.Time `json:"marked_read_at"`
 	// Status: working | need_action | finished (stored).
 	Status string `json:"status"`
+	// Kind: ThreadStream (v3: the session's one conversation) or "" (an older thread, a segment of it).
+	Kind string `json:"kind"`
 	// Derived.
 	Unread          int        `json:"unread"`
 	OpenQuestions   int        `json:"open_questions"`
@@ -255,6 +257,11 @@ type Message struct {
 	Closed map[string]string `json:"closed,omitempty"`
 	// Command: the run of a "!" message (kind "command").
 	Command *Command `json:"command,omitempty"`
+	// v3: the agent's decision about the person's messages its reply answered (DecisionExisting,
+	// DecisionCreated, DecisionNone, DecisionMoved), the task it names, and those messages (TurnOf).
+	Decision     string   `json:"decision,omitempty"`
+	DecisionTask string   `json:"decision_task,omitempty"`
+	TurnOf       []string `json:"turn_of,omitempty"`
 
 	claimOwner string
 }
@@ -455,6 +462,10 @@ var addedColumns = []struct{ table, column, def string }{
 	{"messages", "kind", "TEXT NOT NULL DEFAULT 'message'"},
 	{"messages", "urgent", "INTEGER NOT NULL DEFAULT 0"},
 	{"messages", "annotations", "TEXT NOT NULL DEFAULT '[]'"},
+	{"messages", "decision", "TEXT NOT NULL DEFAULT ''"},      // v3: see Message.Decision
+	{"messages", "decision_task", "TEXT NOT NULL DEFAULT ''"}, // v3
+	{"messages", "turn_of", "TEXT NOT NULL DEFAULT '[]'"},     // v3
+	{"threads", "kind", "TEXT NOT NULL DEFAULT ''"},           // v3: 'stream' (one per session) or '' (an older thread: a segment of the stream)
 	{"attachments", "type", "TEXT NOT NULL DEFAULT ''"},
 	{"attachments", "author", "TEXT NOT NULL DEFAULT 'agent'"},
 	{"attachments", "named_path", "TEXT NOT NULL DEFAULT ''"},
@@ -523,6 +534,12 @@ func migrate(db *sql.DB) error {
 	}
 	if err := migrateThreadStatus(context.Background(), db); err != nil {
 		return fmt.Errorf("thread status: %w", err)
+	}
+	if _, err := db.Exec(taskSchema); err != nil {
+		return fmt.Errorf("tasks: %w", err)
+	}
+	if err := migrateV3(context.Background(), db); err != nil {
+		return fmt.Errorf("v3: %w", err)
 	}
 	// Hosts added with a shared token (before pairing) must be paired again.
 	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
@@ -974,14 +991,14 @@ func (s *Store) AddMessage(ctx context.Context, threadID string, m NewMessage) (
 	return msg, nil
 }
 
-const messageCols = `id, thread_id, author, body, words, questions, answers, answers_for, created_at, read_at, claimed_at, claim_owner, delivered_at, kind, urgent, annotations`
+const messageCols = `id, thread_id, author, body, words, questions, answers, answers_for, created_at, read_at, claimed_at, claim_owner, delivered_at, kind, urgent, annotations, decision, decision_task, turn_of`
 
 func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	var m Message
-	var qs, as, ann string
+	var qs, as, ann, turnOf string
 	var created int64
 	var read, claimed, delivered sql.NullInt64
-	if err := row.Scan(&m.ID, &m.ThreadID, &m.Author, &m.Body, &m.Words, &qs, &as, &m.AnswersFor, &created, &read, &claimed, &m.claimOwner, &delivered, &m.Kind, &m.Urgent, &ann); err != nil {
+	if err := row.Scan(&m.ID, &m.ThreadID, &m.Author, &m.Body, &m.Words, &qs, &as, &m.AnswersFor, &created, &read, &claimed, &m.claimOwner, &delivered, &m.Kind, &m.Urgent, &ann, &m.Decision, &m.DecisionTask, &turnOf); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -990,6 +1007,10 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	_ = json.Unmarshal([]byte(qs), &m.Questions)
 	_ = json.Unmarshal([]byte(as), &m.Answers)
 	_ = json.Unmarshal([]byte(ann), &m.Annotations)
+	_ = json.Unmarshal([]byte(turnOf), &m.TurnOf)
+	if len(m.TurnOf) == 0 {
+		m.TurnOf = nil
+	}
 	if m.Annotations == nil {
 		m.Annotations = []Annotation{}
 	}
@@ -1008,7 +1029,7 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 
 func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]Thread, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.session_id, t.subject, t.created_at, t.updated_at, s.status,
-	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at, COALESCE(s.project_id,''), COALESCE(p.name,''), COALESCE(t.status,'')
+	  t.name, t.archived_at, t.pinned_at, t.snoozed_until, t.marked_read_at, COALESCE(s.project_id,''), COALESCE(p.name,''), COALESCE(t.status,''), t.kind
 	  FROM threads t JOIN sessions s ON s.id=t.session_id LEFT JOIN projects p ON p.id=s.project_id WHERE `+where+` ORDER BY t.updated_at DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -1020,7 +1041,7 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 		var created, updated int64
 		var st string
 		var archived, pinned, snoozed, marked sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked, &t.ProjectID, &t.ProjectName, &t.Status); err != nil {
+		if err := rows.Scan(&t.ID, &t.SessionID, &t.Subject, &created, &updated, &st, &t.Name, &archived, &pinned, &snoozed, &marked, &t.ProjectID, &t.ProjectName, &t.Status, &t.Kind); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -1152,7 +1173,8 @@ func derive(t *Thread, sessionStatus string, now time.Time) {
 			switch {
 			case replaced[normPrompt(q.Prompt)] && q.Replaces == "":
 				reason = ClosedReplaced
-			case i != lastAgent:
+			case i != lastAgent && t.Kind != ThreadStream:
+				// In a stream an agent talks about several tasks: a later message does not close a question.
 				reason = ClosedMovedOn
 			case markedRead:
 				reason = ClosedMarkedRead
@@ -1436,6 +1458,9 @@ type PendingDelivery struct {
 	NewThread bool   `json:"new_thread"` // the person started this thread
 	// The agent message the person answered (the latest one before this message).
 	InReplyTo *Message `json:"in_reply_to,omitempty"`
+	// v3: the message's tasks, and whether it is in the session's stream (else an older thread).
+	Tasks  []Tag `json:"tasks,omitempty"`
+	Stream bool  `json:"stream,omitempty"`
 }
 
 // PendingForSession lists the person's undelivered messages of the session,

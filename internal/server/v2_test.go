@@ -47,7 +47,7 @@ func TestAttachmentsAndReview(t *testing.T) {
 		t.Fatalf("attachment result = %v", a0)
 	}
 	_, th, _ := e.do("GET", "/api/threads/"+sent["thread_id"].(string), nil, nil)
-	if th["name"] != "plan-tag" || th["attachment_count"].(float64) != 2 {
+	if th["kind"] != "stream" || th["attachment_count"].(float64) != 2 {
 		t.Fatalf("thread = %v", th)
 	}
 	_, att, _ := e.do("GET", "/api/attachments/"+ids[0].(string), nil, nil)

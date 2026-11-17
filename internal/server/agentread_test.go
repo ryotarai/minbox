@@ -31,8 +31,17 @@ func (e *env) sessionIn(sub, name string) *store.Session {
 	return sess
 }
 
+// send posts an agent message; without threadID it first makes an older-style thread (a segment
+// of the session's stream, as every thread was before v3) and posts into it.
 func (e *env) send(sess *store.Session, threadID, subject, body, status string) string {
 	e.t.Helper()
+	if threadID == "" {
+		id, err := e.st.NewSegmentThread(context.Background(), sess.ID, subject)
+		if err != nil {
+			e.t.Fatal(err)
+		}
+		threadID = id
+	}
 	m := map[string]string{"body": body, "thread_title": subject, "status": status}
 	if threadID != "" {
 		m["thread_id"] = threadID

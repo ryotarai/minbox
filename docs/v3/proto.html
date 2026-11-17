@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>minbox Streams Prototype</title>
+<style>
+:root {
+  --bg:#f3f3f5; --surface:#ffffff; --card:#fbfbfc; --sunken:#f5f5f7; --rowsel:#ececf1; --chip:#ececf0; --key:#e4e4e9;
+  --line:#e4e4e9; --line2:#dadae0; --fg:#17171a; --fg2:#3a3a42; --body:#26262b; --muted:#55555f; --subtle:#676772; --faint:#9a9aa4;
+  --wait:#a35f00; --waitbg:#fdf1dc; --work:#2563d6; --ok:#16824e; --danger:#c2410c; --purple:#7c4dde; --track:#e4e4e9;
+  --accent:#f2b14a; --onaccent:#1a1204; --bubble:#eef3fd; --shadow:0 16px 40px rgba(20,20,30,.18);
+  --t0:#2563d6; --t1:#0f8a7a; --t2:#7c4dde; --t3:#a35f00; --t4:#c2410c; --t5:#3f7d20;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0b0b0d; --surface:#111114; --card:#16161a; --sunken:#0e0e11; --rowsel:#1f1f25; --chip:#1f1f24; --key:#2c2c33;
+    --line:#222227; --line2:#2c2c32; --fg:#ededf0; --fg2:#c4c4cc; --body:#dcdce0; --muted:#a6a6b0; --subtle:#8b8b95; --faint:#6b6b75;
+    --wait:#f2b14a; --waitbg:#2a2111; --work:#82aefc; --ok:#6fd6a0; --danger:#ff9a80; --purple:#b79cff; --track:#2c2c32; --bubble:#17202f;
+    --shadow:0 16px 40px rgba(0,0,0,.5);
+    --t0:#82aefc; --t1:#5fd0bf; --t2:#b79cff; --t3:#f2b14a; --t4:#ff9a80; --t5:#9bd67a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0b0b0d; --surface:#111114; --card:#16161a; --sunken:#0e0e11; --rowsel:#1f1f25; --chip:#1f1f24; --key:#2c2c33;
+  --line:#222227; --line2:#2c2c32; --fg:#ededf0; --fg2:#c4c4cc; --body:#dcdce0; --muted:#a6a6b0; --subtle:#8b8b95; --faint:#6b6b75;
+  --wait:#f2b14a; --waitbg:#2a2111; --work:#82aefc; --ok:#6fd6a0; --danger:#ff9a80; --purple:#b79cff; --track:#2c2c32; --bubble:#17202f;
+  --shadow:0 16px 40px rgba(0,0,0,.5);
+  --t0:#82aefc; --t1:#5fd0bf; --t2:#b79cff; --t3:#f2b14a; --t4:#ff9a80; --t5:#9bd67a;
+  color-scheme:dark;
+}
+* { box-sizing:border-box; }
+html, body { margin:0; height:100%; }
+body { background:var(--bg); color:var(--body); font:13px/1.45 ui-sans-serif,system-ui,-apple-system,'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif; }
+button { font:inherit; color:inherit; cursor:pointer; }
+input, textarea, select { font:inherit; color:var(--fg); background:var(--surface); }
+.mono { font-family:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace; }
+.app { display:flex; height:100vh; height:100dvh; }
+
+/* rail + sidebar */
+.rail { width:52px; flex:none; background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:10px 0; gap:8px; }
+.tile { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; font-weight:600; font-size:12px; color:var(--fg2); background:var(--chip); }
+.tile.sel { outline:2px solid var(--accent); outline-offset:1px; }
+.rail .grow { flex:1; }
+.iconbtn { width:32px; height:32px; border-radius:8px; border:0; background:transparent; color:var(--subtle); display:grid; place-items:center; font-size:15px; }
+.iconbtn:hover { background:var(--rowsel); color:var(--fg); }
+.sidebar { width:236px; flex:none; background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+.sb-item { display:flex; align-items:center; gap:9px; padding:7px 14px; color:var(--fg2); cursor:pointer; border:0; background:none; width:100%; text-align:left; }
+.sb-item:hover { background:var(--rowsel); }
+.sb-item.sel { background:var(--rowsel); color:var(--fg); font-weight:500; }
+.sb-item .cnt { margin-left:auto; }
+.badge { font-size:11px; border-radius:9px; padding:0 6px; line-height:17px; background:var(--chip); color:var(--muted); min-width:18px; text-align:center; }
+.badge.w { background:var(--accent); color:var(--onaccent); font-weight:600; }
+.badge.u { background:var(--work); color:#fff; }
+.sb-h { padding:14px 14px 4px; font-size:11px; letter-spacing:.08em; font-weight:600; color:var(--subtle); display:flex; }
+.sb-h span { margin-left:auto; color:var(--faint); letter-spacing:0; font-weight:500; }
+.agents { overflow:auto; flex:1; }
+.ag { padding:6px 14px; display:grid; grid-template-columns:10px 1fr auto; gap:1px 9px; align-items:center; cursor:pointer; }
+.ag:hover { background:var(--rowsel); }
+.ag.sel { background:var(--rowsel); }
+.ag .nm { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ag .nm small { color:var(--faint); font-size:11px; margin-left:4px; }
+.ag .doing { grid-column:2 / 4; color:var(--subtle); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sb-new { margin:8px 12px 12px; border:1px solid var(--line2); border-radius:8px; padding:6px 10px; color:var(--faint); font-size:12px; display:flex; background:var(--bg); cursor:pointer; text-align:left; }
+.sb-new .kbd { margin-left:auto; }
+.kbd { display:inline-block; min-width:16px; padding:0 4px; border-radius:4px; background:var(--key); color:var(--fg2); font-size:10.5px; text-align:center; line-height:16px; font-family:inherit; }
+.dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
+.d-wait { background:var(--wait); } .d-work { background:var(--work); } .d-block { background:var(--danger); } .d-idle, .d-done { background:var(--faint); }
+.live { animation:pulse 1.4s infinite; }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--work) 65%,transparent);} 70%{box-shadow:0 0 0 6px transparent;} 100%{box-shadow:0 0 0 0 transparent;} }
+
+/* main */
+.main { flex:1; min-width:0; display:flex; min-height:0; background:var(--bg); }
+.col { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.grow1 { flex:1; }
+.head { padding:12px 18px 10px; border-bottom:1px solid var(--line); background:var(--surface); }
+.head .r1 { display:flex; align-items:center; gap:10px; }
+.head h1, .head h2 { margin:0; font-size:16px; color:var(--fg); font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.head .r2 { display:flex; gap:7px; align-items:center; margin-top:7px; flex-wrap:wrap; color:var(--subtle); font-size:12px; }
+.head .sum b { color:var(--wait); }
+.scroll { overflow:auto; flex:1; min-height:0; }
+.btn { border:1px solid var(--line2); background:var(--surface); color:var(--fg2); border-radius:6px; padding:3px 10px; font-size:12px; }
+.btn:hover { background:var(--rowsel); }
+.btn.pri { background:var(--accent); border-color:var(--accent); color:var(--onaccent); font-weight:600; }
+.btn.sm { padding:1px 7px; font-size:11.5px; }
+.chip { font-size:12px; border-radius:6px; padding:1px 8px; background:var(--chip); color:var(--fg2); display:inline-flex; gap:6px; align-items:center; border:0; }
+.chip .lnk { color:var(--work); }
+select.chip { padding:1px 4px; }
+
+/* tags */
+.tag { display:inline-flex; align-items:center; gap:3px; font-size:11px; border-radius:10px; padding:0 8px; line-height:18px; border:1px solid color-mix(in srgb,var(--c) 45%,transparent); color:var(--c); background:color-mix(in srgb,var(--c) 9%,transparent); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.tag::before { content:"#"; opacity:.7; }
+.tag .x { display:none; margin-left:3px; opacity:.7; border:0; background:none; padding:0; color:inherit; font-size:11px; }
+.msg:hover .tag .x, .tag:focus-within .x { display:inline; }
+.tag.add { --c:var(--faint); border-style:dashed; background:transparent; }
+.tag.add::before { content:"+"; }
+.tag.flash { animation:flash 1.6s ease-out; }
+@keyframes flash { 0%{ transform:scale(1.35); box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 40%,transparent);} 100%{ transform:scale(1); box-shadow:none; } }
+
+/* board */
+.gh { display:flex; gap:6px; align-items:center; padding:14px 18px 5px; font-size:11px; letter-spacing:.08em; font-weight:600; color:var(--subtle); border-bottom:1px solid var(--line); }
+.gh .n { color:var(--faint); font-weight:500; }
+.gh.needs { color:var(--wait); } .gh.blocked { color:var(--danger); }
+.gh .r { margin-left:auto; color:var(--faint); font-weight:400; letter-spacing:0; cursor:pointer; }
+.group.dropping { background:color-mix(in srgb,var(--accent) 10%,transparent); }
+.empty { padding:10px 18px; color:var(--faint); font-size:12px; }
+.qc { margin:8px 18px; border:1px solid var(--line2); border-left:3px solid var(--wait); border-radius:8px; padding:8px 12px; background:var(--card); }
+.qc.focus { box-shadow:0 0 0 2px var(--accent); }
+.qc.untag { border-left-color:var(--faint); }
+.qc .q { color:var(--fg); }
+.qc .q b { color:var(--wait); }
+.qc .meta { display:flex; gap:6px; align-items:center; margin-top:6px; color:var(--subtle); font-size:11.5px; flex-wrap:wrap; }
+.qc .meta .sp { flex:1; }
+.qc.new { animation:newin .6s ease-out; }
+@keyframes newin { from { transform:translateY(-6px); opacity:0; } to { transform:none; opacity:1; } }
+.choices { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; align-items:center; }
+.choice { border:1px solid var(--line2); background:var(--surface); color:var(--fg2); border-radius:6px; padding:2px 9px; font-size:12px; display:flex; gap:5px; align-items:center; }
+.choice:hover { border-color:var(--wait); color:var(--fg); }
+.choice.rec { border-color:var(--wait); color:var(--fg); }
+.free { flex:1; min-width:140px; border:1px solid var(--line2); border-radius:6px; padding:2px 8px; font-size:12px; }
+.row { border-bottom:1px solid var(--line); }
+.row .line { display:grid; grid-template-columns:minmax(0,1fr) 190px 64px; gap:14px; padding:9px 18px; cursor:pointer; align-items:center; }
+.row:hover .line { background:var(--rowsel); }
+.row.focus .line { box-shadow:inset 3px 0 0 var(--accent); background:var(--rowsel); }
+.row.open { background:var(--card); }
+.row .ti { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:8px; align-items:center; }
+.row .ti .t { overflow:hidden; text-overflow:ellipsis; }
+.row .sub { display:flex; gap:8px; align-items:center; padding-left:16px; margin-top:4px; color:var(--subtle); font-size:12px; flex-wrap:wrap; }
+.row .ext { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row .age { text-align:right; color:var(--faint); font-size:12px; }
+.unread { width:6px; height:6px; border-radius:50%; background:var(--work); display:inline-block; flex:none; }
+.qmark { font-size:10.5px; color:var(--wait); border:1px solid var(--wait); border-radius:8px; padding:0 5px; line-height:15px; }
+.bar { display:flex; gap:2px; width:120px; height:5px; flex:none; }
+.bar i { flex:1; border-radius:2px; background:var(--track); }
+.bar i.ok { background:var(--ok); } .bar i.doing { background:var(--work); } .bar i.blk { background:var(--danger); } .bar i.wt { background:var(--wait); }
+.cnt2 { color:var(--subtle); font-size:11.5px; font-variant-numeric:tabular-nums; }
+.pr { color:var(--work); }
+.pill { font-size:10.5px; border-radius:4px; padding:0 5px; line-height:16px; background:var(--chip); color:var(--muted); }
+.pill.pend { color:var(--wait); } .pill.fail { color:var(--danger); } .pill.pass { color:var(--ok); }
+.detail { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; padding:2px 18px 14px 34px; }
+.sec { font-size:11px; letter-spacing:.08em; font-weight:600; color:var(--subtle); margin:12px 0 7px; display:flex; gap:8px; align-items:center; }
+.sec .x { margin-left:auto; letter-spacing:0; font-weight:500; color:var(--faint); }
+.report { background:var(--sunken); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px; }
+.tl { list-style:none; margin:0; padding:0; }
+.tl li { display:grid; grid-template-columns:10px 40px minmax(0,1fr); gap:8px; padding:2px 0; align-items:center; font-size:12px; }
+.tl .m { width:8px; height:8px; border-radius:50%; }
+.tl .tm { color:var(--faint); font-variant-numeric:tabular-nums; }
+.tl .tx { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* checklist */
+ul.steps { list-style:none; margin:0; padding:0; }
+ul.steps ul.steps { padding-left:22px; }
+.st { display:flex; gap:8px; align-items:center; padding:2px 0; cursor:pointer; }
+.st.done { color:var(--subtle); } .st.doing { color:var(--fg); font-weight:500; } .st.blk { color:var(--danger); }
+.ck { width:14px; height:14px; border-radius:50%; border:1.5px solid var(--faint); flex:none; display:grid; place-items:center; font-size:10px; }
+.st.done .ck { border-color:var(--ok); background:var(--ok); color:var(--surface); }
+.st.doing .ck { border-color:var(--work); background:linear-gradient(90deg, transparent 50%, var(--work) 50%); }
+.st.blk .ck { border-color:var(--danger); }
+.now { font-size:10.5px; color:var(--work); }
+
+/* conversation */
+.conv { padding:14px 18px; display:flex; flex-direction:column; gap:9px; }
+.msg { max-width:680px; position:relative; }
+.msg .w { font-size:12px; color:var(--subtle); margin-bottom:3px; display:flex; gap:8px; align-items:center; }
+.msg .w b { color:var(--fg2); font-weight:600; }
+.msg .src { font-size:11px; border-radius:4px; padding:0 5px; background:var(--chip); color:var(--muted); }
+.msg .bd { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.msg .tags { display:flex; gap:5px; margin-top:5px; flex-wrap:wrap; align-items:center; }
+.msg.me { align-self:flex-end; }
+.msg.me .w, .msg.me .tags { justify-content:flex-end; }
+.msg.me .bd { background:var(--bubble); border-color:transparent; }
+.msg.ctx { opacity:.55; }
+.msg.ctx .bd { background:transparent; border-style:dashed; }
+.msg.unr .bd { box-shadow:inset 3px 0 0 var(--work); }
+.msg.hl .bd { outline:2px solid var(--accent); }
+.gap { align-self:stretch; display:flex; align-items:center; gap:10px; color:var(--faint); font-size:12px; cursor:pointer; background:none; border:0; padding:0; }
+.gap::before, .gap::after { content:""; flex:1; height:1px; background:var(--line2); }
+.gap b { color:var(--work); font-weight:500; }
+.ev { display:flex; gap:8px; align-items:center; color:var(--subtle); font-size:12px; padding-left:4px; }
+.ev .m { width:8px; height:8px; border-radius:50%; flex:none; }
+.ev .tm { color:var(--faint); width:38px; font-variant-numeric:tabular-nums; }
+.qcard { border:1px solid var(--wait); background:var(--waitbg); border-radius:10px; padding:9px 12px; margin-top:6px; white-space:normal; }
+.qcard .q { color:var(--fg); font-weight:600; }
+.qcard.done { border-color:var(--line2); background:var(--sunken); }
+.qcard .ans { color:var(--ok); font-size:12px; margin-top:4px; }
+.note { font-size:11.5px; color:var(--subtle); margin-top:4px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.note .k { color:var(--faint); }
+.note button { border:0; background:none; padding:0; color:var(--work); font-size:11.5px; }
+.typing { color:var(--faint); font-size:12px; font-style:italic; }
+.composer { margin:0 18px 14px; border:1px solid var(--line2); background:var(--surface); border-radius:10px; padding:8px 12px; }
+.composer .to { display:flex; gap:7px; align-items:center; font-size:12px; color:var(--subtle); margin-bottom:5px; flex-wrap:wrap; }
+.composer textarea { width:100%; border:0; outline:0; resize:none; min-height:38px; background:transparent; }
+.composer .tb { display:flex; gap:10px; align-items:center; color:var(--faint); font-size:12px; }
+.composer .tb .sp { flex:1; }
+
+/* tag popup */
+.tagpop { position:absolute; z-index:20; margin-top:4px; width:260px; background:var(--surface); border:1px solid var(--line2); border-radius:8px; box-shadow:var(--shadow); padding:6px; }
+.msg.me .tagpop { right:0; }
+.tagpop input { width:100%; border:1px solid var(--line2); border-radius:6px; padding:4px 8px; outline:0; }
+.tagpop .opt { padding:4px 8px; border-radius:5px; cursor:pointer; display:flex; gap:6px; align-items:center; font-size:12.5px; }
+.tagpop .opt.sel, .tagpop .opt:hover { background:var(--rowsel); }
+
+/* side panel */
+.side { width:290px; flex:none; background:var(--surface); border-left:1px solid var(--line); overflow:auto; padding:4px 16px 16px; }
+.side .bar { width:auto; flex:1; }
+.ph-only { display:none; }
+dl.facts { display:grid; grid-template-columns:70px minmax(0,1fr); gap:5px 10px; margin:0; font-size:12px; }
+dl.facts dt { color:var(--subtle); } dl.facts dd { margin:0; overflow:hidden; text-overflow:ellipsis; }
+.mt { padding:7px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+.mt .a { display:flex; gap:7px; align-items:center; color:var(--fg); }
+.mt .b { display:flex; gap:7px; align-items:center; padding-left:15px; margin-top:4px; }
+
+/* search, agents (phone) */
+.search { padding:12px 18px; }
+.search input { width:100%; border:1px solid var(--line2); border-radius:8px; padding:8px 12px; font-size:14px; outline:0; }
+.res { padding:8px 18px; border-bottom:1px solid var(--line); cursor:pointer; }
+.res:hover { background:var(--rowsel); }
+.res .k { font-size:11px; color:var(--faint); }
+mark { background:color-mix(in srgb,var(--accent) 45%,transparent); color:inherit; border-radius:2px; }
+
+/* modal, help, sim */
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-start; justify-content:center; padding-top:12vh; z-index:50; }
+.dialog { width:min(560px, calc(100vw - 32px)); background:var(--surface); border:1px solid var(--line2); border-radius:12px; box-shadow:var(--shadow); padding:14px 16px; }
+.dialog h3 { margin:0 0 10px; font-size:15px; color:var(--fg); }
+.dialog .rowf { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; font-size:12.5px; color:var(--subtle); }
+.dialog textarea { width:100%; min-height:90px; border:1px solid var(--line2); border-radius:8px; padding:8px 10px; outline:0; resize:vertical; }
+.dialog input[type=text] { border:1px solid var(--line2); border-radius:6px; padding:4px 8px; flex:1; min-width:120px; outline:0; }
+.dialog .foot { display:flex; gap:8px; align-items:center; margin-top:10px; font-size:12px; color:var(--faint); }
+.dialog .foot .sp { flex:1; }
+.toggle { display:inline-flex; gap:6px; align-items:center; cursor:pointer; color:var(--fg2); }
+.help table { border-collapse:collapse; width:100%; font-size:12.5px; }
+.help td { padding:3px 6px; border-bottom:1px solid var(--line); }
+.help td:first-child { white-space:nowrap; width:120px; }
+.sim { position:fixed; left:62px; bottom:50px; z-index:40; background:var(--surface); border:1px solid var(--line2); border-radius:10px; box-shadow:var(--shadow); padding:6px 8px; display:flex; gap:6px; align-items:center; font-size:11.5px; color:var(--subtle); }
+.sim select { border:1px solid var(--line2); border-radius:5px; font-size:11.5px; }
+.toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:6px 14px; border-radius:8px; font-size:12.5px; z-index:60; }
+
+.tabs { display:none; }
+@media (max-width: 699px) {
+  .rail, .sidebar { display:none; }
+  .app { flex-direction:column; }
+  .main { flex-direction:column; overflow:auto; }
+  .main > .col { flex:none; min-height:auto; }
+  .main .scroll { overflow:visible; }
+  .side { width:auto; border-left:0; border-top:1px solid var(--line); overflow:visible; }
+  .row .line { grid-template-columns:minmax(0,1fr) 44px; }
+  .row .ext { display:none; }
+  .detail { grid-template-columns:1fr; padding-left:18px; }
+  .tabs { display:flex; border-top:1px solid var(--line); background:var(--surface); padding:4px 0 10px; flex:none; }
+  .tabs button { flex:1; border:0; background:none; font-size:11px; color:var(--subtle); display:flex; flex-direction:column; align-items:center; gap:1px; position:relative; }
+  .tabs button b { font-size:17px; font-weight:500; }
+  .tabs button.on { color:var(--fg); }
+  .tabs .badge { position:absolute; top:0; left:calc(50% + 6px); }
+  .sim { bottom:70px; right:8px; left:auto; }
+  .ph-only { display:inline-block; }
+  .head .hide-phone { display:none; }
+}
+</style>
+</head>
+<body>
+<div id="app" class="app">
+  <nav class="rail" aria-label="Projects">
+    <div class="tile" title="alerts">AL</div>
+    <div class="tile sel" title="api">AP</div>
+    <div class="tile" title="docs">DO</div>
+    <div class="grow"></div>
+    <button class="iconbtn" data-act="theme" title="Toggle theme">◐</button>
+    <button class="iconbtn" data-act="help" title="Keyboard (?)">?</button>
+  </nav>
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main" id="main"></main>
+  <nav class="tabs" id="tabs"></nav>
+</div>
+<div id="modal"></div>
+<div id="sim" class="sim"></div>
+<div id="toast"></div>
+
+<script>
+'use strict'
+/* =========================================================================
+   minbox prototype: agent streams + tagged tasks (design A).
+   Everything is in memory. A timer-driven fake agent loop changes it live.
+   ========================================================================= */
+
+// ---------- helpers ----------
+const $ = (s, el = document) => el.querySelector(s)
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const pick = (a) => a[Math.floor(Math.random() * a.length)]
+const chance = (p) => Math.random() < p
+const MIN = 60000
+const hhmm = (t) => new Date(t).toTimeString().slice(0, 5)
+function ago(t) {
+  const s = Math.max(0, (Date.now() - t) / 1000)
+  if (s < 45) return 'now'
+  const m = Math.round(s / 60); if (m < 60) return m + 'm'
+  const h = Math.round(m / 60); if (h < 24) return h + 'h'
+  return Math.round(h / 24) + 'd'
+}
+let seq = 100
+const uid = (p) => p + (++seq)
+
+// ---------- state ----------
+let S
+function seed() {
+  const now = Date.now()
+  const agents = [
+    { id: 'a1', name: 'api-main', kind: 'Claude', main: true, turn: false, title: 'Fixing the gauge window max', host: 'this Mac', branch: 'fix/gauge-window-max' },
+    { id: 'a2', name: 'api-sub-1', kind: 'Claude', main: false, turn: false, title: 'Wrote the regression test', host: 'this Mac', branch: 'fix/gauge-window-max' },
+    { id: 'a3', name: 'api-2', kind: 'Pi', main: false, turn: false, title: 'Planning the tenant split', host: 'this Mac', branch: 'tenant-split' },
+    { id: 'a4', name: 'api-3', kind: 'OpenCode', main: false, turn: false, title: 'Reviewing #7598', host: 'buildbox', branch: 'review-7598' },
+    { id: 'a5', name: 'docs-bot', kind: 'Claude', main: false, turn: false, title: 'Release notes', host: 'this Mac', branch: 'main' },
+  ]
+  const st = (text, done = false, sub) => ({ id: uid('s'), text, done, blocked: false, sub: sub || [] })
+  const tasks = [
+    { id: 'T1', keywords: ['gauge','pressure','window','sample','max','7612'], title: 'Fix the pressure gauge window max', summary: 'The gauge reports the last sample instead of the window max.', status: 'working', agents: ['a1', 'a2'], owner: 'a1', created: now - 58 * MIN,
+      steps: [st('Reproduce the wrong gauge value', true), st('Fix with TDD', false, [st('Write the failing test', true), st('Make the test pass')]), st('Check the dashboard query', true), st('Open the PR for review'), st('Canary on one host')],
+      pr: { label: 'service#7612', state: 'draft', ci: 'pending' }, linear: 'ENG-501', report: 'Failing test in place; fixing the window reset now.', events: [] },
+    { id: 'T2', keywords: ['threshold','thresholds','alert','alerts','dashboard','dashboards'], title: 'Alert thresholds per dashboard', summary: 'Decide how existing dashboards keep their threshold semantics.', status: 'working', agents: ['a1'], owner: 'a1', created: now - 9 * MIN,
+      steps: [st('Inventory dashboards using the gauge'), st('Migrate thresholds')], events: [] },
+    { id: 'T3', keywords: ['tenant','tenants','orders','migration','partition','backfill'], title: 'Split orders by tenant', summary: 'Partition the orders table by tenant id.', status: 'working', agents: ['a3'], owner: 'a3', created: now - 80 * MIN,
+      steps: [st('Draft the migration plan', true), st('Review with you'), st('Write the migration'), st('Backfill'), st('Switch reads')], events: [] },
+    { id: 'T4', keywords: ['7598','handlers','handler','endpoint','endpoints','middleware','review'], title: 'Review: split the endpoint handlers', summary: 'Second-pass review requested by Mina.', status: 'working', agents: ['a4'], owner: 'a4', created: now - 40 * MIN,
+      steps: [], pr: { label: 'service#7598', state: 'review requested', ci: 'pass' }, events: [] },
+    { id: 'T5', keywords: ['golang','1.25','toolchain','race','vendored','bump'], title: 'Bump Go to 1.25', summary: 'Go toolchain and vendored deps.', status: 'blocked', agents: ['a1'], owner: 'a1', created: now - 20 * 60 * MIN,
+      steps: [st('Bump go.mod', true), st('Update vendored deps', true), st('Fix vet warnings', true), Object.assign(st('CI green'), { blocked: true })],
+      pr: { label: 'service#7620', state: 'open', ci: 'failing' }, events: [] },
+    { id: 'T6', keywords: ['release','1.8','changelog'], title: 'Release notes 1.8', summary: '', status: 'done', agents: ['a5'], owner: 'a5', created: now - 5 * 60 * MIN, doneAt: now - 2 * 60 * MIN,
+      steps: [st('Collect merged PRs', true), st('Write notes', true)], events: [] },
+    { id: 'T7', keywords: ['meeting','minutes','knowledge'], title: 'Sync meeting notes', summary: '', status: 'done', agents: ['a5'], owner: 'a5', created: now - 7 * 60 * MIN, doneAt: now - 4 * 60 * MIN,
+      steps: [st('Fetch notes', true), st('Update the knowledge base', true)], events: [] },
+  ]
+  const ev = (task, mins, text, color) => tasks.find((t) => t.id === task).events.push({ t: now - mins * MIN, text, color })
+  ev('T1', 55, 'Task created by api-main · 7 steps', 'work'); ev('T1', 47, 'Reproduce the wrong gauge value → done', 'ok')
+  ev('T1', 30, 'Handed off “Write the failing test” to api-sub-1', 'purple'); ev('T1', 28, 'PR service#7612 opened (draft)', 'work')
+  ev('T1', 22, 'Check the dashboard query → done', 'ok'); ev('T1', 17, 'Write the failing test → done', 'ok')
+  ev('T2', 9, 'Task created by api-main', 'work'); ev('T3', 78, 'Task created by api-2', 'work'); ev('T3', 30, 'Draft the migration plan → done', 'ok')
+  ev('T4', 40, 'Task created by api-3', 'work'); ev('T5', 20 * 60, 'Task created by api-main', 'work'); ev('T5', 35, 'CI failing on race detector → blocked', 'danger')
+  ev('T6', 120, 'Done', 'ok'); ev('T7', 240, 'Done', 'ok')
+  const msgs = []
+  const m = (agent, mins, author, body, tags = [], extra = {}) => { const x = Object.assign({ id: uid('m'), agent, t: now - mins * MIN, author, body, tags: tags.slice(), read: author === 'me' }, extra); msgs.push(x); return x }
+  m('a1', 22 * 60, 'agent', 'Go 1.25 bump is pushed; CI is running. I will pick it up when it finishes.', ['T5'], { read: true })
+  m('a1', 58, 'me', 'The pressure gauge shows the wrong value under load. Find out why and fix it, small PR please.', ['T1'])
+  m('a1', 47, 'agent', 'Reproduced: the gauge reports the last sample, not the window max. I will have a subagent write the regression test while I trace the reset.', ['T1'], { read: true })
+  m('a1', 44, 'agent', 'Side note: the staging deploy took 14 minutes today, longer than usual.', [], { read: true })
+  m('a1', 42, 'me', 'Thanks. Not now. Also: which Slack channel do the alerts use today?')
+  m('a1', 40, 'agent', '#alerts-api today, but I am not sure that is right for the new thresholds.', [], { read: true,
+    q: { prompt: 'Which Slack channel should the new alerts go to?', choices: ['#alerts-api', '#oncall-api'], rec: 0, answer: null } })
+  m('a2', 30, 'agent', 'Picked up from api-main: writing the regression test for the gauge window.', ['T1'], { read: true })
+  m('a2', 17, 'agent', 'Regression test added in gauge_window_test.go; it fails on main as expected.', ['T1'])
+  m('a1', 35, 'agent', 'CI for the Go bump failed on the race detector, in a package unrelated to the gauge. I will look after the gauge fix.', ['T5'])
+  m('a1', 4, 'agent', 'The fix changes the threshold semantics for existing dashboards too.', ['T1', 'T2'], {
+    q: { prompt: 'Keep the old alert threshold for existing dashboards?', choices: ['Keep old, migrate later', 'Switch all now'], rec: 0, answer: null } })
+  m('a3', 80, 'me', 'Split the orders table by tenant. Plan first, I want to review it.', ['T3'])
+  m('a3', 22, 'agent', 'Plan drafted: 3 files (schema, backfill job, read switch).', ['T3'], {
+    q: { prompt: 'Review the migration plan (3 files)?', choices: ['Looks good, go ahead', 'Needs changes'], rec: 0, answer: null } })
+  m('a4', 40, 'agent', 'Starting the second-pass review of service#7598.', ['T4'], { read: true })
+  m('a4', 18, 'agent', 'Two handlers still share the auth middleware; leaving a comment.', ['T4'])
+  m('a5', 120, 'agent', 'Release notes 1.8 published.', ['T6'], { read: true })
+  m('a5', 240, 'agent', 'Meeting notes synced.', ['T7'], { read: true })
+  return {
+    agents, tasks, msgs,
+    ui: { focus: null, expanded: {}, ctx: {}, drafts: {}, to: {}, tagPop: null, modal: null, showDone: false, search: '', sel: 0, hl: null },
+    sim: { speed: 1, paused: false },
+  }
+}
+
+// ---------- derived ----------
+const agentById = (id) => S.agents.find((a) => a.id === id)
+const taskById = (id) => S.tasks.find((t) => t.id === id)
+const tagged = (tid) => S.msgs.filter((m) => m.tags.includes(tid)).sort((a, b) => a.t - b.t)
+const openQs = () => S.msgs.filter((m) => m.q && m.q.answer == null).sort((a, b) => a.t - b.t)
+const taskOpenQs = (tid) => openQs().filter((m) => m.tags.includes(tid))
+const unreadOf = (aid) => S.msgs.filter((m) => m.agent === aid && !m.read).length
+const taskUnread = (tid) => S.msgs.some((m) => m.tags.includes(tid) && !m.read)
+function leaves(t) { const out = []; t.steps.forEach((s) => (s.sub.length ? s.sub.forEach((x) => out.push(x)) : out.push(s))); return out }
+function current(t) { return leaves(t).find((s) => !s.done) }
+function lastActivity(t) { const ms = tagged(t.id); return Math.max(t.created, ...t.events.map((e) => e.t), ...ms.map((m) => m.t)) }
+function lastAgent(t) { const ms = tagged(t.id).filter((m) => m.author === 'agent'); return ms.length ? ms[ms.length - 1].agent : t.owner }
+function tagColor(tid) { const n = parseInt(tid.replace(/\D/g, ''), 10) || 0; return 'var(--t' + (n % 6) + ')' }
+function needsYouCount() { return openQs().length + S.tasks.filter((t) => t.status === 'needs_you' && !taskOpenQs(t.id).length).length }
+
+// ---------- route ----------
+function route() {
+  const h = location.hash.replace(/^#\/?/, '')
+  const [view, id] = h.split('/')
+  if (view === 'task' && taskById(id)) return { view: 'task', id }
+  if (view === 'agent' && agentById(id)) return { view: 'agent', id }
+  if (view === 'agents') return { view: 'agents' }
+  if (view === 'search') return { view: 'search' }
+  return { view: 'board' }
+}
+const go = (h) => { if (location.hash !== h) location.hash = h; else render() }
+
+// ---------- render pieces ----------
+function tagChip(tid, opts = {}) {
+  const t = taskById(tid); if (!t) return ''
+  const fl = opts.flash ? ` flash" style="--c:${tagColor(tid)};animation-delay:-${opts.flash}ms` : `" style="--c:${tagColor(tid)}`
+  const x = opts.msg ? `<button class="x" data-act="untag" data-msg="${opts.msg}" data-task="${tid}" title="Remove tag">✕</button>` : ''
+  return `<span class="tag${fl}" data-act="open-task" data-task="${tid}" title="${esc(t.title)}">${esc(short(t.title, opts.short || 26))}${x}</span>`
+}
+const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+function bar(t) {
+  const ls = leaves(t); if (!ls.length) return ''
+  const cur = current(t); const q = taskOpenQs(t.id).length || t.status === 'needs_you'
+  return `<div class="bar">${ls.map((s) => `<i class="${s.done ? 'ok' : s.blocked ? 'blk' : s === cur ? (q ? 'wt' : t.status === 'blocked' ? 'blk' : 'doing') : ''}"></i>`).join('')}</div><span class="cnt2">${ls.filter((s) => s.done).length}/${ls.length}</span>`
+}
+function prChip(t) {
+  if (!t.pr) return '<span style="color:var(--faint)">—</span>'
+  const ci = t.pr.ci === 'failing' ? '<span class="pill fail">CI failing</span>' : t.pr.ci === 'pending' ? '<span class="pill pend">CI pending</span>' : '<span class="pill pass">CI ✓</span>'
+  return `<span class="pr">${esc(t.pr.label)}</span> <span class="pill">${esc(t.pr.state)}</span> ${ci}`
+}
+function statusDot(t) {
+  const busy = t.agents.some((a) => agentById(a)?.turn && lastAgent(t) === a)
+  const c = taskOpenQs(t.id).length || t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : 'd-work'
+  return `<span class="dot ${c}${busy ? ' live' : ''}"></span>`
+}
+function choicesHtml(m, keys) {
+  const q = m.q
+  return `<div class="choices">${q.choices.map((c, i) => `<button class="choice${i === q.rec ? ' rec' : ''}" data-act="answer" data-msg="${m.id}" data-i="${i}">${keys ? `<span class="kbd">${i + 1}</span>` : ''}${esc(c)}${i === q.rec ? ' · rec.' : ''}</button>`).join('')}
+    <input class="free" data-k="free-${m.id}" data-act-enter="answer-free" data-msg="${m.id}" placeholder="Other…" value="${esc(S.ui.drafts['free-' + m.id] || '')}"></div>`
+}
+function stepsHtml(t, list = t.steps) {
+  const cur = current(t)
+  return `<ul class="steps">${list.map((s) => `<li><div class="st ${s.done ? 'done' : s.blocked ? 'blk' : s === cur ? 'doing' : ''}" data-act="tick" data-task="${t.id}" data-step="${s.id}"><span class="ck">${s.done ? '✓' : ''}</span><span>${esc(s.text)}</span>${s === cur && !s.done ? '<span class="now">now</span>' : ''}${s.blocked ? '<span class="now" style="color:var(--danger)">blocked</span>' : ''}</div>${s.sub.length ? stepsHtml(t, s.sub) : ''}</li>`).join('')}</ul>`
+}
+function timeline(t, n) {
+  const items = t.events.map((e) => ({ t: e.t, color: e.color, text: e.text }))
+    .concat(tagged(t.id).map((m) => ({ t: m.t, color: m.author === 'me' ? 'purple' : m.q ? 'wait' : 'subtle', text: (m.author === 'me' ? 'You: ' : agentById(m.agent).name + ': ') + m.body })))
+    .sort((a, b) => b.t - a.t)
+  return `<ul class="tl">${items.slice(0, n).map((e) => `<li><span class="m" style="background:var(--${e.color === 'subtle' ? 'faint' : e.color})"></span><span class="tm">${hhmm(e.t)}</span><span class="tx">${esc(e.text)}</span></li>`).join('')}</ul>`
+}
+
+// ---------- sidebar / tabs ----------
+function renderSidebar(r) {
+  const n = needsYouCount()
+  $('#sidebar').innerHTML = `
+    <div style="height:8px"></div>
+    <button class="sb-item${r.view === 'board' ? ' sel' : ''}" data-act="nav" data-h="#/board">▤ Board <span class="cnt">${n ? `<span class="badge w">${n}</span>` : ''}</span></button>
+    <button class="sb-item${r.view === 'search' ? ' sel' : ''}" data-act="nav" data-h="#/search">⌕ Search <span class="cnt"><span class="kbd">/</span></span></button>
+    <div class="sb-h">AGENTS <span>api</span></div>
+    <div class="agents">${S.agents.map((a) => agentRow(a, r)).join('')}<div style="height:44px"></div></div>
+    <button class="sb-new" data-act="new">New message… <span class="kbd">⇧N</span></button>`
+  const tabs = [['board', '▤', 'Board', n, 'w'], ['agents', '☺', 'Agents', S.agents.reduce((s, a) => s + unreadOf(a.id), 0), 'u'], ['search', '⌕', 'Search', 0]]
+  $('#tabs').innerHTML = tabs.map(([v, i, l, c, k]) => `<button class="${r.view === v || (v === 'agents' && r.view === 'agent') || (v === 'board' && r.view === 'task') ? 'on' : ''}" data-act="nav" data-h="#/${v}"><b>${i}</b>${l}${c ? `<span class="badge ${k}">${c}</span>` : ''}</button>`).join('')
+}
+function agentRow(a, r) {
+  const u = unreadOf(a.id)
+  const waits = openQs().some((m) => m.agent === a.id)
+  return `<div class="ag${r && r.view === 'agent' && r.id === a.id ? ' sel' : ''}" data-act="nav" data-h="#/agent/${a.id}">
+    <span class="dot ${a.turn ? 'd-work live' : waits ? 'd-wait' : 'd-idle'}"></span><span class="nm">${esc(a.name)} <small>${a.main ? 'main · ' : ''}${a.kind}</small></span>${u ? `<span class="badge u">${u}</span>` : '<span></span>'}
+    <span class="doing">${a.turn ? 'typing… · ' : ''}${esc(a.title)}</span></div>`
+}
+
+// ---------- board ----------
+function boardItems() {
+  const qs = openQs()
+  const explicit = S.tasks.filter((t) => t.status === 'needs_you' && !taskOpenQs(t.id).length)
+  const by = (s) => S.tasks.filter((t) => t.status === s).sort((a, b) => lastActivity(b) - lastActivity(a))
+  return { qs, explicit, working: by('working'), blocked: by('blocked'), done: by('done').filter((t) => Date.now() - (t.doneAt || 0) < 24 * 60 * MIN) }
+}
+function focusKeys() {
+  const b = boardItems()
+  return [...b.qs.map((m) => 'q:' + m.id), ...b.explicit.map((t) => 't:' + t.id), ...b.working.map((t) => 't:' + t.id), ...b.blocked.map((t) => 't:' + t.id), ...(S.ui.showDone ? b.done.map((t) => 't:' + t.id) : [])]
+}
+function renderBoard() {
+  const b = boardItems()
+  const qcard = (m) => {
+    const a = agentById(m.agent); const isNew = Date.now() - m.t < 1500
+    return `<div class="qc${m.tags.length ? '' : ' untag'}${S.ui.focus === 'q:' + m.id ? ' focus' : ''}${isNew ? ' new' : ''}" data-key="q:${m.id}">
+      <div class="q"><b>you:</b> ${esc(m.q.prompt)}</div>${choicesHtml(m, S.ui.focus === 'q:' + m.id)}
+      <div class="meta">${m.tags.map((t) => tagChip(t)).join('')}${m.tags.length ? '' : `<span class="tag add" data-act="tagpop" data-msg="${m.id}">tag to task</span>`}<span class="sp"></span>
+      <a data-act="nav" data-h="#/agent/${a.id}" style="cursor:pointer">${esc(a.name)}${m.tags.length ? '' : ' · untagged'}</a> · ${ago(m.t)}</div>
+      ${S.ui.tagPop && S.ui.tagPop.msg === m.id ? tagPopHtml() : ''}</div>`
+  }
+  const row = (t) => {
+    const k = 't:' + t.id; const open = S.ui.expanded[t.id]; const q = taskOpenQs(t.id).length
+    const who = t.agents.map((a) => agentById(a)?.name).join(' + ')
+    const cur = current(t)
+    return `<div class="row${S.ui.focus === k ? ' focus' : ''}${open ? ' open' : ''}" data-key="${k}" draggable="true" data-task="${t.id}">
+      <div class="line" data-act="row" data-task="${t.id}">
+        <div><div class="ti">${statusDot(t)}<span class="t">${t.status === 'needs_you' && !q ? '<b style="color:var(--wait)">you:</b> ' : ''}${esc(t.title)}</span>${q ? `<span class="qmark">? ${q}</span>` : ''}${taskUnread(t.id) ? '<span class="unread"></span>' : ''}</div>
+        <div class="sub"><span>${esc(who)}</span>${bar(t)}${cur && t.status !== 'done' ? `<span>now: ${esc(short(cur.text, 34))}</span>` : ''}</div></div>
+        <div class="ext">${prChip(t)}</div><div class="age">${ago(t.status === 'done' ? t.doneAt : lastActivity(t))}</div></div>
+      ${open ? `<div class="detail"><div><div class="sec">CHECKLIST <span class="x">${leaves(t).length ? Math.round(100 * leaves(t).filter((s) => s.done).length / leaves(t).length) + '% · ' : ''}${ago(t.created)}</span></div>${t.steps.length ? stepsHtml(t) : '<div class="empty" style="padding:0">No steps.</div>'}
+        <div class="sec">LAST REPORT</div><div class="report">${esc(t.report || lastReport(t) || '—')}</div>
+        <div style="margin-top:10px;display:flex;gap:6px"><button class="btn pri sm" data-act="nav" data-h="#/task/${t.id}">Open task ↵</button><button class="btn sm" data-act="nav" data-h="#/agent/${lastAgent(t)}">Open ${esc(agentById(lastAgent(t)).name)}</button></div></div>
+        <div><div class="sec">TIMELINE</div>${timeline(t, 8)}</div></div>` : ''}
+    </div>`
+  }
+  const group = (title, cls, status, list, extra = '') => `<section class="group" data-drop="${status}"><div class="gh ${cls}">${title} <span class="n">${list}</span>${extra}</div>`
+  return `<div class="col grow1">
+    <div class="head"><div class="r1"><h1>Board</h1><button class="btn" data-act="new">＋ New <span class="kbd">⇧N</span></button></div>
+      <div class="r2 sum">api · ${S.tasks.filter((t) => t.status !== 'done').length} open tasks · <b>${needsYouCount()} need you</b> · ${b.working.length} working · ${b.blocked.length} blocked<span class="hide-phone" style="margin-left:auto">J/K move · Space expand · ↵ open · 1–9 answer · drag rows between groups</span></div></div>
+    <div class="scroll" data-scroll="board">
+      ${group('NEEDS YOU', 'needs', 'needs_you', b.qs.length + b.explicit.length)}${b.qs.map(qcard).join('')}${b.explicit.map(row).join('')}${b.qs.length + b.explicit.length ? '' : '<div class="empty">Nothing needs you.</div>'}</section>
+      ${group('WORKING', '', 'working', b.working.length)}${b.working.map(row).join('') || '<div class="empty">Nothing in progress.</div>'}</section>
+      ${group('BLOCKED', 'blocked', 'blocked', b.blocked.length)}${b.blocked.map(row).join('') || '<div class="empty">Nothing blocked.</div>'}</section>
+      ${group('DONE TODAY', '', 'done', b.done.length, `<span class="r" data-act="toggle-done">${S.ui.showDone ? 'hide' : 'show'}</span>`)}${S.ui.showDone ? b.done.map(row).join('') : ''}</section>
+      <div style="height:60px"></div></div></div>`
+}
+function lastReport(t) { const ms = tagged(t.id).filter((m) => m.author === 'agent'); return ms.length ? ms[ms.length - 1].body : '' }
+
+// ---------- message ----------
+function msgHtml(m, opts = {}) {
+  const a = agentById(m.agent)
+  const who = m.author === 'me' ? `You <span class="src">→ ${esc(a.name)}</span>` : `<b>${esc(a.name)}</b>`
+  const q = m.q ? `<div class="qcard${m.q.answer != null ? ' done' : ''}"><div class="q">${esc(m.q.prompt)}</div>${m.q.answer != null ? `<div class="ans">Answered: ${esc(m.q.answer)}</div>` : choicesHtml(m, false)}</div>` : ''
+  const fl = m.flash && Date.now() - m.flash.t < 1600 ? m.flash : null
+  const tags = m.tags.map((t) => tagChip(t, { msg: m.id, flash: fl && fl.task === t ? Date.now() - fl.t : 0 })).join('')
+  return `<div class="msg${m.author === 'me' ? ' me' : ''}${opts.ctx ? ' ctx' : ''}${opts.unr ? ' unr' : ''}${S.ui.hl === m.id ? ' hl' : ''}" data-mid="${m.id}">
+    <div class="w">${who}<span>${hhmm(m.t)}</span></div><div class="bd">${esc(m.body)}${q}</div>
+    <div class="tags">${tags}<span class="tag add" data-act="tagpop" data-msg="${m.id}">tag</span></div>${noteHtml(m)}
+    ${S.ui.tagPop && S.ui.tagPop.msg === m.id ? tagPopHtml() : ''}</div>`
+}
+function noteHtml(m) {
+  const n = m.note; if (!n) return ''
+  if (n.kind === 'none') return `<div class="note"><span class="k">→ no task (just a reply)</span><button data-act="wrongtask" data-msg="${m.id}">tag it?</button></div>`
+  const label = { existing: 'existing task', created: 'created task', also: 'also touches', moved: 'moved by you' }[n.kind]
+  return `<div class="note"><span class="k">→ ${n.kind === 'created' ? 'created' : 'tagged'}</span>${tagChip(n.task, { short: 34 })}<span class="k">(${label})</span>${n.kind === 'moved' ? '' : `<button data-act="wrongtask" data-msg="${m.id}">wrong task?</button>`}</div>`
+}
+function tagPopHtml() {
+  const p = S.ui.tagPop; const m = S.msgs.find((x) => x.id === p.msg)
+  const q = (p.q || '').replace(/^#/, '').toLowerCase()
+  const opts = S.tasks.filter((t) => !m.tags.includes(t.id) && t.title.toLowerCase().includes(q)).slice(0, 6)
+  const head = p.move ? `<div class="k" style="font-size:11.5px;color:var(--subtle);padding:2px 4px 4px">${p.move.from ? 'Move the tag from “' + esc(short(taskById(p.move.from).title, 30)) + '” to…' : 'Tag the message and the reply with…'}</div>` : ''
+  p.opts = opts.map((t) => t.id).concat(q ? ['new'] : [])
+  const sel = Math.min(p.sel || 0, p.opts.length - 1)
+  return `<div class="tagpop">${head}<input data-k="tagpop" placeholder="# task…" value="${esc(p.q || '')}" autocomplete="off">
+    ${opts.map((t, i) => `<div class="opt${i === sel ? ' sel' : ''}" data-act="tagpick" data-task="${t.id}">${statusDot(t)}${esc(t.title)}</div>`).join('')}
+    ${q ? `<div class="opt${opts.length === sel ? ' sel' : ''}" data-act="tagpick" data-task="new">＋ New task “${esc(p.q.replace(/^#/, ''))}”</div>` : ''}</div>`
+}
+function composer(key, toId, toOptions, tags, placeholder) {
+  return `<div class="composer"><div class="to">to <select class="chip" data-k="to-${key}" data-act-change="to" data-key="${key}">${toOptions.map((a) => `<option value="${a.id}"${a.id === toId ? ' selected' : ''}>${esc(a.name)}${a.turn ? ' · in a turn' : ''}</option>`).join('')}</select>
+    ${tags.length ? 'tagged ' + tags.map((t) => tagChip(t)).join('') : '· untagged'}</div>
+    <textarea data-k="draft-${key}" placeholder="${esc(placeholder)}" rows="2">${esc(S.ui.drafts['draft-' + key] || '')}</textarea>
+    <div class="tb"><span>📎</span><span>✎</span><span class="sp"></span><span class="kbd">⌘↵</span><button class="btn pri" data-act="send" data-key="${key}">Send</button></div></div>`
+}
+
+// ---------- task view ----------
+function renderTask(id) {
+  const t = taskById(id)
+  const ms = tagged(id)
+  ms.forEach((m) => { if (!m.read) { m.read = true; m.justRead = true } })
+  let html = ''
+  const items = ms.map((m) => ({ t: m.t, m })).concat(t.events.map((e) => ({ t: e.t, e }))).sort((a, b) => a.t - b.t)
+  const lastInStream = {}
+  for (const it of items) {
+    if (it.e) { html += `<div class="ev" style="color:var(--${it.e.color})"><span class="tm">${hhmm(it.e.t)}</span><span class="m" style="background:var(--${it.e.color})"></span><span>${esc(it.e.text)}</span></div>`; continue }
+    const m = it.m; const prev = lastInStream[m.agent]
+    if (prev) {
+      const between = S.msgs.filter((x) => x.agent === m.agent && x.t > prev.t && x.t < m.t && !x.tags.includes(id)).sort((a, b) => a.t - b.t)
+      if (between.length) {
+        const k = id + ':' + m.id
+        html += `<button class="gap" data-act="ctx" data-k2="${k}"><span>${esc(agentById(m.agent).name)} · ${between.length} other message${between.length > 1 ? 's' : ''} · <b>${S.ui.ctx[k] ? 'hide' : 'show'} context</b></span></button>`
+        if (S.ui.ctx[k]) html += between.map((x) => { x.read = true; return msgHtml(x, { ctx: true }) }).join('')
+      }
+    }
+    lastInStream[m.agent] = m
+    html += msgHtml(m, { unr: m.justRead })
+  }
+  const typing = t.agents.map(agentById).filter((a) => a.turn).map((a) => `<div class="typing">${esc(a.name)} is working…</div>`).join('')
+  const toId = S.ui.to['task-' + id] || lastAgent(t)
+  const opts = [...t.agents.map(agentById), ...S.agents.filter((a) => !t.agents.includes(a.id))]
+  const ls = leaves(t)
+  return `<div class="col grow1">
+    <div class="head"><div class="r1">${statusDot(t)}<h2>${esc(t.title)}</h2>
+      <select class="chip" data-act-change="status" data-task="${t.id}">${['working', 'needs_you', 'blocked', 'done'].map((s) => `<option value="${s}"${t.status === s ? ' selected' : ''}>${{ working: 'Working', needs_you: 'Needs you', blocked: 'Blocked', done: 'Done' }[s]}</option>`).join('')}</select>
+      <button class="btn hide-phone" data-act="nav" data-h="#/board">Esc · Board</button></div>
+      <div class="r2">${t.agents.map((a) => `<span class="chip" data-act="nav" data-h="#/agent/${a}" style="cursor:pointer"><span class="dot ${agentById(a).turn ? 'd-work live' : 'd-idle'}"></span>${esc(agentById(a).name)}</span>`).join('')}
+        ${t.pr ? `<span class="chip">${prChip(t)}</span>` : ''}${t.linear ? `<span class="chip">${esc(t.linear)}</span>` : ''}<span style="margin-left:auto">${ms.length} tagged messages · ${t.events.length} events</span></div></div>
+    <div class="scroll" data-scroll="task-${id}"><div class="conv">${html || '<div class="empty">No messages tagged yet.</div>'}${typing}</div></div>
+    ${composer('task-' + id, toId, opts, [id], `Message ${agentById(toId).name} about this task…`)}
+  </div>
+  <aside class="side">
+    <div class="sec">CHECKLIST <span class="x">${ls.length ? ls.filter((s) => s.done).length + '/' + ls.length + ' · ' : ''}${ago(t.created)}</span></div>
+    ${ls.length ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">${bar(t)}</div>` : ''}${t.steps.length ? stepsHtml(t) : '<div class="cnt2">No steps yet.</div>'}
+    <div class="sec">LAST REPORT</div><div class="report">${esc(t.report || lastReport(t) || '—')}</div>
+    <div class="sec">FACTS</div>
+    <dl class="facts"><dt>Agents</dt><dd>${t.agents.map((a) => esc(agentById(a).name) + (a === t.owner ? ' (owner)' : '')).join(' · ')}</dd>
+      <dt>PR</dt><dd>${prChip(t)}</dd><dt>Linear</dt><dd>${esc(t.linear || '—')}</dd>
+      <dt>Branch</dt><dd class="mono">${esc(agentById(t.owner).branch)}</dd><dt>Started</dt><dd>${hhmm(t.created)} · ${ago(t.created)} ago</dd>
+      <dt>Fresh</dt><dd>last activity ${ago(lastActivity(t))} ago</dd></dl>
+    <div class="sec">SUMMARY</div><div style="font-size:12.5px">${esc(t.summary || '—')}</div>
+  </aside>`
+}
+
+// ---------- agent stream ----------
+function renderAgent(id) {
+  const a = agentById(id)
+  const ms = S.msgs.filter((m) => m.agent === id).sort((x, y) => x.t - y.t)
+  let html = ''; let day = ''
+  for (const m of ms) {
+    const d = new Date(m.t).toDateString()
+    if (d !== day) { day = d; html += `<div class="ev" style="justify-content:center;color:var(--faint)">— ${d === new Date().toDateString() ? 'Today' : 'Earlier'} —</div>` }
+    html += msgHtml(m, { unr: !m.read })
+  }
+  ms.forEach((m) => { m.read = true })
+  const tasks = S.tasks.filter((t) => t.agents.includes(id))
+  const untaggedQ = openQs().filter((m) => m.agent === id && !m.tags.length).length
+  const key = 'agent-' + id
+  return `<div class="col grow1">
+    <div class="head"><div class="r1"><span class="dot ${a.turn ? 'd-work live' : 'd-idle'}"></span><h2>${esc(a.name)}</h2><span class="hide-phone" style="color:var(--subtle);font-size:12px">${a.kind}${a.main ? ' · main session' : ''} · ${esc(a.host)}</span></div>
+      <div class="r2">${a.turn ? 'in a turn' : 'idle'} · ${esc(a.title)} ${tasks.filter((t) => t.status !== 'done').map((t) => tagChip(t.id)).join('')}</div></div>
+    <div class="scroll" data-scroll="${key}"><div class="conv">${html}${a.turn ? `<div class="typing">${esc(a.name)} is working…</div>` : ''}</div></div>
+    ${composer(key, id, [a], [], `Message ${a.name}…  (tag later with the chip’s +)`)}
+  </div>
+  <aside class="side">
+    <div class="sec">TASKS OF ${esc(a.name.toUpperCase())} <span class="x">${tasks.filter((t) => t.status !== 'done').length} open</span></div>
+    ${tasks.map((t) => `<div class="mt" data-act="nav" data-h="#/task/${t.id}"><div class="a">${statusDot(t)}${esc(t.title)}</div><div class="b">${bar(t)}<span class="cnt2">${{ working: 'working', needs_you: 'needs you', blocked: 'blocked', done: 'done' }[t.status]}${taskOpenQs(t.id).length ? ' · ? ' + taskOpenQs(t.id).length : ''}</span></div></div>`).join('') || '<div class="cnt2">No tasks.</div>'}
+    ${untaggedQ ? `<div class="mt"><div class="a"><span class="dot d-wait"></span>${untaggedQ} untagged question${untaggedQ > 1 ? 's' : ''}</div></div>` : ''}
+    <div class="sec">AGENT</div>
+    <dl class="facts"><dt>Kind</dt><dd>${a.kind}</dd><dt>Host</dt><dd>${esc(a.host)}</dd><dt>Branch</dt><dd class="mono">${esc(a.branch)}</dd>
+    <dt>Tagged</dt><dd>${Math.round(100 * ms.filter((m) => m.tags.length).length / Math.max(1, ms.length))}% of messages</dd></dl>
+  </aside>`
+}
+
+function renderAgentsList() {
+  return `<div class="col grow1"><div class="head"><div class="r1"><h1>Agents</h1><button class="btn" data-act="new">＋ New</button></div></div>
+    <div class="scroll" style="background:var(--surface)">${S.agents.map((a) => agentRow(a)).join('')}</div></div>`
+}
+
+// ---------- search ----------
+function hlText(s, q) { if (!q) return esc(s); const i = s.toLowerCase().indexOf(q.toLowerCase()); if (i < 0) return esc(short(s, 140)); const st = Math.max(0, i - 50); return (st ? '…' : '') + esc(s.slice(st, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(short(s.slice(i + q.length), 90)) }
+function renderSearch() {
+  const q = S.ui.search.trim()
+  let res = ''
+  if (q) {
+    const ql = q.toLowerCase()
+    const ts = S.tasks.filter((t) => (t.title + ' ' + t.summary + ' ' + leaves(t).map((s) => s.text).join(' ')).toLowerCase().includes(ql))
+    const ms = S.msgs.filter((m) => (m.body + ' ' + (m.q ? m.q.prompt : '')).toLowerCase().includes(ql)).sort((a, b) => b.t - a.t)
+    res = `<div class="sec" style="padding:0 18px">TASKS <span class="x">${ts.length}</span></div>${ts.map((t) => `<div class="res" data-act="nav" data-h="#/task/${t.id}"><div>${statusDot(t)} ${hlText(t.title, q)}</div><div class="k">${t.status} · ${t.agents.map((a) => agentById(a).name).join(', ')}</div></div>`).join('')}
+      <div class="sec" style="padding:0 18px">MESSAGES <span class="x">${ms.length}</span></div>${ms.slice(0, 40).map((m) => `<div class="res" data-act="open-msg" data-msg="${m.id}"><div>${hlText(m.body + (m.q ? ' ' + m.q.prompt : ''), q)}</div><div class="k">${m.author === 'me' ? 'You → ' : ''}${esc(agentById(m.agent).name)} · ${hhmm(m.t)} ${m.tags.map((t) => tagChip(t, { short: 18 })).join(' ')}</div></div>`).join('')}`
+  } else res = '<div class="empty">Type to search tasks and messages across all agents.</div>'
+  return `<div class="col grow1"><div class="head"><div class="r1"><h1>Search</h1></div></div>
+    <div class="search"><input data-k="search" placeholder="Search tasks and messages…" value="${esc(S.ui.search)}" autocomplete="off"></div>
+    <div class="scroll" style="background:var(--surface)">${res}</div></div>`
+}
+
+// ---------- modal ----------
+function renderModal() {
+  const md = S.ui.modal
+  if (!md) { $('#modal').innerHTML = ''; return }
+  if (md.kind === 'help') {
+    $('#modal').innerHTML = `<div class="overlay" data-act="close-modal"><div class="dialog help" data-stop><h3>Keyboard</h3><table>
+    ${[['?', 'This help'], ['⇧N', 'New message (to the main session by default)'], ['/', 'Search'], ['g b · g a', 'Board · first agent'], ['J / K', 'Move on the Board'], ['Space', 'Expand / collapse a task row'], ['Enter', 'Open the task (on a question: its task or agent)'], ['1–9', 'Answer the focused question'], ['X', 'Done / reopen the focused task'], ['R', 'Focus the reply box'], ['⌘↵', 'Send'], ['Esc', 'Close / back to the Board']].map(([k, v]) => `<tr><td><span class="kbd">${k}</span></td><td>${v}</td></tr>`).join('')}
+    </table><p style="color:var(--subtle);font-size:12px">Fake data, fake agents. The simulation (bottom right) makes agents report, tick steps, ask questions and hit CI failures. Chips on messages are task tags: + adds (type to filter, Enter picks), ✕ on hover removes.</p></div></div>`
+    return
+  }
+  const isNewSess = md.to === 'new'
+  $('#modal').innerHTML = `<div class="overlay" data-act="close-modal"><div class="dialog" data-stop>
+    <h3>New message</h3>
+    <div class="rowf">To <select data-k="nm-to" data-act-change="nm-to">${S.agents.map((a) => `<option value="${a.id}"${md.to === a.id ? ' selected' : ''}>${esc(a.name)}${a.main ? ' (main)' : ''} · ${a.kind}</option>`).join('')}<option value="new"${isNewSess ? ' selected' : ''}>New session…</option></select>
+      ${isNewSess ? `<input type="text" data-k="nm-name" placeholder="session name" value="${esc(md.name || '')}"><select data-k="nm-kind" data-act-change="nm-kind">${['Claude', 'Pi', 'OpenCode'].map((k) => `<option${md.kind2 === k ? ' selected' : ''}>${k}</option>`).join('')}</select>` : ''}</div>
+    <textarea data-k="nm-body" placeholder="Ask or tell the agent something…">${esc(md.body || '')}</textarea>
+    <div class="foot"><span>The agent decides: a message about an existing task, new work (it creates a task) or just a reply. ⌘↵ send · Esc close</span><span class="sp"></span><button class="btn" data-act="close-modal">Cancel</button><button class="btn pri" data-act="nm-send">Send</button></div>
+  </div></div>`
+}
+
+// ---------- sim control ----------
+function renderSim() {
+  $('#sim').innerHTML = `<span title="Simulation">Sim</span><select data-act-change="speed">${[0.5, 1, 2, 4].map((v) => `<option value="${v}"${S.sim.speed === v ? ' selected' : ''}>${v}×</option>`).join('')}</select>
+    <button class="btn sm" data-act="pause">${S.sim.paused ? '▶ Resume' : '❚❚ Pause'}</button><button class="btn sm" data-act="reset">Reset</button><button class="btn sm ph-only" data-act="theme" title="Theme">◐</button><button class="btn sm ph-only" data-act="help">?</button>`
+}
+
+// ---------- render (keeps focus, caret and scroll across live re-renders) ----------
+function render() {
+  const r = route()
+  const ae = document.activeElement
+  const fk = ae && ae.dataset ? ae.dataset.k : null
+  const sel = fk && 'selectionStart' in ae ? [ae.selectionStart, ae.selectionEnd] : null
+  const scrolls = {}
+  document.querySelectorAll('[data-scroll]').forEach((el) => { scrolls[el.dataset.scroll] = { top: el.scrollTop, atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 40 } })
+  renderSidebar(r)
+  let html
+  if (r.view === 'task') html = renderTask(r.id)
+  else if (r.view === 'agent') html = renderAgent(r.id)
+  else if (r.view === 'agents') html = renderAgentsList()
+  else if (r.view === 'search') html = renderSearch()
+  else html = renderBoard()
+  $('#main').innerHTML = html
+  S.msgs.forEach((m) => { delete m.justRead })
+  renderSidebar(r) // read state may have changed while rendering the view
+  renderModal()
+  document.querySelectorAll('[data-scroll]').forEach((el) => {
+    const p = scrolls[el.dataset.scroll]
+    if (!p) { if (el.dataset.scroll !== 'board') el.scrollTop = el.scrollHeight } else el.scrollTop = p.atBottom && el.dataset.scroll !== 'board' ? el.scrollHeight : p.top
+  })
+  if (S.ui.hl && r.view !== 'board') { const el = document.querySelector(`[data-mid="${S.ui.hl}"]`); if (el && !S.ui.hlDone) { el.scrollIntoView({ block: 'center' }); S.ui.hlDone = true } }
+  if (fk) { const el = document.querySelector(`[data-k="${fk}"]`); if (el) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]) } catch (e) {} } }
+  if (S.ui.focusSearch && r.view === 'search') { S.ui.focusSearch = false; const i = $('[data-k="search"]'); if (i) i.focus() }
+  document.title = (needsYouCount() ? `(${needsYouCount()}) ` : '') + 'minbox Streams Prototype'
+}
+let rq = 0
+const schedule = () => { if (!rq) rq = requestAnimationFrame(() => { rq = 0; render() }) }
+
+// ---------- actions ----------
+function addEvent(t, text, color = 'work') { t.events.push({ t: Date.now(), text, color }) }
+function toast(s) { $('#toast').innerHTML = `<div class="toast">${esc(s)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => { $('#toast').innerHTML = '' }, 2200) }
+function addMsg(agent, author, body, tags = [], extra = {}) {
+  const m = Object.assign({ id: uid('m'), agent, author, body, t: Date.now(), tags: tags.slice(), read: author === 'me' }, extra)
+  S.msgs.push(m)
+  tags.forEach((tid) => { const t = taskById(tid); if (t && !t.agents.includes(agent)) t.agents.push(agent) })
+  return m
+}
+function send(agentId, body, tags) {
+  body = body.trim(); if (!body) return
+  const m = addMsg(agentId, 'me', body, tags)
+  tags.forEach((tid) => { const t = taskById(tid); if (t.status === 'done') { t.status = 'working'; addEvent(t, 'Reopened by your message', 'work') } })
+  agentTurn(agentId, m)
+  schedule()
+}
+function answer(msgId, text) {
+  const m = S.msgs.find((x) => x.id === msgId); if (!m || !m.q || m.q.answer != null) return
+  m.q.answer = text; m.read = true
+  const reply = addMsg(m.agent, 'me', `> ${m.q.prompt}\n${text}`, m.tags)
+  m.tags.forEach((tid) => { const t = taskById(tid); addEvent(t, 'You answered: ' + text, 'purple'); if (t.status === 'needs_you' && !taskOpenQs(tid).length) t.status = 'working' })
+  delete S.ui.drafts['free-' + msgId]
+  agentTurn(m.agent, reply)
+  toast('Answered · sent to ' + agentById(m.agent).name)
+  schedule()
+}
+function tick(t, s, by) {
+  s.done = !s.done; s.blocked = false
+  addEvent(t, `${s.text} → ${s.done ? 'done' : 'not done'}${by ? ' (' + by + ')' : ''}`, s.done ? 'ok' : 'subtle')
+  const parent = t.steps.find((p) => p.sub.includes(s)); if (parent) parent.done = parent.sub.every((x) => x.done)
+}
+function setStatus(t, s, by) {
+  if (t.status === s) return
+  t.status = s; if (s === 'done') t.doneAt = Date.now()
+  addEvent(t, `→ ${s.replace('_', ' ')}${by ? ' (' + by + ')' : ''}`, s === 'done' ? 'ok' : s === 'blocked' ? 'danger' : s === 'needs_you' ? 'wait' : 'work')
+}
+function createTask(title, agentId, by, steps) {
+  const n = 1 + Math.max(...S.tasks.map((t) => parseInt(t.id.slice(1), 10)))
+  const st = (text) => ({ id: uid('s'), text, done: false, blocked: false, sub: [] })
+  const t = { id: 'T' + n, keywords: keywordsOf(title), title, summary: '', status: 'working', agents: [agentId], owner: agentId, created: Date.now(), steps: (steps || []).map(st), events: [] }
+  S.tasks.push(t); addEvent(t, `Task created by ${by}${t.steps.length ? ' · ' + t.steps.length + ' steps' : ''}`, 'work')
+  return t
+}
+function tagMsg(m, tid, by) {
+  if (m.tags.includes(tid)) return
+  m.tags.push(tid); m.flash = { task: tid, t: Date.now() }
+  const t = taskById(tid); if (!t.agents.includes(m.agent)) t.agents.push(m.agent)
+  addEvent(t, `Message tagged by ${by}`, 'subtle')
+}
+
+// ---------- the fake agent ----------
+const WORK = /\b(fix|add|implement|make|build|write|update|remove|refactor|investigate|create|change|bump|migrate|rename|delete|support|look into)\b|作って|直して|追加|修正|実装|調べて|対応/i
+const delay = (lo, hi) => (lo + Math.random() * (hi - lo)) * 1000 / S.sim.speed
+const timers = new Set()
+function later(fn, ms) { const id = setTimeout(() => { timers.delete(id); if (S.sim.paused) { later(fn, 500) } else fn() }, ms); timers.add(id) }
+function titleFrom(text) {
+  let s = text.split('\n')[0].replace(/^(please|could you|can you|pls)\s+/i, '').replace(/[.?!。]+$/, '').trim()
+  s = s.charAt(0).toUpperCase() + s.slice(1)
+  return short(s, 64)
+}
+const STOP = new Set('this that with from have please also make into about when them they their should could would there some test tests page look sure just still again what which where will your mine more than then here been does done need want like into only very much make sure thanks thank'.split(' '))
+function tokens(text) { return (text.toLowerCase().match(/[#a-z0-9][a-z0-9.\-]*/g) || []).map((w) => w.replace(/^#/, '').replace(/[.\-]+$/, '')).filter(Boolean) }
+function keywordsOf(title) { return tokens(title).filter((w) => w.length >= 4 && !STOP.has(w)) }
+/** The fake agent's judgement: which tasks a message is about, best first (score = distinct keyword hits). */
+function matchTasks(text, agentId) {
+  const ws = new Set(tokens(text))
+  return S.tasks.map((t) => {
+    let sc = (t.keywords || []).filter((k) => ws.has(k)).length
+    if (sc && t.agents.includes(agentId)) sc += 0.5
+    if (sc && t.status === 'done') sc -= 0.5
+    return { t, sc }
+  }).filter((x) => x.sc >= 1).sort((a, b) => b.sc - a.sc)
+}
+function agentTurn(agentId, trigger) {
+  const a = agentById(agentId)
+  if (a.turn) { later(() => agentTurn(agentId, trigger), delay(1.5, 2.5)); return }
+  a.turn = true; schedule()
+  later(() => {
+    a.turn = false
+    decide(a, trigger)
+    schedule()
+  }, delay(1, 3))
+}
+function decide(a, trigger) {
+  const agentId = a.id
+  const say = (body, tags, note) => addMsg(agentId, 'agent', body, tags, note ? { note, trigger: trigger && trigger.id } : {})
+  if (!trigger || trigger.author !== 'me') { return }
+  if (trigger.body.startsWith('>')) { // an answer to a question: carry on with its task
+    const live = trigger.tags.filter((tid) => taskById(tid) && taskById(tid).status !== 'done')
+    if (live.length) progress(agentId, taskById(live[0]), trigger); else say('Thanks, noted.', [])
+    return
+  }
+  const hits = matchTasks(trigger.body, agentId).filter((x) => !trigger.tags.includes(x.t.id))
+  if (trigger.tags.length) { // sent from a task view: the person chose the task; the agent may add another one
+    const t0 = taskById(trigger.tags[0])
+    const extra = hits.find((x) => x.sc >= 1.5)
+    if (extra) {
+      tagMsg(trigger, extra.t.id, a.name + ' (agent)')
+      say(`Noted for “${t0.title}”. This also touches “${extra.t.title}”, so I tagged that one too.`, [t0.id, extra.t.id], { kind: 'also', task: extra.t.id })
+    }
+    if (t0.status === 'done') { setStatus(t0, 'working', a.name) }
+    progress(agentId, t0, trigger)
+    return
+  }
+  if (hits.length) { // (1) about an existing task
+    const t = hits[0].t
+    tagMsg(trigger, t.id, a.name + ' (agent)')
+    if (t.status === 'done') setStatus(t, 'working', a.name + ' · reopened')
+    a.title = t.title
+    say(pick([`That is about “${t.title}”. I will fold it in.`, `Got it, adding this to “${t.title}”.`, `Understood. Tracking this under “${t.title}”.`]), [t.id], { kind: 'existing', task: t.id })
+    toast(`${a.name} tagged your message: ${short(t.title, 40)}`)
+    if (chance(0.5)) later(() => { progress(agentId, t, null); schedule() }, delay(1, 2))
+    return
+  }
+  if (WORK.test(trigger.body) || trigger.body.length > 90) { // (2) new work
+    const title = titleFrom(trigger.body)
+    const t = createTask(title, agentId, a.name + ' (create_task)', ['Look into it', 'Make the change', 'Test it', 'Open a PR'])
+    tagMsg(trigger, t.id, a.name + ' (create_task)')
+    a.title = title
+    say(`On it. I created a task for this (“${title}”) and will report progress there.`, [t.id], { kind: 'created', task: t.id })
+    toast(`${a.name} created a task: ${short(title, 40)}`)
+    return
+  }
+  // (3) chit-chat or a quick question: no task
+  say(pick(['Sure — noted.', 'Good question. Short answer: yes, it is safe to leave as is for now.', 'I checked: no, that has not changed since yesterday.', 'About 14 minutes, same as this morning.']), [], { kind: 'none' })
+}
+function progress(agentId, t, trigger) {
+  const a = agentById(agentId); a.title = t.title
+  const cur = current(t)
+  const qOpen = openQs().length
+  const r = Math.random()
+  if (t.status === 'blocked') {
+    if (chance(0.6)) { setStatus(t, 'working', a.name); if (cur) cur.blocked = false; if (t.pr) t.pr.ci = 'pending'; addMsg(agentId, 'agent', 'Re-ran CI after a fix; it is running again.', [t.id]) }
+    else addMsg(agentId, 'agent', 'Still waiting on CI.', [t.id])
+    return
+  }
+  if (!leaves(t).length) {
+    if (chance(0.15)) { setStatus(t, 'done', a.name); t.report = 'Finished.'; addMsg(agentId, 'agent', `Finished “${t.title}”.`, [t.id]) }
+    else { t.report = pick(['Left two comments; checking the rest.', 'Halfway through.', 'Looking at the error paths now.']); addMsg(agentId, 'agent', t.report, [t.id]) }
+    return
+  }
+  if (!cur) {
+    setStatus(t, 'done', a.name); t.report = 'All steps done.'
+    addMsg(agentId, 'agent', `All steps of “${t.title}” are done. Marking the task done.`, [t.id]); return
+  }
+  if (r < 0.22 && qOpen < 5 && !(trigger && trigger.author === 'me' && trigger.body.startsWith('>'))) {
+    const qs = [
+      [`Before “${cur.text}”: keep the change minimal or also clean up the surrounding code?`, ['Minimal', 'Clean up too']],
+      [`“${cur.text}” touches a shared config. OK to change it?`, ['Yes', 'No, find another way']],
+      [`Should I open the PR as draft or ready for review?`, ['Draft', 'Ready for review']],
+    ]
+    const [p, c] = pick(qs)
+    addMsg(agentId, 'agent', 'One decision before I continue.', [t.id], { q: { prompt: p, choices: c, rec: 0, answer: null } })
+    toast(`${a.name} asks: ${short(p, 50)}`)
+    return
+  }
+  if (r < 0.3 && t.pr && t.pr.ci !== 'failing') {
+    t.pr.ci = 'failing'; cur.blocked = true; setStatus(t, 'blocked', 'CI'); addEvent(t, `PR ${t.pr.label}: CI failing`, 'danger')
+    addMsg(agentId, 'agent', `CI failed on ${t.pr.label} (flaky integration test?). Waiting for a re-run.`, [t.id]); return
+  }
+  tick(t, cur, a.name)
+  const next = current(t)
+  if (/PR/.test(cur.text) && !t.pr) { t.pr = { label: 'service#' + (7630 + Math.floor(Math.random() * 60)), state: 'draft', ci: 'pending' }; addEvent(t, `PR ${t.pr.label} opened (draft)`, 'work') }
+  t.report = `Done: ${cur.text}.${next ? ' Next: ' + next.text + '.' : ''}`
+  addMsg(agentId, 'agent', t.report, [t.id])
+  if (!next) { setStatus(t, 'done', a.name); addMsg(agentId, 'agent', `“${t.title}” is complete.`, [t.id]) }
+}
+function loop() {
+  later(() => {
+    const working = S.tasks.filter((t) => (t.status === 'working' || t.status === 'blocked') && !taskOpenQs(t.id).length)
+    const cand = working.filter((t) => !agentById(lastAgent(t)).turn)
+    if (cand.length && chance(0.8)) {
+      const t = pick(cand); const aid = lastAgent(t); const a = agentById(aid)
+      a.turn = true; schedule()
+      later(() => { a.turn = false; progress(aid, t, null); schedule() }, delay(1.5, 3))
+    } else if (chance(0.5)) {
+      const a = pick(S.agents.filter((x) => !x.turn))
+      if (a) { addMsg(a.id, 'agent', pick(['FYI: the dev database was restarted; nothing to do.', 'Heads-up: disk on buildbox is 85% full.', 'I pulled main; no conflicts.'])); schedule() }
+    }
+    loop()
+  }, delay(5, 8))
+}
+
+// ---------- events ----------
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]')
+  if (e.target.closest('[data-stop]') && !el) return
+  if (!el) { if (S.ui.tagPop && !e.target.closest('.tagpop')) { S.ui.tagPop = null; schedule() } return }
+  const act = el.dataset.act
+  if (act === 'close-modal' && e.target.closest('[data-stop]') && !e.target.closest('button')) return
+  e.stopPropagation()
+  const r = route()
+  switch (act) {
+    case 'nav': S.ui.tagPop = null; if (el.dataset.h === '#/search') S.ui.focusSearch = true; go(el.dataset.h); break
+    case 'open-task': if (!e.target.closest('.x')) go('#/task/' + el.dataset.task); break
+    case 'row': { const id = el.dataset.task; S.ui.focus = 't:' + id; S.ui.expanded[id] = !S.ui.expanded[id]; schedule(); break }
+    case 'toggle-done': S.ui.showDone = !S.ui.showDone; schedule(); break
+    case 'answer': { const m = S.msgs.find((x) => x.id === el.dataset.msg); answer(m.id, m.q.choices[+el.dataset.i]); break }
+    case 'tick': { const t = taskById(el.dataset.task); const s = leaves(t).concat(t.steps).find((x) => x.id === el.dataset.step); if (s.sub.length) break; tick(t, s, 'you'); schedule(); break }
+    case 'ctx': S.ui.ctx[el.dataset.k2] = !S.ui.ctx[el.dataset.k2]; schedule(); break
+    case 'tagpop': S.ui.tagPop = { msg: el.dataset.msg, q: '', sel: 0 }; render(); { const i = $('[data-k="tagpop"]'); if (i) i.focus() } break
+    case 'tagpick': pickTag(el.dataset.task); break
+    case 'wrongtask': { const m = S.msgs.find((x) => x.id === el.dataset.msg); S.ui.tagPop = { msg: m.id, q: '', sel: 0, move: { from: m.note.kind === 'none' ? null : m.note.task, msgs: [m.trigger, m.id].filter(Boolean) } }; render(); { const i = $('[data-k="tagpop"]'); if (i) i.focus() } break }
+    case 'untag': { const m = S.msgs.find((x) => x.id === el.dataset.msg); m.tags = m.tags.filter((t) => t !== el.dataset.task); addEvent(taskById(el.dataset.task), 'Tag removed by you', 'subtle'); schedule(); break }
+    case 'send': doSend(el.dataset.key); break
+    case 'new': openNew(r); break
+    case 'nm-send': nmSend(false); break
+    case 'close-modal': S.ui.modal = null; renderModal(); break
+    case 'help': S.ui.modal = { kind: 'help' }; renderModal(); break
+    case 'theme': { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); document.documentElement.dataset.theme = cur === 'dark' ? 'light' : 'dark'; break }
+    case 'pause': S.sim.paused = !S.sim.paused; renderSim(); break
+    case 'reset': timers.forEach(clearTimeout); timers.clear(); S = seed(); renderSim(); go('#/board'); loop(); break
+    case 'open-msg': { const m = S.msgs.find((x) => x.id === el.dataset.msg); S.ui.hl = m.id; S.ui.hlDone = false; go(m.tags.length ? '#/task/' + m.tags[0] : '#/agent/' + m.agent); setTimeout(() => { S.ui.hl = null; schedule() }, 2500); break }
+  }
+})
+function pickTag(tid) {
+  const p = S.ui.tagPop; if (!p) return
+  const m = S.msgs.find((x) => x.id === p.msg)
+  if (tid === 'new') { const t = createTask(titleFrom(p.q.replace(/^#/, '')), m.agent, 'you'); tid = t.id }
+  if (p.move) {
+    const from = p.move.from
+    p.move.msgs.forEach((id) => { const x = S.msgs.find((y) => y.id === id); if (!x) return; if (from) x.tags = x.tags.filter((t) => t !== from); tagMsg(x, tid, 'you') })
+    if (from) {
+      const ft = taskById(from); addEvent(ft, 'Tag moved by you to “' + taskById(tid).title + '”', 'subtle')
+      if (m.note && m.note.kind === 'created' && !tagged(from).length) { S.tasks = S.tasks.filter((t) => t !== ft); toast('Removed the mistaken task “' + ft.title + '”') }
+    }
+    m.note = { kind: 'moved', task: tid }
+  } else tagMsg(m, tid, 'you')
+  S.ui.tagPop = null; schedule()
+}
+function doSend(key) {
+  const body = S.ui.drafts['draft-' + key] || ''
+  if (!body.trim()) return
+  const [kind, id] = key.split('-')
+  if (kind === 'task') send(S.ui.to[key] || lastAgent(taskById(id)), body, [id])
+  else send(id, body, [])
+  S.ui.drafts['draft-' + key] = ''
+  schedule()
+}
+function openNew(r) {
+  const to = S.agents.find((a) => a.main).id
+  S.ui.modal = { kind: 'new', to, body: '', kind2: 'Claude' }
+  renderModal(); const t = $('[data-k="nm-body"]'); if (t) t.focus()
+}
+function nmSend() {
+  const md = S.ui.modal; if (!md || !md.body || !md.body.trim()) return
+  let to = md.to
+  if (to === 'new') {
+    const name = (md.name || '').trim() || 'api-' + (S.agents.length + 1)
+    const a = { id: uid('a'), name, kind: md.kind2 || 'Claude', main: false, turn: false, title: 'Starting', host: 'this Mac', branch: 'main' }
+    S.agents.push(a); to = a.id; toast('Started a new session: ' + name)
+  }
+  S.ui.modal = null
+  send(to, md.body, [])
+  go('#/agent/' + to)
+}
+document.addEventListener('input', (e) => {
+  const k = e.target.dataset.k; if (!k) return
+  if (k === 'tagpop') { S.ui.tagPop.q = e.target.value; S.ui.tagPop.sel = 0; schedule(); return }
+  if (k === 'search') { S.ui.search = e.target.value; schedule(); return }
+  if (k.startsWith('nm-')) { const md = S.ui.modal; if (k === 'nm-body') md.body = e.target.value; if (k === 'nm-name') md.name = e.target.value; return }
+  S.ui.drafts[k] = e.target.value
+})
+document.addEventListener('change', (e) => {
+  const act = e.target.dataset.actChange; if (!act) return
+  const v = e.target.value
+  if (act === 'to') S.ui.to[e.target.dataset.key] = v
+  if (act === 'status') { setStatus(taskById(e.target.dataset.task), v, 'you'); schedule() }
+  if (act === 'speed') S.sim.speed = +v
+  if (act === 'nm-to') { S.ui.modal.to = v; renderModal() }
+  if (act === 'nm-kind') S.ui.modal.kind2 = v
+  schedule()
+})
+// drag rows between groups
+document.addEventListener('dragstart', (e) => { const r = e.target.closest && e.target.closest('.row[data-task]'); if (r) { e.dataTransfer.setData('text/plain', r.dataset.task); e.dataTransfer.effectAllowed = 'move' } })
+document.addEventListener('dragover', (e) => { const g = e.target.closest && e.target.closest('[data-drop]'); if (g) { e.preventDefault(); document.querySelectorAll('.dropping').forEach((x) => x !== g && x.classList.remove('dropping')); g.classList.add('dropping') } })
+document.addEventListener('drop', (e) => { const g = e.target.closest && e.target.closest('[data-drop]'); if (!g) return; e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); const t = taskById(id); if (t) { setStatus(t, g.dataset.drop, 'moved by you'); if (g.dataset.drop === 'done') S.ui.showDone = true } schedule() })
+document.addEventListener('dragend', () => document.querySelectorAll('.dropping').forEach((x) => x.classList.remove('dropping')))
+
+let gPending = false
+document.addEventListener('keydown', (e) => {
+  const t = e.target; const typing = t.matches && t.matches('input, textarea, select')
+  const r = route()
+  if (e.key === 'Escape') {
+    if (S.ui.modal) { S.ui.modal = null; renderModal(); return }
+    if (S.ui.tagPop) { S.ui.tagPop = null; schedule(); return }
+    if (typing) { t.blur(); return }
+    if (r.view !== 'board') go('#/board'); return
+  }
+  if (S.ui.modal && S.ui.modal.kind === 'new' && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); nmSend(); return }
+  if (t.dataset && t.dataset.k === 'tagpop') {
+    const p = S.ui.tagPop
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); p.sel = Math.max(0, Math.min((p.opts || []).length - 1, (p.sel || 0) + (e.key === 'ArrowDown' ? 1 : -1))); schedule() }
+    if (e.key === 'Enter') { e.preventDefault(); const o = (p.opts || [])[Math.min(p.sel || 0, (p.opts || []).length - 1)]; if (o) pickTag(o) }
+    return
+  }
+  if (t.dataset && t.dataset.actEnter === 'answer-free' && e.key === 'Enter' && t.value.trim()) { answer(t.dataset.msg, t.value.trim()); return }
+  if (typing) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && t.dataset.k && t.dataset.k.startsWith('draft-')) { e.preventDefault(); doSend(t.dataset.k.slice(6)) }
+    return
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (S.ui.modal) return
+  if (gPending) { gPending = false; if (e.key === 'b') go('#/board'); if (e.key === 'a') go('#/agent/' + S.agents[0].id); return }
+  if (e.key === 'g') { gPending = true; setTimeout(() => { gPending = false }, 800); return }
+  if (e.key === '?') { S.ui.modal = { kind: 'help' }; renderModal(); return }
+  if (e.key === 'N' && e.shiftKey) { e.preventDefault(); openNew(r); return }
+  if (e.key === '/') { e.preventDefault(); S.ui.focusSearch = true; go('#/search'); return }
+  if (e.key === 'r' || e.key === 'R') { const ta = $('.composer textarea'); if (ta) { e.preventDefault(); ta.focus() } return }
+  if (r.view !== 'board') return
+  const keys = focusKeys(); let i = keys.indexOf(S.ui.focus)
+  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); S.ui.focus = keys[Math.min(keys.length - 1, i + 1)]; render(); scrollFocus() }
+  else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); S.ui.focus = keys[Math.max(0, i - 1)]; render(); scrollFocus() }
+  else if (!S.ui.focus) return
+  else if (e.key === ' ') { e.preventDefault(); if (S.ui.focus.startsWith('t:')) { const id = S.ui.focus.slice(2); S.ui.expanded[id] = !S.ui.expanded[id]; schedule() } }
+  else if (e.key === 'Enter') { const [k, id] = S.ui.focus.split(':'); if (k === 't') go('#/task/' + id); else { const m = S.msgs.find((x) => x.id === id); go(m.tags.length ? '#/task/' + m.tags[0] : '#/agent/' + m.agent) } }
+  else if (/^[1-9]$/.test(e.key) && S.ui.focus.startsWith('q:')) { const m = S.msgs.find((x) => x.id === S.ui.focus.slice(2)); const c = m.q.choices[+e.key - 1]; if (c) { const idx = keys.indexOf(S.ui.focus); answer(m.id, c); S.ui.focus = keys[idx + 1] || null } }
+  else if ((e.key === 'x' || e.key === 'X') && S.ui.focus.startsWith('t:')) { const tk = taskById(S.ui.focus.slice(2)); setStatus(tk, tk.status === 'done' ? 'working' : 'done', 'you'); schedule() }
+})
+function scrollFocus() { const el = document.querySelector(`[data-key="${S.ui.focus}"]`); if (el) el.scrollIntoView({ block: 'nearest' }) }
+
+window.addEventListener('hashchange', () => { S.ui.tagPop = null; render(); const sc = document.querySelector('[data-scroll]'); if (sc && route().view !== 'board') sc.scrollTop = sc.scrollHeight })
+setInterval(() => { if (!document.hidden) schedule() }, 15000) // ages
+
+// ---------- boot ----------
+S = seed()
+renderSim()
+render()
+loop()
+</script>
+</body>
+</html>
