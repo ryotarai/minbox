@@ -1025,6 +1025,8 @@ export const api = {
   setTopicStatus: (id: string, status: TopicStatus) => call<Topic>('PATCH', `/api/topics/${encodeURIComponent(id)}`, { status }),
   topic: (id: string) => call<TopicDetail>('GET', `/api/topics/${encodeURIComponent(id)}`),
   topics: (project = '') => call<TopicsResult>('GET', `/api/topics${project ? `?project=${encodeURIComponent(project)}` : ''}`),
+  /** One thread's topics (the thread's Tasks pane). */
+  threadTopics: (threadId: string) => call<TopicsResult>('GET', `/api/topics?thread=${encodeURIComponent(threadId)}`),
 
   settings: () => call<Settings>('GET', '/api/settings'),
   saveSettings: (patch: Partial<Settings>) => call<Settings>('PUT', '/api/settings', patch),

@@ -26,6 +26,7 @@ import {
   IconUnfold,
   IconShell,
   IconAgentKind,
+  IconTasks,
   IconTerminal,
   IconPaperclip,
   IconPlus,
@@ -43,6 +44,7 @@ import { LinearLinkButton } from './LinearLink'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { answerRevealAsk, flashMessage, useRevealAsk } from '../lib/revealMessage'
 import { ModConnection } from './ModConnection'
+import { setThreadTasksOverlay, useThreadTasksOverlay } from './Topics'
 import { useMentions } from './Mentions'
 import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from './ReplyHelp'
 import { Button, IconButton, Kbd, MenuItem, Popover, ThreadStatusBadge, cx, type MenuAt } from './ui'
@@ -114,6 +116,28 @@ export function ShellButton({ session }: { session: Session }) {
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
       <IconShell size={15} />
+    </IconButton>
+  )
+}
+
+/**
+ * Header button for the open thread's Tasks: desktop shows and hides the pane beside the thread
+ * (layout.tasksPane, stored); a tablet opens them full screen.
+ */
+export function TasksButton() {
+  const { layout, setLayout, isTablet } = useApp()
+  const overlay = useThreadTasksOverlay()
+  const open = isTablet ? overlay : layout.tasksPane
+  return (
+    <IconButton
+      data-testid="tasks-toggle"
+      aria-label={open ? 'Hide tasks' : 'Show tasks'}
+      title={open ? 'Hide tasks' : "Show tasks: what this thread is working on"}
+      aria-pressed={open}
+      onClick={() => (isTablet ? setThreadTasksOverlay(!overlay) : setLayout({ tasksPane: !open }))}
+      className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
+    >
+      <IconTasks size={15} />
     </IconButton>
   )
 }
@@ -362,7 +386,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     return () => document.removeEventListener('visibilitychange', mark)
   }, [thread, threadId])
 
-  // "Show this message" (revealMessage, e.g. from the Topics pane): unfold whatever hides it, then,
+  // "Show this message" (revealMessage, e.g. from the Tasks pane): unfold whatever hides it, then,
   // once it is rendered, scroll it to the middle and flash it.
   const revealAsk = useRevealAsk(threadId)
   const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null)
@@ -532,6 +556,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
         <ThreadHeaderBar session={session} onBack={onBack} others={unreadElsewhere(siblings, threadId)}>
           {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
           <ShellButton session={session} />
+          <TasksButton />
           <IconButton data-testid="mark-read" aria-label="Mark read" title="Mark read (E)" onClick={markRead}>
             <IconCheck size={15} />
           </IconButton>

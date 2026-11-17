@@ -101,6 +101,10 @@ func TestListTopics(t *testing.T) {
 	if got := titles(one); len(got) != 2 || got[0] != "A1" {
 		t.Fatalf("project = %v", got)
 	}
+	th, _ := s.ListTopics(ctx, TopicQuery{ThreadID: tb.ID})
+	if got := titles(th); len(got) != 2 || got[0] != "B1" || got[1] != "B2" {
+		t.Fatalf("thread = %v", got)
+	}
 	// Done ones: only since a time, and at most so many.
 	lim, _ := s.ListTopics(ctx, TopicQuery{DoneLimit: 1})
 	if got := titles(lim); len(got) != 3 || got[2] != "B2" {

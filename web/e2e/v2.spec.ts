@@ -15,7 +15,7 @@ async function openThread(page: Page, subject: string) {
 }
 
 /** The project rail's footer holds Settings, Topics, Decide and Drafts. */
-async function fromMenu(page: Page, testid: 'open-settings' | 'open-topics' | 'open-decide' | 'drafts') {
+async function fromMenu(page: Page, testid: 'open-settings' | 'open-tasks' | 'open-decide' | 'drafts') {
   await page.getByTestId('project-rail').getByTestId(testid).click()
 }
 
@@ -239,17 +239,17 @@ test('settings: the theme and the Topics switch persist on the server', async ({
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByTestId('settings-nav-capabilities').click()
   // Topics is on by default; turned off (it stays off after a reload), its entry leaves the rail.
-  await page.getByRole('switch', { name: 'Topics' }).click()
+  await page.getByRole('switch', { name: 'Tasks' }).click()
   await page.reload()
-  await expect(page.getByRole('switch', { name: 'Topics' })).toHaveAttribute('aria-checked', 'false')
+  await expect(page.getByRole('switch', { name: 'Tasks' })).toHaveAttribute('aria-checked', 'false')
   await page.getByTestId('settings-back').click()
   await expect(page.getByTestId('project-rail').getByTestId('open-settings')).toBeVisible()
-  await expect(page.getByTestId('project-rail').getByTestId('open-topics')).toHaveCount(0)
+  await expect(page.getByTestId('project-rail').getByTestId('open-tasks')).toHaveCount(0)
   await fromMenu(page, 'open-settings')
   await page.getByTestId('settings-nav-capabilities').click()
-  await page.getByRole('switch', { name: 'Topics' }).click()
+  await page.getByRole('switch', { name: 'Tasks' }).click()
   await page.getByTestId('settings-back').click()
-  await fromMenu(page, 'open-topics')
+  await fromMenu(page, 'open-tasks')
   await expect(page.getByTestId('topics')).toBeVisible()
 })
 
