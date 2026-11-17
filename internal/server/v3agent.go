@@ -497,5 +497,75 @@ func (s *Server) v3Inject(ctx context.Context, pending []store.PendingDelivery) 
 		if k, err := s.store.GetThreadKind(ctx, pending[i].ThreadID); err == nil {
 			pending[i].Stream = k == store.ThreadStream
 		}
+		// A hand-off (the person wrote from a task to an agent new on it): the task's state rides along.
+		for _, tg := range pending[i].Tasks {
+			if hc := s.handoffContext(ctx, tg.TaskID, pending[i].ID); hc != "" {
+				pending[i].Body = hc + "\n\n" + pending[i].Body
+			}
+		}
 	}
+}
+
+// handoffContext is what an agent new on a task needs to pick it up: the task, its checklist, its
+// last report and its latest messages. "" when the message is no hand-off.
+func (s *Server) handoffContext(ctx context.Context, taskID, messageID string) string {
+	evs, err := s.store.TaskEvents(ctx, taskID)
+	if err != nil {
+		return ""
+	}
+	handoff := false
+	for _, e := range evs {
+		if e.Kind == "handoff" && e.MessageID == messageID {
+			handoff = true
+		}
+	}
+	if !handoff {
+		return ""
+	}
+	t, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("<minbox_handoff task=\"" + t.ID + "\">\nYou are taking over this task from another agent. Task " + t.ID + ": " + t.Title + " (" + t.Status + ")\n")
+	if t.Summary != "" {
+		b.WriteString(t.Summary + "\n")
+	}
+	if t.Detail != "" {
+		b.WriteString(truncRunes(t.Detail, 1500) + "\n")
+	}
+	for i, p := range store.FlatSteps(t.Steps) {
+		box := " "
+		if p.Done {
+			box = "x"
+		}
+		b.WriteString("  " + strconv.Itoa(i+1) + ". [" + box + "] " + p.Text + "\n")
+	}
+	if t.Report != "" {
+		b.WriteString("Last report: " + truncRunes(t.Report, 1500) + "\n")
+	}
+	ids, _ := s.store.TaskMessageIDs(ctx, taskID)
+	if len(ids) > 6 {
+		ids = ids[len(ids)-6:]
+	}
+	for _, id := range ids {
+		if id == messageID {
+			continue
+		}
+		m, err := s.store.GetMessage(ctx, id)
+		if err != nil {
+			continue
+		}
+		who := "agent"
+		text := m.Body
+		if m.Author == store.AuthorUser {
+			who = "person"
+			if m.Words != "" {
+				text = m.Words
+			}
+		}
+		b.WriteString("[" + who + "] " + truncRunes(strings.Join(strings.Fields(text), " "), 400) + "\n")
+	}
+	b.WriteString("</minbox_handoff>")
+	return b.String()
 }

@@ -8,6 +8,8 @@ import { agentKindLabel } from '../lib/agents'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { ProjectRail } from '../components/ProjectRail'
 import { AttachmentViewer } from '../components/AttachmentViewer'
+import { ConnectionBanner } from '../components/Banners'
+import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, useBoard } from './Board'
 import { TaskView } from './TaskView'
 import { StreamView, type SidePane } from './StreamView'
@@ -45,7 +47,8 @@ export function V3App() {
     const s = sessions?.find((x) => x.id === route.s)
     if (s && projectId && s.project_id && s.project_id !== projectId) selectProject(s.project_id)
   }, [view, route.s, sessions, projectId])
-  useEffect(() => setPane('tasks'), [route.s])
+  // A link with tab=terminal (older links, the phone's terminal) opens the agent with its terminal.
+  useEffect(() => setPane(route.tab === 'terminal' ? 'terminal' : 'tasks'), [route.s, route.tab])
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
 
   // ---- keys ----
@@ -143,6 +146,21 @@ export function V3App() {
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
   }, [])
+  // Ctrl+` shows and hides the agent's shell, also from inside a terminal (caught before it sees the key).
+  const shellRef = useRef(() => {})
+  shellRef.current = () => {
+    if (view === 'agent') setPane(pane === 'shell' ? 'tasks' : 'shell')
+  }
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
+      e.preventDefault()
+      e.stopPropagation()
+      shellRef.current()
+    }
+    window.addEventListener('keydown', on, true)
+    return () => window.removeEventListener('keydown', on, true)
+  }, [])
 
   const tasks = board?.tasks ?? []
   const onOpenAttachment = (a: Attachment, m: V3Message) => setViewer({ a, m })
@@ -177,6 +195,8 @@ export function V3App() {
       )}
       {!isPhone && (
         <nav className="v-sidebar" data-testid="sidebar">
+          <ConnectionBanner />
+          <PairRequestBanner />
           <div style={{ height: 8 }} />
           <button type="button" className={'v-sb-item' + (view === 'board' ? ' sel' : '')} data-testid="nav-board" onClick={nav.board}>
             ▤ Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
@@ -200,6 +220,12 @@ export function V3App() {
             New message… <span className="v-kbd">⇧N</span>
           </button>
         </nav>
+      )}
+      {isPhone && (
+        <>
+          <ConnectionBanner />
+          <PairRequestBanner />
+        </>
       )}
       <main className="v-main">{main}</main>
       {isPhone && (
@@ -291,13 +317,16 @@ function AgentRow({ a, sel, counts }: { a: Session; sel: boolean; counts?: { unr
 }
 
 function AgentsList({ agents, counts, onNew }: { agents: Session[]; counts: Record<string, { unread: number; open_questions: number }>; onNew: () => void }) {
-  const { projects } = useApp()
+  const { projects, navigate } = useApp()
   const { id } = useSelectedProject()
   return (
     <div className="v-col" data-testid="agents-view">
       <div className="v-head">
         <div className="v-r1">
           <h1>Agents</h1>
+          <button type="button" className="v-btn" data-testid="open-settings-phone" onClick={() => navigate({ view: 'settings' }, { push: true })}>
+            Settings
+          </button>
           <button type="button" className="v-btn" onClick={onNew}>
             ＋ New
           </button>
@@ -325,7 +354,7 @@ function AgentsList({ agents, counts, onNew }: { agents: Session[]; counts: Reco
 
 /** ⇧N: a message to an agent (the project's main one by default) or to a new agent. The agent decides what it is. */
 function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; initialTo?: string; onClose: () => void }) {
-  const { error, projects, toast } = useApp()
+  const { error, projects, toast, setOverlay } = useApp()
   const { id: projectId } = useSelectedProject()
   const nav = useNav()
   const main = agents.find((a) => a.is_main) ?? agents[0]
@@ -354,6 +383,14 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
     <div className="v-overlay" onMouseDown={onClose} data-testid="new-message-dialog">
       <div className="v-dialog" onMouseDown={(e) => e.stopPropagation()}>
         <h3>New message</h3>
+        {!project && (
+          <div className="v-rowf" data-testid="no-project">
+            There is no project yet: add one (its folder) first, then write to its agent.
+            <button type="button" className="v-btn pri" onClick={() => setOverlay({ kind: 'new-project' })}>
+              Add a project
+            </button>
+          </div>
+        )}
         <div className="v-rowf">
           To
           <select aria-label="To" data-testid="new-to" value={to} onChange={(e) => setTo(e.target.value)}>
@@ -428,6 +465,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['X', 'Done / reopen the focused task'],
     ['R', 'Focus the reply box'],
     ['T', 'Terminal of the agent'],
+    ['Ctrl+`', 'Shell of the agent'],
     ['⌘↵', 'Send'],
     ['Esc', 'Close / back to the Board'],
   ]

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -262,5 +263,34 @@ func TestV3GoalAutonomousRun(t *testing.T) {
 	got, _ := e.st.GetTask(context.Background(), gid)
 	if got.Status != store.TaskDone || got.Auto.State != store.AutoStopped || got.Auto.Reason != "met" {
 		t.Fatalf("goal after met = %+v", got)
+	}
+}
+
+func TestV3HandoffCarriesTheTask(t *testing.T) {
+	e := newEnv(t)
+	a := e.createSession()
+	b := e.createSession()
+	e.personSays(a, "fix the gauge")
+	_, created, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Fix gauge", "steps": []any{map[string]any{"text": "Look", "done": true}}}, bearer(a))
+	e.agentSays(a, map[string]any{"body": "Looked: the scale is off."})
+	tid := created["task_id"].(string)
+	// The person writes from the task to b: a hand-off.
+	code, m, _ := e.do("POST", "/api/v3/sessions/"+b.ID+"/messages", map[string]any{"words": "please take it over", "task_ids": []string{tid}}, nil)
+	if code != 201 {
+		t.Fatalf("send: %d %v", code, m)
+	}
+	_, _, list := e.do("GET", "/api/agent/pending", nil, bearer(b))
+	if len(list) != 1 {
+		t.Fatalf("pending = %v", list)
+	}
+	body := list[0].(map[string]any)["body"].(string)
+	for _, want := range []string{"<minbox_handoff task=\"" + tid + "\">", "1. [x] Look", "[agent] Looked: the scale is off.", "please take it over"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("hand-off lacks %q:\n%s", want, body)
+		}
+	}
+	got, _ := e.st.GetTask(context.Background(), tid)
+	if len(got.Agents) != 2 {
+		t.Fatalf("agents = %+v", got.Agents)
 	}
 }

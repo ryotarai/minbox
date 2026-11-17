@@ -6,8 +6,7 @@ import { projectHueStyle } from '../lib/projectColor'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
-import { replyDraftThreads, useDraftsVersion } from '../lib/drafts'
-import { IconArchive, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPencil, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
+import { IconArchive, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx, type MenuAt } from './ui'
 import { useContextMenu } from './ContextMenu'
 
@@ -282,16 +281,13 @@ type IconC = typeof IconSettings
 /** An entry that is not about a project: Settings, Tasks, Decide, Drafts. The rail's footer and the phone's project sheet list them. */
 export type GlobalEntry = { id: string; testid: string; label: string; title: string; icon: IconC; active: boolean; count?: number; run: () => void }
 
-/** Settings and Tasks always; Decide when it is turned on; Drafts with its count. */
+/** Settings always; Decide when it is turned on. */
 export function useGlobalEntries(): GlobalEntry[] {
   const { settings, setOverlay, navigate, route } = useApp()
-  useDraftsVersion()
-  const drafts = replyDraftThreads().length
   const out: GlobalEntry[] = [
     { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
   ]
   if (settings.decision_mode) out.push({ id: 'decide', testid: 'open-decide', label: 'Decide', title: 'Decide (Shift+D)', icon: IconBolt, active: false, run: () => setOverlay({ kind: 'decide' }) })
-  out.push({ id: 'drafts', testid: 'drafts', label: 'Drafts', title: drafts ? `Drafts (${drafts})` : 'Drafts', icon: IconPencil, active: false, count: drafts, run: () => setOverlay({ kind: 'drafts' }) })
   return out
 }
 

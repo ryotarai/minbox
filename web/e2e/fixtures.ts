@@ -273,7 +273,7 @@ export { expect }
  * A no-op when it is already shown and on phone/tablet widths (their terminal is a view, not a pane).
  */
 export async function showTerminal(page: Page) {
-  if ((page.viewportSize()?.width ?? 1500) < 1100) return
+  if ((page.viewportSize()?.width ?? 1500) < 700) return
   const toggle = page.getByTestId('terminal-toggle')
   await toggle.waitFor({ timeout: 5_000 })
   if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
@@ -337,22 +337,25 @@ export async function chooseFolder(page: Page) {
   await expect(cwd).toBeVisible()
 }
 
-/** Creates a session in the given directory through the UI. */
+/**
+ * Creates a session in the given directory (v3: through the API, as the composer's "New agent" does)
+ * and opens its stream with the terminal beside it. The page must be on the minbox already.
+ */
 export async function createSession(page: Page, cwd: string, name: string, agent?: 'claude' | 'pi' | 'opencode') {
-  // With no sessions the dialog opens by itself, maybe right after we look:
-  // press New only while the dialog is not there, briefly each time.
-  const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-  for (let i = 0; i < 30 && !(await form.isVisible()); i++) {
-    await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
-  }
-  await chooseFolder(page)
-  await page.getByTestId('new-session-cwd').fill(cwd)
-  await page.getByTestId('new-session-name').fill(name)
-  if (agent) await page.locator(`[data-testid="new-session-agent-option"][data-agent="${agent}"]`).click()
-  await page.getByTestId('new-session-start').click()
-  await expect(page.getByTestId('terminal-toggle').or(page.getByTestId('terminal-session-name')).or(page.getByTestId('phone')).first()).toBeVisible()
+  if (!/^https?:/.test(page.url())) throw new Error('createSession: open the minbox first')
+  const s = await page.evaluate(
+    async (body) => {
+      const r = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!r.ok) throw new Error('create session: ' + r.status + ' ' + (await r.text()))
+      return r.json()
+    },
+    { cwd, name, agent },
+  )
+  await page.evaluate((id) => (location.hash = `v=agent&s=${id}`), s.id)
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', s.id)
   await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name').filter({ hasText: name })).toBeVisible()
+  return s.id as string
 }
 
 /**
@@ -390,10 +393,9 @@ c.commit()
   return id
 }
 
-/** Desktop: selects a session (the threads list shows only its threads, the terminal follows). */
+/** Desktop: opens a session's (agent's) stream from the sidebar, with its terminal. */
 export async function selectSession(page: Page, name: string) {
-  await page.getByTestId('session-filter').click()
-  await page.getByTestId('session-option').filter({ hasText: name }).first().click()
+  await page.getByTestId('agent-row').filter({ has: page.locator('.v-nm', { hasText: name }) }).first().click()
   await showTerminal(page)
   await expect(page.getByTestId('terminal-session-name')).toHaveText(name)
 }

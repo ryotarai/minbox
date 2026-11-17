@@ -231,3 +231,4 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-conv { padding: 12px 12px; }
   .v-qc { margin: 8px 12px; }
 }
+.v-composer .v-tagpop { top: auto; bottom: 100%; margin-bottom: 4px; }

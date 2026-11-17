@@ -30,6 +30,19 @@ test('agent stream: chips, + tag picker with a new task, the terminal beside the
   await expect(q.getByTestId('tag')).toHaveAttribute('title', 'Staging health')
   await taskNamed(minbox, 'Staging health')
 
+  // # at the start of the reply box tags the message being written.
+  await page.getByTestId('composer-text').click()
+  await page.keyboard.type('#')
+  await expect(page.getByTestId('tag-picker')).toBeVisible()
+  await page.keyboard.type('staging')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('composer').getByTestId('tag')).toHaveAttribute('title', 'Staging health')
+  await page.getByTestId('composer-text').fill('the staging check is green now')
+  await page.getByTestId('composer-send').click()
+  const sent = stream.locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'the staging check is green now' })
+  await expect(sent.getByTestId('tag')).toHaveAttribute('title', 'Staging health')
+  await expect(sent).not.toHaveClass(/pending/)
+
   // T opens the terminal beside the stream (the fake agent's screen).
   await page.locator('body').click({ position: { x: 700, y: 30 } })
   await page.keyboard.press('t')
