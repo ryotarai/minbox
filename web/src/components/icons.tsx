@@ -72,6 +72,12 @@ export const IconCheck = (p: P) => (
     <path d="M3 8.5 6.5 12 13 4.5" />
   </Svg>
 )
+export const IconCopy = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+    <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
+  </Svg>
+)
 export const IconGrid = (p: P) => (
   <Svg strokeWidth={1.5} {...p}>
     <rect x="2" y="2" width="5" height="5" rx="1" />

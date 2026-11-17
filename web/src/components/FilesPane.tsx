@@ -4,7 +4,7 @@ import type { ContextMenuItem as FileTreeContextMenuItem, ContextMenuOpenContext
 import { api, type FileTreeListing, type Session, type TreeFile } from '../api'
 import { useApp } from '../lib/app'
 import { CODE_HIGHLIGHT_MAX_CHARS, CODE_WRAP_LINE_CHARS, langOf } from './AttachmentViewer'
-import { IconBack, IconClose, IconRefresh } from './icons'
+import { IconBack, IconCheck, IconClose, IconCopy, IconRefresh } from './icons'
 import { insertFileMention } from './Files'
 import { cx, IconButton } from './ui'
 
@@ -254,6 +254,24 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
   const [file, setFile] = useState<TreeFile | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [tokens, setTokens] = useState<Tok[][] | null>(null)
+  const { error } = useApp()
+  const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(copiedTimer.current), [])
+  // Copies the text already loaded for the viewer; a brief check says it worked.
+  const copy = () => {
+    if (file?.kind !== 'text') return
+    const clip = navigator.clipboard
+    if (!clip) return error('The clipboard is not available here')
+    clip
+      .writeText(file.text ?? '')
+      .then(() => {
+        setCopied(true)
+        clearTimeout(copiedTimer.current)
+        copiedTimer.current = setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(error)
+  }
   useEffect(() => {
     let live = true
     api
@@ -306,6 +324,19 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
         >
           @
         </button>
+        {file?.kind === 'text' && (
+          <IconButton
+            aria-label={copied ? 'Copied' : 'Copy contents'}
+            title={copied ? 'Copied' : 'Copy contents'}
+            data-testid="file-viewer-copy"
+            data-copied={copied || undefined}
+            size={phone ? 32 : 26}
+            onClick={copy}
+            className={copied ? 'text-ok' : undefined}
+          >
+            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+          </IconButton>
+        )}
         {!phone && (
           <IconButton aria-label="Close file" title="Close file" data-testid="file-viewer-close" size={26} onClick={onClose}>
             <IconClose size={13} />
