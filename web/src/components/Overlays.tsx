@@ -56,7 +56,7 @@ const KEYS: [string, string, boolean?][] = [
   ['Shell pane', 'Ctrl+`'],
   ['Close layer', 'Esc'],
   ['Tasks', '⇧T'],
-  ['', ''],
+  ['Files pane', '⇧F'],
   ['List', '', true],
   ['Thread', '', true],
   ['Move', '↑ ↓'],

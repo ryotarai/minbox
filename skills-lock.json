@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "skills": {
+    "trees": {
+      "source": "pierrecomputer/pierre",
+      "commit": "c29a4007cf96accb0a5ad072a57433dd9229ad44",
+      "sourceType": "github",
+      "skillPath": "skills/trees/SKILL.md",
+      "computedHash": "2fc6b4d2557dfdafa9880fb8ace37a02419e9248efa84262ccb6553889227526",
+      "installMode": "copy"
+    }
+  }
+}

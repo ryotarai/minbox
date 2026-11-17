@@ -17,6 +17,7 @@ export function ThreadMoreMenu({
   onBack,
   openQuestions,
   onShell,
+  onFiles,
   top,
   testid,
 }: {
@@ -30,6 +31,8 @@ export function ThreadMoreMenu({
   openQuestions: number
   /** Open the session's companion shell (omitted when the session has none). */
   onShell?: () => void
+  /** Show the Files pane (the phone's header has no room for its button). */
+  onFiles?: () => void
   /** Items above the thread's own (each closes the menu itself). */
   top?: ReactNode
   testid?: string
@@ -92,6 +95,11 @@ export function ThreadMoreMenu({
         {onShell && (
           <MenuItem testid="thread-open-shell" onClick={() => (close(), onShell())}>
             Open shell
+          </MenuItem>
+        )}
+        {onFiles && (
+          <MenuItem testid="thread-open-files" onClick={() => (close(), onFiles())}>
+            Files
           </MenuItem>
         )}
         {naming ? (

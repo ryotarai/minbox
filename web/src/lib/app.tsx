@@ -112,13 +112,16 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   /** Desktop: the open thread's Tasks pane is shown (beside the thread, before the terminal), and its width. */
   tasksPane: boolean
   tasksW: number
+  /** Desktop: the Files pane (the session's folder as a tree) is shown (after the Tasks pane), and its width. */
+  filesPane: boolean
+  filesW: number
 }
 function defaultLayout(): Layout {
   const w = window.innerWidth
-  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
-  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
-  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
-  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
+  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320, filesPane: false, filesW: 360 }
+  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320, filesPane: false, filesW: 360 }
+  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320, filesPane: false, filesW: 360 }
+  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320, filesPane: false, filesW: 360 }
 }
 function readLayout(): Layout {
   try {

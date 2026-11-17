@@ -837,6 +837,11 @@ export type SearchResult = { threads: SearchHit[]; messages: SearchHit[]; files:
 export type Completion = { name: string; description: string }
 export type Completions = { agents: Completion[]; skills: Completion[]; commands: Completion[] }
 export type FileEntry = { path: string; dir: boolean }
+/** The Files pane: every file under a session's folder (relative, "/"-separated; empty folders end in "/"). */
+export type FileTreeListing = { root: string; git: boolean; paths: string[]; truncated: boolean }
+export type TreeGitStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked'
+/** One file for the viewer: text carries it; an image's bytes are at treeRawUrl. */
+export type TreeFile = { path: string; size: number; kind: 'text' | 'image' | 'binary' | 'too_large' | 'hidden'; text?: string }
 
 export type Storage = {
   data_dir: string
@@ -971,6 +976,10 @@ export const api = {
   archiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/archive`),
   unarchiveSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/unarchive`),
   completions: (id: string) => call<Completions>('GET', `/api/sessions/${id}/completions`),
+  tree: (id: string) => call<FileTreeListing>('GET', `/api/sessions/${id}/tree`),
+  treeStatus: (id: string) => call<{ entries: { path: string; status: TreeGitStatus }[] }>('GET', `/api/sessions/${id}/tree/status`),
+  treeFile: (id: string, path: string) => call<TreeFile>('GET', `/api/sessions/${id}/tree/file?path=${encodeURIComponent(path)}`),
+  treeRawUrl: (id: string, path: string) => `/api/sessions/${id}/tree/raw?path=${encodeURIComponent(path)}`,
   files: (id: string, prefix: string) => call<{ entries: FileEntry[] }>('GET', `/api/sessions/${id}/files?prefix=${encodeURIComponent(prefix)}`),
 
   allThreads: () => call<Thread[]>('GET', '/api/threads'),

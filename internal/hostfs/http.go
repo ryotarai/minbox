@@ -88,6 +88,31 @@ func Handler(l *Local) http.Handler {
 		}
 		writeJSON(w, 200, v)
 	})
+	mux.HandleFunc("GET /fs/tree", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(q(r, "limit"))
+		v, err := l.ListTree(r.Context(), q(r, "root"), limit)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, v)
+	})
+	mux.HandleFunc("GET /fs/tree/gitstatus", func(w http.ResponseWriter, r *http.Request) {
+		v, err := l.TreeGitStatus(r.Context(), q(r, "root"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, v)
+	})
+	mux.HandleFunc("GET /fs/tree/resolve", func(w http.ResponseWriter, r *http.Request) {
+		p, err := l.ResolveTreePath(r.Context(), q(r, "root"), q(r, "rel"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"path": p})
+	})
 	mux.HandleFunc("GET /fs/gitdiff", func(w http.ResponseWriter, r *http.Request) {
 		d, err := l.GitDiff(r.Context(), q(r, "cwd"), q(r, "path"), q(r, "base"))
 		if err != nil {
@@ -235,6 +260,24 @@ func (c *Remote) ListFiles(ctx context.Context, cwd, query string, limit int) ([
 	var v []FileEntry
 	err := c.getJSON(ctx, "/fs/files", url.Values{"cwd": {cwd}, "q": {query}, "limit": {strconv.Itoa(limit)}}, &v)
 	return v, err
+}
+
+func (c *Remote) ListTree(ctx context.Context, root string, limit int) (Tree, error) {
+	var v Tree
+	err := c.getJSON(ctx, "/fs/tree", url.Values{"root": {root}, "limit": {strconv.Itoa(limit)}}, &v)
+	return v, err
+}
+
+func (c *Remote) TreeGitStatus(ctx context.Context, root string) ([]GitStatusEntry, error) {
+	var v []GitStatusEntry
+	err := c.getJSON(ctx, "/fs/tree/gitstatus", url.Values{"root": {root}}, &v)
+	return v, err
+}
+
+func (c *Remote) ResolveTreePath(ctx context.Context, root, rel string) (string, error) {
+	var v struct{ Path string }
+	err := c.getJSON(ctx, "/fs/tree/resolve", url.Values{"root": {root}, "rel": {rel}}, &v)
+	return v.Path, err
 }
 
 func (c *Remote) GitDiff(ctx context.Context, cwd, path, base string) (string, error) {

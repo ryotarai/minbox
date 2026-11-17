@@ -51,7 +51,9 @@ const GLOBAL = new Set(['mod+k', 'mod+b', 'escape', 'mod+enter'])
 function onKeyDown(e: KeyboardEvent) {
   if (e.defaultPrevented || e.isComposing) return
   const key = keyOf(e)
-  const typing = isTyping(e.target)
+  // The element itself, also inside a shadow root (the Files pane's tree and its search box).
+  const target = e.composedPath?.()[0] ?? e.target
+  const typing = isTyping(target)
   const terminal = inTerminal(e.target)
   if (terminal && key !== 'mod+k') return
   if (typing && !GLOBAL.has(key)) return

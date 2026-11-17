@@ -221,6 +221,11 @@ export const IconTasks = (p: P) => (
     <path d="M8 4.25h6M8 9.75h6M2.5 13.5h.5M8 13.5h6" />
   </Svg>
 )
+export const IconFiles = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="M1.75 4.25v8a1 1 0 0 0 1 1h10.5a1 1 0 0 0 1-1v-6.5a1 1 0 0 0-1-1H8L6.5 2.75H2.75a1 1 0 0 0-1 1z" />
+  </Svg>
+)
 export const IconBolt = (p: P) => (
   <Svg strokeWidth={1.5} {...p}>
     <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />

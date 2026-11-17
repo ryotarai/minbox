@@ -12,7 +12,7 @@ type Token = { ch: '@' | '/'; start: number; q: string; quoted: boolean }
 type Item = { key: string; insert: string; kind: 'file' | 'dir' | 'agent' | 'skill'; description?: string }
 
 /** The text to insert for a path: quoted when it has white space. */
-const mentionOf = (path: string) => (/\s/.test(path) ? `@"${path}"` : `@${path}`)
+export const mentionOf = (path: string) => (/\s/.test(path) ? `@"${path}"` : `@${path}`)
 
 /** The mention being typed just before the caret, if any ("@" must start a word: not a@b). */
 function tokenAt(v: string, caret: number, agents: boolean): Token | null {
