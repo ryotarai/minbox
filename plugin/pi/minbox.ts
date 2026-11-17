@@ -16,6 +16,8 @@
  * - A long minbox_subagent run (plugin/pi/subagent.ts) keeps the status working: its partial results
  *   are tool_execution_update events, and busy.ts is a marker the two extensions share.
  * - Refuses Bash commands that would open a page on the host machine.
+ * - Reports bash commands another extension blocked (tool_execution_end in error without running),
+ *   and the later successful run of one; the reply area offers the latest as "Run yourself".
  * - Reports the conversation id and file in a hello at every session start (also after /new or
  *   /resume, which restart the extension), so minbox resumes the right conversation later.
  *
@@ -30,6 +32,7 @@
  * without Pi (minbox.test.ts, run with `node --test`); the default export wires the real thing.
  */
 import { readFileSync } from 'node:fs'
+import { DENIED_MAX, normCommand, piBlocked, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
 import {
   openDeny,
@@ -317,20 +320,67 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   pi.on('tool_call', async (e: any) => {
     if (busy) busyAt = deps.now()
     if (e?.toolName === 'bash' && typeof e.input?.command === 'string' && opensBrowser(e.input.command)) {
+      if (typeof e.toolCallId === 'string') ownBlocks.add(e.toolCallId)
       return { block: true, reason: openDeny(names.open) }
     }
     return undefined
   })
 
+  // ---- denied commands (../minbox/hooks/denied.ts) ----
+  // Pi has no permission prompt of its own: a bash call is denied when an extension's tool_call
+  // handler blocks it. The first blocking handler ends the chain (later ones, maybe this one, never
+  // see the call), so the block is read from the call's end: tool_execution_end in error with no
+  // durationMs (the tool never ran). tool_execution_start carries the command.
+
+  /** bash commands of running calls, by call id. */
+  const bashCalls = new Map<string, string>()
+  /** Calls this extension blocked itself (opening a page): not reported. */
+  const ownBlocks = new Set<string>()
+  /** Commands reported as denied: a later successful run clears them on the server. */
+  const deniedCommands = new Set<string>()
+  /** The threads of the messages delivered for the running turn. */
+  let turnThreads: string[] = []
+
+  function onToolStart(e: any): void {
+    if (e?.toolName === 'bash' && typeof e.toolCallId === 'string') {
+      const command = normCommand(e.args?.command)
+      if (command) bashCalls.set(e.toolCallId, command)
+    }
+  }
+
+  function onToolEnd(e: any): void {
+    if (e?.toolName !== 'bash' || typeof e.toolCallId !== 'string') return
+    const command = bashCalls.get(e.toolCallId) ?? ''
+    bashCalls.delete(e.toolCallId)
+    if (ownBlocks.delete(e.toolCallId) || !command) return
+    const reason = piBlocked(e)
+    if (reason !== null) {
+      if (command.length > DENIED_MAX) return
+      deniedCommands.add(command)
+      note('denied-command', `a bash command was blocked (${command.length} characters)`)
+      const body: DeniedReport = { command, reason: shortReason(reason), thread_id: turnThreads.length === 1 ? turnThreads[0] : undefined, at: new Date(deps.now()).toISOString() }
+      void api('POST', '/api/agent/denied-commands', body)
+    } else if (e.isError !== true && deniedCommands.delete(command)) {
+      void api('POST', '/api/agent/denied-commands/ran', { command })
+    }
+  }
+
   // ---- status ----
 
   pi.on('agent_start', async () => setBusy(true))
-  pi.on('agent_settled', async () => setBusy(false))
+  pi.on('agent_settled', async () => {
+    setBusy(false)
+    turnThreads = []
+  })
   const alive = async () => {
     if (busy) busyAt = deps.now()
   }
   pi.on('turn_start', alive)
-  pi.on('tool_execution_start', alive)
+  pi.on('tool_execution_start', async (e: any) => {
+    await alive()
+    onToolStart(e)
+  })
+  pi.on('tool_execution_end', async (e: any) => onToolEnd(e))
   // A long tool (minbox_subagent) streams partial results as tool_execution_update.
   pi.on('tool_execution_update', alive)
   pi.on('input', async (e: any) => {
@@ -430,6 +480,7 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       return false
     }
     lastDeliveryAt = new Date(deps.now()).toISOString()
+    turnThreads = [...new Set([...(steer ? turnThreads : []), ...deliver.map((p) => p.thread_id)])]
     note('delivered', `submitted ${deliver.length} message(s): ${deliver.map((p) => p.id).join(',')}`)
     for (const p of deliver) await api('POST', pendingPath(p.id, 'delivered'))
     return true

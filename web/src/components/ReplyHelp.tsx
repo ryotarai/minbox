@@ -7,7 +7,9 @@ import { cx } from './ui'
 
 // Reply help: questions for the person (drafted by the helper agent, GET /api/threads/{id}/suggestions)
 // that help them decide how to answer the agent's latest message. Picked options and "Other" text are
-// put into the reply when it is sent (composeReplyHelp).
+// put into the reply when it is sent (composeReplyHelp). The same answer carries `command`: a shell
+// command the agent tried and was denied, as its integration reported it (never guessed from text),
+// offered as "Run yourself".
 
 export type { ReplyHelpAnswer }
 
@@ -123,6 +125,8 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     },
     dismiss: () => {
       setReplyHelpDraft(threadId, {})
+      // The denied command goes too, also on the server (it is not offered again).
+      if (get().data?.command) api.dismissDeniedCommand(threadId).catch(() => {})
       set((st) => ({ ...st, dismissed: true }))
     },
     clear: () => setReplyHelpDraft(threadId, {}),

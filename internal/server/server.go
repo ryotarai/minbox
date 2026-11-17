@@ -73,6 +73,8 @@ type Server struct {
 	hub      *hub
 	sessions *sessionManager
 	suggest  *suggester
+	// denied: shell commands the agent was denied, offered as "Run yourself" (denied.go).
+	denied *deniedStore
 	// poller receives messages from Slack (RunSlackInbound runs it); its status feeds the Notifications API.
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
@@ -176,6 +178,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.poller = notify.NewPoller(st, slackInbound{s})
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runSuggest)
+	s.denied = newDeniedStore()
 	s.pickRun = s.runPick
 	s.topicsRun = s.runTopicsHelper
 	if noHelperRuns {
@@ -259,6 +262,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)
 	mux.HandleFunc("GET /api/threads/{id}/suggestions", s.threadSuggestions)
+	mux.HandleFunc("DELETE /api/threads/{id}/denied-command", s.dismissDeniedCommand)
 	mux.HandleFunc("POST /api/threads/{id}/fork/preview", s.forkPreview)
 	mux.HandleFunc("POST /api/threads/{id}/fork", s.forkThread)
 	mux.HandleFunc("GET /api/threads/{id}/linear", s.getThreadLinear)
@@ -374,6 +378,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/heartbeat", s.agent(s.agentHeartbeat))
 	mux.HandleFunc("POST /api/agent/title", s.agent(s.agentTitle))
 	mux.HandleFunc("POST /api/agent/open", s.agent(s.agentOpen))
+	mux.HandleFunc("POST /api/agent/denied-commands", s.agent(s.agentDeniedCommand))
+	mux.HandleFunc("POST /api/agent/denied-commands/ran", s.agent(s.agentRanCommand))
 	mux.HandleFunc("POST /api/agent/messages", s.agent(s.agentSend))
 	mux.HandleFunc("GET /api/agent/threads", s.agent(s.agentListThreads))
 	mux.HandleFunc("GET /api/agent/threads/{id}", s.agent(s.agentReadThread))
