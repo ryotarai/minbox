@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { api, type Topic, type TopicDetail, type TopicStatus, type TopicsResult } from '../api'
 import { useApp } from '../lib/app'
 import { isMac } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { renderMarkdown } from '../lib/markdown'
 import { selectProject, useSelectedProject } from '../lib/projects'
+import { revealMessage } from '../lib/revealMessage'
 import { ContextMenu, useContextMenu } from './ContextMenu'
 import { IconBack, IconCheck, IconClose, IconMore, IconSend } from './icons'
 import { ThreadProjectBadge } from './ThreadList'
@@ -294,7 +295,7 @@ export function TopicsPage() {
       onMove={(st) => move(selected.id, st)}
       onOpenThread={(messageId) => {
         open(selected)
-        if (messageId) jumpToMessage(messageId)
+        if (messageId) revealMessage(selected.thread_id, messageId)
       }}
     />
   )
@@ -523,37 +524,6 @@ export function topicPrefix(title: string): string {
 }
 
 /**
- * After a jump to a thread: once the message is on screen, bring it into view and flash it (the
- * thread view first scrolls to its end; this comes after). Gives up quietly after a few seconds
- * (an old message the view does not show).
- */
-function jumpToMessage(id: string) {
-  const sel = `[data-testid="message"][data-message-id="${CSS.escape(id)}"]`
-  const started = Date.now()
-  const tick = () => {
-    const el = document.querySelector<HTMLElement>(sel)
-    if (!el) {
-      if (Date.now() - started < 5000) setTimeout(tick, 100)
-      return
-    }
-    setTimeout(() => {
-      const now = document.querySelector<HTMLElement>(sel) ?? el
-      now.scrollIntoView({ block: 'center' })
-      now.dataset.jumped = 'true'
-      now.style.outline = '2px solid var(--mb-accent)'
-      now.style.outlineOffset = '4px'
-      now.style.borderRadius = '12px'
-      setTimeout(() => {
-        now.style.outline = ''
-        now.style.outlineOffset = ''
-        now.style.borderRadius = ''
-      }, 2000)
-    }, 250)
-  }
-  tick()
-}
-
-/**
  * A topic's pane: the fuller summary (Markdown), its steps as a read-only checklist with the
  * progress, the thread's messages about it (a click opens the thread at that message), and a box
  * that sends a message to the thread headed with the topic's name. Beside the board on a desktop,
@@ -601,6 +571,18 @@ function TopicPane({
   const body = (t.detail || t.summary || '').trim()
   const html = useMemo(() => (body ? renderMarkdown(body) : ''), [body])
   const msgs = detail?.topic.id === t.id ? detail.messages : null
+  // The related messages scroll on their own, oldest at the top, and start at the bottom (the
+  // newest). They stay at the bottom as messages arrive, unless the person scrolled up in the list.
+  const listRef = useRef<HTMLUListElement>(null)
+  const listAtBottom = useRef(true)
+  useEffect(() => {
+    listAtBottom.current = true
+  }, [t.id])
+  const lastMsg = msgs && msgs.length ? msgs[msgs.length - 1]!.id : ''
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (el && listAtBottom.current) el.scrollTop = el.scrollHeight
+  }, [t.id, msgs?.length, lastMsg])
   const session = sessions?.find((s) => s.id === t.session_id)
   const prefix = topicPrefix(t.title)
   const mod = isMac() ? '⌘' : 'Ctrl+'
@@ -729,7 +711,15 @@ function TopicPane({
           ) : msgs.length === 0 ? (
             <span className="text-[12.5px] text-subtle">No messages linked yet.</span>
           ) : (
-            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+            <ul
+              ref={listRef}
+              data-testid="topic-messages"
+              onScroll={(e) => {
+                const el = e.currentTarget
+                listAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+              }}
+              className={cx('m-0 flex shrink-0 list-none flex-col gap-1.5 overflow-y-auto overscroll-contain p-0 pr-1', phone ? 'max-h-[45vh]' : 'max-h-[min(360px,45vh)]')}
+            >
               {msgs.map((m) => (
                 <li key={m.id}>
                   <button

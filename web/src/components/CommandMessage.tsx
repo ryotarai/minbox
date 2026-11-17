@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Message } from '../api'
 import { cx } from './ui'
 
@@ -16,9 +16,13 @@ function duration(ms: number): string {
 }
 
 /** A person's "!" message: the command, its output (long output collapsed) and how it ended. */
-export function CommandMessage({ m, phone }: { m: Message; phone?: boolean }) {
+export function CommandMessage({ m, phone, revealed }: { m: Message; phone?: boolean; revealed?: number }) {
   const c = m.command
   const [open, setOpen] = useState(false)
+  // Asked to show this message (revealMessage): the whole output, not its first lines.
+  useEffect(() => {
+    if (revealed) setOpen(true)
+  }, [revealed])
   if (!c) return null
   const running = c.state === 'running'
   const lines = c.output.replace(/\n$/, '').split('\n')
