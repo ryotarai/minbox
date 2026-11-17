@@ -257,6 +257,17 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         r = api("POST", "/api/agent/messages", body)
         last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
+    elif line.startswith("denied "):
+        # denied <command>: what the mod reports when a Bash call was denied (in the last thread's turn)
+        body = {"command": line[len("denied "):], "reason": "The user doesn't want to proceed with this tool use."}
+        if last_thread:
+            body["thread_id"] = last_thread
+        r = api("POST", "/api/agent/denied-commands", body)
+        out(f"denied reported {r.get('thread_id', r)}")
+    elif line.startswith("ran "):
+        # ran <command>: the mod's report that a command denied earlier ran
+        r = api("POST", "/api/agent/denied-commands/ran", {"command": line[len("ran "):]})
+        out(f"ran reported cleared={r.get('cleared')}")
     elif line.startswith("tui "):
         sys.dont_write_bytecode = True  # no __pycache__ in e2e/
         import fake_tui  # next to this file

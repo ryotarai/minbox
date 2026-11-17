@@ -153,6 +153,8 @@ func (s *Server) replyCommand(w http.ResponseWriter, r *http.Request, th *store.
 		return
 	}
 	_, _ = s.store.MarkThreadRead(ctx, th.ID)
+	// The person runs a command the agent was denied: it is no longer offered.
+	s.denied.resolve(th.SessionID, command)
 	if c, err := s.store.GetCommand(ctx, msg.ID); err == nil {
 		msg.Command = c
 	}

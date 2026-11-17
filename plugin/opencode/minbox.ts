@@ -18,6 +18,9 @@
  *   goes into a running turn too (delivery "steer": OpenCode adds it at the next step).
  * - Denies shell commands that open a page on the host, and OpenCode's `question` tool in the main
  *   session (the person answers in minbox, not in the terminal), through the permission hook.
+ * - Reports shell commands whose permission was rejected (session.tool.failed with error type
+ *   permission.rejected: a config deny rule or a plugin's permission hook), and the later successful
+ *   run of one; the reply area offers the latest as "Run yourself".
  * - Creates the session if it is missing and moves it to MINBOX_OPENCODE_DIR when the project's folder
  *   changed (OpenCode sessions can move between folders).
  * - Follows a new top-level session the person starts in the TUI (/new) like Pi's extension does: the
@@ -31,6 +34,7 @@
  * (minbox.test.ts, `node --test`).
  */
 import { readFileSync, realpathSync } from 'node:fs'
+import { DENIED_MAX, normCommand, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
 import {
   openDeny,
@@ -72,7 +76,9 @@ const RETRY_MS = 1000
 const HEARTBEAT_MS = 15_000
 
 const EXECUTION_EVENTS = ['session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']
-const ALIVE_EVENTS = ['session.step.started', 'session.step.ended', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed']
+const ALIVE_EVENTS = ['session.step.started', 'session.step.ended', 'session.tool.input.started', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed']
+/** The tool events read for denied shell commands. */
+const TOOL_EVENTS = ['session.tool.input.started', 'session.tool.called', 'session.tool.success', 'session.tool.failed']
 
 /** What the plugin needs from the outside; replaced in tests. */
 export type Deps = {
@@ -328,8 +334,56 @@ export function createCore(deps: Deps) {
     if (!sid || sid !== sessionID) return
     const type = String(ev.type ?? '')
     if (type === 'session.execution.started') setBusy(true)
-    else if (EXECUTION_EVENTS.includes(type)) setBusy(false)
-    else if (busy) busyAt = deps.now()
+    else if (EXECUTION_EVENTS.includes(type)) {
+      setBusy(false)
+      turnThreads = []
+    } else if (busy) busyAt = deps.now()
+    if (TOOL_EVENTS.includes(type)) onToolEvent(type, ev.data)
+  }
+
+  // ---- denied commands (../minbox/hooks/denied.ts) ----
+  // A shell call refused by a permission rule (`deny` in the config) or a plugin's permission hook ends
+  // as session.tool.failed with error.type "permission.rejected" (OpenCode's own mapping of a rejected
+  // permission). Its tool name comes with session.tool.input.started, its command with
+  // session.tool.called. Only the main session is followed (not subagent sessions).
+
+  /** Tool calls of the session: name and shell command, by call id. */
+  const toolCalls = new Map<string, { name?: string; command?: string }>()
+  /** Commands reported as denied: a later successful run clears them on the server. */
+  const deniedCommands = new Set<string>()
+  /** The threads of the messages delivered for the running execution. */
+  let turnThreads: string[] = []
+
+  function onToolEvent(type: string, d: any): void {
+    const id = typeof d?.id === 'string' ? d.id : ''
+    if (!id) return
+    const call = toolCalls.get(id) ?? {}
+    if (type === 'session.tool.input.started') {
+      if (typeof d.name === 'string') call.name = d.name
+      toolCalls.set(id, call)
+      return
+    }
+    if (type === 'session.tool.called') {
+      const command = normCommand(d.input?.command)
+      if (command) call.command = command
+      toolCalls.set(id, call)
+      return
+    }
+    toolCalls.delete(id)
+    if (toolCalls.size > 500) toolCalls.clear() // calls whose end never came
+    const shell = call.name === undefined || call.name === 'bash' || call.name === 'shell'
+    const command = call.command ?? ''
+    if (!shell || !command) return
+    if (type === 'session.tool.failed' && d.error?.type === 'permission.rejected') {
+      const reason = typeof d.error.message === 'string' ? d.error.message : 'permission rejected'
+      if (reason === openDeny(names.open) || command.length > DENIED_MAX) return // minbox's own refusal
+      deniedCommands.add(command)
+      note('denied-command', `a shell command was denied (${command.length} characters)`)
+      const body: DeniedReport = { command, reason: shortReason(reason), thread_id: turnThreads.length === 1 ? turnThreads[0] : undefined, at: new Date(deps.now()).toISOString() }
+      void api('POST', '/api/agent/denied-commands', body)
+    } else if (type === 'session.tool.success' && deniedCommands.delete(command)) {
+      void api('POST', '/api/agent/denied-commands/ran', { command })
+    }
   }
 
   /** session hook "context": minbox's instructions in the system prompt of every request of the session. */
@@ -517,6 +571,7 @@ export function createCore(deps: Deps) {
       return false
     }
     lastDeliveryAt = new Date(deps.now()).toISOString()
+    turnThreads = [...new Set([...(busy ? turnThreads : []), ...deliver.map((p) => p.thread_id)])]
     note('delivered', `submitted ${deliver.length} message(s): ${deliver.map((p) => p.id).join(',')}`)
     for (const p of deliver) await api('POST', pendingPath(p.id, 'delivered'))
     return true

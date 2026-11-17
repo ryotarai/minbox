@@ -324,6 +324,63 @@ test('the heartbeat speaks the shared protocol with agent opencode', async () =>
   t.core.stop()
 })
 
+test('a shell call whose permission was rejected is reported with its thread; a later success clears it', async () => {
+  let pending = [{ id: 'msg_1', thread_id: 'thr_7', subject: 'Deploy', body: 'ship it', urgent: false }]
+  const t = setup({ pending: () => pending })
+  await setupLocation(t.oc.ctx, t.core)
+  await settle()
+  t.advance(5000)
+  await settle(120)
+  pending = []
+  assert.ok(t.oc.sessionCalls.some((c) => c.op === 'prompt'), 'delivered')
+  const ev = (type: string, data: object) => t.core.onEvent({ type, data: { sessionID: SES, assistantMessageID: 'msg_a', ...data } })
+  ev('session.execution.started', {})
+  const reports = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands')
+  const ran = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands/ran')
+
+  // Fixture: a config `deny` rule on `git push *` (OpenCode's events for it).
+  ev('session.tool.input.started', { id: 'call_1', name: 'bash' })
+  ev('session.tool.called', { id: 'call_1', input: { command: 'git push origin main', description: 'push' }, executed: false })
+  ev('session.tool.failed', { id: 'call_1', error: { type: 'permission.rejected', message: 'The user has specified a rule which prevents you from using this specific tool call.' }, executed: false })
+  await settle()
+  assert.equal(reports().length, 1)
+  assert.deepEqual([reports()[0].body.command, reports()[0].body.thread_id], ['git push origin main', 'thr_7'])
+  assert.match(reports()[0].body.reason, /rule which prevents/)
+
+  // A command that failed on its own, another tool, minbox's own refusal: not reported.
+  ev('session.tool.input.started', { id: 'call_2', name: 'bash' })
+  ev('session.tool.called', { id: 'call_2', input: { command: 'false' } })
+  ev('session.tool.failed', { id: 'call_2', error: { type: 'tool.execution', message: 'exit 1' } })
+  ev('session.tool.input.started', { id: 'call_3', name: 'edit' })
+  ev('session.tool.called', { id: 'call_3', input: { filePath: '/etc/hosts' } })
+  ev('session.tool.failed', { id: 'call_3', error: { type: 'permission.rejected', message: 'no' } })
+  const ownDeny = (await import('../minbox/hooks/text.ts')).openDeny('minbox_open_url')
+  ev('session.tool.input.started', { id: 'call_4', name: 'bash' })
+  ev('session.tool.called', { id: 'call_4', input: { command: 'open https://example.com' } })
+  ev('session.tool.failed', { id: 'call_4', error: { type: 'permission.rejected', message: ownDeny } })
+  await settle()
+  assert.equal(reports().length, 1)
+
+  // The same command succeeds later: cleared once.
+  for (const id of ['call_5', 'call_6']) {
+    ev('session.tool.input.started', { id, name: 'bash' })
+    ev('session.tool.called', { id, input: { command: 'git push origin main' } })
+    ev('session.tool.success', { id, content: [], executed: true })
+  }
+  await settle()
+  assert.equal(ran().length, 1)
+  assert.deepEqual(ran()[0].body, { command: 'git push origin main' })
+
+  // After the execution ends, a rejection has no thread (the server gives it the next message's).
+  ev('session.execution.succeeded', {})
+  ev('session.tool.called', { id: 'call_7', input: { command: 'rm -rf dist' } })
+  ev('session.tool.failed', { id: 'call_7', error: { type: 'permission.rejected', message: 'denied' } })
+  await settle()
+  assert.equal(reports().length, 2)
+  assert.equal(reports()[1].body.thread_id, undefined)
+  t.core.stop()
+})
+
 test('the entry is a plain V2 plugin object', () => {
   assert.equal(entry.id, 'minbox')
   assert.equal(typeof entry.setup, 'function')

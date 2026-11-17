@@ -14,6 +14,10 @@
  *   as a plugin turn with `$.prompt.submit`, then acknowledged as delivered.
  *   A failed submit releases the claim; nothing is delivered twice.
  * - Reports whether Claude is working or idle (main-loop turn.start / turn.complete).
+ * - Reports Bash commands that were denied (tool.check deny verdicts, auto mode's
+ *   classic.PermissionDenied, and a tool.call result worded as a refusal: the person rejecting the
+ *   prompt, a deny rule), and the later successful run of one; the reply area offers the latest
+ *   as "Run yourself" (denied.ts).
  * - Sends a heartbeat every HEARTBEAT_MS (its state, last poll / delivery, and a tail of its own
  *   event log) so the server can tell a live mod from a silent one; see docs/mod-connection.md.
  * - Adds a one-paragraph reminder of the inbox to the first prompt, and the
@@ -22,6 +26,7 @@
  * Anywhere else (no MINBOX_TOKEN, a -p run) every hook passes through.
  */
 import type { Register } from 'claude-code'
+import { claudeRanOk, claudeRefusal, DENIED_MAX, normCommand, shortReason, type DeniedReport } from './denied'
 import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from './nav'
 import {
   READ_DESCRIPTION,
@@ -135,6 +140,38 @@ let deliveredThreads: string[] = []
 let turnThreads: string[] = []
 /** The next reminder is about these threads (a turn answered them without send_message). */
 let replyNudgeThreads: string[] = []
+
+/** Tool calls already reported as denied (by id), so the check, the classic event and the result report it once. */
+const reportedDenials = new Set<string>()
+/** Commands reported as denied in this process: running one later clears it on the server. */
+const deniedCommands = new Set<string>()
+
+/** The thread the running turn answers, when it is exactly one (else the server picks the next message's). */
+function currentThread(): string | undefined {
+  const threads = turnThreads.length > 0 ? turnThreads : deliveredThreads
+  return threads.length === 1 ? threads[0] : undefined
+}
+
+/** Reports a Bash command that was denied (once per tool call). */
+function reportDenied($: any, id: string, command: string, reason: string): void {
+  if (!conn || !command || command.length > DENIED_MAX) return
+  if (id) {
+    if (reportedDenials.has(id)) return
+    reportedDenials.add(id)
+    if (reportedDenials.size > 200) reportedDenials.delete(reportedDenials.values().next().value!)
+  }
+  deniedCommands.add(command)
+  note($, 'denied-command', `a Bash command was denied (${command.length} characters)`)
+  const body: DeniedReport = { command, reason: shortReason(reason), thread_id: currentThread(), at: new Date().toISOString() }
+  void api($, 'POST', '/api/agent/denied-commands', body)
+}
+
+/** A command denied earlier ran: it is no longer offered to the person. */
+function reportRan($: any, command: string): void {
+  if (!conn || !deniedCommands.has(command)) return
+  deniedCommands.delete(command)
+  void api($, 'POST', '/api/agent/denied-commands/ran', { command })
+}
 
 /** Records an event in the mod's ring buffer. Identical consecutive events are folded into a count. */
 function note($: any, kind: string, msg: string): void {
@@ -558,9 +595,34 @@ export const register: Register = (on) => {
     return { result: `Opened ${res.json?.url ?? url} in the person's browser.` }
   })
 
-  // Pages opened from Bash would open on the host, not where the person is.
+  // Pages opened from Bash would open on the host, not where the person is. Every other Bash call
+  // runs, and one that turns out refused is reported as a denied command (see denied.ts).
   on('tool.call', { tool: 'Bash' }, async ($, e: any, next) => {
     if (conn && typeof e.command === 'string' && opensBrowser(e.command)) return { deny: openDeny(openToolName) }
+    if (!conn) return next(e)
+    const res = await next(e)
+    const command = normCommand(e.command)
+    const id = typeof e.tool_use_id === 'string' ? e.tool_use_id : ''
+    const reason = claudeRefusal(res)
+    if (reason !== null) reportDenied($, id, command, reason)
+    else if (claudeRanOk(res)) reportRan($, command)
+    return res
+  })
+
+  // The verdict of the permission check: a deny from a rule, the mode or a PreToolUse hook. The call
+  // never runs; it is reported here (the tool.call hook above would see the same refusal again).
+  on('tool.check', { tool: 'Bash' }, async ($, e: any, next) => {
+    const v = await next(e)
+    if (conn && typeof e.tool_use_id === 'string' && e.tool_use_id && v?.decision === 'deny') {
+      const why = v.rule ? `denied by the rule ${v.rule}` : v.hook ? `denied by a ${v.hook} hook${v.reason ? ': ' + v.reason : ''}` : v.reason || 'denied'
+      reportDenied($, e.tool_use_id, normCommand(e.input?.command), why)
+    }
+    return v
+  })
+
+  // Auto mode's classifier refused the call.
+  on('classic.PermissionDenied', async ($, e: any, next) => {
+    if (conn && e.tool_name === 'Bash') reportDenied($, typeof e.tool_use_id === 'string' ? e.tool_use_id : '', normCommand(e.tool_input?.command), e.reason || 'denied')
     return next(e)
   })
 

@@ -33,6 +33,12 @@ func TestExtractPi(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "..", "minbox", "hooks", "nav.ts")); err != nil {
 		t.Fatalf("shared nav.ts missing next to the extension: %v", err)
 	}
+	if !strings.Contains(string(src), "'../minbox/hooks/denied.ts'") {
+		t.Fatal("the extension no longer imports ../minbox/hooks/denied.ts: update piSources")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "..", "minbox", "hooks", "denied.ts")); err != nil {
+		t.Fatalf("shared denied.ts missing next to the extension: %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(entry), "minbox.test.ts")); err == nil {
 		t.Fatal("the test file was extracted")
 	}

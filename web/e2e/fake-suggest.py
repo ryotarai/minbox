@@ -160,7 +160,7 @@ out = {
     },
 }
 # Screenshots (SCREENSHOTS=1) may fix the questions with a JSON file: a list of questions, or the
-# whole structured output ({"questions": [...], "command": "..."}).
+# whole structured output ({"questions": [...]}).
 f = os.environ.get("FAKE_SUGGEST_FILE")
 if f and os.path.exists(f):
     v = json.load(open(f))

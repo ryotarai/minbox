@@ -242,7 +242,8 @@ help them decide how to reply; the person's answers are put into their reply whe
 with `ReplyQuestion = {question: string, kind: "single"|"multi", options: {label: string, description?: string}[0..5]}`.
 Every question also takes a free-text "Other" answer in the UI; `options: []` means free text only (the helper is told to
 use that only when no sensible options exist). Always 200 for generation problems (error = short reason, questions empty);
-404 for an unknown thread. No questions and no command is a valid (cached) answer: nothing to ask.
+404 for an unknown thread. No questions and no command is a valid (cached) answer: nothing to ask. `command` rides
+every answer (also `disabled`, `not_needed`, `no_agent` and errors) and is not cached.
 
 - `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent.
   `no_agent`: no coding agent (claude, pi or opencode) is installed to run the helper (feature off, not an error).
@@ -250,11 +251,13 @@ use that only when no sensible options exist). Always 200 for generation problem
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
   (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
   Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
-- `command` (denied commands): when the agent's last message has a denial word (denied, rejected, declined, refused, not allowed, ...
-  or Japanese equivalents) and quotes one single-line command (first fenced block, else first inline code, at most 199 characters),
-  `command` is `!<command>` (a "Thread commands" run), set by the server without the helper; it is still offered when the
-  helper fails, and options that only repeat it are dropped. Otherwise the helper's own `command` field (asked for the same case;
-  single line, `$ `/`!` prefix dropped) is passed on.
+- `command` (denied commands, `internal/server/denied.go`): the thread's latest unresolved shell command that the agent
+  tried and was denied, as its integration reported it (`POST /api/agent/denied-commands`, see "Denied commands" under the
+  agent API), as `!<command>` (a "Thread commands" run). Only single-line commands of at most 500 characters are offered.
+  It never comes from the message text or the helper. Cleared when the person runs the same command with `!` in any thread
+  of the session, when the agent later runs it successfully (`POST /api/agent/denied-commands/ran`), or when the person
+  dismisses the reply help (`DELETE /api/threads/{id}/denied-command` → `{ok, cleared}`). Kept in memory (20 per session):
+  a server restart forgets them.
 - The UI (ThreadView, `ReplyHelp.tsx`) requests it when the agent's message is the last one, no question of the agent is
   open and the session has not ended; the result and the person's answers are kept in memory per (thread, last message).
   Above the reply box (desktop and phone) it shows: the command as a one-tap chip (`reply-command`: sends `!<cmd>` at once;
@@ -278,14 +281,14 @@ use that only when no sensible options exist). Always 200 for generation problem
   `--system-prompt` replaces the default prompt; `--tools ""` disables all tools; `--setting-sources ""` loads no
   settings/CLAUDE.md; `--bare` is not used (it needs an ANTHROPIC_API_KEY, not the person's login). Verified with
   claude 2.1.318. Schema (`suggestSchema`): `{questions: [{question (<=200), kind: "single"|"multi", options: [{label (<=80),
-  description? (<=160)}] (0..5)}] (0..8), command?: string (<=200)}`.
+  description? (<=160)}] (0..5)}] (0..8)}`.
 - Envelope (`--output-format json`): one object `{"type":"result","subtype":"success","is_error":false,"result":"<the JSON as text>",
   "structured_output":{"questions":[...]}, ...}`; we read `structured_output`, else parse `result`.
 - Prompt: last 12 messages (each cut at 1,500 chars, PERSON/AGENT), the open questions and options of a final agent
   message, then the instruction: the questions the person should answer to decide their reply, as many as needed (usually
   1–4, more only when warranted, none when nothing is to be decided), single or multi, 2–5 short options with an optional
   one-line description, options strongly preferred over free text, no "Other" option (the UI adds it), in the language the
-  person writes in (else the agent's), nothing about thanks or greetings, and the denied command in `command`.
+  person writes in (else the agent's), nothing about thanks or greetings.
   Result parsing is lenient: questions and options are trimmed and deduped (case-insensitive), empty or malformed entries
   dropped, an unknown kind read as single, a bare string option read as its label; caps 8 questions, 5 options, 200/80/160 chars.
 - Privacy/cost: the thread's recent text goes to Anthropic through claude (Haiku, low effort), once per agent message
@@ -755,6 +758,16 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 
 ## Opening pages: `open_url`
 
+- Denied commands: `POST /api/agent/denied-commands {command, reason?, thread_id?, at?}` → `{ok, thread_id}` records a
+  shell command the agent tried and could not run because it was denied (trimmed; 400 without a command). `thread_id` is the
+  thread whose delivered message the turn answers, when the integration knows exactly one; a missing, unknown or foreign
+  thread leaves it unassigned, and the session's next agent message (`POST /api/agent/messages`) gives it its thread. The same
+  command denied again replaces the earlier entry. `POST /api/agent/denied-commands/ran {command}` → `{ok, cleared}`: the agent
+  ran a command it was denied earlier (it is no longer offered). Who reports what: the Claude Code mod (a `tool.check` deny
+  verdict for Bash, `classic.PermissionDenied`, a Bash `tool.call` result worded as a refusal such as "The user doesn't want to
+  proceed with this tool use" / "Permission to use Bash … has been denied"), Pi's extension (a `bash` call that ended in error
+  without running: another extension's `tool_call` block), OpenCode's plugin (`session.tool.failed` with
+  `error.type: "permission.rejected"` for a shell call).
 - Tool `open_url {url}` → `POST /api/agent/open {url}` (absolute http(s) URL, else 400). With no
   browser on `/api/events`: 409 (Claude gives the URL in its reply instead). Otherwise it publishes
   the event `{"type":"open","session_id","url"}` and answers `{ok, url, browsers}`.

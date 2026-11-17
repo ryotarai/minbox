@@ -120,7 +120,8 @@ after the project moved (all go through `sessionManager.spawn`). Pi, OpenCode an
   `agent_start` / `agent_settled` set the session working / idle; a long poll on `/api/agent/pending`
   claims the person's messages once Pi has been idle for 2 s and the person is not typing, delivers them with
   `pi.sendUserMessage` and marks them delivered (a failed delivery releases the claim); an urgent message
-  (Send now) is delivered into a running turn with `deliverAs: "steer"`.
+  (Send now) is delivered into a running turn with `deliverAs: "steer"`. A `bash` call another extension blocked
+  (`tool_execution_end` in error with no `durationMs`) is reported as a denied command ("Run yourself", docs/thread-commands.md).
   Not in the Pi extension yet (planned Phase 2): the reminder when a turn asks the person only in the chat,
   the open-threads reminder after a compaction, mod-silent parity, completions. Remote hosts: see below.
 * **Instructions** reach Pi once, on the command line, because Pi keeps its system prompt through
