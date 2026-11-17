@@ -129,7 +129,7 @@ test('phone: the columns are tabs; a card opens its topic full screen, then its 
   await expect(page.getByTestId('topics-col-done')).toHaveCount(0)
   await expect(page.getByTestId('topic-pane-title')).toHaveText('Release notes v1.4')
   await expect(page.getByTestId('topic-pane-status')).toHaveText('Done')
-  // No prefix chip: the "[Topic: …]" prefix is added on send only.
+  // No prefix chip: the "[Task: …]" header and context are added on send only.
   await expect(page.getByTestId('topic-pane-prefix')).toHaveCount(0)
   await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', 'Message the thread about this task…')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -352,20 +352,25 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
   await expect(ui).toHaveAttribute('data-selected', 'true')
 
-  // R: the message box. Send: the thread gets "[Topic: …]" then the text, and the agent takes it.
+  // R: the message box. Send: the thread gets "[Task: …]", a short quoted context (summary, status,
+  // open steps, the latest related messages) and then the text, and the agent takes all of it.
   await page.keyboard.press('r')
   const input = page.getByTestId('topic-pane-input')
   await expect(input).toBeFocused()
   await input.fill('Debounce the search by 200 ms.')
   await page.getByTestId('topic-pane-send').click()
   await expect(input).toHaveValue('')
-  const want = '[Task: Search box UI]\nDebounce the search by 200 ms.'
   type Msg = { author: string; words?: string; body: string; delivery?: string }
   const sent = async () => {
     const th: { messages: Msg[] } = await (await page.request.get(`${minbox.url}/api/threads/${search}`)).json()
-    return th.messages.find((m) => m.author === 'user' && (m.words || m.body) === want)
+    return th.messages.find((m) => m.author === 'user' && (m.words || m.body).endsWith('\n\nDebounce the search by 200 ms.'))
   }
   await expect.poll(async () => (await sent())?.delivery, SLOW).toBe('delivered')
+  const m = (await sent())!
+  const words = m.words || m.body
+  expect(words.startsWith('[Task: Search box UI]\n> Task context (from minbox): Building the search field and results list\n')).toBe(true)
+  expect(words).toContain('> Status: In progress · Steps: 1/3 done; open: Show the results; Keyboard shortcut')
+  expect(words).toMatch(/\n> Related messages: (You|Agent), \d{4}-\d\d-\d\d \d\d:\d\d UTC: "Add search to the inbox\./)
   // The new message names the topic: the next extraction links it, and the pane shows it.
   await expect(related).toHaveCount(2, SLOW)
   await expect(related.nth(1).getByTestId('topic-message-excerpt')).toContainText('[Task: Search box UI] Debounce the search by 200 ms.')
@@ -375,7 +380,13 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   await expect(page.getByTestId('topics')).toHaveCount(0)
   await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
   await expect(page.locator('[data-testid="message"][data-jumped="true"]')).toContainText('Add search to the inbox.')
-  await expect(page.locator('[data-testid="message"]').filter({ hasText: 'Debounce the search by 200 ms.' })).toContainText('[Task: Search box UI]')
+  // In the thread the context folds into a "Task" chip; a click shows it.
+  const sentMsg = page.locator('[data-testid="message"]').filter({ hasText: 'Debounce the search by 200 ms.' })
+  await expect(sentMsg.getByTestId('task-context-title')).toHaveText('Search box UI')
+  await expect(sentMsg.getByTestId('task-context-body')).toBeHidden()
+  await sentMsg.getByTestId('task-context').locator('summary').click()
+  await expect(sentMsg.getByTestId('task-context-body')).toContainText('open: Show the results; Keyboard shortcut')
+  await expect(sentMsg).not.toContainText('[Task:')
 
   // Enter on the focused card still opens the thread.
   await page.goto(minbox.url + '/#v=tasks')
