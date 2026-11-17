@@ -319,13 +319,9 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     let timer: ReturnType<typeof setTimeout> | null = null
     const evaluate = () => {
       const sel = window.getSelection()
-      const box = scrollRef.current
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !box) return setQuote(null)
+      const text = selectedQuote(scrollRef.current)
+      if (!sel || !text) return setQuote(null)
       const range = sel.getRangeAt(0)
-      const text = sel.toString().trim()
-      // Where it starts decides: a triple-click can run on to the start of the next block.
-      const start = range.startContainer
-      if (!text || !box.contains(start.nodeType === 1 ? start : start.parentNode)) return setQuote(null)
       const rects = range.getClientRects()
       const r = rects.length ? rects[rects.length - 1]! : range.getBoundingClientRect()
       const zoom = parseFloat((document.getElementById('root') as HTMLElement).style.zoom || '1')
@@ -353,9 +349,9 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       if (timer) clearTimeout(timer)
     }
   }, [])
-  const quoteIntoReply = () => {
-    if (!quote) return
-    const block = quote.text.split('\n').map((l) => (l.trim() ? `> ${l}` : '>')).join('\n')
+  const quoteIntoReply = (text = quote?.text) => {
+    if (!text) return
+    const block = text.split('\n').map((l) => (l.trim() ? `> ${l}` : '>')).join('\n')
     updateReplyDraft(threadId, (d) => ({ ...d, words: d.words.trim() ? `${d.words.replace(/\s+$/, '')}\n\n${block}\n\n` : `${block}\n\n` }))
     window.getSelection()?.removeAllRanges()
     setQuote(null)
@@ -496,12 +492,16 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
 
   useHotkeys(
     {
-      // In the Tasks pane beside the thread, R is the open task's message box (focusTasksReply).
-      // Otherwise, with text selected in a message (the Reply bubble shown), R quotes it, as the
-      // bubble does; else the thread's message box.
+      // With text selected in a message (the Reply bubble shown), R quotes it, as the bubble does.
+      // The selection is read now, not from the bubble's state: that follows the selection only
+      // after a pause (a double-click and a quick R beat it), and the keyboard may still be in the
+      // Tasks pane. Otherwise R in the Tasks pane is the open task's box (focusTasksReply); else
+      // the thread's message box.
       r: () => {
+        const text = quote?.text || selectedQuote(scrollRef.current, true)
+        if (text) return quoteIntoReply(text)
         if (focusTasksReply()) return
-        return quote ? quoteIntoReply() : replyRef.current?.focus()
+        replyRef.current?.focus()
       },
       e: markRead,
       'shift+e': archive,
@@ -743,7 +743,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           data-testid="quote-reply"
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => e.preventDefault()} // a tap must not clear the selection before the click
-          onClick={quoteIntoReply}
+          onClick={() => quoteIntoReply()}
           title={phone ? undefined : 'Reply (R)'}
           style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
           className="fixed z-[30] flex h-8 items-center gap-1.5 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] font-semibold text-fg shadow-pop hover:bg-raised"
@@ -1768,3 +1768,25 @@ function ReplyBox({
 }
 
 export { IconArchive }
+
+/**
+ * The text selected in the thread's messages (`box`), trimmed; '' when none starts there.
+ * `clip`: cut a selection that runs on past the messages (a triple-click ends at the start of the
+ * next block, and what is put in between, such as the Reply bubble, joins it) to its part inside.
+ */
+function selectedQuote(box: HTMLElement | null, clip = false): string {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !box) return ''
+  const range = sel.getRangeAt(0)
+  // Where it starts decides: a triple-click can run on to the start of the next block.
+  const start = range.startContainer
+  if (!box.contains(start.nodeType === 1 ? start : start.parentNode)) return ''
+  if (clip && !box.contains(range.endContainer)) {
+    const inside = range.cloneRange()
+    inside.setEnd(box, box.childNodes.length)
+    // Selection.toString keeps the line breaks between blocks (Range.toString does not).
+    sel.removeAllRanges()
+    sel.addRange(inside)
+  }
+  return sel.toString().trim()
+}
