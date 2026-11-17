@@ -53,12 +53,13 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
   const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
   const lastReport = t.report || (lastAgentMsg ? lineOf(lastAgentMsg) : '')
-  const send = async (words: string, toSel: string) => {
+  const send = async (words: string, toSel: string, extraTasks: string[]) => {
     const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: toSel, tags: [{ task_id: t.id, title: t.title, status: t.status, source: 'person' }], open: 0, pending: true }
     setPending((p) => [...p, tmp])
     try {
-      if (toSel === 'new') await v3.newMessage({ to: 'new', project_id: t.project_id, words, task_ids: [t.id] })
-      else await v3.send(toSel, { words, task_ids: [t.id] })
+      const ids = [t.id, ...extraTasks]
+      if (toSel === 'new') await v3.newMessage({ to: 'new', project_id: t.project_id, words, task_ids: ids })
+      else await v3.send(toSel, { words, task_ids: ids })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -235,6 +236,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           tags={[{ task_id: t.id, title: t.title }]}
           placeholder={toId === 'new' ? 'A new agent starts with this task…' : `Message ${agentName(byId, toId)} about this ${t.kind === 'goal' ? 'goal' : 'task'}…`}
           onSend={send}
+          tasks={tasks}
         />
       </div>
       {!isPhone && side}

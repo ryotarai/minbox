@@ -1,5 +1,11 @@
 # minbox API contract (UI v2)
 
+> **v3**: the UI is the Board / tasks / agent streams now. Its API (streams, tasks and goals, tags,
+> read state, search, the composer) and the v3 agent contract (`send_message {body, task_ids?}`,
+> `create_task` / `update_task` with goals) are in [docs/v3/api.md](v3/api.md); the model is in
+> [docs/v3/redesign.md](v3/redesign.md). Everything below still works (older threads are segments of
+> each session's stream).
+
 The browser UI (web/) and the Go server agree on this. Everything that already
 exists keeps working; this lists what is added or changed. Times are RFC3339
 strings, `null` when unset. JSON field names are snake_case.

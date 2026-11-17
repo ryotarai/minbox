@@ -514,30 +514,39 @@ export function Composer({
   placeholder,
   onSend,
   testid = 'composer',
+  tasks,
 }: {
   toId: string
   toOptions: Session[]
   onTo?: (id: string) => void
   tags: { task_id: string; title: string }[]
   placeholder: string
-  onSend: (words: string, to: string) => Promise<void>
+  onSend: (words: string, to: string, extraTasks: string[]) => Promise<void>
   testid?: string
+  /** The tasks the person can tag the message with (# at the start, or the tag button). */
+  tasks?: Task[]
 }) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [extra, setExtra] = useState<{ task_id: string; title: string }[]>([])
+  const [picking, setPicking] = useState(false)
   const send = async () => {
     const w = text.trim()
     if (!w || busy) return
     setBusy(true)
     setText('')
+    const ex = extra
+    setExtra([])
     try {
-      await onSend(w, toId)
+      await onSend(w, toId, ex.map((t) => t.task_id))
     } catch {
       setText(w)
+      setExtra(ex)
     } finally {
       setBusy(false)
     }
   }
+  const all = [...tags, ...extra]
   return (
     <div className="v-composer" data-testid={testid}>
       <div className="v-to">
@@ -555,15 +564,39 @@ export function Composer({
         ) : (
           <span className="v-chip">{toOptions.find((a) => a.id === toId)?.name ?? 'agent'}</span>
         )}
-        {tags.length ? (
+        {all.length ? (
           <>
             tagged{' '}
             {tags.map((t) => (
               <TagChip key={t.task_id} tag={t} />
             ))}
+            {extra.map((t) => (
+              <TagChip key={t.task_id} tag={t} onRemove={() => setExtra((x) => x.filter((y) => y.task_id !== t.task_id))} />
+            ))}
           </>
         ) : (
           '· the agent decides the task'
+        )}
+        {tasks && (
+          <span style={{ position: 'relative' }}>
+            <span className="v-tag add" role="button" tabIndex={0} data-testid="composer-tag" title="Tag the message (#)" onClick={() => setPicking(true)}>
+              tag
+            </span>
+            {picking && (
+              <TagPicker
+                tasks={tasks}
+                exclude={all.map((t) => t.task_id)}
+                onClose={() => setPicking(false)}
+                onPick={(r) => {
+                  setPicking(false)
+                  if ('task_id' in r) {
+                    const t = tasks.find((x) => x.id === r.task_id)
+                    if (t) setExtra((x) => [...x, { task_id: t.id, title: t.title }])
+                  }
+                }}
+              />
+            )}
+          </span>
         )}
       </div>
       <textarea
@@ -572,7 +605,14 @@ export function Composer({
         rows={2}
         value={text}
         placeholder={placeholder}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          // # in an empty box picks a task to tag the message with.
+          if (tasks && text === '' && e.target.value === '#') {
+            setPicking(true)
+            return
+          }
+          setText(e.target.value)
+        }}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault()

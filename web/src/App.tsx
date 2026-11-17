@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { V3App } from './v3/V3App'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
@@ -22,24 +22,17 @@ export function App() {
 }
 
 function Root() {
-  const { route, sessions, navigate, overlay, setOverlay, undoLast, settings } = useApp()
+  const { route, navigate, overlay, setOverlay, undoLast, settings } = useApp()
 
   // Older links: the All inbox, Topics, Board and Tasks pages are the v3 Board now.
   useEffect(() => {
     if ((route.view as string) === 'inbox' || route.view === 'tasks') navigate({ view: 'main' }, { push: false })
   }, [route.view, navigate])
-  // An older thread link (#s=…&t=…) opens that agent's stream.
+  // An older session or thread link (#s=…[&t=…]) opens that agent's stream.
   useEffect(() => {
-    if (route.view === 'main' && route.s && route.t) navigate({ view: 'agent', t: null }, { push: false })
+    if (route.view === 'main' && route.s) navigate({ view: 'agent', t: null }, { push: false })
   }, [route.view, route.s, route.t, navigate])
 
-  // First run: nothing to show yet, so offer to start a session.
-  const offered = useRef(false)
-  useEffect(() => {
-    if (!sessions || offered.current) return
-    offered.current = true
-    if (sessions.length === 0 && route.view === 'main') setOverlay({ kind: 'new-session' })
-  }, [sessions, route.view, setOverlay])
 
   useHotkeys({
     z: () => undoLast(),

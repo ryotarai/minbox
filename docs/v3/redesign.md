@@ -330,3 +330,26 @@ limit (default 4 h) runs out, or when the person stops it. "Met" is the agent's 
 - `update_task {task_id: <goal>, check_criteria: [n], criteria?, status?}`; all criteria checked or
   `status: done` ends the goal (and its run).
 - The person: Start / Pause / Stop on the goal (Board row and goal view), and edits the criteria.
+
+---
+
+## 13. Decisions taken, and what v3 implements
+
+1. Direction **A** (streams + tagged tasks), NEEDS YOU as question cards.
+2. "minbox" = the project's **main session** (the composer's default recipient).
+3. Tagging = **rules + agent + person** (no helper-model suggestions): the agent's `task_ids` /
+   `create_task` in the turn (also tagging the person's untagged messages of the turn), tags inherited
+   by the reply from the person's task-view messages and by answers from their questions, and the
+   person's chips, `#` picker, "wrong task?" / "tag it?". The server never guesses (layer 3 is not
+   used).
+4. Migration: unfinished threads without topics become tasks; finished ones stay as segments.
+5. A reply from a task goes to the **most recently active agent** on it, switchable (a new agent on
+   the task is a hand-off: the task's state rides along with the message).
+
+Implemented: §2 model, §3 layers 1, 2, 4, 6, §4 read state / task replies / delivery with tasks,
+§4.5, §5 (one stream thread per session; older threads untouched as segments), §6.1 screens, §6.2
+search (as a screen, `/`), §6.4 keys (J/K, Space, Enter, 1–9, X, R, ⇧N, /, ?, g b, g a, T, Ctrl+`),
+§6.5 phone, §7 contract (all three integrations), §8.1–3, 4 (Linear links copied to the task), 7,
+§12 goals. Not yet: §8.5 Slack and Linear comment routing by task (they still follow the stream
+thread), §6.3 notifications per task (they still follow the session), task snooze / pin, tag
+suggestions (decided against), the cross-project concierge.

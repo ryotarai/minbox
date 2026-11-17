@@ -56,12 +56,12 @@ export function StreamView({
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
   const untaggedQ = msgs.filter((m) => m.open > 0 && !m.tags.length).length
-  const send = async (words: string) => {
+  const send = async (words: string, _to: string, extraTasks: string[]) => {
     const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: id, tags: [], open: 0, pending: true }
     setPending((p) => [...p, tmp])
     atBottom.current = true
     try {
-      await v3.send(id, { words })
+      await v3.send(id, { words, task_ids: extraTasks.length ? extraTasks : undefined })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -91,7 +91,7 @@ export function StreamView({
               {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
             </span>
-            <button type="button" className={'v-btn' + (pane === 'terminal' ? ' pri' : '')} data-testid="open-terminal" onClick={() => setPane(pane === 'terminal' ? 'tasks' : 'terminal')}>
+            <button type="button" className={'v-btn' + (pane === 'terminal' ? ' pri' : '')} data-testid="terminal-toggle" aria-pressed={pane === 'terminal'} onClick={() => setPane(pane === 'terminal' ? 'tasks' : 'terminal')}>
               Terminal <span className="v-kbd v-hide-phone">T</span>
             </button>
           </div>
@@ -149,7 +149,7 @@ export function StreamView({
             {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
           </div>
         </div>
-        <Composer toId={id} toOptions={[sess]} tags={[]} placeholder={`Message ${sess.name}…`} onSend={send} />
+        <Composer toId={id} toOptions={[sess]} tags={[]} tasks={tasks} placeholder={`Message ${sess.name}…`} onSend={send} />
       </div>
       {(!isPhone || terminalish) && (
         <aside className={'v-side' + (terminalish ? ' wide' : '')} data-testid="agent-side">
