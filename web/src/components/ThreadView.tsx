@@ -41,6 +41,7 @@ import { useLongPress } from '../lib/useLongPress'
 import { LinearBar, LinearEventItem, groupLinearEvents } from './LinearBar'
 import { LinearLinkButton } from './LinearLink'
 import { CommandMessage, commandOf } from './CommandMessage'
+import { answerRevealAsk, flashMessage, useRevealAsk } from '../lib/revealMessage'
 import { ModConnection } from './ModConnection'
 import { useMentions } from './Mentions'
 import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from './ReplyHelp'
@@ -361,6 +362,54 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
     return () => document.removeEventListener('visibilitychange', mark)
   }, [thread, threadId])
 
+  // "Show this message" (revealMessage, e.g. from the Topics pane): unfold whatever hides it, then,
+  // once it is rendered, scroll it to the middle and flash it.
+  const revealAsk = useRevealAsk(threadId)
+  const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null)
+  useEffect(() => {
+    if (!revealAsk || !thread) return
+    answerRevealAsk(revealAsk.n)
+    const list = thread.messages ?? []
+    const idx = list.findIndex((m) => m.id === revealAsk.messageId)
+    if (idx < 0) return
+    // The fold as it will be once "new since you looked" is known (it is decided on this same load).
+    const firstUnread = firstNew !== undefined ? firstNew : (list.find((x) => x.author === 'agent' && !x.read_at)?.id ?? null)
+    const newI = firstUnread ? list.findIndex((m) => m.id === firstUnread) : -1
+    if (idx < foldAnchor(list.length, newI, foldAll, expanded)) {
+      keep.current = null
+      setFoldAll(false)
+      setExpanded(true)
+    }
+    setShowArtifacts(false)
+    setFullReply(false)
+    setReveal({ id: revealAsk.messageId, n: revealAsk.n })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealAsk, thread])
+  useEffect(() => {
+    if (!reveal) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = () => {
+      const box = scrollRef.current
+      const el = box?.querySelector<HTMLElement>(`[data-testid="message"][data-message-id="${CSS.escape(reveal.id)}"]`)
+      if (!box || !el) {
+        if (++tries < 50) timer = setTimeout(tick, 100)
+        return
+      }
+      // A frame later: the expanded history and late layout (code, diagrams) settle first.
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ block: el.offsetHeight > box.clientHeight ? 'start' : 'center' })
+        pinned.current = nearBottom(box)
+        flashMessage(el)
+      })
+    }
+    tick()
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal])
+
   const lastAgentIdx = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i]!.author === 'agent') return i
     return -1
@@ -468,8 +517,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   // Folding: earlier messages collapse into one row; the newest stay open.
   const n = messages.length
   const newIdx = firstNew ? messages.findIndex((m) => m.id === firstNew) : -1
-  let anchor = foldAll ? n - 1 : newIdx >= 0 ? newIdx : Math.max(0, n - 2)
-  if (expanded) anchor = 0
+  const anchor = foldAnchor(n, newIdx, foldAll, expanded)
   const folded = messages.slice(0, Math.max(0, anchor - 1))
   const compactOne = anchor >= 1 ? messages[anchor - 1] : null
   const shown = messages.slice(anchor)
@@ -638,6 +686,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
                 onFork={() => setForkMsg(m)}
                 openId={route.f}
                 newestId={newestId}
+                revealed={reveal?.id === m.id ? reveal.n : undefined}
               />
             )}
             {m === lastUser && <DeliveryLine m={m} session={session} />}
@@ -688,6 +737,12 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       />
     </div>
   )
+}
+
+/** The index of the first open message: the ones before it fold (the one right before it as a compact row). */
+function foldAnchor(n: number, newIdx: number, foldAll: boolean, expanded: boolean): number {
+  if (expanded) return 0
+  return foldAll ? n - 1 : newIdx >= 0 ? newIdx : Math.max(0, n - 2)
 }
 
 function foldedSummary(ms: Message[]): string {
@@ -948,6 +1003,7 @@ function UserMessage({
   onFork,
   openId,
   newestId,
+  revealed,
 }: {
   m: Message
   session: Session
@@ -957,12 +1013,14 @@ function UserMessage({
   onFork: () => void
   openId: string | null
   newestId: string | null
+  /** Set (to the ask's number) when revealMessage asked for this message: a long output opens. */
+  revealed?: number
 }) {
   const menu = useContextMenu({ longPress: false })
-  if (m.kind === 'command') return <CommandMessage m={m} phone={phone} />
+  if (m.kind === 'command') return <CommandMessage m={m} phone={phone} revealed={revealed} />
   if (m.kind === 'note') {
     return (
-      <div data-testid="message" data-author="human" data-kind="note" className="rounded-[10px] border border-line2 bg-raised px-3 py-2.5 text-[12.5px] text-fg2">
+      <div data-testid="message" data-author="human" data-kind="note" data-message-id={m.id} className="rounded-[10px] border border-line2 bg-raised px-3 py-2.5 text-[12.5px] text-fg2">
         {m.words || m.body} <span className="text-subtle">· {m.delivery === 'delivered' ? 'Delivered' : 'Waiting'}</span>
       </div>
     )

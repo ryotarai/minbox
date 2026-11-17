@@ -516,3 +516,84 @@ test('phone: the topic pane has Done and Reopen; the board follows', async ({ pa
   await page.getByTestId('topics-tab-in_progress').click()
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
 })
+
+// A thread long enough that its first message folds away ("N earlier messages") and the topic's
+// related messages overflow the pane's list: each reply names the topic.
+async function seedLong(page: Page, minbox: Minbox) {
+  const { sid } = await seed(page, minbox)
+  const r = await page.request.post(`${minbox.url}/api/sessions/${sid('web-app')}/threads`, {
+    data: { subject: 'Long fold thread', body: 'The very first note on Fold topic: start with the parser.\nTOPIC: Fold topic | in_progress | Folding the history' },
+  })
+  expect(r.ok()).toBe(true)
+  const id = (await r.json()).id as string
+  for (let i = 1; i <= 14; i++) {
+    const rr = await page.request.post(`${minbox.url}/api/threads/${id}/reply`, { data: { words: `Fold topic follow-up number ${i}.` } })
+    expect(rr.ok()).toBe(true)
+  }
+  return id
+}
+
+const listState = (page: Page) =>
+  page.getByTestId('topic-messages').evaluate((el) => ({ top: el.scrollTop, gap: el.scrollHeight - el.scrollTop - el.clientHeight, overflow: el.scrollHeight > el.clientHeight }))
+
+test('the related messages scroll on their own from the newest; a click unfolds the thread at a folded message', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1400, height: 820 })
+  const id = await seedLong(page, minbox)
+  await page.goto(minbox.url + '/#v=topics')
+  const fold = card(page, 'in_progress', 'Fold topic')
+  await expect(fold).toBeVisible(SLOW)
+  await fold.click()
+  const related = page.getByTestId('topic-message')
+  await expect(related).toHaveCount(15, SLOW)
+  // Its own scroll area, at the bottom: the newest message is in view, the oldest above.
+  await expect.poll(async () => (await listState(page)).overflow).toBe(true)
+  await expect.poll(async () => (await listState(page)).gap).toBeLessThan(4)
+  await expect(related.last()).toContainText('follow-up number 14')
+  await expect(related.last()).toBeInViewport()
+  await expect(page.getByTestId('topic-pane-input')).toBeInViewport()
+  // Scrolled up, a new related message does not pull the list down.
+  await page.getByTestId('topic-messages').evaluate((el) => (el.scrollTop = 0))
+  const rr = await page.request.post(`${minbox.url}/api/threads/${id}/reply`, { data: { words: 'Fold topic follow-up number 15.' } })
+  expect(rr.ok()).toBe(true)
+  await expect(related).toHaveCount(16, SLOW)
+  expect((await listState(page)).top).toBe(0)
+  // Another topic and back: at the bottom again.
+  await card(page, 'in_progress', 'Search box UI').click()
+  await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
+  await fold.click()
+  await expect(related).toHaveCount(16)
+  await expect.poll(async () => (await listState(page)).gap).toBeLessThan(4)
+
+  // The oldest related message is folded in the thread: the click unfolds it and shows it.
+  await page.getByTestId('topic-messages').evaluate((el) => (el.scrollTop = 0))
+  await related.first().click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Long fold thread')
+  const target = page.locator('[data-testid="message"][data-jumped="true"]')
+  await expect(target).toContainText('The very first note on Fold topic: start with the parser.')
+  await expect(target).toBeInViewport()
+  await expect(page.getByTestId('earlier')).toHaveCount(0)
+})
+
+test('phone: a related message opens the thread with the folded message shown', async ({ page, minbox }) => {
+  await seedLong(page, minbox)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(minbox.url + '/#v=topics')
+  await page.getByTestId('topics-tab-in_progress').click()
+  const fold = card(page, 'in_progress', 'Fold topic')
+  await expect(fold).toBeVisible(SLOW)
+  await fold.click()
+  const related = page.getByTestId('topic-message')
+  await expect(related).toHaveCount(15, SLOW)
+  await expect.poll(async () => (await listState(page)).gap).toBeLessThan(4)
+  await expect(related.last()).toBeInViewport()
+  await expect(page.getByTestId('topic-pane-input')).toBeInViewport()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+  await page.getByTestId('topic-messages').evaluate((el) => (el.scrollTop = 0))
+  await related.first().click()
+  await expect(page.getByTestId('thread-subject')).toHaveText('Long fold thread')
+  const target = page.locator('[data-testid="message"][data-jumped="true"]')
+  await expect(target).toContainText('The very first note on Fold topic: start with the parser.')
+  await expect(target).toBeInViewport()
+  await expect(page.getByTestId('earlier')).toHaveCount(0)
+})
