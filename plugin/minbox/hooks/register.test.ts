@@ -62,10 +62,10 @@ function fakeServer(on: any, pending: any[], opts: { instructions?: string; fail
       return ok({ id: 'thr_5', subject: 'Long', status: 'working', own: false, session_name: 'other', open_questions: 0, message_count: 40, has_more: true, older: 38, next_before: 'msg_1', messages: [{ id: 'msg_1', author: 'user', body: 'hello', created_at: 't1' }] })
     }
     if (url.pathname === '/api/agent/tasks' && method === 'POST') {
-      return ok({ id: 'tpc_1', thread_id: body.thread_id ?? 'thr_9', status: body.status ?? 'in_progress', title: body.title, summary: body.summary ?? '', tasks: body.steps ?? [] })
+      return ok({ task_id: 'tpc_1', tagged_messages: [], task: { id: 'tpc_1', status: body.status ?? 'working', title: body.title, summary: body.summary ?? '', steps: body.steps ?? [] } })
     }
     if (url.pathname.startsWith('/api/agent/tasks/')) {
-      return ok({ id: 'tpc_1', thread_id: 'thr_1', status: body?.status ?? 'in_progress', title: 'Search UI', summary: 'Wired', tasks: [{ text: 'Add the field', done: true }, { text: 'Wire results', done: false }] })
+      return ok({ task_id: 'tpc_1', task: { id: 'tpc_1', status: body?.status ?? 'working', title: 'Search UI', summary: 'Wired', steps: [{ text: 'Add the field', done: true }, { text: 'Wire results', done: false }] } })
     }
     if (url.pathname === '/api/agent/tasks') {
       return ok({ threads: [{ id: 'thr_1', subject: 'Plan', tasks: [{ id: 'tpc_1', status: 'waiting_on_you', manual_status: 'waiting_on_you', title: 'Index', summary: 'Pick one', tasks: [] }] }] })
@@ -133,44 +133,24 @@ test('send_message posts the message and says the reply comes by itself', async 
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
 
   const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', status: 'working', body: ':::question\nA or B?\n- [ ] A\n- [ ] B\n:::', thread_title: 'Plan' })
-  expect(res.result).toContain('Started thread thr_1')
+  expect(res.result).toContain('Sent to the person in minbox')
   expect(res.result).toContain('Do not wait or poll')
   const post = server.calls.find((c) => c.path === '/api/agent/messages')
   expect(post?.body.thread_title).toBe('Plan')
 })
 
-test('send_message is refused without a valid status', async ($, on) => {
+test('send_message needs only a body (v3): task_ids go along, status and thread_title are optional', async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi' } as any)
-  const bad: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'done' } as any)
-  expect(JSON.stringify(res)).toContain('status is required')
-  expect(JSON.stringify(bad)).toContain('status is required')
-  expect(server.calls.filter((c) => c.path === '/api/agent/messages')).toHaveLength(0)
-})
-
-test('send_message is refused without a usable thread_title', async ($, on) => {
-  mock.clock(on)
-  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  const server = fakeServer(on, [])
-  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  const send = (extra: object): Promise<any> => $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', ...extra } as any)
-  expect(JSON.stringify(await send({}))).toContain('thread_title is required')
-  expect(JSON.stringify(await send({ thread_title: '   ' }))).toContain('thread_title is required')
-  expect(server.calls.filter((c) => c.path === '/api/agent/messages')).toHaveLength(0)
-})
-
-test('send_message accepts a long thread_title in full (30 characters is only guidance)', async ($, on) => {
-  mock.clock(on)
-  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  const server = fakeServer(on, [])
-  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', thread_title: 'x'.repeat(30) } as any)
+  const empty: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: '  ' } as any)
+  expect(JSON.stringify(empty)).toContain('body is required')
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', task_ids: ['tsk_1', ''] } as any)
   await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', status: 'working', thread_title: 'あ'.repeat(100) } as any)
   const posts = server.calls.filter((c) => c.path === '/api/agent/messages')
   expect(posts).toHaveLength(2)
+  expect(posts[0]?.body).toEqual({ body: 'hi', task_ids: ['tsk_1'] })
   expect(posts[1]?.body.thread_title).toBe('あ'.repeat(100))
 })
 
@@ -333,7 +313,7 @@ test('send_message passes attachments and a review', async ($, on) => {
   const post = server.calls.find((c) => c.path === '/api/agent/messages')
   expect(post?.body.attachments).toEqual(['plan.md'])
   expect(post?.body.review.title).toBe('R')
-  expect(post?.body.name).toBe('tag')
+  expect(post?.body.name).toBeUndefined() // v3: no threads to name
 })
 
 test('send_message tells Claude what it attached and which images will not show', () => {
@@ -347,7 +327,7 @@ test('send_message tells Claude what it attached and which images will not show'
       { ref: '~/.ssh/k.png', reason: 'a .env file, or in a hidden folder of the home folder such as ~/.ssh' },
     ],
   })
-  expect(text).toContain('Sent to the minbox inbox asking 1 question with 1 attachment (Started thread thr_9).')
+  expect(text).toContain('Sent to the person in minbox asking 1 question with 1 attachment.')
   expect(text).toContain('Attached: plan.md (markdown).')
   expect(text).toContain('This image does not exist yet: shots/x.png; it shows once written there.')
   expect(text).toContain('The message was sent, but this image will not show: ~/.ssh/k.png (a .env file, or in a hidden folder of the home folder such as ~/.ssh). Copy the image to a plain folder and link that path, or attach it with attachments.')
@@ -492,7 +472,7 @@ test('a turn that answered an inbox message without send_message is reminded onc
   await clock.advance(5000)
   expect(server.submitted.length).toBe(2)
   expect(server.submitted[1]).toBe(replyNudgeText('mcp__minbox__send_message', ['thr_1']))
-  expect(server.submitted[1]).toContain('thread_id thr_1')
+  expect(server.submitted[1]).toContain('Reply now with mcp__minbox__send_message')
 
   // The reminder's own turn does not remind again.
   await $.turn.start({ turnId: 't2', prompt: 'p' } as any)
@@ -777,15 +757,14 @@ test('task tools are registered (loaded) and keep the Tasks board through /api/a
 
   const bad: any = await $.tool.call({ tool: 'mcp__minbox__create_task', title: ' ' } as any)
   expect(bad.deny).toContain('title is required')
-  // Outside a delivered turn: the thread given.
-  let res: any = await $.tool.call({ tool: 'mcp__minbox__create_task', title: 'Search UI', thread_id: 'thr_7', steps: [{ text: 'Add the field' }], status: 'in_progress' } as any)
-  expect(calls()[0]).toEqual({ method: 'POST', path: '/api/agent/tasks', body: { title: 'Search UI', status: 'in_progress', steps: [{ text: 'Add the field', done: false }], thread_id: 'thr_7' } })
+  // v3: no thread; a legacy thread_id is not sent.
+  let res: any = await $.tool.call({ tool: 'mcp__minbox__create_task', title: 'Search UI', thread_id: 'thr_7', steps: [{ text: 'Add the field' }], status: 'working' } as any)
+  expect(calls()[0]).toEqual({ method: 'POST', path: '/api/agent/tasks', body: { title: 'Search UI', status: 'working', steps: [{ text: 'Add the field', done: false }] } })
   expect(JSON.stringify(res)).toContain('task_id tpc_1')
-  // In a turn that answers one thread: that thread by default.
-  await clock.advance(5000) // the reply in thr_1 is delivered
+  await clock.advance(5000)
   await $.turn.start({ turnId: 't1', prompt: 'p' } as any)
-  await $.tool.call({ tool: 'mcp__minbox__create_task', title: 'Docs' } as any)
-  expect(calls()[1]!.body.thread_id).toBe('thr_1')
+  await $.tool.call({ tool: 'mcp__minbox__create_task', title: 'Docs', kind: 'goal', criteria: [{ text: 'Published' }], autonomous: true } as any)
+  expect(calls()[1]!.body).toEqual({ title: 'Docs', kind: 'goal', criteria: [{ text: 'Published', done: false }], autonomous: true })
 
   res = await $.tool.call({ tool: 'mcp__minbox__update_task', task_id: 'tpc_1', check_steps: [1], summary: 'Wired' } as any)
   expect(calls()[2]).toEqual({ method: 'PATCH', path: '/api/agent/tasks/tpc_1', body: { summary: 'Wired', check_steps: [1] } })
@@ -795,5 +774,5 @@ test('task tools are registered (loaded) and keep the Tasks board through /api/a
 
   res = await $.tool.call({ tool: 'mcp__minbox__list_tasks' } as any)
   expect(calls()[calls().length - 1]!.path).toBe('/api/agent/tasks')
-  expect(JSON.stringify(res)).toContain('tpc_1 [waiting_on_you] (the person moved it to waiting_on_you by hand) Index')
+  expect(JSON.stringify(res)).toContain('tpc_1 [waiting_on_you] (the person set it to waiting_on_you by hand) Index')
 })

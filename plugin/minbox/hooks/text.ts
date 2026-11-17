@@ -5,15 +5,11 @@ export const SEND_TOOL = 'send_message'
 export const READ_TOOL = 'read_thread'
 
 export const SEND_DESCRIPTION = [
-  "Send a message to the person's minbox inbox, the pane beside this terminal: it is how they hear from you.",
-  'Use it EVERY time you need their opinion, a decision, an approval or an action from them (run something, check something, review, choose what is next), and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).',
-  'They may not be watching the terminal: something asked only in the chat goes unseen.',
-  'It does not block: it returns at once. Never wait, poll or sleep for the answer, and do not also ask the same thing in the chat.',
-  'Their reply arrives later as a new message in this conversation, headed with its thread id (usable with `read_thread` for the earlier messages); meanwhile keep working on what does not depend on it, or end your turn.',
-  'Leave `thread_id` out to start a new thread ; pass the thread_id of a reply to answer in its thread.',
-  '`thread_title` is required on every message (keep it short, around 30 characters; a guide, not a hard limit): name what the thread is about now, and update it when the topic drifts, so the title in the inbox list is always current. Write it in the person\'s language.',
-  'Pass `status` (working | need_action | blocked | finished) to set the thread\'s status: `working` when you start working on it, `need_action` when you need the person to decide or do something, `blocked` when you cannot go on until something outside the person happens (a CI run, another session, a server coming up), `finished` when its task is done; it is required on every message.',
-  'attachments: files to show the person; link one from the body (`[the mock](mock.html)`) to open it beside the thread. A guided `review` walks them through your changes.',
+  "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal.",
+  'Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).',
+  'It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.',
+  'Pass `task_ids` when the message is about tasks (from create_task / list_tasks): the reply and the person\'s messages it answers get them, so the person sees it in those tasks. Tasks you created in this turn are added by themselves; a quick answer needs none.',
+  'attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.',
 ].join(' ')
 
 export const QUESTION_GUIDE = [
@@ -49,29 +45,21 @@ export const SEND_SCHEMA = {
   type: 'object',
   properties: {
     body: { type: 'string', description: QUESTION_GUIDE },
-    thread_title: {
-      type: 'string',
-      description:
-        "The thread's title in the inbox list. Required on every message; keep it short, about 30 characters or fewer (a guide, not a hard limit). Name what the thread is about NOW: it replaces the current title, so update it when the topic drifts. Write it in the same language as the person.",
+    task_ids: {
+      type: 'array',
+      items: { type: 'string' },
+      description: "The tasks this message is about (ids from create_task or list_tasks). The person's messages this reply answers get them too. Leave out for a quick answer that is about no task.",
     },
     status: {
       type: 'string',
-      enum: ['working', 'need_action', 'blocked', 'finished'],
-      description:
-        "The thread's status, shown as a badge in the inbox. Set `working` when you start working on the thread, `need_action` when you need the person to decide or do something, `blocked` when you wait on something outside the person (CI, another session, a server), `finished` when the thread's task is done. Required on every message: say where the thread stands after it. A message that asks the person something is need_action; a report that the work is done is finished; a progress note while you carry on is working.",
-    },
-    subject: {
-      type: 'string',
-      description: 'Deprecated alias of thread_title; use thread_title.',
+      enum: ['working', 'needs_you', 'blocked', 'done'],
+      description: 'Optional: the new status of the tasks in task_ids (update_task does the same).',
     },
     thread_id: {
       type: 'string',
-      description: 'The thread to continue (the thread_id a reply came with). Leave out to start a new thread.',
+      description: 'Legacy, optional: an older thread to answer in. Leave out: the message goes to your conversation with the person.',
     },
-    name: {
-      type: 'string',
-      description: 'A short tag for a new thread, e.g. "archive-search". Ignored with thread_id.',
-    },
+    thread_title: { type: 'string', description: 'Legacy, optional; not needed.' },
     attachments: {
       type: 'array',
       items: { type: 'string' },
@@ -102,9 +90,28 @@ export const SEND_SCHEMA = {
       required: ['title', 'sections'],
     },
   },
-  required: ['body', 'status', 'thread_title'],
+  required: ['body'],
   additionalProperties: false,
 } as const
+
+/** The API body of send_message, or an error for the agent. Only body is required (v3). */
+export function sendRequest(e: any): { body: Record<string, unknown> } | { error: string } {
+  const body = typeof e?.body === 'string' ? e.body : ''
+  if (!body.trim()) return { error: 'body is required.' }
+  const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : undefined)
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : undefined)
+  const out: Record<string, unknown> = {
+    body,
+    task_ids: strs(e.task_ids),
+    status: str(e.status),
+    thread_id: str(e.thread_id),
+    thread_title: str(e.thread_title) ?? str(e.subject),
+    attachments: strs(e.attachments),
+    review: e.review && typeof e.review === 'object' ? e.review : undefined,
+  }
+  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k]
+  return { body: out }
+}
 
 export const READ_DESCRIPTION = [
   "Read the person's minbox inbox.",
@@ -166,12 +173,12 @@ export function asksPerson(answer: string): boolean {
   return /(どうしますか|いかがですか|よろしいですか|しますか|ますか。|ご確認|確認してください|教えてください|選んでください|決めてください|お知らせください|お願いします|指示をください|ご判断|\bshould I\b|\bwould you like\b|\bdo you want\b|\blet me know\b|\bplease (?:confirm|review|check|choose|decide|run|approve|test|try)\b|\bwhich (?:one|option|approach)\b|\byour call\b)/i.test(lastLines)
 }
 
-/** A plugin turn: the turn answered an inbox message but never replied in its thread. */
+/** A plugin turn: the turn answered a message from the person but never replied with send_message. */
 export function replyNudgeText(sendTool: string, threadIds: string[]): string {
-  const ids = threadIds.map((id) => `thread_id ${id}`).join(' / ')
+  void threadIds
   return [
-    `minbox: the last turn handled a message from the person's inbox (${ids}), but nothing was sent back in that thread, and they cannot see the terminal.`,
-    `Reply now with ${sendTool} and the thread_id above: the answer, or a short summary of what you did. Do not repeat the long text here; after sending, end your turn.`,
+    `minbox: the last turn handled a message from the person, but nothing was sent back with ${sendTool}, and they cannot see the terminal.`,
+    `Reply now with ${sendTool}: the answer, or a short summary of what you did. Do not repeat the long text here; after sending, end your turn.`,
   ].join(' ')
 }
 
@@ -232,6 +239,10 @@ export type Pending = Message & {
   urgent?: boolean
   new_thread: boolean
   in_reply_to?: Message | null
+  /** v3: the message's tasks, whether it is in the stream, and its kind ("continue": a goal's run). */
+  tasks?: { task_id: string; title: string; status?: string }[] | null
+  stream?: boolean
+  kind?: string
 }
 
 export type Thread = {
@@ -269,9 +280,30 @@ export function readHint(threadId: string, readTool: string): string {
   return `(Thread ${threadId}. Earlier messages in this thread: call ${readTool} with this thread_id.)`
 }
 
+/** The line naming a message's tasks, or ''. */
+export function tasksLine(p: Pending): string {
+  const ts = p.tasks ?? []
+  if (ts.length === 0) return ''
+  return `Tasks: ${ts.map((t) => `${t.task_id} "${oneLine(t.title)}"${t.status && t.status !== 'working' ? ` (${t.status})` : ''}`).join('; ')}`
+}
+
+const STREAM_LINE =
+  'Decide what it is about: an existing task (reply with send_message and its task_ids), new work (create_task, then reply), or nothing that needs a task (just reply).'
+
 /** The turn text for the person's messages from the inbox (one or more). */
 export function wakeText(pending: Pending[], sendTool: string, readTool: string): string {
   const parts = pending.map((p) => {
+    if (p.stream) {
+      if (p.kind === 'continue') return p.body.trim()
+      const tl = tasksLine(p)
+      return [
+        `minbox: a message from the person (message ${p.id})${tl ? '' : '.'}`,
+        ...(tl ? [tl + ' (they wrote it about these tasks).'] : [STREAM_LINE]),
+        `Answer it with ${sendTool}, even briefly: text only in the terminal is not shown to them.`,
+        '',
+        p.body.trim(),
+      ].join('\n')
+    }
     const lines = [
       `minbox inbox: ${oneLine(p.subject) || 'a reply'} (thread_id: ${p.thread_id})`,
       p.new_thread ? NEW_THREAD_LINE : REPLY_LINE,
@@ -289,6 +321,8 @@ export function wakeText(pending: Pending[], sendTool: string, readTool: string)
 export type SendResult = {
   thread_id: string
   new_thread: boolean
+  task_ids?: string[] | null
+  decision?: string
   questions?: { key: string; prompt: string }[]
   attachments?: { id: string; name: string; kind: string; path: string }[]
   images_not_shown?: { ref: string; reason: string; not_yet?: boolean }[]
@@ -302,8 +336,9 @@ function plural(n: number, word: string): string {
 export function sentText(r: SendResult): string {
   const asking = r.questions?.length ? ` asking ${plural(r.questions.length, 'question')}` : ''
   const files = r.attachments?.length ? ` with ${plural(r.attachments.length, 'attachment')}` : ''
+  const tagged = r.task_ids?.length ? ` Tagged with task${r.task_ids.length > 1 ? 's' : ''} ${r.task_ids.join(', ')}.` : ''
   const lines = [
-    `Sent to the minbox inbox${asking}${files} (${r.new_thread ? 'Started thread' : 'Added to thread'} ${r.thread_id}).`,
+    `Sent to the person in minbox${asking}${files}.${tagged}`,
     "The person's reply will arrive by itself as a new message in this conversation. Do not wait or poll for it.",
   ]
   if (r.questions?.length) {
@@ -371,7 +406,7 @@ export function fallbackReminderText(sendTool: string): string {
   return [
     `minbox: the person follows this session through the minbox inbox and may not be watching the terminal.`,
     `Whenever you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at, send it with ${sendTool} (each decision as a :::question block) and keep going; their reply comes back here by itself.`,
-    `Messages that arrive as "minbox inbox: … (thread_id: …)" come from the inbox: always answer them with ${sendTool} and that thread_id, never only in the terminal.`,
+    `Messages that arrive as "minbox: a message from the person" come from minbox: always answer them with ${sendTool}, never only in the terminal.`,
   ].join(' ')
 }
 

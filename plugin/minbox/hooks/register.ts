@@ -37,6 +37,7 @@ import {
   readPath,
   SEND_DESCRIPTION,
   SEND_SCHEMA,
+  sendRequest,
   SEND_TOOL,
   openDeny,
   opensBrowser,
@@ -569,24 +570,9 @@ export const register: Register = (on) => {
 
   on('tool.call', { tool: `mcp__minbox__${SEND_TOOL}` }, async ($, e: any) => {
     if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const body = typeof e.body === 'string' ? e.body : ''
-    if (!body.trim()) return { deny: 'body is required.' }
-    if (e.status !== 'working' && e.status !== 'need_action' && e.status !== 'blocked' && e.status !== 'finished') {
-      return { deny: 'status is required: working (you carry on), need_action (you need the person), blocked (you wait on something outside them) or finished (the task is done). Send the message again with it.' }
-    }
-    const title = typeof e.thread_title === 'string' && e.thread_title.trim() ? e.thread_title : typeof e.subject === 'string' ? e.subject : ''
-    if (!title.trim()) {
-      return { deny: 'thread_title is required: name what the thread is about now, in about 30 characters or fewer. Send the message again with it.' }
-    }
-    const res = await api($, 'POST', '/api/agent/messages', {
-      body,
-      thread_title: title,
-      thread_id: typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : undefined,
-      name: typeof e.name === 'string' && e.name ? e.name : undefined,
-      status: typeof e.status === 'string' && e.status ? e.status : undefined,
-      attachments: Array.isArray(e.attachments) ? e.attachments.filter((a: unknown) => typeof a === 'string') : undefined,
-      review: e.review && typeof e.review === 'object' ? e.review : undefined,
-    })
+    const req = sendRequest(e)
+    if ('error' in req) return { deny: req.error }
+    const res = await api($, 'POST', '/api/agent/messages', req.body)
     if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
     sentThisTurn = true
     return { result: sentText(res.json) }

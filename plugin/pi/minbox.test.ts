@@ -71,7 +71,7 @@ test('does nothing without the minbox environment', () => {
 test('registers the minbox tools under Pi names', () => {
   const t = setup()
   for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
-  assert.equal(t.tools.get('minbox_send_message').parameters.required.includes('thread_title'), true)
+  assert.deepEqual(t.tools.get('minbox_send_message').parameters.required, ['body'])
   t.ext!.stop()
 })
 
@@ -79,12 +79,10 @@ test('send_message validates, posts, and throws on a server error', async () => 
   const t = setup({ fail: (c) => c.path === '/api/agent/title' })
   const send = t.tools.get('minbox_send_message')
   await assert.rejects(send.execute('1', { body: '', status: 'working', thread_title: 'x' }), /body is required/)
-  await assert.rejects(send.execute('1', { body: 'hi', thread_title: 'x' }), /status is required/)
-  await assert.rejects(send.execute('1', { body: 'hi', status: 'finished' }), /thread_title is required/)
-  const r = await send.execute('1', { body: 'hi', status: 'need_action', thread_title: 'Pick one' })
-  assert.match(r.content[0].text, /Started thread thr_1/)
+  const r = await send.execute('1', { body: 'hi', task_ids: ['tsk_1'] })
+  assert.match(r.content[0].text, /Sent to the person in minbox/)
   const post = t.calls.find((c) => c.path === '/api/agent/messages')!
-  assert.deepEqual([post.body.body, post.body.status, post.body.thread_title], ['hi', 'need_action', 'Pick one'])
+  assert.deepEqual(post.body, { body: 'hi', task_ids: ['tsk_1'] })
   await assert.rejects(t.tools.get('minbox_set_session_title').execute('1', { title: 'T' }), /minbox: boom/)
   t.ext!.stop()
 })
@@ -318,17 +316,17 @@ test('a bash call another extension blocked is reported with its thread; a later
   t.ext!.stop()
 })
 
-test('task tools keep the Tasks board: create in the delivered thread, update, list', async () => {
+test('task tools keep the Board: create, update, list', async () => {
   let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: search', body: 'go', new_thread: false, urgent: true }]
   const t = setup({
     pending: () => pending,
     reply: (c) =>
       c.path === '/api/agent/tasks' && c.method === 'POST'
-        ? { id: 'tpc_1', thread_id: c.body.thread_id, status: 'in_progress', title: c.body.title, summary: '', tasks: c.body.steps ?? [] }
+        ? { task_id: 'tpc_1', tagged_messages: ['m1'], task: { id: 'tpc_1', status: 'working', title: c.body.title, summary: '', steps: c.body.steps ?? [] } }
         : c.path.startsWith('/api/agent/tasks/')
-          ? { id: 'tpc_1', thread_id: 'thr_9', status: c.body.status ?? 'in_progress', title: 'Search UI', summary: '', tasks: [{ text: 'Add the field', done: true }] }
+          ? { task_id: 'tpc_1', task: { id: 'tpc_1', status: c.body.status ?? 'working', title: 'Search UI', summary: '', steps: [{ text: 'Add the field', done: true }] } }
           : c.path.startsWith('/api/agent/tasks')
-            ? { threads: [{ id: 'thr_9', subject: 'Search', tasks: [{ id: 'tpc_1', status: 'done', title: 'Search UI', summary: 'Shipped', tasks: [] }] }] }
+            ? { tasks: [{ id: 'tpc_1', status: 'done', title: 'Search UI', summary: 'Shipped', steps: [] }] }
             : undefined,
   })
   for (const n of ['create_task', 'update_task', 'list_tasks']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
@@ -340,13 +338,13 @@ test('task tools keep the Tasks board: create in the delivered thread, update, l
   await assert.rejects(t.tools.get('minbox_create_task').execute('1', { title: '' }), /title is required/)
   const created = await t.tools.get('minbox_create_task').execute('1', { title: 'Search UI', steps: [{ text: 'Add the field' }] })
   const post = t.calls.find((c) => c.path === '/api/agent/tasks' && c.method === 'POST')!
-  assert.deepEqual(post.body, { title: 'Search UI', steps: [{ text: 'Add the field', done: false }], thread_id: 'thr_9' })
-  assert.match(created.content[0].text, /task_id tpc_1/)
+  assert.deepEqual(post.body, { title: 'Search UI', steps: [{ text: 'Add the field', done: false }] })
+  assert.match(created.content[0].text, /task_id tpc_1\)\. The person's message of this turn/)
   const updated = await t.tools.get('minbox_update_task').execute('1', { task_id: 'tpc_1', status: 'done', check_steps: [1] })
   assert.deepEqual([t.calls.at(-1)!.method, t.calls.at(-1)!.path, t.calls.at(-1)!.body], ['PATCH', '/api/agent/tasks/tpc_1', { status: 'done', check_steps: [1] }])
   assert.match(updated.content[0].text, /1\. \[x\] Add the field/)
-  const listed = await t.tools.get('minbox_list_tasks').execute('1', { thread_id: 'thr_9' })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/tasks?thread_id=thr_9')
+  const listed = await t.tools.get('minbox_list_tasks').execute('1', { all: true })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/tasks?all=1')
   assert.match(listed.content[0].text, /tpc_1 \[done\] Search UI — Shipped/)
   t.ext!.stop()
 })
