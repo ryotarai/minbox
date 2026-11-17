@@ -885,6 +885,8 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			_ = s.store.UpdateThread(ctx, threadID, nil, &name)
 		}
 	}
+	// Denied commands reported without a thread belong to the thread the agent writes to next.
+	s.denied.assign(sess.ID, threadID)
 	type attInfo struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`

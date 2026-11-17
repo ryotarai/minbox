@@ -997,6 +997,8 @@ export const api = {
   unsnoozeThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/unsnooze`),
   reask: (id: string) => call<Message>('POST', `/api/threads/${id}/reask`),
   suggestions: (threadId: string) => call<SuggestResult>('GET', `/api/threads/${threadId}/suggestions`),
+  /** The person dismissed the "Run yourself" command (a denied command the agent reported). */
+  dismissDeniedCommand: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/denied-command`),
   reply: (threadId: string, req: ReplyRequest) =>
     call<Message & { forwarded_thread_id?: string; thread_id: string }>('POST', `/api/threads/${threadId}/reply`, req),
   sendNow: (messageId: string) => call<Ok>('POST', `/api/messages/${messageId}/send-now`),

@@ -396,7 +396,9 @@ archived sessions and threads, storage and About.
 Haiku through `claude -p` for a few questions that help you decide your reply, each with options to pick
 (single or multiple choice, plus "Other…" for your own words). What you pick is added to your reply as
 `Q: … → A: …` lines (a preview shows it) when you press Send; answer nothing and the reply goes as typed.
-When the agent says a command was denied, a chip offers `!<command>` to run it yourself. The recent text
+When the agent tried a shell command and it was denied (you rejected the prompt, a permission rule, a hook),
+a "Run yourself" chip offers `!<command>` to run it yourself: the agent's integration reports the denial as it
+happens, nothing is guessed from the message text. The recent text
 of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**. Without `claude`
 the default agent runs it instead (Pi: `pi --print`, its own default model, or `MINBOX_PI_HELPER_MODEL`; OpenCode only
 when neither Claude Code nor Pi is installed: `opencode run`, `MINBOX_OPENCODE_HELPER_MODEL`); with no

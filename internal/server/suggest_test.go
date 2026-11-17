@@ -38,16 +38,20 @@ func TestBuildSuggestPrompt(t *testing.T) {
 	if strings.Count(p, "あ") != suggestMsgLen || !strings.Contains(p, "あ…") {
 		t.Errorf("long message not truncated to %d runes", suggestMsgLen)
 	}
-	for _, want := range []string{"Subject: Pick a DB", "Open question: Which?", "option: Postgres", "option: SQLite", "language the PERSON used", "\"single\"", "\"multi\"", "2 to 5 options", "Strongly prefer options", "set command"} {
+	for _, want := range []string{"Subject: Pick a DB", "Open question: Which?", "option: Postgres", "option: SQLite", "language the PERSON used", "\"single\"", "\"multi\"", "2 to 5 options", "Strongly prefer options"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt lacks %q", want)
 		}
+	}
+	// Commands to run come only from reported denials (denied.go), never from the helper.
+	if strings.Contains(p, "command") || strings.Contains(suggestSchema, "command") {
+		t.Error("the helper is asked for a command")
 	}
 }
 
 func TestParseSuggestions(t *testing.T) {
 	long := strings.Repeat("x", 300)
-	// render: "question[kind]=label/desc,label;..." then " !command"
+	// render: "question[kind]=label/desc,label;..." then " "
 	render := func(h replyHelp) string {
 		var parts []string
 		for _, q := range h.Questions {
@@ -57,7 +61,7 @@ func TestParseSuggestions(t *testing.T) {
 			}
 			parts = append(parts, q.Question+"["+q.Kind+"]="+strings.Join(os, ","))
 		}
-		return strings.Join(parts, ";") + " " + h.Command
+		return strings.Join(parts, ";") + " "
 	}
 	cases := []struct {
 		name, in, want string
@@ -69,11 +73,7 @@ func TestParseSuggestions(t *testing.T) {
 		{"unknown kind is single, string options", `{"structured_output":{"questions":[{"question":"Q","kind":"radio","options":["a"," b "]}]}}`, "Q[single]=a/,b/ ", false},
 		{"dupes, empties, bad entries", `{"structured_output":{"questions":[{"question":"Q","kind":"multi","options":[{"label":"a"},{"label":"A"},{"label":" "},3,{"label":"b"}]},{"question":"q","kind":"single","options":[]},{"question":"  "},7,{"question":"R","kind":"single","options":[]}]}}`, "Q[multi]=a/,b/;R[single]= ", false},
 		{"caps", `{"structured_output":{"questions":[{"question":"` + long + `","kind":"single","options":[{"label":"1"},{"label":"2"},{"label":"3"},{"label":"4"},{"label":"5"},{"label":"6"}]}]}}`, strings.Repeat("x", suggestMaxLen) + "…[single]=1/,2/,3/,4/,5/ ", false},
-		{"command", `{"structured_output":{"questions":[],"command":"$ make lint"}}`, " !make lint", false},
-		{"multi-line command dropped", `{"structured_output":{"questions":[],"command":"a\nb"}}`, " ", false},
-		{"path command dropped", `{"structured_output":{"questions":[],"command":"extensions/auto-permission/"}}`, " ", false},
-		{"lone word command dropped", `{"structured_output":{"questions":[],"command":"deny"}}`, " ", false},
-		{"bang command", `{"structured_output":{"questions":[],"command":"! gcloud auth login"}}`, " !gcloud auth login", false},
+		{"a command from an old helper is ignored", `{"structured_output":{"questions":[],"command":"$ make lint"}}`, " ", false},
 		{"none", `{"structured_output":{"questions":[]}}`, " ", false},
 		{"old shape", `{"structured_output":{"suggestions":["a"]}}`, "", true},
 		{"not json", `hello`, "", true},
