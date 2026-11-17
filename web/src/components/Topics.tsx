@@ -50,7 +50,7 @@ function movedTopic(t: Topic, status: TopicStatus): Topic {
  * Selecting a card (a click, a tap, or Space on the focused card) opens its pane: on the right of
  * the board on a desktop, full screen on a phone. The pane shows the topic's fuller summary, its
  * steps as a read-only checklist, the thread's messages about it, and a box that sends a message
- * to the thread, headed with the topic's name ("[Topic: …]"). While the pane is open the keyboard
+ * to the thread, headed with the topic's name ("[Topic: …]", added on send, not shown in the box). While the pane is open the keyboard
  * focus moves the selection along; R writes, Esc closes it.
  */
 export function TopicsPage() {
@@ -767,23 +767,14 @@ function TopicPane({
           void send()
         }}
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            data-testid="topic-pane-prefix"
-            title="Added at the start of your message, so the agent knows which topic it is about"
-            className="min-w-0 max-w-full truncate rounded-full border border-accent/50 bg-accent/10 px-2 py-px text-[11.5px] text-fg2 select-none"
-          >
-            {prefix}
-          </span>
-          {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
-        </div>
+        {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
         <div className="flex items-end gap-2">
           <textarea
             ref={replyRef}
             data-testid="topic-pane-input"
             value={draft}
             rows={phone ? 2 : 3}
-            placeholder={phone ? 'Message the thread…' : `Message the thread about this topic… (R)`}
+            placeholder={phone ? 'Message the thread about this topic…' : 'Message the thread about this topic… (R)'}
             onChange={(e) => onDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {

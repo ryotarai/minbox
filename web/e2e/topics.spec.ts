@@ -125,7 +125,9 @@ test('phone: the columns are tabs; a card opens its topic full screen, then its 
   await expect(page.getByTestId('topics-col-done')).toHaveCount(0)
   await expect(page.getByTestId('topic-pane-title')).toHaveText('Release notes v1.4')
   await expect(page.getByTestId('topic-pane-status')).toHaveText('Done')
-  await expect(page.getByTestId('topic-pane-prefix')).toHaveText('[Topic: Release notes v1.4]')
+  // No prefix chip: the "[Topic: …]" prefix is added on send only.
+  await expect(page.getByTestId('topic-pane-prefix')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', 'Message the thread about this topic…')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.getByTestId('topic-pane-back').click()
   await expect(pane).toHaveCount(0)
@@ -320,8 +322,9 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   const related = page.getByTestId('topic-message')
   await expect(related).toHaveCount(1)
   await expect(related.first().getByTestId('topic-message-excerpt')).toContainText('Add search to the inbox.')
-  // The message box: the prefix shows as a chip.
-  await expect(page.getByTestId('topic-pane-prefix')).toHaveText('[Topic: Search box UI]')
+  // The message box: no prefix chip (the prefix is added on send), a hint in the placeholder.
+  await expect(page.getByTestId('topic-pane-prefix')).toHaveCount(0)
+  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', /Message the thread about this topic/)
   await expect(page.getByTestId('topic-pane-send')).toBeDisabled()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/topics-pane.png` })
 
