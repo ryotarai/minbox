@@ -10,7 +10,8 @@ const noOverflow = async (page: import('@playwright/test').Page) => {
   expect(m.scroll).toBeLessThanOrEqual(m.inner)
 }
 
-test('phone: a tap on an attachment opens the viewer full screen; x and back close it', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('phone: a tap on an attachment opens the viewer full screen; x and back close it', async ({ page, minbox }) => {
   test.setTimeout(120_000)
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'kinds')

@@ -32,7 +32,8 @@ test('placePopover: flips and caps height inside the visible area', () => {
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
-  test('session picker stays inside the visual viewport when the keyboard shrinks it', async ({ page, minbox }) => {
+  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+  test.skip('session picker stays inside the visual viewport when the keyboard shrinks it', async ({ page, minbox }) => {
     test.setTimeout(120_000)
     // A fake visual viewport the test can shrink, like an overlaying keyboard does.
     await page.addInitScript(() => {

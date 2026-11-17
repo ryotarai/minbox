@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
+import { IconAgentKind, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
@@ -91,9 +92,33 @@ export function StreamView({
               {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
             </span>
-            <button type="button" className={'v-btn' + (pane === 'terminal' ? ' pri' : '')} data-testid="terminal-toggle" aria-pressed={pane === 'terminal'} onClick={() => setPane(pane === 'terminal' ? 'tasks' : 'terminal')}>
-              Terminal <span className="v-kbd v-hide-phone">T</span>
+            <button
+              type="button"
+              className={'v-btn' + (pane === 'terminal' ? ' pri' : '')}
+              data-testid="terminal-toggle"
+              data-agent={sess.agent || 'claude'}
+              aria-pressed={pane === 'terminal'}
+              aria-label={`${pane === 'terminal' ? 'Hide' : 'Show'} ${agentKindLabel(sess.agent)} terminal`}
+              title={`${pane === 'terminal' ? 'Hide' : 'Show'} the ${agentKindLabel(sess.agent)} terminal`}
+              style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}
+              onClick={() => setPane(pane === 'terminal' ? 'tasks' : 'terminal')}
+            >
+              <IconAgentKind kind={sess.agent} size={13} /> Terminal <span className="v-kbd v-hide-phone">T</span>
             </button>
+            {sess.kind !== 'shell' && sess.status !== 'ended' && (
+              <button
+                type="button"
+                className={'v-btn' + (pane === 'shell' ? ' pri' : '')}
+                data-testid="shell-toggle"
+                aria-pressed={pane === 'shell'}
+                aria-label={pane === 'shell' ? 'Hide shell' : 'Open shell'}
+                title={pane === 'shell' ? 'Hide the shell (Ctrl+`)' : "Open shell: a shell in this agent's folder (Ctrl+`)"}
+                style={{ display: 'inline-flex', alignItems: 'center' }}
+                onClick={() => setPane(pane === 'shell' ? 'tasks' : 'shell')}
+              >
+                <IconShell size={13} />
+              </button>
+            )}
           </div>
           <div className="v-r2">
             <span data-testid="agent-state">{sess.status === 'working' ? 'in a turn' : sess.status === 'ended' ? 'ended' : sess.status === 'starting' ? 'starting' : 'idle'}</span>

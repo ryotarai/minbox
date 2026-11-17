@@ -105,7 +105,8 @@ test('settings: connect with errors, scopes, manifest, backend, details, disconn
   await expect(page.getByTestId('slack-error')).toContainText('Slack is not connected')
 })
 
-test('desktop: list groups, detail, dismiss / snooze, cache, start a minbox thread', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('desktop: list groups, detail, dismiss / snooze, cache, start a minbox thread', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
   const sl = minbox.slackUser
@@ -286,7 +287,8 @@ test('a rate limit shows partial results and waits; the Real-time Search API ref
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
-  test('list, detail with back, start thread', async ({ page, minbox }) => {
+  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+  test.skip('list, detail with back, start thread', async ({ page, minbox }) => {
     test.setTimeout(150_000)
     if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto(minbox.url)

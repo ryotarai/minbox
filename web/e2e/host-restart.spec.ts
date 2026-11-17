@@ -20,7 +20,8 @@ async function session(url: string, name: string): Promise<Session | undefined> 
   return list.find((s) => s.name === name)
 }
 
-test('restart the local host from Settings: the session resumes in a new host, and new sessions start', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('restart the local host from Settings: the session resumes in a new host, and new sessions start', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'keeper')
   await expectTerminal(page, 'ready>')

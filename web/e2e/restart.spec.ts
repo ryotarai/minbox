@@ -10,7 +10,8 @@ async function sendQuick(page: Page, body: string) {
   await page.getByTestId('quick-send').click()
 }
 
-test('the session menu restarts a running session; the new process gets messages', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('the session menu restarts a running session; the new process gets messages', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'cycler')
   await expectTerminal(page, 'ready>')
@@ -55,7 +56,8 @@ test('declining the confirm leaves the session as it is', async ({ page, minbox 
   expect(await terminalText(page)).toContain('say keep')
 })
 
-test('the palette restarts the current running session', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('the palette restarts the current running session', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'palette-cycler')
   await expectTerminal(page, 'ready>')

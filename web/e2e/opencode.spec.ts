@@ -29,7 +29,8 @@ test('the dialog offers OpenCode; its session gets the plugin, a created session
   expect(sessions[0].claude_session_id).toMatch(/^ses_[0-9A-Za-z]{26}$/)
 })
 
-test('an OpenCode session reports status, its messages and replies flow, Send now steers, and the heartbeat shows', async ({ page, ocMinbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('an OpenCode session reports status, its messages and replies flow, Send now steers, and the heartbeat shows', async ({ page, ocMinbox }) => {
   await page.goto(ocMinbox.url)
   await createSession(page, ocMinbox.dataDir, 'oc-flow', 'opencode')
   await expectTerminal(page, 'ready>')
@@ -82,7 +83,8 @@ test('a restarted OpenCode session opens the same OpenCode session', async ({ pa
   expect(after.claude_session_id).toBe(s.claude_session_id)
 })
 
-test('with only OpenCode installed there is no picker and OpenCode is the default', async ({ page, ocOnlyMinbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('with only OpenCode installed there is no picker and OpenCode is the default', async ({ page, ocOnlyMinbox }) => {
   const agents = await (await fetch(ocOnlyMinbox.url + '/api/agents')).json()
   expect(agents.default).toBe('opencode')
   expect(agents.agents.map((a: any) => [a.kind, a.installed])).toEqual([

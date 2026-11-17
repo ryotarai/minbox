@@ -23,7 +23,8 @@ test('with two agents installed the dialog offers both and starts a Pi session',
   expect(sessions.map((s: any) => s.agent)).toEqual(['pi'])
 })
 
-test('a Pi session reports status and its messages and the replies flow through the inbox', async ({ page, piMinbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('a Pi session reports status and its messages and the replies flow through the inbox', async ({ page, piMinbox }) => {
   await page.goto(piMinbox.url)
   await createSession(page, piMinbox.dataDir, 'pi-flow', 'pi')
   await expectTerminal(page, 'ready>')
@@ -71,7 +72,8 @@ test('a restarted Pi session continues the same conversation id', async ({ page,
   expect(after.claude_session_id).toBe(s.claude_session_id)
 })
 
-test('with only Pi installed there is no picker, Pi is the default, and nothing needs claude', async ({ page, piOnlyMinbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('with only Pi installed there is no picker, Pi is the default, and nothing needs claude', async ({ page, piOnlyMinbox }) => {
   const agents = await (await fetch(piOnlyMinbox.url + '/api/agents')).json()
   expect(agents.default).toBe('pi')
   expect(agents.agents.map((a: any) => [a.kind, a.installed])).toEqual([

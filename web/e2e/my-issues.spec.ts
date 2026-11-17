@@ -19,7 +19,8 @@ async function connect(page: Page, minbox: Minbox) {
   await expect(page.getByTestId('linear-status')).toHaveText('Connected', { timeout: 15_000 })
 }
 
-test('desktop: entry above All projects only when connected; list, search, detail; start a linked thread; new issue from plain language', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('desktop: entry above All projects only when connected; list, search, detail; start a linked thread; new issue from plain language', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
   const lin = minbox.linear
@@ -181,7 +182,8 @@ test('desktop: entry above All projects only when connected; list, search, detai
   await expect(page).not.toHaveURL(/v=issues/)
 })
 
-test('desktop: with several projects the helper picks one; the main session is the default; changing the project re-defaults it', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('desktop: with several projects the helper picks one; the main session is the default; changing the project re-defaults it', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'alpha')
@@ -245,7 +247,8 @@ test('logged out: no entry, and the screen asks to connect', async ({ page, minb
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
-  test('list, detail with back, start thread, new issue', async ({ page, minbox }) => {
+  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+  test.skip('list, detail with back, start thread, new issue', async ({ page, minbox }) => {
     test.setTimeout(150_000)
     if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto(minbox.url)

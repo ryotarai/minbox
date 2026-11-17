@@ -46,7 +46,8 @@ test('the badge shows connected, goes stale without heartbeats with the gap, and
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('minbox mod connection, session')
 })
 
-test('phone: the badge shows in the thread header and turns stale', async ({ page, connMinbox: minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('phone: the badge shows in the thread header and turns stale', async ({ page, connMinbox: minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'pocketbeat')
   await expectTerminal(page, 'ready>')
