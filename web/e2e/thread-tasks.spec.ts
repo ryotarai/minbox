@@ -196,6 +196,64 @@ test('desktop: the toggle shows this thread’s tasks beside it, before the term
   await expect(pane(page)).toHaveCount(0)
 })
 
+const status = async (page: Page, minbox: Minbox, thread: string, title: string) => {
+  const r = await (await page.request.get(`${minbox.url}/api/topics?thread=${thread}`)).json()
+  return r.topics.find((t: { title: string }) => t.title === title)?.status as string | undefined
+}
+
+test('desktop: a task card’s check button marks it done on hover (it holds), Reopen brings it back; the list stays', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  const { sid, search } = await seed(page, minbox)
+  await page.goto(`${minbox.url}/#s=${sid}&t=${search}`)
+  await page.getByTestId('tasks-toggle').click()
+  const ui = card(page, 'Search box UI')
+  await expect(ui).toBeVisible(SLOW)
+  const btn = ui.getByTestId('topic-done')
+  await page.mouse.move(0, 0)
+  await expect(btn).toBeHidden()
+  await ui.hover()
+  await expect(btn).toBeVisible()
+  await expect(btn).toHaveAttribute('title', 'Mark done (3)')
+  await btn.click()
+  await expect(pane(page).getByTestId('thread-tasks-done')).toContainText('Search box UI')
+  // The click did not open the task.
+  await expect(pane(page).getByTestId('topic-pane')).toHaveCount(0)
+  await expect.poll(() => status(page, minbox, search, 'Search box UI')).toBe('done')
+
+  await page.reload()
+  await expect(pane(page).getByTestId('thread-tasks-done')).toContainText('Search box UI', SLOW)
+  const done = card(page, 'Search box UI')
+  await done.hover()
+  const reopen = done.getByTestId('topic-reopen')
+  await expect(reopen).toHaveAttribute('title', 'Reopen (1)')
+  await reopen.click()
+  await expect(pane(page).getByTestId('thread-tasks-in_progress')).toContainText('Search box UI')
+  await expect(pane(page).getByTestId('topic-pane')).toHaveCount(0)
+  await expect.poll(() => status(page, minbox, search, 'Search box UI')).toBe('in_progress')
+})
+
+test.describe('phone check button', () => {
+  test.use({ hasTouch: true })
+
+  test('phone: the check button shows without hover in the full-screen tasks and marks the task done', async ({ page, minbox }) => {
+    const { sid, search } = await seed(page, minbox)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${minbox.url}/#s=${sid}&t=${search}`)
+    await page.getByTestId('tasks-toggle').click()
+    const ui = card(page, 'Index format')
+    await expect(ui).toBeVisible(SLOW)
+    const btn = ui.getByTestId('topic-done')
+    await expect(btn).toBeVisible()
+    await btn.tap()
+    await expect(pane(page).getByTestId('thread-tasks-done')).toContainText('Index format')
+    await expect(pane(page).getByTestId('topic-pane')).toHaveCount(0)
+    await expect.poll(() => status(page, minbox, search, 'Index format')).toBe('done')
+    await card(page, 'Index format').getByTestId('topic-reopen').tap()
+    await expect(pane(page).getByTestId('thread-tasks-in_progress')).toContainText('Index format')
+    await expect.poll(() => status(page, minbox, search, 'Index format')).toBe('in_progress')
+  })
+})
+
 test('desktop: tasks turned off — the pane says so', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1500, height: 900 })
   await fetch(minbox.url + '/api/settings', {

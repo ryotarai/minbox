@@ -532,6 +532,88 @@ test('phone: the topic pane has Done and Reopen; the board follows', async ({ pa
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
 })
 
+test("a card's check button marks it done on hover (it holds); on a done card it reopens; no pane, no drag", async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1400, height: 820 })
+  await seed(page, minbox)
+  await page.goto(minbox.url + '/#v=tasks')
+  const ui = card(page, 'in_progress', 'Search box UI')
+  await expect(ui).toBeVisible(SLOW)
+  const doneBtn = ui.getByTestId('topic-done')
+  // Hidden until the card is hovered (its space is kept: the title does not move).
+  await page.mouse.move(0, 0)
+  await expect(doneBtn).toBeHidden()
+  const before = (await ui.getByTestId('topic-title').boundingBox())!
+  await ui.hover()
+  await expect(doneBtn).toBeVisible()
+  await expect(doneBtn).toHaveAttribute('title', 'Mark done (3)')
+  await expect(doneBtn).toHaveAttribute('aria-label', 'Mark done (3)')
+  await expect(doneBtn).toHaveAttribute('draggable', 'false')
+  expect((await ui.getByTestId('topic-title').boundingBox())!.width).toBe(before.width)
+  await doneBtn.click()
+  await expect(card(page, 'done', 'Search box UI')).toBeVisible()
+  await expect(card(page, 'in_progress', 'Search box UI')).toHaveCount(0)
+  // The click did not select the card.
+  await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('done')
+
+  // It holds after a reload.
+  await page.reload()
+  const done = card(page, 'done', 'Search box UI')
+  await expect(done).toBeVisible(SLOW)
+  await expect(card(page, 'in_progress', 'Search box UI')).toHaveCount(0)
+
+  // On a done card: Reopen, back to In progress.
+  await done.hover()
+  const reopen = done.getByTestId('topic-reopen')
+  await expect(reopen).toBeVisible()
+  await expect(reopen).toHaveAttribute('title', 'Reopen (1)')
+  await reopen.click()
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
+  await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+  await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('in_progress')
+
+  // From the keyboard: Tab from the focused card reaches the button (visible), Enter presses it.
+  await page.mouse.move(0, 0)
+  const rb = card(page, 'in_progress', 'Rounding bug')
+  await rb.focus()
+  await page.keyboard.press('Tab')
+  const rbDone = rb.getByTestId('topic-done')
+  await expect(rbDone).toBeFocused()
+  await expect(rbDone).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(card(page, 'done', 'Rounding bug')).toBeVisible()
+  await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+  await expect(page.getByTestId('topics')).toBeVisible()
+})
+
+test.describe('phone check button', () => {
+  test.use({ hasTouch: true })
+
+  test('phone: the check button shows without hover and marks the card done; Reopen brings it back', async ({ page, minbox }) => {
+    await seed(page, minbox)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(minbox.url + '/#v=tasks')
+    await page.getByTestId('topics-tab-in_progress').click()
+    const ui = card(page, 'in_progress', 'Search box UI')
+    await expect(ui).toBeVisible(SLOW)
+    const btn = ui.getByTestId('topic-done')
+    await expect(btn).toBeVisible()
+    await btn.tap()
+    await expect(card(page, 'in_progress', 'Search box UI')).toHaveCount(0)
+    await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+    await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('done')
+    await page.getByTestId('topics-tab-done').click()
+    const done = card(page, 'done', 'Search box UI')
+    await expect(done).toBeVisible()
+    await done.getByTestId('topic-reopen').tap()
+    await expect(page.getByTestId('topic-pane')).toHaveCount(0)
+    await expect.poll(async () => (await stored(page, minbox))['Search box UI']).toBe('in_progress')
+    await page.getByTestId('topics-tab-in_progress').click()
+    await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+})
+
 // A thread long enough that its first message folds away ("N earlier messages") and the topic's
 // related messages overflow the pane's list: each reply names the topic.
 async function seedLong(page: Page, minbox: Minbox) {
