@@ -276,12 +276,134 @@ func TestSetTopicStatusAndManualMarker(t *testing.T) {
 		t.Fatalf("in-flight = %+v", cur)
 	}
 
-	// An extraction that started after the move (it was told): its answer wins, the markers go.
+	// An extraction that started after the move (it was told) but names no message written since:
+	// no new information, the moves hold with their markers (the other fields apply).
 	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{Title: "Search UI", Summary: "Reopened", Status: "in_progress"}, {Title: "Index", Status: "waiting_on_you"}}, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	cur, _ = s.ThreadTopics(ctx, th.ID)
-	if len(cur) != 2 || cur[0].Status != TopicInProgress || cur[0].DoneAt != nil || cur[0].ManualStatus != "" || cur[0].ManualAt != nil || cur[1].Status != TopicWaitingOnYou || cur[1].ManualStatus != "" {
+	if len(cur) != 2 || cur[0].Status != TopicDone || cur[0].Summary != "Reopened" || cur[0].DoneAt == nil || cur[0].ManualStatus != TopicDone || cur[0].ManualAt == nil || cur[1].Status != TopicInProgress || cur[1].ManualStatus != TopicInProgress {
 		t.Fatalf("after = %+v", cur)
+	}
+}
+
+// No new information, no move: a status set by hand, or a done topic, changes only when the answer
+// links the topic to a message written after the move (after done_at) that it was not linked to.
+func TestReplaceTopicsStatusHoldsWithoutNewInfo(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	clock := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { clock = clock.Add(time.Second); return clock }
+	sess, _ := s.CreateSession(ctx, "alpha", "/tmp/a", "u")
+	th, _, _ := s.CreateThread(ctx, sess.ID, "Search", agentMsg("Implementing search…"))
+	full, _ := s.GetThread(ctx, th.ID)
+	m1 := full.Messages[0].ID
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{
+		{Title: "Search UI", Status: "in_progress", MessageIDs: []string{m1}},
+		{Title: "Index", Status: "done", MessageIDs: []string{m1}},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := s.ThreadTopics(ctx, th.ID)
+	ui, idx := cur[0], cur[1]
+	get := func(id string) Topic {
+		t.Helper()
+		cur, _ := s.ThreadTopics(ctx, th.ID)
+		for _, tp := range cur {
+			if tp.ID == id {
+				return tp
+			}
+		}
+		t.Fatalf("topic %s gone: %+v", id, cur)
+		return Topic{}
+	}
+
+	// The person marks Search UI done by hand.
+	if _, err := s.SetTopicStatus(ctx, ui.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	// An idle re-extraction (no new message) answers in_progress for both, citing only the old
+	// message: both stay done; the marker stays.
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{
+		{ID: ui.ID, Title: "Search UI", Summary: "Still going", Status: "in_progress", MessageIDs: []string{m1}},
+		{ID: idx.ID, Title: "Index", Status: "in_progress", MessageIDs: []string{m1}},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(ui.ID); tp.Status != TopicDone || tp.ManualStatus != TopicDone || tp.ManualAt == nil || tp.DoneAt == nil || tp.Summary != "Still going" {
+		t.Fatalf("manual done moved without new info: %+v", tp)
+	}
+	if tp := get(idx.ID); tp.Status != TopicDone || tp.DoneAt == nil {
+		t.Fatalf("done moved without new info: %+v", tp)
+	}
+	// Left out: a topic moved by hand is not deleted.
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{ID: idx.ID, Title: "Index", Status: "done", MessageIDs: []string{m1}}}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(ui.ID); tp.Status != TopicDone || tp.ManualStatus != TopicDone {
+		t.Fatalf("left out: %+v", tp)
+	}
+
+	// A new message about another topic, cited for it only: still no move for these two.
+	m2, _ := s.AddMessage(ctx, th.ID, agentMsg("Docs next."))
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{
+		{ID: ui.ID, Title: "Search UI", Status: "in_progress"},
+		{ID: idx.ID, Title: "Index", Status: "waiting_on_you"},
+		{Title: "Docs", Status: "in_progress", MessageIDs: []string{m2.ID}},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(ui.ID); tp.Status != TopicDone || tp.ManualStatus != TopicDone {
+		t.Fatalf("manual done moved by another topic's message: %+v", tp)
+	}
+	if tp := get(idx.ID); tp.Status != TopicDone {
+		t.Fatalf("done moved by another topic's message: %+v", tp)
+	}
+
+	// A new message about Search UI (a new problem), linked to it: the status changes, the marker
+	// goes. Index gets a new message too: it reopens.
+	m3, _ := s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "Search UI crashes", Words: "Search UI crashes, and the index is stale"})
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{
+		{ID: ui.ID, Title: "Search UI", Status: "in_progress", MessageIDs: []string{m3.ID}},
+		{ID: idx.ID, Title: "Index", Status: "in_progress", MessageIDs: []string{m3.ID}},
+		{Title: "Docs", Status: "in_progress", MessageIDs: []string{m2.ID}},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(ui.ID); tp.Status != TopicInProgress || tp.ManualStatus != "" || tp.ManualAt != nil || tp.DoneAt != nil {
+		t.Fatalf("manual done with new info: %+v", tp)
+	}
+	if tp := get(idx.ID); tp.Status != TopicInProgress || tp.DoneAt != nil {
+		t.Fatalf("done with new info: %+v", tp)
+	}
+
+	// Done again by the answer; a later re-run citing the same (already linked) message does not
+	// reopen it: that message is not new information.
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{ID: idx.ID, Title: "Index", Status: "done", MessageIDs: []string{m3.ID}}}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{ID: idx.ID, Title: "Index", Status: "in_progress", MessageIDs: []string{m3.ID}}}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(idx.ID); tp.Status != TopicDone {
+		t.Fatalf("reopened by an already linked message: %+v", tp)
+	}
+	// A manual move to waiting_on_you holds too; a newer message linked to it lets the answer move it.
+	if _, err := s.SetTopicStatus(ctx, idx.ID, "waiting_on_you"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{ID: idx.ID, Title: "Index", Status: "done", MessageIDs: []string{m3.ID}}}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(idx.ID); tp.Status != TopicWaitingOnYou || tp.ManualStatus != TopicWaitingOnYou {
+		t.Fatalf("manual waiting moved without new info: %+v", tp)
+	}
+	m4, _ := s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "index ok", Words: "The index looks fine now"})
+	if _, err := s.ReplaceTopics(ctx, th.ID, []TopicInput{{ID: idx.ID, Title: "Index", Status: "done", MessageIDs: []string{m4.ID}}}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if tp := get(idx.ID); tp.Status != TopicDone || tp.ManualStatus != "" || tp.DoneAt == nil {
+		t.Fatalf("manual waiting with new info: %+v", tp)
 	}
 }

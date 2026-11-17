@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +20,7 @@ func TestBuildTopicsPromptManualHint(t *testing.T) {
 		{ID: "tpc_2", Title: "Index", Status: store.TopicInProgress},
 	}, topicsAgent{})
 	if !strings.Contains(p, "id: tpc_1 | status: done | title: Search UI | summary:  | moved by the PERSON by hand to done at 2026-11-16 09:30 UTC") ||
-		!strings.Contains(p, "strong signal") || strings.Contains(p, "title: Index | summary:  | moved") {
+		!strings.Contains(p, "strong signal") || !strings.Contains(p, "only when new work or a new problem on it clearly appears") || strings.Contains(p, "title: Index | summary:  | moved") {
 		t.Fatalf("prompt:\n%s", p)
 	}
 	if strings.Contains(buildTopicsPrompt(th, []store.Topic{{ID: "tpc_2", Title: "Index", Status: store.TopicInProgress}}, topicsAgent{}), "strong signal") {
@@ -26,8 +28,8 @@ func TestBuildTopicsPromptManualHint(t *testing.T) {
 	}
 }
 
-// The person moves a card: PATCH stores it and publishes SSE; the next extraction is told about it
-// and its answer then wins; a move made while an extraction runs survives that extraction.
+// The person moves a card: PATCH stores it and publishes SSE; the next extraction is told about it;
+// a move made while an extraction runs survives that extraction.
 func TestTopicsManualMove(t *testing.T) {
 	e := newEnv(t)
 	e.srv.topics.debounce = 20 * time.Millisecond
@@ -99,7 +101,7 @@ func TestTopicsManualMove(t *testing.T) {
 	}
 
 	// The next message: the prompt tells of the move; the answer (here: keep it done) applies and
-	// the marker is gone.
+	// the marker stays (no new information moved it).
 	mu.Lock()
 	answer = `{"structured_output":{"topics":[{"title":"Search UI","summary":"Shipped","status":"done"}]}}`
 	mu.Unlock()
@@ -112,7 +114,7 @@ func TestTopicsManualMove(t *testing.T) {
 	if !strings.Contains(last, "id: "+id+" | status: done") || !strings.Contains(last, "moved by the PERSON by hand to done at") {
 		t.Fatalf("prompt without the move:\n%s", last)
 	}
-	if tp := topic(); tp["status"] != "done" || tp["summary"] != "Shipped" || tp["manual_status"] != "" || tp["manual_at"] != nil {
+	if tp := topic(); tp["status"] != "done" || tp["summary"] != "Shipped" || tp["manual_status"] != "done" || tp["manual_at"] == nil {
 		t.Fatalf("after the run = %v", tp)
 	}
 
@@ -133,5 +135,82 @@ func TestTopicsManualMove(t *testing.T) {
 	waitEvent(th)
 	if tp := topic(); tp["status"] != "waiting_on_you" || tp["summary"] != "Reopened" || tp["manual_status"] != "waiting_on_you" {
 		t.Fatalf("in-flight run overwrote the move: %v", tp)
+	}
+}
+
+var promptMessageIDRe = regexp.MustCompile(`· id: (\S+)\]`)
+
+// promptMessageIDs: the ids of the messages a topics prompt shows, oldest first.
+func promptMessageIDs(p string) []string {
+	out := []string{}
+	for _, m := range promptMessageIDRe.FindAllStringSubmatch(p, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// No new information, no move: a card moved to done by hand stays done through re-extractions
+// with no new message about it (as on idle / finished), and moves only when a new message is
+// linked to it; then the marker goes.
+func TestTopicsManualDoneHoldsWithoutNewInfo(t *testing.T) {
+	e := newEnv(t)
+	e.srv.topics.debounce = 20 * time.Millisecond
+	var mu sync.Mutex
+	status, cite := "in_progress", "none" // cite: "none" or "newest" (the newest message shown)
+	e.srv.topicsRun = func(_ context.Context, p string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		ids := []string{}
+		if all := promptMessageIDs(p); cite == "newest" && len(all) > 0 {
+			ids = all[len(all)-1:]
+		}
+		b, _ := json.Marshal(ids)
+		return []byte(`{"structured_output":{"topics":[{"title":"Search UI","summary":"s","status":"` + status + `","message_ids":` + string(b) + `}]}}`), nil
+	}
+	ctx := context.Background()
+	one := func(th string) store.Topic {
+		t.Helper()
+		ts, _ := e.srv.store.ThreadTopics(ctx, th)
+		if len(ts) != 1 {
+			t.Fatalf("topics = %+v", ts)
+		}
+		return ts[0]
+	}
+	waitStatus := func(th, want string) store.Topic {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if ts, _ := e.srv.store.ThreadTopics(ctx, th); len(ts) == 1 && ts[0].Status == want {
+				return ts[0]
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("status = %+v, want %s", one(th), want)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	sess := e.createSession()
+	th := e.send(sess, "", "Search", "Implementing the search UI…", "working")
+	tp := waitStatus(th, store.TopicInProgress)
+	if code, _, _ := e.do("PATCH", "/api/topics/"+tp.ID, map[string]any{"status": "done"}, nil); code != 200 {
+		t.Fatal("patch")
+	}
+
+	// Re-extractions without a new message (what idle / finished run): the answer says
+	// in_progress, the card stays done with its marker.
+	e.srv.refreshTopics(th)
+	mu.Lock()
+	cite = "newest" // the only message shown is older than the move
+	mu.Unlock()
+	e.srv.refreshTopics(th)
+	if tp := one(th); tp.Status != store.TopicDone || tp.ManualStatus != store.TopicDone || tp.ManualAt == nil {
+		t.Fatalf("moved without new info: %+v", tp)
+	}
+
+	// A new message, linked to the topic: a new problem reopens it and the marker goes.
+	e.send(sess, th, "Search", "The search UI crashes on empty input; fixing it.", "working")
+	if tp := waitStatus(th, store.TopicInProgress); tp.ManualStatus != "" || tp.ManualAt != nil || tp.DoneAt != nil {
+		t.Fatalf("after new info: %+v", tp)
 	}
 }

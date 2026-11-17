@@ -211,14 +211,14 @@ test('moving cards: drag, the menu; the move holds and the next extraction is to
   expect(await stored(page, minbox)).toMatchObject({ 'Search box UI': 'done', 'Rounding bug': 'waiting_on_you', 'Index format': 'in_progress' })
 
   // A new message in the thread: the extraction runs again. Its prompt says the person moved the
-  // cards (the fake helper keeps a moved card's column and says so in the summary); its answer is
-  // then the status, and the marker is gone.
+  // cards (the fake helper keeps a moved card's column and says so in the summary). No new message
+  // is about those cards, so their moves still hold, marked (no new information, no move).
   const r = await page.request.post(`${minbox.url}/api/threads/${search}/reply`, { data: { words: 'Next.\nTOPIC: Docs | in_progress | Write the docs' } })
   expect(r.ok()).toBe(true)
   await expect(card(page, 'in_progress', 'Docs')).toBeVisible(SLOW)
   await expect(card(page, 'done', 'Search box UI').getByTestId('topic-summary')).toHaveText('Building the search field and results list (kept your move)')
   await expect(card(page, 'in_progress', 'Index format').getByTestId('topic-summary')).toContainText('(kept your move)')
-  await expect(card(page, 'done', 'Search box UI')).not.toHaveAttribute('data-manual', 'true')
+  await expect(card(page, 'done', 'Search box UI')).toHaveAttribute('data-manual', 'true')
   await expect(card(page, 'done', 'Search box UI')).toHaveAttribute('data-topic-id', id!)
   // The other thread had no new message: its move still holds, marked.
   await expect(card(page, 'waiting_on_you', 'Rounding bug')).toHaveAttribute('data-manual', 'true')
