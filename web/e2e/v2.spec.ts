@@ -828,6 +828,52 @@ test('R with text selected in a message quotes it into the reply box, as the Rep
   await expect(box).toHaveValue('> Please review the retry logic\n\nretry')
 })
 
+test('R right after a real mouse selection (double-click, drag) quotes it, before the Reply bubble has caught up', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'quote-fast')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Please review the retry logic')
+  await page.getByTestId('thread-row').first().click()
+  const text = page.getByTestId('message').getByText('Please review the retry logic')
+  await expect(text).toBeVisible()
+  const box = page.getByTestId('reply-box')
+  // Real mouse input (not a programmatic selection); the text moves as the reply box grows and shrinks.
+  const dblclick = async () => {
+    const bb = (await text.boundingBox())!
+    await page.mouse.dblclick(bb.x + 10, bb.y + bb.height / 2) // the word "Please"
+  }
+  const clear = async () => {
+    await expect(box).toBeFocused() // the quote focuses the box on the next frame
+    await box.fill('')
+    await box.blur()
+    await expect(page.getByTestId('quote-reply')).toHaveCount(0)
+  }
+  // A double-click on a word and R at once: the bubble follows the selection only after a pause.
+  await dblclick()
+  await page.keyboard.press('r')
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('> Please\n\n')
+  await clear()
+  // A drag over the text, then R at once.
+  const bb = (await text.boundingBox())!
+  await page.mouse.move(bb.x + 1, bb.y + bb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bb.x + bb.width + 20, bb.y + bb.height / 2, { steps: 4 })
+  await page.mouse.up()
+  await page.keyboard.press('r')
+  await expect(box).toHaveValue('> Please review the retry logic\n\n')
+  await clear()
+  // Once the bubble shows: R and a click on the bubble both quote.
+  await dblclick()
+  await expect(page.getByTestId('quote-reply')).toBeVisible()
+  await page.keyboard.press('r')
+  await expect(box).toHaveValue('> Please\n\n')
+  await clear()
+  await dblclick()
+  await page.getByTestId('quote-reply').click()
+  await expect(box).toHaveValue('> Please\n\n')
+})
+
 test.describe('touch device (coarse pointer, wide layout)', () => {
   test.use({ hasTouch: true, viewport: { width: 1200, height: 800 } })
 

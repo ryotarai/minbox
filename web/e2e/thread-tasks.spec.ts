@@ -100,6 +100,18 @@ test('desktop: the toggle shows this thread’s tasks beside it, before the term
   await expect(input).not.toBeFocused()
   await expect(page.getByTestId('reply-box')).toBeFocused()
   await page.getByTestId('reply-box').blur()
+  // Text selected in the thread wins over the pane: R quotes it, also while the keyboard is still
+  // in the pane (and the bubble has not caught up yet).
+  const msgText = page.getByTestId('message').getByText('Add search to the inbox.')
+  const mb = (await msgText.boundingBox())!
+  await page.mouse.dblclick(mb.x + 6, mb.y + 8) // "Add", on the first line
+  await pane(page).focus()
+  await page.keyboard.press('r')
+  await expect(input).not.toBeFocused()
+  await expect(page.getByTestId('reply-box')).toBeFocused()
+  await expect(page.getByTestId('reply-box')).toHaveValue('> Add\n\n')
+  await page.getByTestId('reply-box').fill('')
+  await page.getByTestId('reply-box').blur()
 
   // Send: the thread beside it shows the message at once (the context as a "Task" chip), and the
   // agent gets "[Task: …]", the context and the text.
