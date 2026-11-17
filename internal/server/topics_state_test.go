@@ -23,7 +23,16 @@ func TestBuildTopicsPromptAgentState(t *testing.T) {
 		"never keep \"in_progress\" just because a topic was in progress before",
 		"\"in_progress\" ONLY when the agent is actively working on it right now",
 		"AND the agent state now is working",
-		"\"waiting_on_you\" when the agent asked the PERSON",
+		"\"waiting_on_you\" ONLY when progress on it is blocked on the PERSON",
+		":::question block",
+		"log in, approve, run or test something themselves",
+		"stopped, waiting for their reply",
+		"NOT \"waiting_on_you\"",
+		"\"let me know if…\"",
+		"optional suggestions",
+		"FYI notes",
+		"unverified points in a finished report",
+		"When unsure between \"waiting_on_you\" and \"done\", choose \"done\"",
 		"\"done\" when the result was reported or delivered",
 		"A question that was answered is done",
 		"When unsure between \"in_progress\" and \"done\", choose \"done\"",
@@ -36,6 +45,9 @@ func TestBuildTopicsPromptAgentState(t *testing.T) {
 	}
 	if strings.Contains(p, "otherwise \"in_progress\"") {
 		t.Error("the old default to in_progress is left")
+	}
+	if strings.Contains(p, "or \"waiting_on_you\" if a request to the person is open") || strings.Contains(p, "explicitly awaits the person's input") {
+		t.Error("the old broad waiting_on_you rule is left")
 	}
 	for state, want := range map[string]string{
 		store.StatusWorking: "Agent state now: working (",

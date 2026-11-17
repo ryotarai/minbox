@@ -421,17 +421,24 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic, ag topicsAgent) stri
 }
 
 // topicsStatusRules: how the helper picks a topic's status (the board's columns). In progress is
-// only for work the agent is doing right now; anything finished, answered or quiet is done.
+// only for work the agent is doing right now; waiting on you only for what is blocked on the person
+// (an open question to decide, an action only they can take); anything else is done.
 const topicsStatusRules = "\nStatus rules (judge every topic again, current ones included, from the newest messages and the agent state now; " +
 	"never keep \"in_progress\" just because a topic was in progress before):\n" +
 	"- \"in_progress\" ONLY when the agent is actively working on it right now: the latest messages about it show the agent " +
 	"started or continues the work (e.g. \"implementing…\", \"investigating…\", a subagent running) and has not yet reported the result, " +
 	"AND the agent state now is working.\n" +
-	"- \"waiting_on_you\" when the agent asked the PERSON a question, decision, review or action about it that is still unanswered, " +
-	"or reported and explicitly awaits the person's input.\n" +
+	"- \"waiting_on_you\" ONLY when progress on it is blocked on the PERSON, with that request still unanswered: " +
+	"a question asking them to choose, decide or answer (e.g. a :::question block, or an explicit question that needs their decision); " +
+	"or a request that they act themselves (log in, approve, run or test something themselves, e.g. on a real device, " +
+	"provide credentials or information); or the agent explicitly says it is stopped, waiting for their reply.\n" +
+	"- NOT \"waiting_on_you\" (these are \"done\", unless the agent is actively working on it): a plain report of finished work; " +
+	"boilerplate offers such as \"let me know if…\", \"tell me if anything is off\", \"any feedback welcome\"; " +
+	"optional suggestions or \"you may want to check…\" that block nothing; FYI notes; a list of unverified points in a finished report.\n" +
 	"- \"done\" when the result was reported or delivered (e.g. \"pushed\", \"fixed\", \"here is the answer\"), " +
 	"or the topic has no pending work, or it went quiet with nobody working on it. A question that was answered is done.\n" +
-	"- When unsure between \"in_progress\" and \"done\", choose \"done\" (or \"waiting_on_you\" if a request to the person is open).\n" +
+	"- When unsure between \"in_progress\" and \"done\", choose \"done\". " +
+	"When unsure between \"waiting_on_you\" and \"done\", choose \"done\".\n" +
 	"- When the agent state now is idle, no topic can be \"in_progress\", unless the latest message clearly says work continues " +
 	"in the background (e.g. a subagent still running), and then only that specific topic.\n" +
 	"- When the thread status now is finished, the agent reported its work done: no topic is \"in_progress\" unless a later message clearly starts new work.\n"
