@@ -266,6 +266,12 @@ export const IconRefresh = (p: P) => (
     <path d="M13 4.5V2M13 4.5h-2.5M12.6 4.4A5.5 5.5 0 1 0 13.5 8" />
   </Svg>
 )
+/** A counter-clockwise arrow: undo, reopen. */
+export const IconUndo = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="M3 4.5V2M3 4.5h2.5M3.4 4.4A5.5 5.5 0 1 1 2.5 8" />
+  </Svg>
+)
 export const IconLink = (p: P) => (
   <Svg strokeWidth={1.5} {...p}>
     <path d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1" />

@@ -8,7 +8,7 @@ import { selectProject, useSelectedProject } from '../lib/projects'
 import { revealMessage } from '../lib/revealMessage'
 import { taskMessage } from '../lib/taskContext'
 import { ContextMenu, useContextMenu } from './ContextMenu'
-import { IconBack, IconCheck, IconClose, IconMore, IconSend } from './icons'
+import { IconBack, IconCheck, IconClose, IconMore, IconSend, IconUndo } from './icons'
 import { ThreadProjectBadge } from './ThreadList'
 import { Button, IconButton, MenuItem, MenuLabel, MenuSep, Popover, Segmented, cx } from './ui'
 
@@ -411,6 +411,7 @@ function TopicCard({
   onDragEnd?: () => void
 }) {
   const waiting = t.status === 'waiting_on_you'
+  const isDone = t.status === 'done'
   const thread = t.thread_name || t.thread_subject || 'Untitled thread'
   const when = t.status === 'done' ? t.done_at ?? t.updated_at : t.updated_at
   // Right-click / Shift+F10 / long press / "…": Move to, Open.
@@ -459,12 +460,38 @@ function TopicCard({
           <span data-testid="topic-title" className={cx('min-w-0 flex-1 text-[13.5px] leading-[1.45] text-fg', waiting ? 'font-[650]' : 'font-medium')}>
             {t.title}
           </span>
+          {/* Done in one click (Reopen once it is): the same manual move as 3 / 1. Not a select, not a drag. */}
+          <IconButton
+            aria-label={isDone ? 'Reopen (1)' : 'Mark done (3)'}
+            title={isDone ? 'Reopen (1)' : 'Mark done (3)'}
+            data-testid={isDone ? 'topic-reopen' : 'topic-done'}
+            size={22}
+            draggable={false}
+            className={cx('-mt-0.5', !phone && !menu.at && 'invisible group-hover:visible group-focus-within:visible focus-visible:visible [@media(hover:none)]:visible')}
+            onMouseDown={(e) => {
+              // No drag of the card from here (and no focus ring left on the card).
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onDragStart={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(isDone ? 'in_progress' : 'done')
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {isDone ? <IconUndo size={13} /> : <IconCheck size={13} />}
+          </IconButton>
           <IconButton
             aria-label="Move to…"
             title="Move to…"
             data-testid="topic-more"
             size={22}
-            className={cx('-mr-1 -mt-0.5', !phone && !menu.at && 'invisible group-hover:visible group-focus-within:visible focus-visible:visible')}
+            className={cx('-mr-1 -mt-0.5', !phone && !menu.at && 'invisible group-hover:visible group-focus-within:visible focus-visible:visible [@media(hover:none)]:visible')}
             onClick={(e) => {
               e.stopPropagation()
               menu.open({ el: e.currentTarget })
