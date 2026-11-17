@@ -219,14 +219,14 @@ func TestSessionArchiveSettings(t *testing.T) {
 	}
 
 	_, st, _ := e.do("GET", "/api/settings", nil, nil)
-	if st["theme"] != "system" || st["text_size"].(float64) != 13 || st["topics"] != true {
+	if st["theme"] != "system" || st["text_size"].(float64) != 13 || st["decision_mode"] != false {
 		t.Fatalf("defaults = %v", st)
 	}
 	if _, had := st["board"]; had {
 		t.Fatalf("the retired board setting is still listed: %v", st)
 	}
-	_, st, _ = e.do("PUT", "/api/settings", map[string]any{"topics": false, "prompt_extra": "be brief"}, nil)
-	if st["topics"] != false || st["theme"] != "system" {
+	_, st, _ = e.do("PUT", "/api/settings", map[string]any{"decision_mode": true, "prompt_extra": "be brief"}, nil)
+	if st["decision_mode"] != true || st["theme"] != "system" {
 		t.Fatalf("put = %v", st)
 	}
 	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"nope": 1}, nil); code != 400 {

@@ -11,51 +11,6 @@ import time
 
 prompt = sys.stdin.read()
 
-if prompt.startswith("Track the topics"):
-    # The Topics board: every line "TOPIC: <title> | <status> | <summary>" in the thread's messages is a
-    # topic; a later line with the same title replaces the earlier one (that is how a test moves a card).
-    import re
-    topics = {}
-    for m in re.finditer(r"^TOPIC: (.+?) \| (in_progress|waiting_on_you|done) \| (.*)$", prompt, re.M):
-        title, status, summary = m.group(1).strip(), m.group(2), m.group(3).strip()
-        topics.pop(title, None)  # a moved topic goes to the end, as a model's answer would list it
-        topics[title] = {"title": title, "status": status, "summary": summary}
-    # A card the person moved by hand (the current topics say so): keep that column, and say in the
-    # summary that the move was seen (tests check the prompt carried it).
-    for m in re.finditer(r"^- id: \S+ \| status: \S+ \| title: (.+?) \| summary: .*? \| moved by the PERSON by hand to (in_progress|waiting_on_you|done) at ", prompt, re.M):
-        title, status = m.group(1).strip(), m.group(2)
-        if title in topics:
-            topics[title]["status"] = status
-            topics[title]["summary"] += " (kept your move)"
-    # The pane: "TOPIC-DETAIL: <title> | <markdown>" is its detail (\n in it is a new line);
-    # "TOPIC-TASK: <title> | [x] <text>" (or "[ ] ") one of its steps, a later line for the same
-    # text marking it again; the related messages are the ones whose text names the topic's title.
-    for t in topics.values():
-        t["detail"], t["tasks"], t["message_ids"] = "", [], []
-    for m in re.finditer(r"^TOPIC-DETAIL: (.+?) \| (.*)$", prompt, re.M):
-        if m.group(1).strip() in topics:
-            topics[m.group(1).strip()]["detail"] = m.group(2).strip().replace("\\n", "\n")
-    for m in re.finditer(r"^TOPIC-TASK: (.+?) \| \[([ x])\] (.*)$", prompt, re.M):
-        t = topics.get(m.group(1).strip())
-        if t is None:
-            continue
-        text, done = m.group(3).strip(), m.group(2) == "x"
-        for k in t["tasks"]:
-            if k["text"] == text:
-                k["done"] = done
-                break
-        else:
-            t["tasks"].append({"text": text, "done": done})
-    heads = list(re.finditer(r"^\[[^\]\n]* · id: (\S+)\]$", prompt, re.M))
-    for i, h in enumerate(heads):
-        end = heads[i + 1].start() if i + 1 < len(heads) else prompt.find("\nTask: list the topics")
-        text = prompt[h.end():end]
-        for title, t in topics.items():
-            if title in text:
-                t["message_ids"].append(h.group(1))
-    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"topics": list(topics.values())}}))
-    sys.exit(0)
-
 if prompt.startswith("Choose the workflow state"):
     # Step two of the Create-Linear-issue draft: the team's state and labels.
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"state_id": "st-3", "label_ids": ["lab-1"]}}))

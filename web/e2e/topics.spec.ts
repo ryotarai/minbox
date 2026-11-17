@@ -3,14 +3,14 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createSession, expect, test, type Minbox } from './fixtures'
 
-// The Topics board: the helper model (here the fake helper, fake-suggest.py) reads each thread's
-// topics a few seconds after a new message, and the board shows them across threads and projects in
-// three columns. The fake takes every "TOPIC: <title> | <status> | <summary>" line of the thread as a
-// topic, a later line for the same title replacing the earlier one. TOPICS_SHOTS=<dir> saves
-// screenshots (topics.png, topics-phone.png).
+// The Tasks board (topics in the API): each thread's agent keeps its tasks with create_task /
+// update_task, and the board shows them across threads and projects in three columns. The fake agent
+// (fake-claude.py) creates a task for every "TOPIC: <title> | <status> | <summary>" line of a message
+// it receives, or updates the task with that title, and links a message that names a task's title.
+// TOPICS_SHOTS=<dir> saves screenshots (topics.png, topics-phone.png).
 
 const SHOTS = process.env.TOPICS_SHOTS
-// The extraction waits ~4 s for a burst to end, then runs the fake helper.
+// The fake agent acts once the message is delivered to it.
 const SLOW = { timeout: 20_000 }
 
 async function seed(page: Page, minbox: Minbox) {
@@ -48,7 +48,7 @@ test('topics from several threads land in their columns, move live and open thei
   await page.setViewportSize({ width: 1400, height: 820 })
   const { search } = await seed(page, minbox)
 
-  // Topics is on by default: its entry is in the rail.
+  // Tasks is always in the rail.
   await page.getByTestId('project-rail').getByTestId('open-tasks').click()
   await expect(page.getByTestId('topics')).toBeVisible()
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
@@ -141,19 +141,16 @@ test('phone: the columns are tabs; a card opens its topic full screen, then its 
   await expect(page.getByTestId('thread-subject')).toHaveText('Invoices are off by a cent')
 })
 
-test('turned off: no new topics are read, and the board says so', async ({ page, minbox }) => {
-  await fetch(minbox.url + '/api/settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Origin: minbox.url },
-    body: JSON.stringify({ topics: false }),
-  })
-  await seed(page, minbox)
-  await page.goto(minbox.url + '/#v=tasks')
-  await expect(page.getByTestId('topics-off')).toBeVisible()
-  await page.waitForTimeout(6000) // past the extraction's debounce
-  await page.reload()
+test('no tasks yet: the board says agents add them; there is no switch to turn Tasks off', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1400, height: 820 })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'web-app')
+  await page.getByTestId('project-rail').getByTestId('open-tasks').click()
+  await expect(page.getByTestId('topics-empty')).toContainText('Agents add a task here')
   await expect(page.getByTestId('topic-card')).toHaveCount(0)
-  await expect(page.getByTestId('project-rail').getByTestId('open-tasks')).toHaveCount(0)
+  // The retired setting is refused.
+  const r = await page.request.put(minbox.url + '/api/settings', { data: { topics: false }, headers: { Origin: minbox.url } })
+  expect(r.status()).toBe(400)
 })
 
 /** The topics as the server has them: title -> status. */
@@ -162,7 +159,7 @@ async function stored(page: Page, minbox: Minbox): Promise<Record<string, string
   return Object.fromEntries(r.topics.map((t: { title: string; status: string }) => [t.title, t.status]))
 }
 
-test('moving cards: drag, the menu; the move holds and the next extraction is told about it', async ({ page, minbox }) => {
+test('moving cards: drag, the menu; the move holds until the agent sets the status again', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1400, height: 820 })
   const { search } = await seed(page, minbox)
   await page.goto(minbox.url + '/#v=tasks')
@@ -210,18 +207,20 @@ test('moving cards: drag, the menu; the move holds and the next extraction is to
   await expect(page).toHaveURL(/v=tasks/) // the button did not open the thread
   expect(await stored(page, minbox)).toMatchObject({ 'Search box UI': 'done', 'Rounding bug': 'waiting_on_you', 'Index format': 'in_progress' })
 
-  // A new message in the thread: the extraction runs again. Its prompt says the person moved the
-  // cards (the fake helper keeps a moved card's column and says so in the summary). No new message
-  // is about those cards, so their moves still hold, marked (no new information, no move).
-  const r = await page.request.post(`${minbox.url}/api/threads/${search}/reply`, { data: { words: 'Next.\nTOPIC: Docs | in_progress | Write the docs' } })
+  // A new message in the thread: the agent adds a task; the cards the person moved stay where they are.
+  let r = await page.request.post(`${minbox.url}/api/threads/${search}/reply`, { data: { words: 'Next.\nTOPIC: Docs | in_progress | Write the docs' } })
   expect(r.ok()).toBe(true)
   await expect(card(page, 'in_progress', 'Docs')).toBeVisible(SLOW)
-  await expect(card(page, 'done', 'Search box UI').getByTestId('topic-summary')).toHaveText('Building the search field and results list (kept your move)')
-  await expect(card(page, 'in_progress', 'Index format').getByTestId('topic-summary')).toContainText('(kept your move)')
   await expect(card(page, 'done', 'Search box UI')).toHaveAttribute('data-manual', 'true')
   await expect(card(page, 'done', 'Search box UI')).toHaveAttribute('data-topic-id', id!)
-  // The other thread had no new message: its move still holds, marked.
   await expect(card(page, 'waiting_on_you', 'Rounding bug')).toHaveAttribute('data-manual', 'true')
+  // The agent sets the status of a moved card: its status wins, the move's mark goes.
+  r = await page.request.post(`${minbox.url}/api/threads/${search}/reply`, { data: { words: 'Reopen it.\nTOPIC: Search box UI | in_progress | Back on the results list' } })
+  expect(r.ok()).toBe(true)
+  await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
+  await expect(card(page, 'in_progress', 'Search box UI')).toHaveAttribute('data-topic-id', id!)
+  await expect(card(page, 'in_progress', 'Search box UI')).not.toHaveAttribute('data-manual', 'true')
+  await expect(card(page, 'in_progress', 'Search box UI').getByTestId('topic-summary')).toHaveText('Back on the results list')
 })
 
 test('keyboard: ⇧T opens Topics; arrows and HJKL move the focus, 1 2 3 move the card, Enter opens', async ({ page, minbox }) => {
@@ -371,7 +370,7 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   expect(words.startsWith('[Task: Search box UI]\n> Task context (from minbox): Building the search field and results list\n')).toBe(true)
   expect(words).toContain('> Status: In progress · Steps: 1/3 done; open: Show the results; Keyboard shortcut')
   expect(words).toMatch(/\n> Related messages: (You|Agent), \d{4}-\d\d-\d\d \d\d:\d\d UTC: "Add search to the inbox\./)
-  // The new message names the topic: the next extraction links it, and the pane shows it.
+  // The new message names the task: the agent links it, and the pane shows it.
   await expect(related).toHaveCount(2, SLOW)
   await expect(related.nth(1).getByTestId('topic-message-excerpt')).toContainText('[Task: Search box UI] Debounce the search by 200 ms.')
 
@@ -648,8 +647,15 @@ test('the related messages scroll on their own from the newest; a click unfolds 
   await expect(related.last()).toContainText('follow-up number 14')
   await expect(related.last()).toBeInViewport()
   await expect(page.getByTestId('topic-pane-input')).toBeInViewport()
-  // Scrolled up, a new related message does not pull the list down.
-  await page.getByTestId('topic-messages').evaluate((el) => (el.scrollTop = 0))
+  // Scrolled up, a new related message does not pull the list down. (Wait for the scroll event: the
+  // fake agent links the new message at once.)
+  await page.getByTestId('topic-messages').evaluate(
+    (el) =>
+      new Promise((done) => {
+        el.addEventListener('scroll', () => requestAnimationFrame(() => done(null)), { once: true })
+        el.scrollTop = 0
+      }),
+  )
   const rr = await page.request.post(`${minbox.url}/api/threads/${id}/reply`, { data: { words: 'Fold topic follow-up number 15.' } })
   expect(rr.ok()).toBe(true)
   await expect(related).toHaveCount(16, SLOW)

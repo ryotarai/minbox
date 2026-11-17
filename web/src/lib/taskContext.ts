@@ -27,7 +27,7 @@ function utc(iso: string): string {
   return Number.isNaN(d.getTime()) ? '' : `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-/** The header line alone (also what the topic helper reads to link the message to the task). */
+/** The header line alone (it tells the agent which task the message is about). */
 export function topicPrefix(title: string): string {
   return `[Task: ${title}]`
 }

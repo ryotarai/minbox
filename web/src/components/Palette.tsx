@@ -144,7 +144,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (isClaude && current!.project_id && !current!.is_main)
       act('set-main', "Set current session as project's main session", () => void api.setMainSession(current!.project_id!, current!.id).then(() => (reloadProjects(), reloadSessions())).catch(error), { keywords: `main default thread target project ${current!.name}` })
     act('inbox', 'Open All inbox', () => navigate({ view: 'inbox' }), { keywords: 'threads messages everything' })
-    if (settings.topics) act('tasks', 'Open Tasks', () => navigate({ view: 'tasks' }), { keywords: 'topics board kanban cards', shortcut: '⇧T' })
+    act('tasks', 'Open Tasks', () => navigate({ view: 'tasks' }), { keywords: 'topics board kanban cards', shortcut: '⇧T' })
     act('settings', 'Open Settings', () => navigate({ view: 'settings', ss: 'general' }), { keywords: 'preferences options' })
     act('devices', 'Open Devices', () => navigate({ view: 'settings', ss: 'devices' }), { keywords: 'paired browsers trust' })
     act('hosts', 'Open Hosts', () => navigate({ view: 'settings', ss: 'hosts' }), { keywords: 'remote machines servers' })
@@ -202,7 +202,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (size > 12) act('text-down', 'Smaller text', () => saveSettings({ text_size: size - 1 }), { keywords: 'text size font zoom decrease' })
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
-  }, [current, isClaude, isPhone, isTablet, route.view, route.t, tasksOverlay, layout.shellPane, layout.terminalPane, layout.tasksPane, settings.topics, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
+  }, [current, isClaude, isPhone, isTablet, route.view, route.t, tasksOverlay, layout.shellPane, layout.terminalPane, layout.tasksPane, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 

@@ -98,7 +98,6 @@ func (s *Store) CreateCommandMessage(ctx context.Context, threadID, command, cwd
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	s.messageAdded(threadID)
 	return msg, nil
 }
 

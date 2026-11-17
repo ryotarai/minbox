@@ -93,6 +93,9 @@ function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail
       }
       if (u.pathname === '/api/agent/messages') return ok({ thread_id: 'thr_1', new_thread: true })
       if (u.pathname === '/api/agent/title') return ok({ ok: true, title: 'T' })
+      if (u.pathname === '/api/agent/tasks' && init.method === 'POST') return ok({ id: 'tpc_1', thread_id: c.body.thread_id, status: 'in_progress', title: c.body.title, summary: '', tasks: c.body.steps ?? [] })
+      if (u.pathname.startsWith('/api/agent/tasks/')) return ok({ id: 'tpc_1', thread_id: 'thr_1', status: c.body.status, title: 'Search UI', summary: '', tasks: [] })
+      if (u.pathname === '/api/agent/tasks') return ok({ threads: [] })
       return ok({})
     },
   }
@@ -307,6 +310,23 @@ test('tools call the minbox API; the title also renames the OpenCode session', a
   await t.oc.tools.get('minbox_set_session_title').execute({ title: 'New title' })
   assert.deepEqual(t.oc.sessionCalls.find((c) => c.op === 'update')?.arg, { sessionID: SES, title: 'New title' })
   await assert.rejects(t.oc.tools.get('minbox_open_url').execute({ url: 'https://x' }), /minbox: boom/)
+  t.core.stop()
+})
+
+test('task tools create, update and list tasks on the agent API', async () => {
+  const t = setup()
+  await setupLocation(t.oc.ctx, t.core)
+  await settle()
+  for (const n of ['create_task', 'update_task', 'list_tasks']) assert.ok(t.oc.tools.has('minbox_' + n), n)
+  assert.match(t.oc.tools.get('minbox_update_task').description, /minbox_send_message/)
+  await assert.rejects(t.oc.tools.get('minbox_create_task').execute({}), /title is required/)
+  const r = await t.oc.tools.get('minbox_create_task').execute({ title: 'Search UI', thread_id: 'thr_1', status: 'waiting_on_you' })
+  assert.deepEqual(t.calls.at(-1)!.body, { title: 'Search UI', status: 'waiting_on_you', thread_id: 'thr_1' })
+  assert.match(r.content, /task_id tpc_1/)
+  await t.oc.tools.get('minbox_update_task').execute({ task_id: 'tpc_1', status: 'done' })
+  assert.deepEqual([t.calls.at(-1)!.method, t.calls.at(-1)!.path], ['PATCH', '/api/agent/tasks/tpc_1'])
+  const l = await t.oc.tools.get('minbox_list_tasks').execute({})
+  assert.equal(l.content, 'No tasks yet.')
   t.core.stop()
 })
 

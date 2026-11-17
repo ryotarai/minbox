@@ -410,7 +410,7 @@ export type ForkRequest = {
 
 export type ForkPreview = { handoff: string; message: string; text: string; bytes: number; subject: string; seq: number; agent: string; same_session: boolean; warnings: string[] }
 
-/** A topic of a thread, as the helper model reads it from the messages (GET /api/topics). */
+/** A topic (a task) of a thread, as its agent keeps it with create_task / update_task (GET /api/topics). */
 export type TopicStatus = 'in_progress' | 'waiting_on_you' | 'done'
 export type Topic = {
   id: string
@@ -422,12 +422,12 @@ export type Topic = {
   created_at: string
   updated_at: string
   done_at: string | null
-  /** The person moved it to this column by hand ("": not since the thread's last extraction). */
+  /** The person moved it to this column by hand ("": not since the agent last set its status). */
   manual_status?: TopicStatus | ''
   manual_at?: string | null
   /** A fuller summary (a few sentences, Markdown) for the topic pane. */
   detail?: string
-  /** Its steps, done as the helper judges them from the messages. */
+  /** Its steps, ticked by the agent as it goes. */
   tasks?: TopicTask[]
   /** The thread's messages about it, oldest first. */
   message_ids?: string[]
@@ -438,7 +438,7 @@ export type Topic = {
   project_name?: string
 }
 export type TopicTask = { text: string; done: boolean }
-export type TopicsResult = { topics: Topic[]; enabled: boolean; done_days: number }
+export type TopicsResult = { topics: Topic[]; done_days: number }
 /** A message a topic relates to (GET /api/topics/{id}). */
 export type TopicMessage = { id: string; author: 'user' | 'agent'; kind: string; created_at: string; excerpt: string }
 export type TopicDetail = { topic: Topic; messages: TopicMessage[] }
@@ -458,8 +458,6 @@ export type Settings = {
   sound: boolean
   tab_count: boolean
   single_key: boolean
-  /** Topics: the helper model reads each thread's topics after its new messages (the Topics board). */
-  topics: boolean
   decision_mode: boolean
   /** The inbox pane left of the terminal (the default) instead of right of it. */
   swap_panes: boolean
@@ -762,7 +760,6 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   tab_count: true,
   single_key: true,
-  topics: true,
   decision_mode: false,
   swap_panes: true,
   prompt_extra: '',
@@ -1021,7 +1018,7 @@ export const api = {
     return call<SearchResult>('GET', `/api/search?${p}`)
   },
 
-  /** Move a topic to another column by hand (it holds until the thread's next extraction). */
+  /** Move a topic to another column by hand (until the agent sets its status again). */
   setTopicStatus: (id: string, status: TopicStatus) => call<Topic>('PATCH', `/api/topics/${encodeURIComponent(id)}`, { status }),
   topic: (id: string) => call<TopicDetail>('GET', `/api/topics/${encodeURIComponent(id)}`),
   topics: (project = '') => call<TopicsResult>('GET', `/api/topics${project ? `?project=${encodeURIComponent(project)}` : ''}`),

@@ -114,7 +114,8 @@ after the project moved (all go through `sessionManager.spawn`). Pi, OpenCode an
   where the old session file is (`agent.pi.RelocationNote`). Resuming the old file across folders with
   `--session <path>` might work in Pi but is **not verified**; it would be better than a new conversation.
 * **Extension** (`plugin/pi/minbox.ts`, loaded by Pi's jiti, no build): tools `minbox_send_message`,
-  `minbox_read_thread`, `minbox_set_session_title`, `minbox_open_url` and the read-only navigation tools
+  `minbox_read_thread`, `minbox_set_session_title`, `minbox_open_url`, the task tools `minbox_create_task`,
+  `minbox_update_task`, `minbox_list_tasks` (shared `tasks.ts`) and the read-only navigation tools
   `minbox_list_projects`, `minbox_get_project`, `minbox_list_sessions`, `minbox_list_threads`, `minbox_search` (same descriptions
   and schemas as the mod; shared `plugin/minbox/hooks/text.ts` and `nav.ts`); `tool_call` blocks Bash commands that open a page on the host;
   `agent_start` / `agent_settled` set the session working / idle; a long poll on `/api/agent/pending`

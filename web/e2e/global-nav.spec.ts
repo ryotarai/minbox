@@ -13,7 +13,7 @@ async function enableAll(url: string) {
   await fetch(url + '/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Origin: url },
-    body: JSON.stringify({ topics: true, decision_mode: true }),
+    body: JSON.stringify({ decision_mode: true }),
   })
 }
 

@@ -317,3 +317,36 @@ test('a bash call another extension blocked is reported with its thread; a later
   assert.equal(reports()[1].body.thread_id, undefined)
   t.ext!.stop()
 })
+
+test('task tools keep the Tasks board: create in the delivered thread, update, list', async () => {
+  let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: search', body: 'go', new_thread: false, urgent: true }]
+  const t = setup({
+    pending: () => pending,
+    reply: (c) =>
+      c.path === '/api/agent/tasks' && c.method === 'POST'
+        ? { id: 'tpc_1', thread_id: c.body.thread_id, status: 'in_progress', title: c.body.title, summary: '', tasks: c.body.steps ?? [] }
+        : c.path.startsWith('/api/agent/tasks/')
+          ? { id: 'tpc_1', thread_id: 'thr_9', status: c.body.status ?? 'in_progress', title: 'Search UI', summary: '', tasks: [{ text: 'Add the field', done: true }] }
+          : c.path.startsWith('/api/agent/tasks')
+            ? { threads: [{ id: 'thr_9', subject: 'Search', tasks: [{ id: 'tpc_1', status: 'done', title: 'Search UI', summary: 'Shipped', tasks: [] }] }] }
+            : undefined,
+  })
+  for (const n of ['create_task', 'update_task', 'list_tasks']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
+  assert.match(t.tools.get('minbox_create_task').description, /minbox_update_task/)
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
+  await settle()
+  pending = []
+  await t.handlers.get('agent_start')!({})
+  await assert.rejects(t.tools.get('minbox_create_task').execute('1', { title: '' }), /title is required/)
+  const created = await t.tools.get('minbox_create_task').execute('1', { title: 'Search UI', steps: [{ text: 'Add the field' }] })
+  const post = t.calls.find((c) => c.path === '/api/agent/tasks' && c.method === 'POST')!
+  assert.deepEqual(post.body, { title: 'Search UI', steps: [{ text: 'Add the field', done: false }], thread_id: 'thr_9' })
+  assert.match(created.content[0].text, /task_id tpc_1/)
+  const updated = await t.tools.get('minbox_update_task').execute('1', { task_id: 'tpc_1', status: 'done', check_steps: [1] })
+  assert.deepEqual([t.calls.at(-1)!.method, t.calls.at(-1)!.path, t.calls.at(-1)!.body], ['PATCH', '/api/agent/tasks/tpc_1', { status: 'done', check_steps: [1] }])
+  assert.match(updated.content[0].text, /1\. \[x\] Add the field/)
+  const listed = await t.tools.get('minbox_list_tasks').execute('1', { thread_id: 'thr_9' })
+  assert.equal(t.calls.at(-1)!.path, '/api/agent/tasks?thread_id=thr_9')
+  assert.match(listed.content[0].text, /tpc_1 \[done\] Search UI — Shipped/)
+  t.ext!.stop()
+})

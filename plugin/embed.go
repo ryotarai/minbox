@@ -93,7 +93,7 @@ type piSource struct {
 
 // piSources are the files of the Pi extensions: everything under pi/ (minbox.ts, subagent.ts, the
 // busy marker they share, the role definitions in agents/) except tests, and the text helpers the
-// extension shares with the Claude Code mod (it imports ../minbox/hooks/text.ts, nav.ts and denied.ts, so the extracted
+// extension shares with the Claude Code mod (it imports ../minbox/hooks/text.ts, nav.ts, tasks.ts and denied.ts, so the extracted
 // folder keeps that layout).
 func piSources() ([]piSource, error) {
 	var out []piSource
@@ -107,7 +107,7 @@ func piSources() ([]piSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}, piSource{&files, "minbox/hooks/denied.ts"}), nil
+	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}, piSource{&files, "minbox/hooks/tasks.ts"}, piSource{&files, "minbox/hooks/denied.ts"}), nil
 }
 
 // PiSubagentPath is the subagent extension (for a second `pi -e`) next to the entry ExtractPi returned.
@@ -133,7 +133,7 @@ var openCodeFiles embed.FS
 
 // openCodeSources are the files of the OpenCode plugin: everything under opencode/ except tests and
 // their helpers (opencode/test), and the text helpers it shares with the Claude Code mod
-// (../minbox/hooks/text.ts, nav.ts and denied.ts).
+// (../minbox/hooks/text.ts, nav.ts, tasks.ts and denied.ts).
 func openCodeSources() ([]piSource, error) {
 	var out []piSource
 	err := fs.WalkDir(openCodeFiles, "opencode", func(path string, d fs.DirEntry, err error) error {
@@ -155,7 +155,7 @@ func openCodeSources() ([]piSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}, piSource{&files, "minbox/hooks/denied.ts"}), nil
+	return append(out, piSource{&files, "minbox/hooks/text.ts"}, piSource{&files, "minbox/hooks/nav.ts"}, piSource{&files, "minbox/hooks/tasks.ts"}, piSource{&files, "minbox/hooks/denied.ts"}), nil
 }
 
 // ExtractOpenCode writes the OpenCode plugin under root/<content hash>/ (opencode/index.ts ... next to

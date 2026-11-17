@@ -680,6 +680,11 @@ The person sees this session in minbox's session list under a title you set with
 - Set it again whenever the main task changes (a new request, a different bug, the next phase); leave it alone for small steps within the same task.
 - Plain text, short (around 80 characters is plenty; a guide, not a hard limit), in the person's language. Do not mention the title in your replies.
 
+# minbox: tasks
+The person's Tasks board (In progress · Waiting on you · Done) shows what each thread is working on; you keep it with mcp__minbox__create_task, mcp__minbox__update_task and mcp__minbox__list_tasks. Nobody else fills it in.
+- When you start a distinct piece of work the person asked for, create a task in that thread (thread_id); one thread can have several. Give it short steps and tick them as you go.
+- Keep its status true: waiting_on_you only while you are blocked on the person's decision or action, done when it is finished (also when it was dropped). Update it when that changes, not for every small step.
+
 # minbox: opening pages
 When the person asks you to open, show or view a web page (a PR, an issue, a CI run, a URL), call mcp__minbox__open_url with its URL. It opens the page in the browser they are using minbox from.
 - Never open pages with Bash (` + "`open URL`, `xdg-open`, `gh pr view --web`, `gh browse`" + `, …): those open on the machine you run on, which may be a remote host the person is not sitting at.

@@ -3,7 +3,8 @@ import { createSession, expect, test, type Minbox } from './fixtures'
 
 // A thread's Tasks pane: the open thread's tasks (topics in the API) beside the thread on a desktop,
 // between the thread and the agent terminal when that is open; full screen on a phone. The fake
-// helper (fake-suggest.py) takes every "TOPIC: <title> | <status> | <summary>" line as a task.
+// agent (fake-claude.py) keeps a task for every "TOPIC: <title> | <status> | <summary>" line of a
+// message it receives, through the agent API (create_task / update_task).
 // THREAD_TASKS_SHOTS=<dir> saves screenshots (thread-tasks.png, thread-tasks-phone.png).
 
 const SHOTS = process.env.THREAD_TASKS_SHOTS
@@ -173,7 +174,7 @@ test('desktop: the toggle shows this thread’s tasks beside it, before the term
   await expect(pane(page).getByTestId('topic-card')).toHaveCount(1)
   await page.goto(`${minbox.url}/#s=${sid}&t=${empty}`)
   await expect(page.getByTestId('thread-subject')).toHaveText('Just a note')
-  await expect(pane(page).getByTestId('thread-tasks-empty')).toHaveText('No tasks yet — they appear after the next message.')
+  await expect(pane(page).getByTestId('thread-tasks-empty')).toHaveText('No tasks yet — the agent adds them when it starts work in this thread.')
 
   // The × closes it (and that holds too).
   await page.getByTestId('tasks-close').click()
@@ -254,17 +255,13 @@ test.describe('phone check button', () => {
   })
 })
 
-test('desktop: tasks turned off — the pane says so', async ({ page, minbox }) => {
+test('desktop: a thread without tasks — the pane says the agent adds them', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1500, height: 900 })
-  await fetch(minbox.url + '/api/settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Origin: minbox.url },
-    body: JSON.stringify({ topics: false }),
-  })
   const { sid, empty } = await seed(page, minbox)
   await page.goto(`${minbox.url}/#s=${sid}&t=${empty}`)
   await page.getByTestId('tasks-toggle').click()
-  await expect(pane(page).getByTestId('thread-tasks-off')).toContainText('Tasks are turned off')
+  await expect(pane(page).getByTestId('thread-tasks-empty')).toContainText('the agent adds them')
+  await expect(pane(page).getByTestId('topic-card')).toHaveCount(0)
 })
 
 test('phone: the header button opens the thread’s tasks full screen, with Back', async ({ page, minbox }) => {
