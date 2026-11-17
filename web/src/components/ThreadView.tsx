@@ -27,6 +27,7 @@ import {
   IconShell,
   IconAgentKind,
   IconTasks,
+  IconFiles,
   IconTerminal,
   IconPaperclip,
   IconPlus,
@@ -46,6 +47,7 @@ import { answerRevealAsk, flashMessage, useRevealAsk } from '../lib/revealMessag
 import { ModConnection } from './ModConnection'
 import { parseTaskMessage, stripTaskContext } from '../lib/taskContext'
 import { focusTasksReply, setThreadTasksOverlay, useThreadTasksOverlay } from './Topics'
+import { setFilesOverlay, useFilesOverlay } from './Files'
 import { useMentions } from './Mentions'
 import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from './ReplyHelp'
 import { Button, IconButton, Kbd, MenuItem, Popover, ThreadStatusBadge, cx, type MenuAt } from './ui'
@@ -139,6 +141,32 @@ export function TasksButton() {
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
       <IconTasks size={15} />
+    </IconButton>
+  )
+}
+
+/** Shows and hides the Files pane (desktop: beside the thread, stored; tablet and phone: full screen). Same as ⇧F and ⌘K. */
+export function useFilesToggle(): [boolean, () => void] {
+  const { layout, setLayout, isTablet, isPhone } = useApp()
+  const overlay = useFilesOverlay()
+  const full = isTablet || isPhone
+  const open = full ? overlay : layout.filesPane
+  return [open, () => (full ? setFilesOverlay(!overlay) : setLayout({ filesPane: !open }))]
+}
+
+/** Header button for the Files pane: the session's folder as a tree (⇧F). */
+export function FilesButton() {
+  const [open, toggle] = useFilesToggle()
+  return (
+    <IconButton
+      data-testid="files-toggle"
+      aria-label={open ? 'Hide files' : 'Show files'}
+      title={open ? 'Hide files (⇧F)' : "Show files: this session's folder (⇧F)"}
+      aria-pressed={open}
+      onClick={toggle}
+      className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
+    >
+      <IconFiles size={15} />
     </IconButton>
   )
 }
@@ -490,6 +518,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
   }
   const scrollTo = (sel: string) => scrollRef.current?.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 
+  const [, toggleFiles] = useFilesToggle()
   useHotkeys(
     {
       // With text selected in a message (the Reply bubble shown), R quotes it, as the bubble does.
@@ -505,6 +534,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
       },
       e: markRead,
       'shift+e': archive,
+      'shift+f': toggleFiles,
       j: () => step(1),
       k: () => step(-1),
       n: () => scrollTo('[data-new-divider]'),
@@ -563,6 +593,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           {onTerminal && <TerminalButton session={session} onClick={onTerminal} shown={terminalShown} />}
           <ShellButton session={session} />
           <TasksButton />
+          <FilesButton />
           <IconButton data-testid="mark-read" aria-label="Mark read" title="Mark read (E)" onClick={markRead}>
             <IconCheck size={15} />
           </IconButton>

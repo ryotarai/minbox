@@ -14,6 +14,7 @@ import { TerminalKeys } from './TerminalKeys'
 import { AttachmentViewer } from './AttachmentViewer'
 import { ModConnection } from './ModConnection'
 import { TasksOverlay, setThreadTasksOverlay } from './Topics'
+import { FilesOverlay, setFilesOverlay } from './Files'
 
 /**
  * Follows the visual viewport, so bars stay above the on-screen keyboard, and
@@ -95,6 +96,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
     <>
       {shellOpen && canOpenShell(session) && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
       <TasksOverlay threadId={inThread ? route.t : null} />
+      <FilesOverlay session={session} threadId={inThread ? route.t : null} />
       <header className={cx('flex h-14 shrink-0 items-center gap-0.5 px-1.5', inThread && 'border-b border-line', typing && 'hidden')}>
         <button
           type="button"
@@ -178,6 +180,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 onBack={home}
                 openQuestions={0}
                 onShell={canOpenShell(session) ? () => setShellOpen(true) : undefined}
+                onFiles={() => setFilesOverlay(true)}
                 onArchive={() => {
                   const id = thread.id
                   api

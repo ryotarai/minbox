@@ -91,6 +91,13 @@ type FS interface {
 	// ListFiles lists the entries (names only) matching an @-mention query,
 	// relative to cwd (or absolute, or ~/...), at most limit.
 	ListFiles(ctx context.Context, cwd, query string, limit int) ([]FileEntry, error)
+	// ListTree lists the files under root (the Files pane), at most limit.
+	ListTree(ctx context.Context, root string, limit int) (Tree, error)
+	// TreeGitStatus is git's status of the changed files under root.
+	TreeGitStatus(ctx context.Context, root string) ([]GitStatusEntry, error)
+	// ResolveTreePath is the real path of rel under root; ErrOutside when it
+	// (or a symbolic link on the way) leads out of root.
+	ResolveTreePath(ctx context.Context, root, rel string) (string, error)
 	// GitDiff is path's diff in the repository (or worktree) that holds it:
 	// against HEAD, or with base against where HEAD left base (its merge
 	// base), so committed changes show too. An untracked file is diffed

@@ -18,8 +18,8 @@ type Version = 'current' | 'sent'
 type Pending = Omit<Annotation, 'comment'> & { x: number; y: number }
 
 const MARKUP_ONLY_TEXT = 'See the marked-up image.'
-const CODE_HIGHLIGHT_MAX_CHARS = 100_000
-const CODE_WRAP_LINE_CHARS = 1000
+export const CODE_HIGHLIGHT_MAX_CHARS = 100_000
+export const CODE_WRAP_LINE_CHARS = 1000
 const FOLD_PANEL_BELOW = 780
 
 export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone }: { attachmentId: string; sessionName: string; sessionCwd: string; phone?: boolean }) {
@@ -442,7 +442,7 @@ function highlight(root: HTMLElement, quote: string) {
 const LANG_MAP: Record<string, string> = { h: 'c', hpp: 'cpp', ex: 'elixir', exs: 'elixir', tf: 'hcl', mjs: 'js', cjs: 'js', mts: 'ts', cts: 'ts', yml: 'yaml', jsonc: 'jsonc', json5: 'json5', conf: 'ini', cfg: 'ini', properties: 'properties', gv: 'dot', mmd: 'mermaid' }
 const NAME_MAP: Record<string, string> = { dockerfile: 'dockerfile', makefile: 'make', justfile: 'just', rakefile: 'ruby', gemfile: 'ruby', vagrantfile: 'ruby', brewfile: 'ruby', procfile: 'text' }
 
-function langOf(name: string): string {
+export function langOf(name: string): string {
   const lower = name.toLowerCase()
   if (NAME_MAP[lower]) return NAME_MAP[lower]!
   const m = /\.([^.]+)$/.exec(lower)

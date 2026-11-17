@@ -10,6 +10,7 @@ import { ProjectDot } from './ProjectRail'
 import { IconSearch } from './icons'
 import { canOpenShell } from './ThreadView'
 import { setThreadTasksOverlay, useThreadTasksOverlay } from './Topics'
+import { setFilesOverlay, useFilesOverlay } from './Files'
 import { Kbd, Modal, cx } from './ui'
 
 // ⌘K: one list of actions, sessions and threads, narrowed as you type. ">" shows only actions,
@@ -120,6 +121,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
 
   const current = sessions?.find((s) => s.id === route.s) ?? null
   const tasksOverlay = useThreadTasksOverlay()
+  const filesOverlay = useFilesOverlay()
   const isClaude = !!current && current.kind !== 'shell'
 
   const actions = useMemo<Item[]>(() => {
@@ -189,6 +191,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
       act('tasks-pane', shown ? 'Hide tasks' : 'Show tasks', () => (isPhone || isTablet ? setThreadTasksOverlay(!shown) : setLayout({ tasksPane: !shown })), {
         keywords: 'topics thread pane toggle checklist progress',
       })
+      // The session's folder as a tree, beside the thread (full screen on a tablet or phone).
+      const filesShown = isPhone || isTablet ? filesOverlay : layout.filesPane
+      act('files-pane', filesShown ? 'Hide files' : 'Show files', () => (isPhone || isTablet ? setFilesOverlay(!filesShown) : setLayout({ filesPane: !filesShown })), {
+        keywords: `file explorer tree browse folder git status ${current.name}`,
+        shortcut: '⇧F',
+      })
     }
     if (!isPhone) {
       if (!isTablet) act('terminal-pane', `${layout.terminalPane ? 'Hide' : 'Show'} ${current ? `${agentKindLabel(current.agent)} ` : ''}terminal`, () => setLayout({ terminalPane: !layout.terminalPane }), { keywords: 'claude code console toggle pane' })
@@ -202,7 +210,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     if (size > 12) act('text-down', 'Smaller text', () => saveSettings({ text_size: size - 1 }), { keywords: 'text size font zoom decrease' })
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
-  }, [current, isClaude, isPhone, isTablet, route.view, route.t, tasksOverlay, layout.shellPane, layout.terminalPane, layout.tasksPane, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
+  }, [current, isClaude, isPhone, isTablet, route.view, route.t, tasksOverlay, filesOverlay, layout.shellPane, layout.terminalPane, layout.tasksPane, layout.filesPane, settings.decision_mode, settings.swap_panes, settings.text_size, navigate, setOverlay, setLayout, saveSettings, error, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 

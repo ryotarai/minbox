@@ -320,6 +320,28 @@ GET   /api/sessions/{id}/files?prefix=      → {entries:[{path, dir}]}  for @-m
                                               when typed ("node…"); gitignored entries only once a name is typed.
                                               Runs on the session's host (remote hosts: GET /fs/files on the host).
                                               Like the folder picker (GET /api/fs/dirs) it is not confined to the cwd.
+GET   /api/sessions/{id}/tree               → {root, git, paths:[...], truncated}  the Files pane: every file under the
+                                              session's cwd, relative to it, "/"-separated. In a git work tree:
+                                              `git ls-files --cached --others --exclude-standard` (tracked, deleted-but-staged
+                                              and untracked-not-ignored files). Elsewhere a walk (5 s) that skips .git,
+                                              node_modules, .venv, venv, __pycache__, .cache, .next and the like and never
+                                              follows symbolic links; empty folders are listed with a trailing "/". At most
+                                              20000 paths (truncated: true past that). Folder missing: 404.
+GET   /api/sessions/{id}/tree/status        → {entries:[{path, status}]}  git's status of the changed files under the cwd
+                                              (`git status --porcelain=v1 -z --untracked-files=all -- .`, paths made relative
+                                              to the cwd); status is added | modified | deleted | renamed | untracked
+                                              (conflicts and type changes are modified). Outside git: entries [].
+GET   /api/sessions/{id}/tree/file?path=    → {path, size, kind, text?}  one file for the viewer. path is relative to the
+                                              cwd and must stay inside it: absolute paths, "..", NUL and symbolic links whose
+                                              target is outside the cwd (resolved on the session's host) are 400; missing 404;
+                                              a folder 400. kind: text (UTF-8, no NUL, at most 1 MiB; text holds it) |
+                                              image (sniffed from the bytes, at most 10 MiB; bytes at /tree/raw) | binary |
+                                              too_large | hidden (the .env family, as attachments: never shown).
+GET   /api/sessions/{id}/tree/raw?path=     an image's bytes (same path rules), Content-Type sniffed, CSP sandbox,
+                                              nosniff, no-store; not an image or a .env file: 415; over 10 MiB: 413.
+                                              All four run on the session's host (remote hosts: GET /fs/tree,
+                                              /fs/tree/gitstatus and /fs/tree/resolve on the host, then /fs/read); a host
+                                              whose minbox predates them answers 404.
 
 PATCH /api/threads/{id}                     {name?, subject?}
 POST  /api/threads/{id}/read                (exists) the person looked: agent messages read
