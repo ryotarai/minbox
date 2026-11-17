@@ -155,7 +155,7 @@ export function PhoneProjectSheet({ onClose }: { onClose: () => void }) {
         })}
         {projects && projects.length === 0 && <span className="px-4 py-6 text-[13px] text-muted">No projects yet. Start a session or add a project with +.</span>}
       </div>
-      {/* Not about a project: Settings, Topics, Decide, Drafts. Pinned under the list, two taps from home. */}
+      {/* Not about a project: Settings, Tasks, Decide, Drafts. Pinned under the list, two taps from home. */}
       <div data-testid="sheet-global" className="flex shrink-0 gap-1 overflow-x-auto border-t border-line px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5">
         {globals.map((e) => (
           <button

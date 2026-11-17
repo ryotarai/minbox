@@ -239,7 +239,7 @@ function TopBar({ phone }: { phone?: boolean }) {
   )
 }
 
-/** The list's own display options. Settings, Topics, Decide and Drafts live in the project rail (the project sheet on a phone). */
+/** The list's own display options. Settings, Tasks, Decide and Drafts live in the project rail (the project sheet on a phone). */
 function HeaderMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
   const { settings, saveSettings } = useApp()
   const opts: [keyof typeof settings.list, string][] = [

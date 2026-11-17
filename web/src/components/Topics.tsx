@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from 'react'
 import { api, type Topic, type TopicDetail, type TopicStatus, type TopicsResult } from '../api'
 import { useApp } from '../lib/app'
 import { isMac } from '../lib/format'
@@ -39,7 +39,7 @@ function movedTopic(t: Topic, status: TopicStatus): Topic {
 }
 
 /**
- * Topics: what each thread is working on, across threads. The helper model reads every thread's
+ * Tasks (topics in the API and the store): what each thread is working on, across threads. The helper model reads every thread's
  * topics from its messages (a few seconds after each new one); a thread can have several, each in
  * its own column. Scoped to the selected project, like the threads list.
  *
@@ -51,7 +51,7 @@ function movedTopic(t: Topic, status: TopicStatus): Topic {
  * Selecting a card (a click, a tap, or Space on the focused card) opens its pane: on the right of
  * the board on a desktop, full screen on a phone. The pane shows the topic's fuller summary, its
  * steps as a read-only checklist, the thread's messages about it, and a box that sends a message
- * to the thread, headed with the topic's name ("[Topic: …]", added on send, not shown in the box). While the pane is open the keyboard
+ * to the thread, headed with the task's name ("[Task: …]", added on send, not shown in the box). While the pane is open the keyboard
  * focus moves the selection along; R writes, Esc closes it.
  */
 export function TopicsPage() {
@@ -313,7 +313,7 @@ export function TopicsPage() {
         <IconButton aria-label="Back" onClick={() => navigate({ view: 'main' })}>
           <IconBack />
         </IconButton>
-        <h1 className="m-0 text-[18px] font-bold">Topics</h1>
+        <h1 className="m-0 text-[18px] font-bold">Tasks</h1>
         {!isPhone && res && (
           <span className="text-[13px] text-muted">
             {byCol.in_progress.length} in progress · <span className="font-semibold text-wait">{byCol.waiting_on_you.length} waiting on you</span>
@@ -336,7 +336,7 @@ export function TopicsPage() {
       </Popover>
       {res && !res.enabled && (
         <div data-testid="topics-off" className="mx-5 mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-muted">
-          Topics are turned off, so threads are not read for new topics.{' '}
+          Tasks are turned off, so threads are not read for new tasks.{' '}
           <button type="button" className="border-0 bg-transparent p-0 text-accent underline" onClick={() => navigate({ view: 'settings', ss: 'capabilities' })}>
             Turn them on in Settings
           </button>
@@ -344,7 +344,7 @@ export function TopicsPage() {
       )}
       {res && res.enabled && res.topics.length === 0 && (
         <div data-testid="topics-empty" className="mx-5 mt-3 text-[12.5px] text-subtle">
-          No topics yet. A thread's topics appear here a few seconds after it gets a new message.
+          No tasks yet. A thread's tasks appear here a few seconds after it gets a new message.
         </div>
       )}
       {isPhone ? (
@@ -385,6 +385,7 @@ function TopicCard({
   selected,
   dragging,
   showProject,
+  compact,
   onOpen,
   onSelect,
   onMove,
@@ -399,12 +400,14 @@ function TopicCard({
   selected: boolean
   dragging: boolean
   showProject: boolean
-  onOpen: () => void
+  /** In a thread's Tasks pane: no thread name, no drag, Enter shows the task, no "Open thread". */
+  compact?: boolean
+  onOpen?: () => void
   onSelect: () => void
   onMove: (s: TopicStatus) => void
   onFocus: () => void
-  onDragStart: (e: DragEvent<HTMLElement>) => void
-  onDragEnd: () => void
+  onDragStart?: (e: DragEvent<HTMLElement>) => void
+  onDragEnd?: () => void
 }) {
   const waiting = t.status === 'waiting_on_you'
   const thread = t.thread_name || t.thread_subject || 'Untitled thread'
@@ -417,7 +420,7 @@ function TopicCard({
         role="button"
         tabIndex={0}
         {...menu.props}
-        draggable={!phone}
+        draggable={!phone && !compact}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onFocus={(e) => e.target === e.currentTarget && onFocus()}
@@ -425,7 +428,8 @@ function TopicCard({
           menu.props.onKeyDown(e)
           if (e.key === 'Enter' && e.target === e.currentTarget) {
             e.preventDefault()
-            onOpen()
+            if (onOpen) onOpen()
+            else onSelect()
           }
         }}
         data-testid="topic-card"
@@ -437,9 +441,11 @@ function TopicCard({
         data-manual={t.manual_status ? 'true' : undefined}
         data-menu-open={menu.at ? 'true' : undefined}
         onClick={onSelect}
-        title={phone ? undefined : 'Show the topic (↵ opens the thread)'}
+        title={phone ? undefined : onOpen ? 'Show the task (↵ opens the thread)' : 'Show the task'}
         className={cx(
-          'group relative flex w-full shrink-0 cursor-pointer flex-col gap-1.5 rounded-[10px] border bg-raised px-3 py-2.5 text-left outline-none hover:border-linestrong focus-visible:ring-2 focus-visible:ring-accent',
+          'group relative flex w-full shrink-0 cursor-pointer flex-col rounded-[10px] border bg-raised text-left',
+          compact ? 'gap-1 px-2.5 py-2' : 'gap-1.5 px-3 py-2.5',
+          'outline-none hover:border-linestrong focus-visible:ring-2 focus-visible:ring-accent',
           waiting ? 'border-wait/50' : 'border-line2',
           t.status === 'done' && 'opacity-80',
           selected && 'border-accent bg-accent/8',
@@ -474,10 +480,14 @@ function TopicCard({
         )}
         <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-subtle">
           {showProject && <ThreadProjectBadge projectId={t.project_id} projectName={t.project_name} />}
-          <span data-testid="topic-thread" className="min-w-0 flex-1 truncate">
-            {thread}
-            {showProject && t.project_name && <span className="text-subtle"> · {t.project_name}</span>}
-          </span>
+          {compact ? (
+            <span className="min-w-0 flex-1" />
+          ) : (
+            <span data-testid="topic-thread" className="min-w-0 flex-1 truncate">
+              {thread}
+              {showProject && t.project_name && <span className="text-subtle"> · {t.project_name}</span>}
+            </span>
+          )}
           <time dateTime={when} title={new Date(when).toLocaleString()} className="shrink-0">
             {relTime(when, now)}
           </time>
@@ -500,17 +510,21 @@ function TopicCard({
             {c.title}
           </MenuItem>
         ))}
-        <MenuSep />
-        <MenuItem
-          testid="topic-open"
-          hint={phone ? undefined : '↵'}
-          onClick={() => {
-            menu.close()
-            onOpen()
-          }}
-        >
-          Open thread
-        </MenuItem>
+        {onOpen && (
+          <>
+            <MenuSep />
+            <MenuItem
+              testid="topic-open"
+              hint={phone ? undefined : '↵'}
+              onClick={() => {
+                menu.close()
+                onOpen()
+              }}
+            >
+              Open thread
+            </MenuItem>
+          </>
+        )}
       </ContextMenu>
     </>
   )
@@ -518,9 +532,9 @@ function TopicCard({
 
 const STATUS_LABEL: Record<TopicStatus, string> = { in_progress: 'In progress', waiting_on_you: 'Waiting on you', done: 'Done' }
 
-/** The message prefix that says which topic a message from the pane is about. */
+/** The message prefix that says which task a message from the pane is about. */
 export function topicPrefix(title: string): string {
-  return `[Topic: ${title}]`
+  return `[Task: ${title}]`
 }
 
 /**
@@ -539,16 +553,20 @@ function TopicPane({
   onClose,
   onMove,
   onOpenThread,
+  inThread,
 }: {
   t: Topic
   now: number
   phone: boolean
-  draft: string
-  onDraft: (v: string) => void
-  replyRef: React.RefObject<HTMLTextAreaElement | null>
+  /** The message box (the board's pane only: a thread's Tasks pane sits beside the thread's own box). */
+  draft?: string
+  onDraft?: (v: string) => void
+  replyRef?: React.RefObject<HTMLTextAreaElement | null>
   onClose: () => void
   onMove: (s: TopicStatus) => void
   onOpenThread: (messageId?: string) => void
+  /** Inside a thread's Tasks pane: fills it, Back goes to the list, no thread link and no message box. */
+  inThread?: boolean
 }) {
   const { topicsVersion, threadVersion, sessions, toast, error } = useApp()
   const [detail, setDetail] = useState<TopicDetail | null>(null)
@@ -588,12 +606,12 @@ function TopicPane({
   const mod = isMac() ? '⌘' : 'Ctrl+'
 
   const send = async () => {
-    const text = draft.trim()
+    const text = (draft ?? '').trim()
     if (!text || sending) return
     setSending(true)
     try {
       await api.reply(t.thread_id, { words: `${prefix}\n${text}` })
-      onDraft('')
+      onDraft?.('')
       toast(`Sent to “${thread}”`)
     } catch (e) {
       error(e)
@@ -607,13 +625,19 @@ function TopicPane({
     <aside
       data-testid="topic-pane"
       data-topic-id={t.id}
-      aria-label={`Topic: ${t.title}`}
-      className={cx('flex min-h-0 flex-col bg-bg', phone ? 'h-full' : 'w-[min(420px,40vw)] shrink-0 border-l border-line')}
+      aria-label={`Task: ${t.title}`}
+      className={cx('flex min-h-0 flex-col bg-bg', phone || inThread ? 'h-full min-w-0 flex-1' : 'w-[min(420px,40vw)] shrink-0 border-l border-line')}
     >
-      <div className={cx('flex shrink-0 items-start gap-2 border-b border-line py-3', phone ? 'px-2' : 'px-4')}>
-        {phone && (
-          <IconButton aria-label="Back to the board" data-testid="topic-pane-back" onClick={onClose}>
-            <IconBack />
+      <div className={cx('flex shrink-0 items-start gap-2 border-b border-line py-3', phone || inThread ? 'px-2' : 'px-4')}>
+        {(phone || inThread) && (
+          <IconButton
+            aria-label={inThread ? 'Back to the tasks' : 'Back to the board'}
+            title={inThread ? 'Back to the tasks' : undefined}
+            data-testid="topic-pane-back"
+            size={inThread && !phone ? 28 : undefined}
+            onClick={onClose}
+          >
+            <IconBack size={inThread && !phone ? 15 : undefined} />
           </IconButton>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -624,16 +648,18 @@ function TopicPane({
             <span data-testid="topic-pane-status" data-status={t.status} className={cx('rounded-full border px-2 py-px text-[11.5px] font-semibold', statusTone)}>
               {STATUS_LABEL[t.status]}
             </span>
-            <button
-              type="button"
-              data-testid="topic-pane-thread"
-              title="Open the thread"
-              onClick={() => onOpenThread()}
-              className="min-w-0 max-w-full truncate border-0 bg-transparent p-0 text-left text-accent hover:underline"
-            >
-              {thread}
-              {t.project_name && <span className="text-subtle"> · {t.project_name}</span>}
-            </button>
+            {!inThread && (
+              <button
+                type="button"
+                data-testid="topic-pane-thread"
+                title="Open the thread"
+                onClick={() => onOpenThread()}
+                className="min-w-0 max-w-full truncate border-0 bg-transparent p-0 text-left text-accent hover:underline"
+              >
+                {thread}
+                {t.project_name && <span className="text-subtle"> · {t.project_name}</span>}
+              </button>
+            )}
           </div>
         </div>
         {/* Done, or Reopen once it is: the same move as a drag or the 3 / 1 keys (a manual mark). */}
@@ -647,7 +673,7 @@ function TopicPane({
             Done
           </Button>
         )}
-        {!phone && (
+        {!phone && !inThread && (
           <IconButton aria-label="Close (Esc)" title="Close (Esc)" data-testid="topic-pane-close" size={28} onClick={onClose}>
             <IconClose size={14} />
           </IconButton>
@@ -663,9 +689,9 @@ function TopicPane({
           )}
         </section>
 
-        <section aria-label="Tasks" data-testid="topic-pane-tasks" className="flex flex-col gap-2">
+        <section aria-label="Steps" data-testid="topic-pane-tasks" className="flex flex-col gap-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-[12px] font-bold uppercase tracking-wide text-subtle">Tasks</span>
+            <span className="text-[12px] font-bold uppercase tracking-wide text-subtle">Steps</span>
             {tasks.length > 0 && (
               <span data-testid="topic-pane-progress" className="text-[12px] text-muted">
                 {done}/{tasks.length} done
@@ -674,7 +700,7 @@ function TopicPane({
           </div>
           {tasks.length > 0 ? (
             <>
-              <div className="h-1.5 overflow-hidden rounded-full bg-raised" role="progressbar" aria-valuemin={0} aria-valuemax={tasks.length} aria-valuenow={done} aria-label="Tasks done">
+              <div className="h-1.5 overflow-hidden rounded-full bg-raised" role="progressbar" aria-valuemin={0} aria-valuemax={tasks.length} aria-valuenow={done} aria-label="Steps done">
                 <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${(done / tasks.length) * 100}%` }} />
               </div>
               <ul className="m-0 flex list-none flex-col gap-1 p-0" title="As the helper reads the thread">
@@ -749,6 +775,7 @@ function TopicPane({
         </section>
       </div>
 
+      {!inThread && (
       <form
         data-testid="topic-pane-compose"
         className={cx('flex shrink-0 flex-col gap-2 border-t border-line py-3', phone ? 'px-3 pb-[max(12px,env(safe-area-inset-bottom))]' : 'px-4')}
@@ -762,10 +789,10 @@ function TopicPane({
           <textarea
             ref={replyRef}
             data-testid="topic-pane-input"
-            value={draft}
+            value={draft ?? ''}
             rows={phone ? 2 : 3}
-            placeholder={phone ? 'Message the thread about this topic…' : 'Message the thread about this topic… (R)'}
-            onChange={(e) => onDraft(e.target.value)}
+            placeholder={phone ? 'Message the thread about this task…' : 'Message the thread about this task… (R)'}
+            onChange={(e) => onDraft?.(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {
                 e.preventDefault()
@@ -779,12 +806,196 @@ function TopicPane({
             }}
             className="min-h-0 flex-1 resize-none rounded-lg border border-linestrong bg-surface px-2.5 py-2 text-[13.5px] text-fg outline-none placeholder:text-subtle focus:border-accent"
           />
-          <Button type="submit" variant="primary" size="sm" data-testid="topic-pane-send" disabled={!draft.trim() || sending} title={`Send (${mod}↵)`} className="h-9">
+          <Button type="submit" variant="primary" size="sm" data-testid="topic-pane-send" disabled={!draft?.trim() || sending} title={`Send (${mod}↵)`} className="h-9">
             <IconSend size={14} />
             Send
           </Button>
         </div>
       </form>
+      )}
     </aside>
+  )
+}
+
+// ---- a thread's Tasks pane ----
+
+/**
+ * Tablet and phone: the open thread's tasks full screen, in front of the thread (the desktop has a
+ * pane for them, layout.tasksPane). Shared by the header buttons and ⌘K; never stored.
+ */
+let tasksOverlay = false
+const overlayListeners = new Set<() => void>()
+export function setThreadTasksOverlay(open: boolean) {
+  if (tasksOverlay === open) return
+  tasksOverlay = open
+  overlayListeners.forEach((l) => l())
+}
+export function useThreadTasksOverlay(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      overlayListeners.add(l)
+      return () => overlayListeners.delete(l)
+    },
+    () => tasksOverlay,
+  )
+}
+
+/**
+ * The open thread's tasks (its topics): beside the thread on a desktop (between the thread and the
+ * agent terminal), full screen on a tablet or phone. The list groups them by status (In progress,
+ * Waiting on you, Done); selecting one shows its summary, steps and related messages (a click shows
+ * the message in the thread), with Done / Reopen and the card menu's Move to. No message box: the
+ * thread's own is right there.
+ */
+export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; phone?: boolean; onClose: () => void }) {
+  const { topicsVersion, error, navigate } = useApp()
+  const [res, setRes] = useState<TopicsResult | null>(null)
+  const [selId, setSelId] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  const [now, setNow] = useState(Date.now())
+  const seq = useRef(0)
+  useEffect(() => {
+    const n = ++seq.current
+    api
+      .threadTopics(threadId)
+      .then((r) => n === seq.current && setRes(r))
+      .catch(error)
+  }, [threadId, topicsVersion, reload, error])
+  // (Callers key it by thread: another thread starts afresh.)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  const topics = useMemo(() => (res?.topics ?? []).filter((t) => t.thread_id === threadId), [res, threadId])
+  const selected = topics.find((t) => t.id === selId) ?? null
+  useEffect(() => {
+    if (res && selId && !res.topics.some((t) => t.id === selId)) setSelId(null)
+  }, [res, selId])
+
+  const move = (id: string, status: TopicStatus) => {
+    const t = topics.find((x) => x.id === id)
+    if (!t || t.status === status) return
+    seq.current++
+    setRes((r) => r && { ...r, topics: [movedTopic(t, status), ...r.topics.filter((x) => x.id !== id)] })
+    api.setTopicStatus(id, status).catch((e) => {
+      error(e)
+      setReload((v) => v + 1)
+    })
+  }
+  const back = () => {
+    const id = selId
+    setSelId(null)
+    if (id) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="thread-tasks"] [data-testid="topic-card"][data-topic-id="${CSS.escape(id)}"]`)?.focus())
+  }
+  const reveal = (messageId?: string) => {
+    if (!messageId) return
+    // Full screen, the thread is behind: close first, then show the message there.
+    if (phone) onClose()
+    revealMessage(threadId, messageId)
+  }
+
+  const counts = { in_progress: 0, waiting_on_you: 0, done: 0 } as Record<TopicStatus, number>
+  for (const t of topics) counts[t.status]++
+  const header = (
+    <div className={cx('flex shrink-0 items-center gap-1.5 border-b border-line', phone ? 'h-14 px-1.5' : 'h-11 pl-3.5 pr-1.5')}>
+      {phone && (
+        <IconButton aria-label="Back to the thread" data-testid="tasks-back" onClick={onClose}>
+          <IconBack />
+        </IconButton>
+      )}
+      <h2 className={cx('m-0 font-[650] text-fg', phone ? 'text-[16px]' : 'text-[13.5px]')}>Tasks</h2>
+      {topics.length > 0 && (
+        <span data-testid="thread-tasks-count" className="text-[12px] text-subtle">
+          {topics.length}
+        </span>
+      )}
+      <span className="flex-1" />
+      {!phone && (
+        <IconButton aria-label="Hide tasks" title="Hide tasks" data-testid="tasks-close" size={28} onClick={onClose}>
+          <IconClose size={14} />
+        </IconButton>
+      )}
+    </div>
+  )
+
+  return (
+    <aside data-testid="thread-tasks" data-thread-id={threadId} aria-label="Tasks" className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
+      {!(phone && selected) && header}
+      {selected ? (
+        <TopicPane
+          key={selected.id}
+          t={selected}
+          now={now}
+          phone={!!phone}
+          inThread
+          onClose={back}
+          onMove={(st) => move(selected.id, st)}
+          onOpenThread={reveal}
+        />
+      ) : (
+        <div className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto', phone ? 'px-3 py-3' : 'px-2.5 py-3')}>
+          {res && !res.enabled && (
+            <div data-testid="thread-tasks-off" className="rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] text-muted">
+              Tasks are turned off, so threads are not read for tasks.{' '}
+              <button type="button" className="border-0 bg-transparent p-0 text-accent underline" onClick={() => navigate({ view: 'settings', ss: 'capabilities' })}>
+                Turn them on in Settings
+              </button>
+            </div>
+          )}
+          {res && res.enabled && topics.length === 0 && (
+            <div data-testid="thread-tasks-empty" className="px-1 text-[12.5px] leading-[1.5] text-subtle">
+              No tasks yet — they appear after the next message.
+            </div>
+          )}
+          {!res && <span className="px-1 text-[12.5px] text-subtle">Loading…</span>}
+          {COLUMNS.filter((c) => counts[c.id] > 0).map((c) => (
+            <section key={c.id} data-testid={`thread-tasks-${c.id}`} aria-label={c.title} className="flex flex-col gap-1.5">
+              <div className="flex items-baseline gap-1.5 px-1">
+                <span className={cx('text-[12px] font-[650]', c.id === 'waiting_on_you' ? 'text-wait' : 'text-fg2')}>{c.title}</span>
+                <span className="text-[11.5px] text-subtle">{counts[c.id]}</span>
+              </div>
+              {topics
+                .filter((t) => t.status === c.id)
+                .map((t) => (
+                  <TopicCard
+                    key={t.id}
+                    t={t}
+                    now={now}
+                    phone={!!phone}
+                    focused={false}
+                    selected={selId === t.id}
+                    dragging={false}
+                    showProject={false}
+                    compact
+                    onSelect={() => setSelId(t.id)}
+                    onMove={(s) => move(t.id, s)}
+                    onFocus={() => {}}
+                  />
+                ))}
+            </section>
+          ))}
+        </div>
+      )}
+    </aside>
+  )
+}
+
+/**
+ * Tablet and phone: the open thread's Tasks full screen, in front of the thread (opened by the
+ * header's Tasks button or ⌘K). Another thread, or none, closes it.
+ */
+export function TasksOverlay({ threadId }: { threadId: string | null }) {
+  const open = useThreadTasksOverlay()
+  const last = useRef(threadId)
+  useEffect(() => {
+    if (last.current !== threadId) setThreadTasksOverlay(false)
+    last.current = threadId
+  }, [threadId])
+  useEffect(() => () => setThreadTasksOverlay(false), [])
+  if (!open || !threadId) return null
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col bg-bg pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" data-testid="phone-tasks">
+      <ThreadTasks key={threadId} threadId={threadId} phone onClose={() => setThreadTasksOverlay(false)} />
+    </div>
   )
 }

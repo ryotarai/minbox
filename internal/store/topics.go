@@ -418,6 +418,7 @@ func prefixed(p, cols string) string {
 // TopicQuery filters ListTopics.
 type TopicQuery struct {
 	ProjectID string // "" = every project
+	ThreadID  string // "" = every thread
 	// DoneSince: done topics finished before it are left out (zero: all of them).
 	DoneSince time.Time
 	// DoneLimit: at most this many done topics, the newest (0: no limit).
@@ -433,6 +434,10 @@ func (s *Store) ListTopics(ctx context.Context, q TopicQuery) ([]Topic, error) {
 	if q.ProjectID != "" {
 		where += ` AND s.project_id=?`
 		args = append(args, q.ProjectID)
+	}
+	if q.ThreadID != "" {
+		where += ` AND tp.thread_id=?`
+		args = append(args, q.ThreadID)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("tp.", topicCols)+`,
 	  t.name, t.subject, t.session_id, COALESCE(s.project_id,''), COALESCE(p.name,'')
