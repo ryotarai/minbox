@@ -49,7 +49,7 @@ test('topics from several threads land in their columns, move live and open thei
   const { search } = await seed(page, minbox)
 
   // Topics is on by default: its entry is in the rail.
-  await page.getByTestId('project-rail').getByTestId('open-topics').click()
+  await page.getByTestId('project-rail').getByTestId('open-tasks').click()
   await expect(page.getByTestId('topics')).toBeVisible()
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
   await expect(card(page, 'waiting_on_you', 'Index format')).toBeVisible(SLOW)
@@ -90,9 +90,13 @@ test('topics from several threads land in their columns, move live and open thei
   await expect(page.getByTestId('topics')).toHaveCount(0)
   await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
 
-  // The old Board address opens Topics.
-  await page.goto(minbox.url + '/#v=board')
-  await expect(page.getByTestId('topics')).toBeVisible()
+  // Topics are Tasks now: the board is at #v=tasks; the old Topics and Board addresses open it.
+  for (const old of ['topics', 'board']) {
+    await page.goto(minbox.url + '/#v=' + old)
+    await expect(page.getByTestId('topics')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Tasks', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => location.hash)).toContain('v=tasks')
+  }
 })
 
 test('phone: the columns are tabs; a card opens its topic full screen, then its thread', async ({ page, minbox }) => {
@@ -101,7 +105,7 @@ test('phone: the columns are tabs; a card opens its topic full screen, then its 
   await page.goto(minbox.url + '/#')
   await expect(page.getByTestId('phone')).toBeVisible()
   await page.getByTestId('project-switch').click()
-  await page.getByTestId('project-sheet').getByTestId('open-topics').click()
+  await page.getByTestId('project-sheet').getByTestId('open-tasks').click()
   await expect(page.getByTestId('topics')).toBeVisible()
 
   // Waiting on you first.
@@ -127,7 +131,7 @@ test('phone: the columns are tabs; a card opens its topic full screen, then its 
   await expect(page.getByTestId('topic-pane-status')).toHaveText('Done')
   // No prefix chip: the "[Topic: …]" prefix is added on send only.
   await expect(page.getByTestId('topic-pane-prefix')).toHaveCount(0)
-  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', 'Message the thread about this topic…')
+  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', 'Message the thread about this task…')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.getByTestId('topic-pane-back').click()
   await expect(pane).toHaveCount(0)
@@ -144,12 +148,12 @@ test('turned off: no new topics are read, and the board says so', async ({ page,
     body: JSON.stringify({ topics: false }),
   })
   await seed(page, minbox)
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await expect(page.getByTestId('topics-off')).toBeVisible()
   await page.waitForTimeout(6000) // past the extraction's debounce
   await page.reload()
   await expect(page.getByTestId('topic-card')).toHaveCount(0)
-  await expect(page.getByTestId('project-rail').getByTestId('open-topics')).toHaveCount(0)
+  await expect(page.getByTestId('project-rail').getByTestId('open-tasks')).toHaveCount(0)
 })
 
 /** The topics as the server has them: title -> status. */
@@ -161,7 +165,7 @@ async function stored(page: Page, minbox: Minbox): Promise<Record<string, string
 test('moving cards: drag, the menu; the move holds and the next extraction is told about it', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1400, height: 820 })
   const { search } = await seed(page, minbox)
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
   await expect(card(page, 'in_progress', 'Rounding bug')).toBeVisible(SLOW)
 
@@ -203,7 +207,7 @@ test('moving cards: drag, the menu; the move holds and the next extraction is to
   await card(page, 'waiting_on_you', 'Index format').getByTestId('topic-more').click()
   await page.getByTestId('topic-menu').getByTestId('topic-move-in_progress').click()
   await expect(card(page, 'in_progress', 'Index format')).toBeVisible()
-  await expect(page).toHaveURL(/v=topics/) // the button did not open the thread
+  await expect(page).toHaveURL(/v=tasks/) // the button did not open the thread
   expect(await stored(page, minbox)).toMatchObject({ 'Search box UI': 'done', 'Rounding bug': 'waiting_on_you', 'Index format': 'in_progress' })
 
   // A new message in the thread: the extraction runs again. Its prompt says the person moved the
@@ -293,7 +297,7 @@ test('keyboard: ⇧T opens Topics; arrows and HJKL move the focus, 1 2 3 move th
 test('the topic pane: summary, checklist, related messages; a message from it reaches the thread with the topic named', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1500, height: 900 })
   const { search } = await seed(page, minbox)
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   const ui = card(page, 'in_progress', 'Search box UI')
   await expect(ui).toBeVisible(SLOW)
   await expect(page.getByTestId('topic-pane')).toHaveCount(0)
@@ -324,7 +328,7 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   await expect(related.first().getByTestId('topic-message-excerpt')).toContainText('Add search to the inbox.')
   // The message box: no prefix chip (the prefix is added on send), a hint in the placeholder.
   await expect(page.getByTestId('topic-pane-prefix')).toHaveCount(0)
-  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', /Message the thread about this topic/)
+  await expect(page.getByTestId('topic-pane-input')).toHaveAttribute('placeholder', /Message the thread about this task/)
   await expect(page.getByTestId('topic-pane-send')).toBeDisabled()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/topics-pane.png` })
 
@@ -355,7 +359,7 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   await input.fill('Debounce the search by 200 ms.')
   await page.getByTestId('topic-pane-send').click()
   await expect(input).toHaveValue('')
-  const want = '[Topic: Search box UI]\nDebounce the search by 200 ms.'
+  const want = '[Task: Search box UI]\nDebounce the search by 200 ms.'
   type Msg = { author: string; words?: string; body: string; delivery?: string }
   const sent = async () => {
     const th: { messages: Msg[] } = await (await page.request.get(`${minbox.url}/api/threads/${search}`)).json()
@@ -364,17 +368,17 @@ test('the topic pane: summary, checklist, related messages; a message from it re
   await expect.poll(async () => (await sent())?.delivery, SLOW).toBe('delivered')
   // The new message names the topic: the next extraction links it, and the pane shows it.
   await expect(related).toHaveCount(2, SLOW)
-  await expect(related.nth(1).getByTestId('topic-message-excerpt')).toContainText('[Topic: Search box UI] Debounce the search by 200 ms.')
+  await expect(related.nth(1).getByTestId('topic-message-excerpt')).toContainText('[Task: Search box UI] Debounce the search by 200 ms.')
 
   // A related message opens the thread at it.
   await related.first().click()
   await expect(page.getByTestId('topics')).toHaveCount(0)
   await expect(page.getByTestId('thread-subject')).toHaveText('Search for the inbox')
   await expect(page.locator('[data-testid="message"][data-jumped="true"]')).toContainText('Add search to the inbox.')
-  await expect(page.locator('[data-testid="message"]').filter({ hasText: 'Debounce the search by 200 ms.' })).toContainText('[Topic: Search box UI]')
+  await expect(page.locator('[data-testid="message"]').filter({ hasText: 'Debounce the search by 200 ms.' })).toContainText('[Task: Search box UI]')
 
   // Enter on the focused card still opens the thread.
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await expect(ui).toBeVisible(SLOW)
   await page.keyboard.press('j')
   await expect(col(page, 'in_progress').getByTestId('topic-card').first()).toBeFocused()
@@ -383,14 +387,14 @@ test('the topic pane: summary, checklist, related messages; a message from it re
 
   // The shortcuts list has the pane's keys.
   await page.keyboard.press('?')
-  await expect(page.getByTestId('shortcuts')).toContainText('Show topic pane')
+  await expect(page.getByTestId('shortcuts')).toContainText('Show task pane')
   await expect(page.getByTestId('shortcuts')).toContainText('Message the thread')
 })
 
 test('phone: the topic pane is a full screen with its message box', async ({ page, minbox }) => {
   await seed(page, minbox)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await page.getByTestId('topics-tab-in_progress').click()
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
   await card(page, 'in_progress', 'Search box UI').click()
@@ -409,7 +413,7 @@ test.describe('phone moves', () => {
   test('phone: a long press or "…" opens Move to; the card goes to its tab', async ({ page, minbox }) => {
     await seed(page, minbox)
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto(minbox.url + '/#v=topics')
+    await page.goto(minbox.url + '/#v=tasks')
     await expect(page.getByTestId('topics')).toBeVisible()
     const idx = card(page, 'waiting_on_you', 'Index format')
     await expect(idx).toBeVisible(SLOW)
@@ -451,7 +455,7 @@ test.describe('phone moves', () => {
 test('the topic pane: Done moves the topic to Done (it holds), Reopen brings it back', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1400, height: 820 })
   await seed(page, minbox)
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   const ui = card(page, 'in_progress', 'Search box UI')
   await expect(ui).toBeVisible(SLOW)
   await ui.click()
@@ -487,7 +491,7 @@ test('the topic pane: Done moves the topic to Done (it holds), Reopen brings it 
 test('phone: the topic pane has Done and Reopen; the board follows', async ({ page, minbox }) => {
   await seed(page, minbox)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await page.getByTestId('topics-tab-in_progress').click()
   await expect(card(page, 'in_progress', 'Search box UI')).toBeVisible(SLOW)
   await card(page, 'in_progress', 'Search box UI').click()
@@ -539,7 +543,7 @@ const listState = (page: Page) =>
 test('the related messages scroll on their own from the newest; a click unfolds the thread at a folded message', async ({ page, minbox }) => {
   await page.setViewportSize({ width: 1400, height: 820 })
   const id = await seedLong(page, minbox)
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   const fold = card(page, 'in_progress', 'Fold topic')
   await expect(fold).toBeVisible(SLOW)
   await fold.click()
@@ -577,7 +581,7 @@ test('the related messages scroll on their own from the newest; a click unfolds 
 test('phone: a related message opens the thread with the folded message shown', async ({ page, minbox }) => {
   await seedLong(page, minbox)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(minbox.url + '/#v=topics')
+  await page.goto(minbox.url + '/#v=tasks')
   await page.getByTestId('topics-tab-in_progress').click()
   const fold = card(page, 'in_progress', 'Fold topic')
   await expect(fold).toBeVisible(SLOW)

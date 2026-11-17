@@ -20,9 +20,11 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
   safe. Haiku can draft up to three one-click replies.
 - **Commands**: a reply that starts with `!` runs as a shell command in the session's folder (60 s limit);
   the result shows in the thread and reaches Claude with your next message. See [docs/thread-commands.md](docs/thread-commands.md).
-- **Topics**: a board of what the threads are working on, across all threads (In progress · Waiting on you ·
-  Done in the last 7 days). A few seconds after a thread gets a new message, Haiku reads its topics (a thread
-  can have several); click a card to open its thread. Turn it off in Settings › Capabilities.
+- **Tasks**: a board of what the threads are working on, across all threads (In progress · Waiting on you ·
+  Done in the last 7 days). A few seconds after a thread gets a new message, Haiku reads its tasks (a thread
+  can have several); click a card to open its thread. The checklist button in a thread's header shows that
+  thread's tasks in a pane beside it (between the thread and the agent terminal; full screen on a phone).
+  Turn it off in Settings › Capabilities.
 - **New thread from a reply**: long-press (or right-click) the reply box's send button to start a new thread
   from the text in it, in the same or another session of the project.
 - **File mentions**: type `@` at the start of a word in a reply or a new thread for a popup of files and
@@ -389,7 +391,7 @@ themselves after a network drop or a server restart, and the open thread reloads
 
 Text size and theme (light, dark, match system; the terminal follows it live with a light palette), swapping the terminal and thread columns,
 browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
-questions), **Notifications**, **Hosts**, **Devices**, optional parts (Topics, Decision mode),
+questions), **Notifications**, **Hosts**, **Devices**, optional parts (Tasks, Decision mode),
 archived sessions and threads, storage and About.
 
 **Help me reply** (on by default): when the last message of a thread is the agent's, minbox asks

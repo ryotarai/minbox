@@ -214,6 +214,13 @@ export const IconBoard = (p: P) => (
     <rect x="11" y="2.5" width="3.5" height="9" rx="1" />
   </Svg>
 )
+/** A checklist: a thread's Tasks pane. */
+export const IconTasks = (p: P) => (
+  <Svg strokeWidth={1.5} {...p}>
+    <path d="m2 4 1.25 1.25L5.5 3M2 9.5l1.25 1.25L5.5 8.5" />
+    <path d="M8 4.25h6M8 9.75h6M2.5 13.5h.5M8 13.5h6" />
+  </Svg>
+)
 export const IconBolt = (p: P) => (
   <Svg strokeWidth={1.5} {...p}>
     <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />

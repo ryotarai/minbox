@@ -15,7 +15,7 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'topics' | 'review' | 'inbox' | 'issues' | 'slack'
+export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -38,13 +38,14 @@ export type Route = {
 
 function readRoute(): Route {
   const p = new URLSearchParams(location.hash.slice(1))
-  // The Board was replaced by Topics: an old link opens Topics.
-  const view = ((p.get('v') === 'board' ? 'topics' : p.get('v')) as View) || 'main'
+  // The Board became Topics, then Tasks: an old link opens Tasks (Root rewrites the hash).
+  const v = p.get('v')
+  const view = ((v === 'board' || v === 'topics' ? 'tasks' : v) as View) || 'main'
   return {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'topics', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
@@ -108,13 +109,16 @@ export const ALL_THREADS = '*'
 export type Layout = { sidebarW: number; inboxW: number; threadW: number; projectsRail?: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean
   /** Desktop: the Claude Code terminal pane is shown (hidden by default: the threads are the way in). */
   terminalPane: boolean
+  /** Desktop: the open thread's Tasks pane is shown (beside the thread, before the terminal), and its width. */
+  tasksPane: boolean
+  tasksW: number
 }
 function defaultLayout(): Layout {
   const w = window.innerWidth
-  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false }
-  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false, terminalPane: false }
-  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false, terminalPane: false }
-  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false, terminalPane: false }
+  if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
+  if (w >= 1440) return { sidebarW: 340, inboxW: 480, threadW: 520, inboxCollapsed: false, shellW: 520, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
+  if (w >= 1200) return { sidebarW: 272, inboxW: 440, threadW: 520, inboxCollapsed: false, shellW: 460, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
+  return { sidebarW: 250, inboxW: 380, threadW: 480, inboxCollapsed: false, shellW: 400, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320 }
 }
 function readLayout(): Layout {
   try {
@@ -174,7 +178,7 @@ type AppState = {
   conn: ConnectionState
   threadsVersion: number
   threadVersion: Record<string, number>
-  /** Bumped when some thread's topics changed (the Topics board reloads). */
+  /** Bumped when some thread's topics changed (the Tasks board and a thread's Tasks pane reload). */
   topicsVersion: number
   devicesVersion: number
   toasts: Toast[]
@@ -403,7 +407,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setLayout = useCallback((patch: Partial<Layout>) => {
     setLayoutState((l) => {
       const next = { ...l, ...patch }
-      localStorage.setItem('minbox:layout', JSON.stringify(next))
+      try {
+        localStorage.setItem('minbox:layout', JSON.stringify(next))
+      } catch {
+        /* storage blocked: the layout holds for this page only */
+      }
       return next
     })
   }, [])
