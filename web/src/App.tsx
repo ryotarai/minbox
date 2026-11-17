@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { AttachmentViewer } from './components/AttachmentViewer'
-import { TopicsPage } from './components/Topics'
+import { TasksOverlay, ThreadTasks, TopicsPage } from './components/Topics'
 import { IssuesScreen } from './components/Issues'
 import { SlackScreen } from './components/Slack'
 import { GuidedReview } from './components/GuidedReview'
@@ -69,6 +69,10 @@ function Root() {
   useEffect(() => {
     if ((route.view as string) === 'inbox') navigate({ view: 'main' }, { push: false })
   }, [route.view, navigate])
+  // Topics (and the Board before them) are Tasks now: an old #v=topics / #v=board link becomes #v=tasks.
+  useEffect(() => {
+    if (route.view === 'tasks' && /(^|[#&])v=(topics|board)(&|$)/.test(location.hash)) navigate({ view: 'tasks' }, { push: false })
+  }, [route.view, navigate])
 
   // First run: nothing to show yet, so offer to start a session.
   const offered = useRef(false)
@@ -85,7 +89,7 @@ function Root() {
     z: () => undoLast(),
     'shift+t': () => {
       if (!settings.topics) return false
-      navigate({ view: 'topics' })
+      navigate({ view: 'tasks' })
     },
     'shift+d': () => {
       if (!settings.decision_mode) return false
@@ -98,7 +102,7 @@ function Root() {
     <>
       {route.view === 'settings' ? (
         <SettingsPage />
-      ) : route.view === 'topics' ? (
+      ) : route.view === 'tasks' ? (
         <TopicsPage />
       ) : route.view === 'issues' ? (
         <IssuesScreen />
@@ -148,6 +152,9 @@ function Desktop() {
   let shellW = showShell ? layout.shellW : 0
   let listW = layout.sidebarW
   let threadW = showMain ? layout.threadW : 0
+  // The open thread's Tasks pane: beside the thread, on the terminal's side of it.
+  const showTasks = !!session && !!route.t && layout.tasksPane
+  let tasksW = showTasks ? layout.tasksW : 0
   // The project column (far left): names, or 56 px tiles when the window is narrow or the person asks.
   const projNarrow = layout.projectsRail ?? width < 1400
   const projW = projNarrow ? 56 : 176
@@ -161,34 +168,37 @@ function Desktop() {
     const paidList = Math.min(rest, Math.max(0, listW - 280))
     listW -= paidList
   }
-  const over = () => projW + listW + threadW + (shellW ? shellW + 9 : 0) + MIN_CENTER + 18 - width
+  const over = () => projW + listW + threadW + (shellW ? shellW + 9 : 0) + (tasksW ? tasksW + 9 : 0) + MIN_CENTER + 18 - width
   const shrink = (w: number, min: number) => Math.max(Math.min(w, min), w - over())
   if (shellW && over() > 0) shellW = shrink(shellW, MIN_W.shell)
+  if (tasksW && over() > 0) tasksW = shrink(tasksW, MIN_W.tasks)
   if (over() > 0) listW = shrink(listW, MIN_W.list)
   if (over() > 0) threadW = shrink(threadW, 380)
   if (shellW && over() > 0) shellW = 0
+  if (tasksW && over() > 0) tasksW = 0
   if (over() > 0) threadW = shrink(threadW, MIN_W.thread)
   // The browser reports a drag in screen pixels; the columns are in zoomed ones.
   const zoom = (settings.text_size || 13) / 13
   // Several pointer moves can arrive before a re-render: each one adds to the width the last one set.
-  const cur = useRef({ listW, threadW, shellW })
-  cur.current = { listW, threadW, shellW }
+  const cur = useRef({ listW, threadW, shellW, tasksW })
+  cur.current = { listW, threadW, shellW, tasksW }
+  const tasksOn = tasksW > 0
   // A pane has only a minimum. It can grow until every other visible pane is at its own minimum.
-  const room = (self: 'list' | 'thread' | 'shell') => {
+  const room = (self: 'list' | 'thread' | 'shell' | 'tasks') => {
     const others =
       projW + (self === 'list' ? 0 : MIN_W.list) + (self === 'thread' || !showMain ? 0 : MIN_W.thread) +
-      (showShell && self !== 'shell' ? MIN_W.shell + 9 : 0) + MIN_CENTER + 18
+      (showShell && self !== 'shell' ? MIN_W.shell + 9 : 0) + (tasksOn && self !== 'tasks' ? MIN_W.tasks + 9 : 0) + MIN_CENTER + 18
     return Math.max(MIN_W[self], width - others)
   }
   // Grow or shrink one pane by dx. A pane that grows squeezes the others (thread, then list, then
   // shell) down to their minimums to keep the terminal at its own; their stored widths follow.
-  const drag = (self: 'list' | 'thread' | 'shell', dx: number) => {
+  const drag = (self: 'list' | 'thread' | 'shell' | 'tasks', dx: number) => {
     const c = cur.current
-    const key = { list: 'listW', thread: 'threadW', shell: 'shellW' } as const
+    const key = { list: 'listW', thread: 'threadW', shell: 'shellW', tasks: 'tasksW' } as const
     c[key[self]] = clamp(c[key[self]] + dx / zoom, MIN_W[self], room(self))
-    let over = projW + c.listW + (showMain ? c.threadW : 0) + (showShell ? c.shellW + 9 : 0) + MIN_CENTER + 18 - width
-    for (const k of ['thread', 'list', 'shell'] as const) {
-      if (k === self || over <= 0 || (k === 'shell' && !showShell) || (k === 'thread' && !showMain)) continue
+    let over = projW + c.listW + (showMain ? c.threadW : 0) + (showShell ? c.shellW + 9 : 0) + (tasksOn ? c.tasksW + 9 : 0) + MIN_CENTER + 18 - width
+    for (const k of ['thread', 'list', 'tasks', 'shell'] as const) {
+      if (k === self || over <= 0 || (k === 'shell' && !showShell) || (k === 'thread' && !showMain) || (k === 'tasks' && !tasksOn)) continue
       const cut = Math.min(over, c[key[k]] - MIN_W[k])
       if (cut > 0) {
         c[key[k]] -= cut
@@ -198,7 +208,7 @@ function Desktop() {
     // Stored widths include what the project column takes from the thread and list at render.
     const thread = c.threadW > 440 ? c.threadW + projW : c.threadW
     const list = c.listW > 280 ? c.listW + (projW - (c.threadW > 440 ? projW : 0)) : c.listW
-    setLayout({ sidebarW: list, ...(showMain ? { threadW: thread } : {}), ...(showShell ? { shellW: c.shellW } : {}) })
+    setLayout({ sidebarW: list, ...(showMain ? { threadW: thread } : {}), ...(showShell ? { shellW: c.shellW } : {}), ...(tasksOn ? { tasksW: c.tasksW } : {}) })
   }
   const dragList = (dx: number) => drag('list', dx)
   // dx is positive when the edge moves right and widens the column on its left.
@@ -208,7 +218,10 @@ function Desktop() {
   useShellHotkey(canShell, () => setLayout({ shellPane: !layout.shellPane }))
   // CSS order, not element order: swapping the panes does not remount the terminal.
   const swap = !settings.swap_panes
-  const o = swap ? { thread: 6, rzThread: 5, main: 2, rzShell: 3, shell: 4 } : { thread: 2, rzThread: 3, main: 4, rzShell: 5, shell: 6 }
+  // The Tasks pane sits next to the thread, on the terminal's side: [thread | tasks | terminal | shell],
+  // or swapped [terminal | shell | tasks | thread]. Its edge is on the side of the flexible column.
+  const o = swap ? { thread: 8, rzThread: 7, main: 2, rzShell: 3, shell: 4, tasks: 6 } : { thread: 2, rzThread: 3, main: 7, rzShell: 8, shell: 9, tasks: 5 }
+  const tasksEdgeAfter = swap ? !showMain : showMain
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="desktop">
       <div style={{ width: projW, order: -1 }} className="shrink-0 border-r border-line">
@@ -227,6 +240,14 @@ function Desktop() {
           <main style={{ order: o.main }} className="min-w-0 flex-1">
             {route.f && session ? <AttachmentViewer attachmentId={route.f} sessionName={session.name} sessionCwd={session.cwd} /> : <TerminalPane session={session} onClose={() => setLayout({ terminalPane: false })} />}
           </main>
+        </>
+      )}
+      {tasksOn && route.t && (
+        <>
+          <Resizer grip order={tasksEdgeAfter ? o.tasks + 1 : o.tasks - 1} onDrag={(dx) => drag('tasks', tasksEdgeAfter ? dx : -dx)} />
+          <div style={{ width: tasksW, order: o.tasks }} className="shrink-0" data-testid="tasks-pane">
+            <ThreadTasks key={route.t} threadId={route.t} onClose={() => setLayout({ tasksPane: false })} />
+          </div>
         </>
       )}
       {shellW > 0 && session && (
@@ -318,6 +339,7 @@ function Tablet() {
         </>
       )}
       {showShell && session && <PhoneShell session={session} typing={false} onClose={() => setLayout({ shellPane: false })} />}
+      <TasksOverlay threadId={session ? route.t : null} />
     </div>
   )
 }
@@ -333,7 +355,7 @@ function useWindowWidth(): number {
 }
 
 /** Each pane's minimum width (CSS px); there are no maximums. The project column is fixed (56 or 176). */
-export const MIN_W = { list: 240, thread: 320, terminal: 360, shell: 280 }
+export const MIN_W = { list: 240, thread: 320, terminal: 360, shell: 280, tasks: 240 }
 /** The tablet's terminal pane may be narrower than the desktop's (a 700 px window leaves 315). */
 const TABLET_MIN_TERMINAL = 300
 

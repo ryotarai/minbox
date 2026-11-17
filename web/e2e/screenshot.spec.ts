@@ -79,7 +79,7 @@ test('screenshots', async ({ page, minbox }) => {
   await page.getByTestId('settings-nav-capabilities').click()
   await page.getByRole('switch', { name: 'Decision mode' }).click()
   await page.getByTestId('settings-back').click()
-  await page.getByTestId('project-rail').getByTestId('open-topics').click()
+  await page.getByTestId('project-rail').getByTestId('open-tasks').click()
   await shot('12-topics')
   await page.keyboard.press('Escape')
   await page.getByTestId('project-rail').getByTestId('open-decide').click()

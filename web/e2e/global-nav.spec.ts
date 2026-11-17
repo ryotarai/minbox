@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { createSession, expect, expectTerminal, test } from './fixtures'
 
-// Settings, Topics, Decide and Drafts are not about the thread list: they sit at the bottom of the
+// Settings, Tasks, Decide and Drafts are not about the thread list: they sit at the bottom of the
 // project rail (desktop, tablet) and of the project sheet (phone). The list's ⋯ menu keeps only its
 // own display options. SHOTS_DIR=... writes a screenshot of each place.
 
@@ -28,7 +28,7 @@ test('desktop: Settings is in the project rail in both modes, not in the list me
     if ((await rail.getAttribute('data-mode')) !== mode) await page.getByTestId('project-rail-toggle').click()
     await expect(rail).toHaveAttribute('data-mode', mode)
     const footer = rail.getByTestId('rail-global')
-    for (const id of ['open-settings', 'open-topics', 'open-decide', 'drafts']) await expect(footer.getByTestId(id)).toBeVisible()
+    for (const id of ['open-settings', 'open-tasks', 'open-decide', 'drafts']) await expect(footer.getByTestId(id)).toBeVisible()
     await expect(footer.getByRole('button', { name: 'Settings' })).toBeVisible()
     // The footer sits at the bottom of the rail, just above New project and the mode toggle.
     const r = (await rail.boundingBox())!
@@ -42,13 +42,13 @@ test('desktop: Settings is in the project rail in both modes, not in the list me
   // The list menu holds only the display options.
   await page.getByTestId('list-options').click()
   await expect(page.getByRole('menuitemcheckbox', { name: 'Compact rows' })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: /Settings|Topics|Decide|Drafts/ })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: /Settings|Tasks|Decide|Drafts/ })).toHaveCount(0)
   await page.keyboard.press('Escape')
 
   await rail.getByTestId('open-settings').click()
   await expect(page.getByTestId('settings-back')).toBeVisible()
   await page.getByTestId('settings-back').click()
-  await rail.getByTestId('open-topics').click()
+  await rail.getByTestId('open-tasks').click()
   await expect(page.getByTestId('topics-col-waiting_on_you')).toBeVisible()
 })
 
@@ -72,12 +72,12 @@ test('phone: Settings is two taps away, on the project sheet', async ({ page, mi
 
   await page.getByTestId('list-options').click()
   await expect(page.getByRole('menuitemcheckbox', { name: 'Compact rows' })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: /Settings|Topics|Decide|Drafts/ })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: /Settings|Tasks|Decide|Drafts/ })).toHaveCount(0)
   await page.keyboard.press('Escape')
 
   await page.getByTestId('project-switch').click()
   const sheet = page.getByTestId('project-sheet')
-  for (const id of ['open-settings', 'open-topics', 'open-decide', 'drafts']) await expect(sheet.getByTestId('sheet-global').getByTestId(id)).toBeVisible()
+  for (const id of ['open-settings', 'open-tasks', 'open-decide', 'drafts']) await expect(sheet.getByTestId('sheet-global').getByTestId(id)).toBeVisible()
   await shot(page, 'phone-projects')
   await sheet.getByTestId('open-settings').click()
   await expect(page.getByTestId('settings-back')).toBeVisible()

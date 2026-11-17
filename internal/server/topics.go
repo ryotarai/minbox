@@ -577,15 +577,15 @@ func (s *Server) getTopic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"topic": t, "messages": out})
 }
 
-// GET /api/topics?project=<id>: the topics of every live thread (of one project), open ones by last
-// change, then the done ones of the last week (newest first, capped).
+// GET /api/topics?project=<id>&thread=<id>: the topics of every live thread (of one project, or of
+// one thread), open ones by last change, then the done ones of the last week (newest first, capped).
 func (s *Server) listTopics(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	project := q.Get("project")
 	if project == "" {
 		project = q.Get("project_id")
 	}
-	ts, err := s.store.ListTopics(r.Context(), store.TopicQuery{ProjectID: project, DoneSince: time.Now().Add(-topicsDoneWindow), DoneLimit: topicsDoneLimit})
+	ts, err := s.store.ListTopics(r.Context(), store.TopicQuery{ProjectID: project, ThreadID: q.Get("thread"), DoneSince: time.Now().Add(-topicsDoneWindow), DoneLimit: topicsDoneLimit})
 	if err != nil {
 		storeError(w, err)
 		return

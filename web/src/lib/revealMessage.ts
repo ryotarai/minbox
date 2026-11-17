@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react'
  * Artifacts grid, a collapsed command output). The caller navigates to the thread and asks; the
  * thread view (on a desktop or a phone, mounted before or after the ask) unfolds what it must,
  * scrolls the message to the middle and flashes it, then marks the ask answered. Usable from
- * anywhere that links to a message (the Topics pane, later search results).
+ * anywhere that links to a message (the Tasks pane, later search results).
  */
 export type RevealAsk = { threadId: string; messageId: string; n: number }
 

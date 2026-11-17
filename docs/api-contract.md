@@ -117,7 +117,7 @@ Annotation (sent with a reply, stored on the message):
 The reply body Claude reads gets a `## Annotations` section:
 `- <name> · "quote" (line N): comment` and `Image: <image_path>` when set.
 
-Topic (the Topics board; see "Topics"):
+Topic (a task of the Tasks board; see "Topics"):
 
 ```
 { id, thread_id, title, summary, status: "in_progress"|"waiting_on_you"|"done", position: number,
@@ -162,8 +162,9 @@ over 4000 characters, a session on another host, and `!cmd` as the body of a new
 
 ## Topics
 
-The Topics board (global nav entry "Topics", route `#v=topics`; the old `#v=board` opens it) shows the topics being
-worked on inside threads, across all threads: one thread can have several, each with its own status, independent of the
+Topics are called **Tasks** in the UI; the API paths, the `topics` table and the `topics` setting keep the old name.
+The Tasks board (global nav entry "Tasks", route `#v=tasks`; the old `#v=topics` and `#v=board` open it and the hash is
+rewritten to `#v=tasks`) shows the topics being worked on inside threads, across all threads: one thread can have several, each with its own status, independent of the
 thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/agent/cards`, setting `board`) is gone.
 
 - Extraction (`internal/server/topics.go`): every message added to a thread (agent, person, command; the store's
@@ -210,8 +211,8 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   unknown topic): the topic with its thread's fields, and its related messages, oldest first; `excerpt` is the agent's
   body or the person's own words, spacing collapsed, cut at 240 characters. The topic pane loads it on selection and
   again on SSE `topics` / `thread`.
-- `GET /api/topics?project=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live thread (not
-  archived, in a live session and project), open ones by `updated_at` newest first, then done ones done within the last
+- `GET /api/topics?project=<id>&thread=<id>` -> `{topics: Topic[], enabled: bool, done_days: 7}`: topics of every live
+  thread (not archived, in a live session and project; `thread` narrows it to one thread, for the thread's Tasks pane), open ones by `updated_at` newest first, then done ones done within the last
   7 days, newest first, at most 30. When a thread's topics change, SSE `topics` (`session_id`, `thread_id`) is published.
 - Moving a card by hand: `PATCH /api/topics/{id}` `{status}` -> `200` Topic (`400` unknown status, `404` unknown topic).
   Sets the status, sets `done_at` when it turns done (kept when it already was) or clears it, bumps `updated_at`, records
@@ -221,17 +222,27 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   marker is cleared. A run that started before the move (`manual_at` >= the run's start) keeps the manual status and its
   marker for that topic (and does not delete it when left out).
 - UI: drag a card to another column (desktop), or its menu (right-click, long press, the "…" button, Shift+F10: Move to);
-  `⇧T` opens Topics; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
+  `⇧T` opens Tasks; on the board arrows / `H J K L` move the focus between cards, `Enter` opens its thread, `1` `2` `3`
   move it to In progress / Waiting on you / Done.
 - The topic pane: a click / tap on a card, or `Space` on the focused card, selects it (highlighted) and opens its pane:
   beside the board on a desktop, full screen on a phone (Back returns to the board). It shows the title, status, the
   thread (a link that opens it), `detail` as Markdown (else the summary), the tasks as read-only checkboxes with "n/m
   done" and a progress bar, and the related messages (author, relative time, excerpt; a click opens the thread and
   scrolls to that message, flashing it). While it is open, moving the focus moves the selection; `Esc` closes it (a
-  second `Esc` leaves Topics), `R` focuses its message box. The box sends with `POST /api/threads/{thread}/reply`
-  `{words: "[Topic: <title>]\n<text>"}` (Send or ⌘/Ctrl+Enter; the same queueing and delivery as the thread's own
-  composer); the `[Topic: <title>]` prefix shows as a fixed chip above the box. Unsent text is kept per topic while the
-  board is open.
+  second `Esc` leaves Tasks), `R` focuses its message box. The box sends with `POST /api/threads/{thread}/reply`
+  `{words: "[Task: <title>]\n<text>"}` (Send or ⌘/Ctrl+Enter; the same queueing and delivery as the thread's own
+  composer); the `[Task: <title>]` prefix is added on send (not shown in the box). Unsent text is kept per topic while
+  the board is open. In the pane the steps are headed "Steps".
+- A thread's Tasks pane: the checklist button in the thread header (`tasks-toggle`, "Show tasks" / "Hide tasks"; ⌘K
+  "Show tasks" / "Hide tasks") shows the open thread's topics (`GET /api/topics?thread=`, reloaded on SSE `topics`). On a
+  desktop it is a resizable column (default 320 px, min 240) right of the thread and, with the agent terminal open,
+  between them: `[thread | tasks | terminal | shell]` (swapped panes: `[terminal | shell | tasks | thread]`); its × closes
+  it, and the open state and width are stored with the layout (`minbox:layout` `tasksPane`, `tasksW`). A narrow window
+  hides it after the shell. On a tablet or phone it opens full screen with Back. The list groups the thread's topics by
+  status (compact cards, the "…" menu moves them); selecting one shows the topic pane's contents in place (Back to the
+  list; no thread link and no message box: the thread's own box is beside it); Done / Reopen move it; a related message
+  is revealed in the thread (on a phone the full-screen view closes first). Empty: "No tasks yet — they appear after the
+  next message"; with the setting off it says Tasks are turned off, with a link to Settings.
 
 ## Reply suggestions
 

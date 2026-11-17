@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { uploadImage, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { homeRelative } from '../lib/format'
-import { IconBack, IconClose, IconShell, IconTerminal, IconImage, IconMore, IconFork } from './icons'
+import { IconBack, IconClose, IconShell, IconTerminal, IconImage, IconMore, IconFork, IconTasks } from './icons'
 import { TerminalView, shellQuote, type TerminalHandle } from './Terminal'
 import { Segmented, EndedTag, cx } from './ui'
 import { api } from '../api'
@@ -13,6 +13,7 @@ import { ThreadsPane, useVisibleThreads } from './ThreadsPane'
 import { TerminalKeys } from './TerminalKeys'
 import { AttachmentViewer } from './AttachmentViewer'
 import { ModConnection } from './ModConnection'
+import { TasksOverlay, setThreadTasksOverlay } from './Topics'
 
 /**
  * Follows the visual viewport, so bars stay above the on-screen keyboard, and
@@ -93,6 +94,7 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
   return (
     <>
       {shellOpen && canOpenShell(session) && <PhoneShell session={session} typing={keyboard} onClose={() => setShellOpen(false)} />}
+      <TasksOverlay threadId={inThread ? route.t : null} />
       <header className={cx('flex h-14 shrink-0 items-center gap-0.5 px-1.5', inThread && 'border-b border-line', typing && 'hidden')}>
         <button
           type="button"
@@ -149,6 +151,16 @@ function PhoneSession({ session, keyboard }: { session: Session; keyboard: boole
                 <IconShell size={20} />
               </button>
             )}
+            <button
+              type="button"
+              aria-label="Show tasks"
+              title="Tasks: what this thread is working on"
+              data-testid="tasks-toggle"
+              onClick={() => setThreadTasksOverlay(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2"
+            >
+              <IconTasks size={20} />
+            </button>
             <button
               type="button"
               aria-label="More"
