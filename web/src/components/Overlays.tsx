@@ -62,7 +62,7 @@ const KEYS: [string, string, boolean?][] = [
   ['Move', '↑ ↓'],
   ['Next / prev thread', 'J  K'],
   ['Open', '↵'],
-  ['Reply', 'R'],
+  ['Reply / quote selection', 'R'],
   ['Mark read', 'E'],
   ['Send', '⌘↵'],
   ['Undo', 'Z'],

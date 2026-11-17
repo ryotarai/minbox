@@ -801,6 +801,31 @@ test('selecting text in a thread offers Reply, which quotes it into the reply bo
   const b = await page.getByTestId('quote-reply').boundingBox()
   const t = await page.getByTestId('message').getByText('Please review the retry logic').boundingBox()
   expect(b!.y + b!.height).toBeLessThanOrEqual(t!.y)
+  await expect(page.getByTestId('quote-reply')).toHaveAttribute('title', 'Reply (R)')
+})
+
+test('R with text selected in a message quotes it into the reply box, as the Reply bubble does', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'quote-key')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'say Please review the retry logic')
+  await page.getByTestId('thread-row').first().click()
+  const text = page.getByTestId('message').getByText('Please review the retry logic')
+  await text.click({ clickCount: 3 })
+  await expect(page.getByTestId('quote-reply')).toBeVisible()
+  await page.keyboard.press('r')
+  const box = page.getByTestId('reply-box')
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('> Please review the retry logic\n\n')
+  await expect(page.getByTestId('quote-reply')).toHaveCount(0)
+  // Typing in the reply box, r is just a letter.
+  await page.keyboard.type('retry')
+  await expect(box).toHaveValue('> Please review the retry logic\n\nretry')
+  // With no selection, R still only focuses the reply box.
+  await box.blur()
+  await page.keyboard.press('r')
+  await expect(box).toBeFocused()
+  await expect(box).toHaveValue('> Please review the retry logic\n\nretry')
 })
 
 test.describe('touch device (coarse pointer, wide layout)', () => {
