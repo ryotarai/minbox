@@ -7,7 +7,7 @@ import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { selectProject, selectProject as selectProjectRaw, shortDir, useProjectStats, useSelectedProject, type ProjectStat } from '../lib/projects'
 import { replyDraftThreads, useDraftsVersion } from '../lib/drafts'
-import { IconArchive, IconBoard, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPencil, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
+import { IconArchive, IconBolt, IconChevronRight, IconInbox, IconLinear, IconMore, IconPencil, IconPin, IconPlus, IconSettings, IconSlack } from './icons'
 import { Button, HostTag, IconButton, MenuItem, MenuSep, Modal, Popover, cx, type MenuAt } from './ui'
 import { useContextMenu } from './ContextMenu'
 
@@ -290,7 +290,6 @@ export function useGlobalEntries(): GlobalEntry[] {
   const out: GlobalEntry[] = [
     { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
   ]
-  out.push({ id: 'tasks', testid: 'open-tasks', label: 'Tasks', title: 'Tasks: what each thread is working on (Shift+T)', icon: IconBoard, active: route.view === 'tasks', run: () => navigate({ view: route.view === 'tasks' ? 'main' : 'tasks' }) })
   if (settings.decision_mode) out.push({ id: 'decide', testid: 'open-decide', label: 'Decide', title: 'Decide (Shift+D)', icon: IconBolt, active: false, run: () => setOverlay({ kind: 'decide' }) })
   out.push({ id: 'drafts', testid: 'drafts', label: 'Drafts', title: drafts ? `Drafts (${drafts})` : 'Drafts', icon: IconPencil, active: false, count: drafts, run: () => setOverlay({ kind: 'drafts' }) })
   return out

@@ -15,7 +15,8 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack'
+/** v3: main is the Board; task, agent (a stream), agents (the phone's list) and search. */
+export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -34,6 +35,10 @@ export type Route = {
   issue: string | null
   /** Slack (personal): the selected thread, `<channel>:<ts>`. */
   slack: string | null
+  /** v3: the open task. */
+  k: string | null
+  /** v3: a message to scroll to and highlight. */
+  m: string | null
 }
 
 function readRoute(): Route {
@@ -45,12 +50,14 @@ function readRoute(): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
     ss: p.get('ss') || 'general',
     issue: p.get('issue'),
     slack: p.get('thread'),
+    k: p.get('k'),
+    m: p.get('m'),
   }
 }
 
@@ -65,6 +72,8 @@ function routeHash(r: Route): string {
   if (r.view === 'settings' && r.ss !== 'general') p.set('ss', r.ss)
   if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
   if (r.view === 'slack' && r.slack) p.set('thread', r.slack)
+  if (r.view === 'task' && r.k) p.set('k', r.k)
+  if (r.m && (r.view === 'task' || r.view === 'agent')) p.set('m', r.m)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
 }
@@ -162,6 +171,8 @@ export type Overlay =
   | { kind: 'edit-project'; project: Project }
   | { kind: 'delete-project'; project: Project }
   | { kind: 'project-icon'; project: Project }
+  | { kind: 'v3-new'; to?: string }
+  | { kind: 'v3-help' }
   | null
 
 type AppState = {
@@ -340,6 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (ev.type === 'threads') setThreadsVersion((v) => v + 1)
         if (ev.type === 'thread' && ev.thread_id) setThreadVersion((m) => ({ ...m, [ev.thread_id!]: (m[ev.thread_id!] ?? 0) + 1 }))
         if (ev.type === 'topics') setTopicsVersion((v) => v + 1)
+        if (ev.type === 'tasks' || ev.type === 'thread' || ev.type === 'threads') window.dispatchEvent(new Event('minbox:v3'))
         if (ev.type === 'settings') loadSettings()
         if (ev.type === 'hosts') reloadHosts()
         if (ev.type === 'notifications') window.dispatchEvent(new Event('minbox:notifications'))
@@ -356,6 +368,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setThreadsVersion((v) => v + 1)
         setThreadVersion((m) => ({ ...m, [ALL_THREADS]: (m[ALL_THREADS] ?? 0) + 1 })) // events were missed: the open thread too
         setTopicsVersion((v) => v + 1)
+        window.dispatchEvent(new Event('minbox:v3'))
       },
       setConn,
     )

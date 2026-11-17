@@ -1,0 +1,208 @@
+// minbox v3 data: the Board, a task's view, an agent's stream (docs/v3/api.md), and the hooks that
+// keep them live (the server's tasks / thread events arrive as window "minbox:v3" events).
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { call, type Answer, type Message, type ReplyRequest } from '../api'
+
+export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
+export const STATUS_LABEL: Record<TaskStatus, string> = { working: 'Working', needs_you: 'Needs you', blocked: 'Blocked', done: 'Done' }
+
+export type Step = { text: string; done: boolean; steps?: Step[] }
+export type Tag = { task_id: string; title: string; status: TaskStatus; source: 'agent' | 'auto' | 'person' }
+export type TaskAgent = { session_id: string; role: 'assigned' | 'involved'; since: string }
+export type AutoRun = { state: '' | 'running' | 'paused' | 'stopped'; session_id?: string; max_turns?: number; turns?: number; until?: string; reason?: string; last_at?: string }
+export type TaskLink = { kind: string; label: string; url: string; state?: string }
+
+export type Task = {
+  id: string
+  project_id: string
+  title: string
+  summary: string
+  detail: string
+  status: TaskStatus
+  steps: Step[]
+  report: string
+  links: TaskLink[]
+  created_by: string
+  created_at: string
+  updated_at: string
+  done_at: string | null
+  manual_status: string
+  agents: TaskAgent[]
+  kind: '' | 'goal'
+  parent_id: string
+  criteria: Step[]
+  auto: AutoRun
+}
+
+export type BoardTask = Task & {
+  open_questions: number
+  unread: number
+  message_count: number
+  last_activity: string
+  last_agent: string
+  needs_you: boolean
+  criteria_done: number
+  task_ids?: string[]
+}
+
+export type V3Message = Message & {
+  session_id: string
+  tags: Tag[]
+  segment?: { id: string; subject: string }
+  open: number
+  decision?: 'existing' | 'created' | 'none' | 'moved'
+  decision_task?: string
+  turn_of?: string[]
+  /** Task view: untagged messages of its stream since the previous tagged one there. */
+  gap?: number
+  /** Optimistic: shown before the server has it. */
+  pending?: boolean
+}
+
+export type TaskEvent = { id: string; task_id: string; at: string; kind: string; text: string; session_id?: string; message_id?: string }
+
+export type Board = { tasks: BoardTask[]; questions: V3Message[]; agents: Record<string, { unread: number; open_questions: number }> }
+export type TaskDetail = { task: BoardTask; messages: V3Message[]; events: TaskEvent[]; tasks: BoardTask[]; goal: Task | null }
+export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string }
+export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tags: Tag[] }[] }
+
+export type SendRequest = ReplyRequest & { task_ids?: string[] }
+
+const q = (o: Record<string, string | undefined>) => {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(o)) if (v) p.set(k, v)
+  const s = p.toString()
+  return s ? '?' + s : ''
+}
+
+export const v3 = {
+  board: (project: string) => call<Board>('GET', '/api/v3/board' + q({ project })),
+  task: (id: string) => call<TaskDetail>('GET', `/api/v3/tasks/${id}`),
+  patchTask: (id: string, body: Partial<Pick<Task, 'title' | 'status' | 'summary' | 'steps' | 'criteria' | 'parent_id'>>) => call<Task>('PATCH', `/api/v3/tasks/${id}`, body),
+  createTask: (body: { project_id?: string; title: string; kind?: string; session_id?: string; message_ids?: string[] }) => call<Task>('POST', '/api/v3/tasks', body),
+  auto: (id: string, action: 'start' | 'pause' | 'stop', session_id?: string) => call<Task>('POST', `/api/v3/tasks/${id}/auto`, { action, session_id }),
+  stream: (session: string, opts: { before?: string; after?: string; limit?: number } = {}) =>
+    call<Stream>('GET', `/api/v3/sessions/${session}/stream` + q({ before: opts.before, after: opts.after, limit: opts.limit ? String(opts.limit) : undefined })),
+  send: (session: string, req: SendRequest, thread?: string) => call<Message>('POST', `/api/v3/sessions/${session}/messages` + q({ thread }), req),
+  newMessage: (req: SendRequest & { to: string; project_id: string; agent?: string; name?: string }) => call<Message>('POST', '/api/v3/new', req),
+  tag: (msg: string, task_id: string) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/tags`, { task_id }),
+  untag: (msg: string, task: string) => call<{ ok: boolean }>('DELETE', `/api/v3/messages/${msg}/tags/${task}`),
+  retag: (msg: string, body: { from?: string; to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/retag`, body),
+  read: (ids: string[]) => call<{ marked: number }>('POST', '/api/v3/read', { message_ids: ids }),
+  search: (qs: string, project: string) => call<SearchResult>('GET', '/api/v3/search' + q({ q: qs, project })),
+}
+
+/** Calls f when anything the v3 views show may have changed (debounced). */
+export function useV3Events(f: () => void) {
+  const ref = useRef(f)
+  ref.current = f
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const on = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => ref.current(), 120)
+    }
+    window.addEventListener('minbox:v3', on)
+    return () => {
+      window.removeEventListener('minbox:v3', on)
+      if (t) clearTimeout(t)
+    }
+  }, [])
+}
+
+/** Loads with fetcher, again on v3 events and when key changes. */
+export function useLive<T>(key: string | null, fetcher: () => Promise<T>): [T | null, () => void, (f: (v: T | null) => T | null) => void] {
+  const [data, setData] = useState<T | null>(null)
+  const seq = useRef(0)
+  const keyRef = useRef(key)
+  const load = useCallback(() => {
+    if (keyRef.current === null) return
+    const n = ++seq.current
+    fetcher()
+      .then((v) => {
+        if (n === seq.current) setData(v)
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  useEffect(() => {
+    keyRef.current = key
+    setData(null)
+    load()
+  }, [key, load])
+  useV3Events(load)
+  return [data, load, setData]
+}
+
+/** Marks the agent messages shown read (once each). */
+export function useMarkRead(messages: V3Message[] | undefined, active = true) {
+  const sent = useRef(new Set<string>())
+  useEffect(() => {
+    if (!active || !messages || document.visibilityState === 'hidden') return
+    const ids = messages.filter((m) => m.author === 'agent' && !m.read_at && !m.pending && !sent.current.has(m.id)).map((m) => m.id)
+    if (ids.length === 0) return
+    ids.forEach((id) => sent.current.add(id))
+    const t = setTimeout(() => void v3.read(ids).catch(() => {}), 400)
+    return () => clearTimeout(t)
+  }, [messages, active])
+}
+
+export function answerText(a: Answer): string {
+  if (a.skipped) return 'Skipped'
+  return [...(a.selected ?? []), a.other, a.text].filter((x) => x && String(x).trim()).join(', ')
+}
+
+/** Leaf steps (a parent with sub-steps counts by them). */
+export function leaves(steps: Step[]): Step[] {
+  const out: Step[] = []
+  for (const s of steps) {
+    if (s.steps?.length) out.push(...s.steps)
+    else out.push(s)
+  }
+  return out
+}
+
+export function currentStep(steps: Step[]): Step | undefined {
+  return leaves(steps).find((s) => !s.done)
+}
+
+/** Colors of task chips: stable per task id. */
+export function tagColor(id: string): string {
+  let h = 0
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return `var(--t${h % 6})`
+}
+
+export function ago(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  return `${Math.floor(s / 86400)}d`
+}
+
+export function hhmm(iso: string): string {
+  const d = new Date(iso)
+  return d.toTimeString().slice(0, 5)
+}
+
+export const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+
+/** The text of a message as shown: the person's own words, else the body. */
+export function textOf(m: Message): string {
+  if (m.author === 'user') return m.words || (m.answers?.length ? '' : m.body)
+  return m.body
+}
+
+/** One line for lists and timelines: question blocks become their prompts, answers their choices. */
+export function lineOf(m: Message): string {
+  if (m.author === 'user') {
+    const w = (m.words ?? '').trim()
+    if (w) return w.replace(/\s+/g, ' ')
+    if (m.answers?.length) return 'answered ' + m.answers.map(answerText).join('; ')
+    return m.body.replace(/\s+/g, ' ')
+  }
+  const prose = m.body.replace(/:::(question|question-multi|question-text|actions)[^\n]*\n([^\n]*)[\s\S]*?\n:::/g, (_x, _k, first) => '[? ' + first.trim() + ']')
+  return prose.replace(/\s+/g, ' ').trim()
+}

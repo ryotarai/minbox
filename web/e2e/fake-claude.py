@@ -156,7 +156,7 @@ def turn(p, body):
     if body.startswith("GOAL:"):
         lines = body.split("\n")
         crit = [{"text": l[2:].strip()} for l in lines[1:] if l.startswith("- ")]
-        g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].strip(), "kind": "goal", "criteria": crit, "autonomous": True})
+        g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].replace("(manual)", "").strip(), "kind": "goal", "criteria": crit, "autonomous": "(manual)" not in lines[0]})
         say(f"Goal set: {g['task']['title']}. I will keep going until it is met.")
         return
     if "ASK" in body:
