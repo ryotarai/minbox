@@ -99,6 +99,14 @@ test('desktop: toggle, persist, tree with git status, filter, open a file, @ment
   await expect(page.getByTestId('file-viewer-code').locator('span[style*="color"]').first()).toBeVisible(SLOW)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/files-pane.png` })
 
+  // Copy puts the file's exact text on the clipboard; a check says it worked, then goes.
+  const copy = page.getByTestId('file-viewer-copy')
+  await expect(copy).toHaveAttribute('aria-label', 'Copy contents')
+  await copy.click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('package main\n\nfunc main() { println("hi") }\n')
+  await expect(copy).toHaveAttribute('aria-label', 'Copied')
+  await expect(copy).toHaveAttribute('aria-label', 'Copy contents', { timeout: 5_000 })
+
   // Its @ button writes the path into the thread's message box, as the @ completion does.
   const reply = page.getByTestId('reply-box')
   await reply.fill('look at')
@@ -109,6 +117,7 @@ test('desktop: toggle, persist, tree with git status, filter, open a file, @ment
   // An image shows as an image.
   await row(page, 'logo.png').click()
   await expect(viewer).toHaveAttribute('data-path', 'logo.png')
+  await expect(page.getByTestId('file-viewer-copy')).toHaveCount(0)
   await expect.poll(() => page.getByTestId('file-viewer-image').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1)
   await page.getByTestId('file-viewer-close').click()
   await expect(viewer).toHaveCount(0)
@@ -174,10 +183,13 @@ test('desktop: binary, large and .env files are not shown; the API keeps to the 
   const note = page.getByTestId('file-viewer-note')
   await row(page, 'blob.bin').click(SLOW)
   await expect(note).toContainText('binary')
+  await expect(page.getByTestId('file-viewer-copy')).toHaveCount(0)
   await row(page, 'big.txt').click()
   await expect(note).toContainText('Too large')
+  await expect(page.getByTestId('file-viewer-copy')).toHaveCount(0)
   await row(page, '.env').click()
   await expect(note).toContainText('not shown')
+  await expect(page.getByTestId('file-viewer-copy')).toHaveCount(0)
   const outside = await page.request.get(`${minbox.url}/api/sessions/${sid}/tree/file?path=${encodeURIComponent('../' + dir.split('/').pop() + '/README.md')}`)
   expect(outside.status()).toBe(400)
 })
@@ -201,6 +213,10 @@ test.describe('phone', () => {
 
     await row(page, 'README.md').tap(SLOW)
     await expect(page.getByTestId('file-viewer-code')).toContainText('# Demo')
+    // Copy works full screen too.
+    await page.getByTestId('file-viewer-copy').tap()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('# Demo\n')
+    await expect(page.getByTestId('file-viewer-copy')).toHaveAttribute('aria-label', 'Copied')
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/files-phone.png` })
     // Back returns to the tree, then to the thread.
     await page.getByTestId('files-back').tap()
