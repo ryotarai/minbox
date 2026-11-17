@@ -196,7 +196,13 @@ func (s *Server) setThreadStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.threadOp(func(ctx context.Context, id string) error {
-		return s.store.SetThreadStatus(ctx, id, v)
+		if err := s.store.SetThreadStatus(ctx, id, v); err != nil {
+			return err
+		}
+		if v == store.ThreadFinished {
+			s.topicsOnFinished(ctx, id)
+		}
+		return nil
 	})(w, r)
 }
 

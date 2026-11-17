@@ -16,12 +16,12 @@ func TestBuildTopicsPromptManualHint(t *testing.T) {
 	p := buildTopicsPrompt(th, []store.Topic{
 		{ID: "tpc_1", Title: "Search UI", Status: store.TopicDone, ManualStatus: store.TopicDone, ManualAt: &at},
 		{ID: "tpc_2", Title: "Index", Status: store.TopicInProgress},
-	})
+	}, topicsAgent{})
 	if !strings.Contains(p, "id: tpc_1 | status: done | title: Search UI | summary:  | moved by the PERSON by hand to done at 2026-11-16 09:30 UTC") ||
 		!strings.Contains(p, "strong signal") || strings.Contains(p, "title: Index | summary:  | moved") {
 		t.Fatalf("prompt:\n%s", p)
 	}
-	if strings.Contains(buildTopicsPrompt(th, []store.Topic{{ID: "tpc_2", Title: "Index", Status: store.TopicInProgress}}), "strong signal") {
+	if strings.Contains(buildTopicsPrompt(th, []store.Topic{{ID: "tpc_2", Title: "Index", Status: store.TopicInProgress}}, topicsAgent{}), "strong signal") {
 		t.Fatal("hint without a manual move")
 	}
 }

@@ -522,3 +522,23 @@ func (s *Store) TopicMessages(ctx context.Context, threadID string, ids []string
 	}
 	return out, rows.Err()
 }
+
+// ThreadsWithTopicStatus lists the live (not archived) threads of a session that have a topic with
+// the given status.
+func (s *Store) ThreadsWithTopicStatus(ctx context.Context, sessionID, status string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT tp.thread_id FROM topics tp JOIN threads t ON t.id=tp.thread_id
+	  WHERE t.session_id=? AND t.archived_at IS NULL AND tp.status=?`, sessionID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
