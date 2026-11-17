@@ -691,6 +691,7 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	}
 	if sess.Status == store.StatusStarting {
 		_ = s.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
+		s.agentSince.Store(sess.ID, s.nowFn())
 	}
 	s.hub.publish(Event{Type: "sessions"})
 	extra := ""
@@ -722,8 +723,13 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 			storeError(w, err)
 			return
 		}
+		s.agentSince.Store(sess.ID, s.nowFn())
 		s.hub.publish(Event{Type: "sessions"})
 		s.hub.publish(Event{Type: "threads", SessionID: sess.ID})
+		if req.Status == store.StatusIdle {
+			// The turn ended: topics still in progress may be done now (see topicsOnIdle).
+			s.topicsOnIdle(sess.ID)
+		}
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

@@ -170,13 +170,27 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
   `OnMessage` hook) kicks a per-thread timer. The run starts 4 s after the last message of a burst (at most 30 s after the
   first), never twice at once for one thread (a message during a run runs it again after), at most 2 threads at a time.
   Skipped when setting `topics` is off, for archived threads, and without a coding agent to run the helper. Existing
-  threads are not read until they get a new message (no backfill).
+  threads are not read until they get a new message (no backfill). Two more kicks, through the same debounce, let work
+  that ended leave In progress without a new message: the session going idle (`POST /api/agent/status` `idle`, the end of
+  the agent's turn) kicks each live thread of that session with an `in_progress` topic, and the person marking a thread
+  `finished` (`POST /api/threads/{id}/status`) kicks it when it has an `in_progress` topic. An extraction adds no message
+  and changes no session or thread status, so it never kicks itself.
 - The helper (the same `runHelper` as reply suggestions: Haiku through `claude -p --json-schema`, or the default agent's
   helper run) gets the thread's current topics (id, status, title, summary, then `detail:` and one `task [x]|[ ] <text>`
   line per step) and its newest 20 messages, each in full with its id in the header (`[PERSON · <time> · id: <msg id>]`;
   no character budget; earlier messages are carried by the current topics), and answers
   `{topics: [{id?, title, summary, status, detail, tasks: [{text, done}], message_ids: [string]}]}` (detail, tasks and
-  message_ids required by the schema; an answer without them reads as empty). The prompt asks to keep the current tasks,
+  message_ids required by the schema; an answer without them reads as empty). Before the messages it says
+  `Agent state now: working | idle (…) [since <time> UTC]` (the session's status: `starting` and `ended` read as idle;
+  the time is when this server last saw it change, left out when unknown) and `Thread status now: <status>`. Status
+  rules in the prompt: `in_progress` ONLY when the agent is actively working on the topic right now (the latest messages
+  show the work started or continuing, no result reported yet) AND the agent state is working; `waiting_on_you` when a
+  question, decision, review or action asked of the person is unanswered, or the agent reported and awaits their input;
+  `done` when the result was reported or delivered, nothing is pending, or it went quiet with nobody working on it
+  (answered questions are done). Unsure between in_progress and done: done (or waiting_on_you if a request to the person
+  is open). Every topic is judged again each run (never kept in_progress because it was). Agent idle: nothing is
+  in_progress unless the latest message clearly says work continues in the background (a subagent running), and then
+  only that topic; thread finished: nothing is in_progress unless a later message starts new work. The prompt asks to keep the current tasks,
   their order and wording, marking them done as they finish. There is no limit on the number of topics: the prompt asks for every
   distinct subject, request, question, decision or piece of work as its own topic (each separate request or question of
   the person; only true duplicates or continuations merged), done ones kept with status `done`. Only a runaway answer is

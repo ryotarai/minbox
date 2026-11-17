@@ -81,8 +81,11 @@ type Server struct {
 	// helper model for it (replaced in tests).
 	topics    *topicer
 	topicsRun func(ctx context.Context, prompt string) ([]byte, error)
-	web       fs.FS
-	handler   http.Handler
+	// agentSince: when each session's agent state (working / idle) last changed, as this server saw
+	// it (the topics prompt says it; unknown after a restart).
+	agentSince sync.Map // session id -> time.Time
+	web        fs.FS
+	handler    http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}

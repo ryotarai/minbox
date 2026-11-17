@@ -56,7 +56,7 @@ func TestBuildTopicsPrompt(t *testing.T) {
 		th.Messages = append(th.Messages, store.Message{Author: store.AuthorAgent, Body: long + " END" + strconv.Itoa(i)})
 	}
 	th.Messages = append(th.Messages, store.Message{Author: store.AuthorAgent, Body: "Which index?", Questions: nil})
-	p := buildTopicsPrompt(th, []store.Topic{{ID: "tpc_1", Title: "Search UI", Summary: "Building", Status: store.TopicInProgress}})
+	p := buildTopicsPrompt(th, []store.Topic{{ID: "tpc_1", Title: "Search UI", Summary: "Building", Status: store.TopicInProgress}}, topicsAgent{})
 	if !strings.HasPrefix(p, "Track the topics") || !strings.Contains(p, "id: tpc_1 | status: in_progress | title: Search UI") {
 		t.Fatalf("prompt head:\n%s", p[:300])
 	}
@@ -83,7 +83,7 @@ func TestBuildTopicsPrompt(t *testing.T) {
 	if strings.Contains(p, "at most 6") || strings.Contains(p, "1 to 3") || strings.Contains(topicsSchema, "maxItems") {
 		t.Error("a count limit is left")
 	}
-	short := buildTopicsPrompt(&store.Thread{Subject: "S", Messages: th.Messages[2:4]}, nil)
+	short := buildTopicsPrompt(&store.Thread{Subject: "S", Messages: th.Messages[2:4]}, nil, topicsAgent{})
 	if !strings.Contains(short, "(none yet)") || !strings.Contains(short, "please add search") || !strings.Contains(short, "[PERSON ran a command") || strings.Contains(short, "only the newest") {
 		t.Fatalf("short prompt:\n%s", short)
 	}
@@ -341,7 +341,7 @@ func TestBuildTopicsPromptIDsAndTasks(t *testing.T) {
 		{ID: "msg_b", Author: store.AuthorAgent, Body: "On it"},
 	}}
 	p := buildTopicsPrompt(th, []store.Topic{{ID: "tpc_1", Title: "Search UI", Summary: "Building", Status: store.TopicInProgress,
-		Detail: "Building the box.\nThen results.", Tasks: []store.TopicTask{{Text: "Add the field", Done: true}, {Text: "Wire results"}}}})
+		Detail: "Building the box.\nThen results.", Tasks: []store.TopicTask{{Text: "Add the field", Done: true}, {Text: "Wire results"}}}}, topicsAgent{})
 	for _, want := range []string{"· id: msg_a]", "· id: msg_b]", "  detail: Building the box. Then results.\n", "  task [x] Add the field\n", "  task [ ] Wire results\n",
 		"- detail:", "- tasks:", "Keep the current tasks", "- message_ids:"} {
 		if !strings.Contains(p, want) {

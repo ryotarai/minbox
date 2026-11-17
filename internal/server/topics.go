@@ -20,8 +20,10 @@ import (
 // (Haiku, or the default agent's helper run; see helperPlan) and shown on the Topics board across
 // threads. A thread's topics are extracted again a few seconds after each new message in it (bursts
 // coalesce, one run per thread at a time); existing threads are never extracted until they get a
-// new message. The topics setting (Settings › Capabilities) turns it off. See docs/api-contract.md
-// ("Topics").
+// new message. It also runs again when the agent's turn ends (the session goes idle) for the
+// session's threads with a topic in progress, and when the person marks a thread finished, so work
+// that ended leaves In progress without a new message. The topics setting (Settings ›
+// Capabilities) turns it off. See docs/api-contract.md ("Topics").
 
 const (
 	topicsDebounce   = 4 * time.Second  // quiet time after a message before the run
@@ -208,7 +210,7 @@ func (s *Server) refreshTopics(threadID string) {
 		log.Printf("topics: %s: %v", threadID, err)
 		return
 	}
-	out, err := s.topicsRun(ctx, buildTopicsPrompt(th, cur))
+	out, err := s.topicsRun(ctx, buildTopicsPrompt(th, cur, s.topicsAgentState(ctx, th.SessionID)))
 	if err != nil {
 		if !errors.Is(err, agent.ErrNoneInstalled) {
 			log.Printf("topics: %s: %v", threadID, err)
@@ -249,18 +251,93 @@ func (s *Server) refreshTopics(threadID string) {
 	}
 }
 
+// topicsOnIdle: the session's agent finished its turn. Its threads with a topic still in progress
+// are extracted again (debounced like a message), so finished work leaves In progress. This cannot
+// loop: an extraction adds no message and changes no session or thread status.
+func (s *Server) topicsOnIdle(sessionID string) {
+	ids, err := s.store.ThreadsWithTopicStatus(context.Background(), sessionID, store.TopicInProgress)
+	if err != nil {
+		log.Printf("topics: session %s: %v", sessionID, err)
+		return
+	}
+	for _, id := range ids {
+		s.topics.kick(id)
+	}
+}
+
+// topicsOnFinished: the person marked the thread finished; extract it again when a topic is still
+// in progress.
+func (s *Server) topicsOnFinished(ctx context.Context, threadID string) {
+	cur, err := s.store.ThreadTopics(ctx, threadID)
+	if err != nil {
+		return
+	}
+	for _, t := range cur {
+		if t.Status == store.TopicInProgress {
+			s.topics.kick(threadID)
+			return
+		}
+	}
+}
+
+// topicsAgent is what the topics prompt says about the agent now.
+type topicsAgent struct {
+	State string    // the session's status: working, idle, starting, ended ("" unknown)
+	Since time.Time // when State began, as this server saw it (zero: unknown)
+}
+
+// topicsAgentState: the session's stored status (the mod reports working / idle at each turn's
+// start and end: POST /api/agent/status) and when it last changed (agentSince).
+func (s *Server) topicsAgentState(ctx context.Context, sessionID string) topicsAgent {
+	var a topicsAgent
+	sess, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return a
+	}
+	a.State = sess.Status
+	if sess.Status == store.StatusEnded {
+		a.Since = sess.UpdatedAt
+	} else if v, ok := s.agentSince.Load(sessionID); ok {
+		a.Since = v.(time.Time)
+	}
+	return a
+}
+
 // runTopicsHelper runs the helper agent with the topics prompt.
 func (s *Server) runTopicsHelper(ctx context.Context, prompt string) ([]byte, error) {
 	return s.runHelper(ctx, "haiku", topicsSystemPrompt, topicsSchema, prompt)
 }
 
-// buildTopicsPrompt: the thread's current topics and its newest messages (in full), then the
-// instruction. It starts with "Track the topics" (the e2e fake helper keys on it).
-func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
+// buildTopicsPrompt: the thread's current topics, the agent's state now and the thread's newest
+// messages (in full), then the instruction with the status rules. It starts with "Track the
+// topics" (the e2e fake helper keys on it).
+func buildTopicsPrompt(th *store.Thread, cur []store.Topic, ag topicsAgent) string {
 	var b strings.Builder
 	b.WriteString("Track the topics of this conversation between a PERSON and their coding AGENT.\n")
 	if name := firstNonEmpty(th.Name, th.Subject); name != "" {
 		b.WriteString("Thread: " + truncRunes(name, 200) + "\n")
+	}
+	// The agent's state now: whether anything can still be in progress.
+	state := ag.State
+	switch state {
+	case store.StatusWorking:
+		state = "working (running a turn now; possibly for another thread of the same session)"
+	case store.StatusIdle:
+		state = "idle (its turn ended; it is waiting for the person)"
+	case store.StatusStarting:
+		state = "idle (starting up)"
+	case store.StatusEnded:
+		state = "idle (the session has ended)"
+	case "":
+		state = "unknown"
+	}
+	b.WriteString("Agent state now: " + state)
+	if !ag.Since.IsZero() {
+		b.WriteString(" since " + ag.Since.UTC().Format("2006-01-02 15:04") + " UTC")
+	}
+	b.WriteString("\n")
+	if th.Status != "" {
+		b.WriteString("Thread status now: " + th.Status + " (set by the agent or the person: working | need_action | blocked | finished)\n")
 	}
 	b.WriteString("\nCurrent topics (from the last update):\n")
 	if len(cur) == 0 {
@@ -330,8 +407,7 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 		"There is no limit on the number of topics. Individual steps of one piece of work are not topics. For each topic give:\n" +
 		"- title: a short name (2 to 8 words), in the language the PERSON writes in (if they wrote nothing, the agent's). Keep the current title when a topic continues.\n" +
 		"- summary: one line (under 120 characters) saying where it stands now.\n" +
-		"- status: \"waiting_on_you\" when the agent is waiting for the person's decision, answer, review or action on it; " +
-		"\"done\" when it is finished, resolved or dropped; otherwise \"in_progress\" (the agent is working on it, or it is still open).\n" +
+		"- status: \"in_progress\", \"waiting_on_you\" or \"done\"; see the status rules below.\n" +
 		"- id: the id of the current topic it continues; leave it out for a new topic.\n" +
 		"- detail: a fuller summary for the topic's pane: a few sentences (Markdown allowed) on what it is about, what was decided or done, and what is left. Update the current detail; do not start over.\n" +
 		"- tasks: the concrete steps or sub-tasks of the topic (short, imperative; usually 0 to 8), each with done true when the messages show it finished. " +
@@ -339,9 +415,26 @@ func buildTopicsPrompt(th *store.Thread, cur []store.Topic) string {
 		"- message_ids: the ids (from the message headers above) of the messages that are about this topic; an empty list when none of the messages above is.\n" +
 		"Keep the current topics, including done ones (with status \"done\"; do not drop a topic because it is finished), " +
 		"and update their status and summary from the newest messages. " +
-		"Drop a current topic only when it was a mistake or became part of another.\n")
+		"Drop a current topic only when it was a mistake or became part of another.\n" +
+		topicsStatusRules)
 	return b.String()
 }
+
+// topicsStatusRules: how the helper picks a topic's status (the board's columns). In progress is
+// only for work the agent is doing right now; anything finished, answered or quiet is done.
+const topicsStatusRules = "\nStatus rules (judge every topic again, current ones included, from the newest messages and the agent state now; " +
+	"never keep \"in_progress\" just because a topic was in progress before):\n" +
+	"- \"in_progress\" ONLY when the agent is actively working on it right now: the latest messages about it show the agent " +
+	"started or continues the work (e.g. \"implementing…\", \"investigating…\", a subagent running) and has not yet reported the result, " +
+	"AND the agent state now is working.\n" +
+	"- \"waiting_on_you\" when the agent asked the PERSON a question, decision, review or action about it that is still unanswered, " +
+	"or reported and explicitly awaits the person's input.\n" +
+	"- \"done\" when the result was reported or delivered (e.g. \"pushed\", \"fixed\", \"here is the answer\"), " +
+	"or the topic has no pending work, or it went quiet with nobody working on it. A question that was answered is done.\n" +
+	"- When unsure between \"in_progress\" and \"done\", choose \"done\" (or \"waiting_on_you\" if a request to the person is open).\n" +
+	"- When the agent state now is idle, no topic can be \"in_progress\", unless the latest message clearly says work continues " +
+	"in the background (e.g. a subagent still running), and then only that specific topic.\n" +
+	"- When the thread status now is finished, the agent reported its work done: no topic is \"in_progress\" unless a later message clearly starts new work.\n"
 
 // parseTopics reads the helper's answer (the envelope parseSuggestions reads): topics with a title
 // and a known status, deduplicated by title, lengths capped (and the count, only against a runaway
