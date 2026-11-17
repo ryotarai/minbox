@@ -10,7 +10,14 @@ Typed commands (one per line):
   work       status working: queued messages wait (idle ends it)
   nobeat     stop the heartbeat (beat starts it again); the poll carries on
   tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
+  agent off|on  stop / start answering the person's stream messages by itself (v3; on by default)
   exit       quit
+
+v3 (docs/v3): a message the person writes in an agent's stream is answered by itself, deciding like
+the prototype's fake agent (see decide()): written from a task -> a note in that task; names an open
+task's keyword -> tagged with that task (task_ids); asks for work -> create_task, then a reply; else a
+plain reply (no task). "GOAL: <title>" + "- <criterion>" lines -> a goal with an autonomous run;
+"ASK" -> a question; a goal's continuation -> progress, and on the second one the criteria are met.
 """
 import json, os, re, sys, threading, time, urllib.error, urllib.request, uuid
 
@@ -25,6 +32,8 @@ busy = False  # "work": a turn is running; only urgent messages are taken
 deaf = False  # "deaf": the mod stopped answering (no polling) until "listen"
 beating = True  # "nobeat": the heartbeat stops until "beat"
 beat_seq = 0
+answering = os.environ.get("FAKE_AGENT", "1") != "0"  # "agent off": stream messages are not answered
+continued = {}  # goal id -> continuations taken
 
 
 def base():
@@ -60,11 +69,12 @@ def keep_tasks(p):
     steps = {}
     for title, box, text in re.findall(r"^TOPIC-TASK: (.+?) \| \[([ x])\] (.*)$", body, re.M):
         steps.setdefault(title.strip(), []).append({"text": text.strip(), "done": box == "x"})
+    if "TOPIC" not in body:
+        return
     have = {}
-    res = api("GET", "/api/agent/tasks?thread_id=" + p["thread_id"])
-    for th in (res or {}).get("threads") or []:
-        for t in th.get("tasks") or []:
-            have[t["title"]] = t
+    res = api("GET", "/api/agent/tasks?all=1")
+    for t in (res or {}).get("tasks") or []:
+        have[t["title"]] = t
     named = set()
     for title, status, summary in lines:
         title = title.strip()
@@ -86,11 +96,95 @@ def keep_tasks(p):
         if cur:
             api("PATCH", "/api/agent/tasks/" + cur["id"], fields)
         else:
-            fields.update({"thread_id": p["thread_id"], "title": title})
+            fields.update({"title": title})
             api("POST", "/api/agent/tasks", fields)
     for title, t in have.items():
         if title not in named and title in body:
             api("PATCH", "/api/agent/tasks/" + t["id"], {"message_ids": [p["id"]]})
+
+
+WORK = re.compile(r"\b(fix|add|implement|make|build|write|update|remove|refactor|investigate|create|change|bump|migrate|rename|delete|support)\b|作って|直して|追加|修正|実装|調べて", re.I)
+STOP = set("this that with from have please also make into about when them they their should could would there some test tests page look sure just still again what which where will your more than then here been does done need want like only very much thanks thank".split())
+
+
+def words(text):
+    return {w.strip(".-#") for w in re.findall(r"[#a-z0-9][a-z0-9.\-]*", text.lower())}
+
+
+def title_from(text):
+    s = re.sub(r"^(please|could you|can you|pls)\s+", "", text.split("\n")[0], flags=re.I).rstrip(".?!。").strip()
+    s = s[:1].upper() + s[1:]
+    return s[:64]
+
+
+def say(body, task_ids=None, **extra):
+    m = {"body": body, **extra}
+    if task_ids:
+        m["task_ids"] = task_ids
+    r = api("POST", "/api/agent/messages", m)
+    out(f"replied {r.get('decision', '')} {r.get('task_ids')}")
+    return r
+
+
+def decide(p):
+    """The fake agent's turn for a stream message of the person (the prototype's rules)."""
+    body = (p.get("body") or "").strip()
+    api("POST", "/api/agent/status", {"status": "working"})
+    try:
+        turn(p, body)
+    finally:
+        time.sleep(0.2)
+        api("POST", "/api/agent/status", {"status": "idle"})
+
+
+def turn(p, body):
+    if p.get("kind") == "continue":
+        gid = re.search(r"Goal (tsk_[0-9a-f]+)", body).group(1)
+        continued[gid] = continued.get(gid, 0) + 1
+        if continued[gid] >= 2:
+            g = api("GET", "/api/agent/tasks?all=1")
+            crit = next((t.get("criteria") or [] for t in g.get("tasks") or [] if t["id"] == gid), [])
+            api("PATCH", "/api/agent/tasks/" + gid, {"check_criteria": list(range(1, len(crit) + 1))})
+            say("All criteria are met; the goal is done.", [gid])
+        else:
+            say(f"Goal progress: step {continued[gid]} done.", [gid])
+        return
+    if body.startswith("## Answers") or "Answers to your questions" in body:
+        say("Thanks, carrying on with that.")
+        return
+    tasks = [t for t in (api("GET", "/api/agent/tasks?all=1").get("tasks") or []) if t["status"] != "done"]
+    if body.startswith("GOAL:"):
+        lines = body.split("\n")
+        crit = [{"text": l[2:].strip()} for l in lines[1:] if l.startswith("- ")]
+        g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].strip(), "kind": "goal", "criteria": crit, "autonomous": True})
+        say(f"Goal set: {g['task']['title']}. I will keep going until it is met.")
+        return
+    if "ASK" in body:
+        named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
+        say("One decision first.\n\n:::question\nWhich region should it deploy to?\n- [ ] Tokyo\n- [ ] Oregon\nRecommended: Tokyo\n:::", named[:1])
+        return
+    if p.get("tasks"):
+        t0 = p["tasks"][0]
+        say(f"Noted for “{t0['title']}”.")
+        return
+    ws = words(body)
+    hits = []
+    for t in tasks:
+        kws = {w for w in words(t["title"]) if len(w) >= 4 and w not in STOP}
+        n = len(kws & ws)
+        if n:
+            hits.append((n, t))
+    if hits:
+        hits.sort(key=lambda x: -x[0])
+        t = hits[0][1]
+        say(f"Got it, adding this to “{t['title']}”.", [t["id"]])
+        return
+    if WORK.search(body) or len(body) > 90:
+        title = title_from(body)
+        api("POST", "/api/agent/tasks", {"title": title, "steps": [{"text": "Look into it"}, {"text": "Make the change"}, {"text": "Test it"}, {"text": "Open a PR"}]})
+        say(f"On it. I created a task for this (“{title}”) and will report progress there.")
+        return
+    say("Sure — noted.")
 
 
 def poll():
@@ -112,6 +206,11 @@ def poll():
                         keep_tasks(p)
                     except Exception as e:
                         out(f"tasks: {e}")
+                    if answering and p.get("stream"):
+                        try:
+                            decide(p)
+                        except Exception as e:
+                            out(f"decide: {e}")
         except Exception as e:  # server restarting
             time.sleep(1)
 
@@ -152,6 +251,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         out(f"status {line}")
     elif line in ("deaf", "listen"):
         deaf = line == "deaf"
+        out(f"status {line}")
+    elif line in ("agent off", "agent on"):
+        answering = line == "agent on"
         out(f"status {line}")
     elif line in ("work", "idle"):
         busy = line == "work"

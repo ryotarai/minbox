@@ -50,6 +50,7 @@ import {
   readPath,
   SEND_DESCRIPTION,
   SEND_SCHEMA,
+  sendRequest,
   SEND_TOOL,
   sentText,
   serverUrlOf,
@@ -448,24 +449,9 @@ export function createCore(deps: Deps) {
       description: SEND_DESCRIPTION,
       input: SEND_SCHEMA,
       async execute(e: any) {
-        const body = typeof e?.body === 'string' ? e.body : ''
-        if (!body.trim()) throw new Error('body is required.')
-        if (e.status !== 'working' && e.status !== 'need_action' && e.status !== 'blocked' && e.status !== 'finished') {
-          throw new Error('status is required: working (you carry on), need_action (you need the person), blocked (you wait on something outside them) or finished (the task is done). Send the message again with it.')
-        }
-        const title = typeof e.thread_title === 'string' && e.thread_title.trim() ? e.thread_title : typeof e.subject === 'string' ? e.subject : ''
-        if (!title.trim()) {
-          throw new Error('thread_title is required: name what the thread is about now, in about 30 characters or fewer. Send the message again with it.')
-        }
-        const res = await api('POST', '/api/agent/messages', {
-          body,
-          thread_title: title,
-          thread_id: typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : undefined,
-          name: typeof e.name === 'string' && e.name ? e.name : undefined,
-          status: e.status,
-          attachments: Array.isArray(e.attachments) ? e.attachments.filter((a: unknown) => typeof a === 'string') : undefined,
-          review: e.review && typeof e.review === 'object' ? e.review : undefined,
-        })
+        const req = sendRequest(e)
+        if ('error' in req) throw new Error(req.error)
+        const res = await api('POST', '/api/agent/messages', req.body)
         if (!res.ok) fail(res)
         return ok(sentText(res.json))
       },

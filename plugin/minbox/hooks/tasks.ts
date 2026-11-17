@@ -1,56 +1,71 @@
 // The task tools of the minbox mod, the Pi extension and the OpenCode plugin (all import this file,
 // as they do text.ts and nav.ts): create_task, update_task and list_tasks. The agent keeps the
-// person's Tasks board with them (/api/agent/tasks); this file holds their descriptions and schemas,
-// the request of a call and the text an answer becomes. Self-contained (no imports), so every
-// runtime loads it.
+// person's Board with them (/api/agent/tasks, v3: docs/v3/api.md); this file holds their
+// descriptions and schemas, the request of a call and the text an answer becomes. Self-contained (no
+// imports), so every runtime loads it.
 
 export const TASK_TOOLS = ['create_task', 'update_task', 'list_tasks'] as const
 export type TaskTool = (typeof TASK_TOOLS)[number]
 
-const STATUSES = ['in_progress', 'waiting_on_you', 'done']
+const STATUSES = ['working', 'needs_you', 'blocked', 'done']
 
 const STATUS_GUIDE =
-  'in_progress: you are working on it (the default). waiting_on_you: you are blocked on the person: a decision, an answer or an action only they can take; not for a plain report or an optional "let me know". done: finished, delivered, or dropped.'
+  'working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.'
+
+const STEP_ITEM = {
+  type: 'object',
+  properties: {
+    text: { type: 'string' },
+    done: { type: 'boolean' },
+    steps: { type: 'array', description: 'Sub-steps (one level).', items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'] } },
+  },
+  required: ['text'],
+  additionalProperties: false,
+}
 
 const STEPS_SCHEMA = {
   type: 'array',
-  description: 'The checklist of the task: short imperative steps, in order, each with done. Replaces the current steps.',
-  items: {
-    type: 'object',
-    properties: { text: { type: 'string' }, done: { type: 'boolean' } },
-    required: ['text'],
-    additionalProperties: false,
-  },
+  description: 'The checklist: short imperative steps, in order, each with done (sub-steps nest one level). Replaces the current steps.',
+  items: STEP_ITEM,
+}
+
+const CRITERIA_SCHEMA = {
+  type: 'array',
+  description: 'A goal\'s "done when" criteria: checkable outcomes (e.g. "CI is green on the PR"). Replaces the current ones.',
+  items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'], additionalProperties: false },
 }
 
 export const TASK_DESCRIPTION: Record<TaskTool, string> = {
   create_task: [
-    "Add a task to the person's minbox Tasks board (columns In progress · Waiting on you · Done): the board is how they see what each thread is working on, and only you fill it in.",
-    'Create one when you start a distinct piece of work the person asked for (a feature, a bug, an investigation, a question to settle); one thread can have several. Not for the small steps inside one piece of work: those are its `steps`.',
-    'Give a short title, a one-line summary of where it stands and, for larger work, steps as a checklist. Then keep it current with update_task: tick the steps as you go and set the status when it changes.',
-    'It returns the task id. Pass the thread_id of the thread the work belongs to (the one its request came in).',
+    "Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in.",
+    'Create one when the person asks for new work (a feature, a bug, an investigation): the message that asked for it, and your replies in this turn, are tagged with it by themselves. Not for small steps inside one piece of work (those are its `steps`), not for a quick answer.',
+    'kind "goal": an outcome to keep pursuing until its `criteria` are met ("keep going until CI is green"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.',
+    'It returns the task id; keep the task current with update_task.',
   ].join(' '),
   update_task: [
-    'Update one of your tasks on the minbox Tasks board by its task_id (from create_task or list_tasks). Pass only what changed.',
-    'Tick steps as you finish them (check_steps: their numbers, from 1), or replace the whole checklist with steps. Keep the summary saying where it stands.',
-    'Set status waiting_on_you only while you are truly blocked on the person (and ask them with send_message), back to in_progress when you continue, done when it is finished or dropped.',
-    'The person can also move a card by hand; your next status replaces their move, so set one only when it really changed.',
+    'Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.',
+    'Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.',
+    'Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. report: a short "where it stands" the person reads on the Board.',
+    'message_ids tags earlier messages with the task.',
   ].join(' '),
   list_tasks:
-    "List your tasks on the minbox Tasks board with their ids, status and steps: this session's threads that have tasks, or one thread's with thread_id. Use it to find a task's id (e.g. after a compaction) before update_task, and to see what the person moved by hand.",
+    "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
 }
 
 export const TASK_SCHEMA: Record<TaskTool, object> = {
   create_task: {
     type: 'object',
     properties: {
-      thread_id: { type: 'string', description: "The thread the work belongs to. Leave out only when you have a single thread: then the session's most recent thread." },
       title: { type: 'string', description: "A short name for the work (2 to 8 words), in the person's language." },
+      kind: { type: 'string', enum: ['task', 'goal'], description: 'task (default) or goal (an outcome pursued until its criteria are met).' },
+      goal_id: { type: 'string', description: 'The goal this task serves.' },
       summary: { type: 'string', description: 'One line on where it stands now.' },
-      detail: { type: 'string', description: 'Optional: a few sentences (Markdown) on what it is about, what was decided, what is left. Shown in the task pane.' },
+      detail: { type: 'string', description: 'Optional: a few sentences (Markdown) on what it is about, what was decided, what is left.' },
       status: { type: 'string', enum: STATUSES, description: STATUS_GUIDE },
       steps: STEPS_SCHEMA,
-      message_ids: { type: 'array', items: { type: 'string' }, description: "Ids of the thread's messages about it. Default: the thread's newest message." },
+      criteria: CRITERIA_SCHEMA,
+      autonomous: { type: 'boolean', description: 'Goals only: minbox keeps continuing you until the criteria are met. Only when the person asked for it.' },
+      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of earlier messages about it (the ones of this turn are tagged anyway).' },
     },
     required: ['title'],
     additionalProperties: false,
@@ -58,15 +73,19 @@ export const TASK_SCHEMA: Record<TaskTool, object> = {
   update_task: {
     type: 'object',
     properties: {
-      task_id: { type: 'string', description: 'The task to update (from create_task or list_tasks).' },
+      task_id: { type: 'string', description: 'The task or goal to update (from create_task or list_tasks).' },
       title: { type: 'string' },
       summary: { type: 'string', description: 'One line on where it stands now.' },
       detail: { type: 'string', description: 'The fuller summary (Markdown); replaces the current one.' },
+      report: { type: 'string', description: 'The latest report the person reads on the Board.' },
       status: { type: 'string', enum: STATUSES, description: STATUS_GUIDE },
       steps: STEPS_SCHEMA,
-      check_steps: { type: 'array', items: { type: 'number' }, description: 'Numbers (from 1) of steps that are now done.' },
+      check_steps: { type: 'array', items: { type: 'number' }, description: 'Numbers (from 1, in reading order) of steps that are now done.' },
       uncheck_steps: { type: 'array', items: { type: 'number' }, description: 'Numbers (from 1) of steps that are not done after all.' },
-      message_ids: { type: 'array', items: { type: 'string' }, description: "Ids of more messages of the thread about it (added to the task's related messages)." },
+      criteria: CRITERIA_SCHEMA,
+      check_criteria: { type: 'array', items: { type: 'number' }, description: "Numbers (from 1) of a goal's criteria that are now met." },
+      goal_id: { type: 'string', description: 'The goal this task serves.' },
+      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of more messages about it (tagged with it).' },
     },
     required: ['task_id'],
     additionalProperties: false,
@@ -74,7 +93,7 @@ export const TASK_SCHEMA: Record<TaskTool, object> = {
   list_tasks: {
     type: 'object',
     properties: {
-      thread_id: { type: 'string', description: "Only this thread's tasks." },
+      all: { type: 'boolean', description: "Every open task of the project, not only yours." },
     },
     additionalProperties: false,
   },
@@ -85,85 +104,89 @@ export type TaskRequest = { method: 'GET' | 'POST' | 'PATCH'; path: string; body
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : undefined)
 const nums = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number' && Number.isFinite(x)).map((x) => Math.floor(x)) : undefined)
-const steps = (v: unknown) =>
-  Array.isArray(v)
-    ? v
-        .filter((s) => s && typeof s === 'object' && typeof (s as any).text === 'string')
-        .map((s: any) => ({ text: String(s.text), done: s.done === true }))
-    : undefined
+const step = (s: any): any => ({ text: String(s.text), done: s.done === true, ...(Array.isArray(s.steps) && s.steps.length ? { steps: s.steps.filter((c: any) => c && typeof c.text === 'string').map((c: any) => ({ text: String(c.text), done: c.done === true })) } : {}) })
+const steps = (v: unknown) => (Array.isArray(v) ? v.filter((s) => s && typeof s === 'object' && typeof (s as any).text === 'string').map(step) : undefined)
 
 /** The fields of a call that the server takes, unset ones left out. */
 function fields(e: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {
     title: str(e.title),
+    kind: str(e.kind),
+    goal_id: str(e.goal_id),
     summary: typeof e.summary === 'string' ? e.summary : undefined,
     detail: typeof e.detail === 'string' ? e.detail : undefined,
+    report: typeof e.report === 'string' ? e.report : undefined,
     status: str(e.status),
     steps: steps(e.steps),
+    criteria: steps(e.criteria),
+    autonomous: typeof e.autonomous === 'boolean' ? e.autonomous : undefined,
     message_ids: strs(e.message_ids),
   }
   for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k]
   return out
 }
 
-/**
- * The API request of a task tool's call, or an error for the agent. defaultThread is the thread the
- * integration knows the agent is answering (create_task and list_tasks use it when thread_id is left out).
- */
-export function taskRequest(tool: TaskTool, e: Record<string, unknown>, defaultThread?: string): TaskRequest | { error: string } {
+/** The API request of a task tool's call, or an error for the agent. */
+export function taskRequest(tool: TaskTool, e: Record<string, unknown>, _defaultThread?: string): TaskRequest | { error: string } {
   switch (tool) {
     case 'create_task': {
       if (!str(e.title)) return { error: 'title is required: a short name for the work.' }
-      const thread = str(e.thread_id) ?? defaultThread
-      return { method: 'POST', path: '/api/agent/tasks', body: { ...fields(e), ...(thread ? { thread_id: thread } : {}) } }
+      return { method: 'POST', path: '/api/agent/tasks', body: fields(e) }
     }
     case 'update_task': {
       const id = str(e.task_id)
       if (!id) return { error: 'task_id is required (from create_task or list_tasks).' }
       const body = fields(e)
-      const check = nums(e.check_steps)
-      const uncheck = nums(e.uncheck_steps)
-      if (check?.length) body.check_steps = check
-      if (uncheck?.length) body.uncheck_steps = uncheck
-      if (Object.keys(body).length === 0) return { error: 'nothing to update: pass status, summary, steps, check_steps, … ' }
+      for (const k of ['check_steps', 'uncheck_steps', 'check_criteria'] as const) {
+        const v = nums(e[k])
+        if (v?.length) body[k] = v
+      }
+      if (Object.keys(body).length === 0) return { error: 'nothing to update: pass status, report, steps, check_steps, check_criteria, … ' }
       return { method: 'PATCH', path: `/api/agent/tasks/${encodeURIComponent(id)}`, body }
     }
-    case 'list_tasks': {
-      const thread = str(e.thread_id)
-      return { method: 'GET', path: `/api/agent/tasks${thread ? `?thread_id=${encodeURIComponent(thread)}` : ''}` }
-    }
+    case 'list_tasks':
+      return { method: 'GET', path: `/api/agent/tasks${e.all === true ? '?all=1' : ''}` }
   }
 }
 
 const oneLine = (s: unknown) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : '')
 
-/** A task as the agent reads it back: id, status, title, summary, steps. */
+/** A task as the agent reads it back: id, kind, status, title, summary, steps, criteria. */
 export function taskLines(t: any): string[] {
-  const manual = t?.manual_status ? ` (the person moved it to ${t.manual_status} by hand)` : ''
-  const lines = [`- ${t?.id} [${t?.status}]${manual} ${oneLine(t?.title)}${t?.summary ? ` — ${oneLine(t.summary)}` : ''}`]
-  const ks: any[] = Array.isArray(t?.tasks) ? t.tasks : []
-  ks.forEach((k, i) => lines.push(`  ${i + 1}. [${k?.done ? 'x' : ' '}] ${oneLine(k?.text)}`))
+  const manual = t?.manual_status ? ` (the person set it to ${t.manual_status} by hand)` : ''
+  const goal = t?.kind === 'goal' ? 'goal ' : ''
+  const auto = t?.auto?.state === 'running' ? ' [autonomous run on]' : ''
+  const parent = t?.parent_id ? ` (serves goal ${t.parent_id})` : ''
+  const lines = [`- ${goal}${t?.id} [${t?.status}]${manual}${auto} ${oneLine(t?.title)}${parent}${t?.summary ? ` — ${oneLine(t.summary)}` : ''}`]
+  const ks: any[] = Array.isArray(t?.steps) ? t.steps : Array.isArray(t?.tasks) ? t.tasks : []
+  let n = 0
+  for (const k of ks) {
+    lines.push(`  ${++n}. [${k?.done ? 'x' : ' '}] ${oneLine(k?.text)}`)
+    for (const c of Array.isArray(k?.steps) ? k.steps : []) lines.push(`    ${++n}. [${c?.done ? 'x' : ' '}] ${oneLine(c?.text)}`)
+  }
+  const cs: any[] = Array.isArray(t?.criteria) ? t.criteria : []
+  if (cs.length) {
+    lines.push('  Done when:')
+    cs.forEach((c, i) => lines.push(`  c${i + 1}. [${c?.done ? 'x' : ' '}] ${oneLine(c?.text)}`))
+  }
   return lines
 }
 
 /** What a task tool returns to the agent. */
 export function taskText(tool: TaskTool, v: any): string {
+  const t = v?.task ?? v
   switch (tool) {
-    case 'create_task':
-      return [`Task created in thread ${v?.thread_id} (task_id ${v?.id}). Keep it current with update_task.`, ...taskLines(v)].join('\n')
+    case 'create_task': {
+      const tagged = Array.isArray(v?.tagged_messages) && v.tagged_messages.length ? ` The person's message${v.tagged_messages.length > 1 ? 's' : ''} of this turn and your replies in it are tagged with it.` : ''
+      return [`${t?.kind === 'goal' ? 'Goal' : 'Task'} created (task_id ${t?.id}).${tagged} Keep it current with update_task.`, ...taskLines(t)].join('\n')
+    }
     case 'update_task':
-      return ['Task updated.', ...taskLines(v)].join('\n')
+      return [`${t?.kind === 'goal' ? 'Goal' : 'Task'} updated.`, ...taskLines(t)].join('\n')
     case 'list_tasks': {
-      const ths: any[] = Array.isArray(v?.threads) ? v.threads : []
-      if (ths.length === 0) return 'No tasks yet.'
-      const out: string[] = []
-      for (const th of ths) {
-        out.push(`Thread ${th.id} "${oneLine(th.subject)}":`)
-        const ts: any[] = Array.isArray(th.tasks) ? th.tasks : []
-        if (ts.length === 0) out.push('  (no tasks)')
-        for (const t of ts) out.push(...taskLines(t))
-      }
-      return out.join('\n')
+      let ts: any[] = Array.isArray(v?.tasks) ? v.tasks : []
+      if (ts.length === 0 && Array.isArray(v?.threads)) ts = v.threads.flatMap((th: any) => (Array.isArray(th?.tasks) ? th.tasks : []))
+      if (ts.length === 0) return 'No tasks yet.'
+      return ts.flatMap((x) => taskLines(x)).join('\n')
     }
   }
 }

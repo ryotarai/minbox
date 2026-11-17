@@ -27,7 +27,7 @@ func TestOrchestratorPromptSetting(t *testing.T) {
 	if !strings.HasPrefix(p, AgentSystemPrompt) || !strings.Contains(p, OrchestratorPrompt) {
 		t.Fatalf("prompt = %q", p)
 	}
-	for _, want := range []string{"ALWAYS start one subagent per thread", "own git worktree", "merge conflicts", "you resolve them when you merge", "not a git repository"} {
+	for _, want := range []string{"ALWAYS start one subagent per task", "own git worktree", "merge conflicts", "you resolve them when you merge", "not a git repository"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("prompt lacks %q", want)
 		}
