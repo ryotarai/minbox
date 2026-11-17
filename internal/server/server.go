@@ -199,6 +199,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		log.Printf("commands: %v", err)
 	}
 	s.handler = s.routes()
+	go s.runGoals(2 * time.Second)
 	return s
 }
 
@@ -326,6 +327,19 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/topics", s.listTopics)
 	mux.HandleFunc("GET /api/topics/{id}", s.getTopic)
 	mux.HandleFunc("PATCH /api/topics/{id}", s.patchTopic)
+	mux.HandleFunc("GET /api/v3/board", s.v3Board)
+	mux.HandleFunc("GET /api/v3/tasks/{id}", s.v3Task)
+	mux.HandleFunc("PATCH /api/v3/tasks/{id}", s.v3PatchTask)
+	mux.HandleFunc("POST /api/v3/tasks", s.v3CreateTask)
+	mux.HandleFunc("POST /api/v3/tasks/{id}/auto", s.v3Auto)
+	mux.HandleFunc("GET /api/v3/sessions/{id}/stream", s.v3Stream)
+	mux.HandleFunc("POST /api/v3/sessions/{id}/messages", s.v3Send)
+	mux.HandleFunc("POST /api/v3/new", s.v3New)
+	mux.HandleFunc("POST /api/v3/messages/{id}/tags", s.v3Tag)
+	mux.HandleFunc("DELETE /api/v3/messages/{id}/tags/{task}", s.v3Untag)
+	mux.HandleFunc("POST /api/v3/messages/{id}/retag", s.v3Retag)
+	mux.HandleFunc("POST /api/v3/read", s.v3Read)
+	mux.HandleFunc("GET /api/v3/search", s.v3Search)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/notifications", s.listNotifications)

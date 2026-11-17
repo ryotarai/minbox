@@ -41,20 +41,15 @@ func TestAgentThreadTitle(t *testing.T) {
 	if got := subject(id); got != "new" {
 		t.Fatalf("thread_title should win: %q", got)
 	}
+	// v3: without a thread_id every message goes to the session's one stream; a title is optional.
 	id2 := send(map[string]any{"body": "Derived title here"})
-	if got := subject(id2); got != "Derived title here" {
-		t.Fatalf("derived %q", got)
+	if id2 != id || send(map[string]any{"body": "again"}) != id {
+		t.Fatalf("not the stream: %s %s", id, id2)
 	}
 	long := send(map[string]any{"body": "x", "thread_title": "line one\n\nline   two " + strings.Repeat("あ", 200)})
 	got := subject(long)
 	if strings.ContainsAny(got, "\n\t") || strings.Contains(got, "  ") || got != "line one line two "+strings.Repeat("あ", 200) {
 		t.Fatalf("not collapsed to one full line: %q (%d)", got, len([]rune(got)))
-	}
-	// A new thread without a title takes the whole first line, uncut.
-	fl := strings.Repeat("い", 150)
-	id3 := send(map[string]any{"body": fl + "\nsecond"})
-	if got := subject(id3); got != fl {
-		t.Fatalf("first-line subject cut: %q", got)
 	}
 }
 

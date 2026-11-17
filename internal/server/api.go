@@ -417,6 +417,8 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		ForwardTo   string             `json:"forward_to"`
 		Resume      bool               `json:"resume"`
 		Uploads     []string           `json:"uploads"`
+		// TaskIDs (v3): tags of the message (it was written from a task's view).
+		TaskIDs []string `json:"task_ids"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -498,7 +500,9 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		body += sec
 	}
 	// Replying means the person has seen the thread.
-	_, _ = s.store.MarkThreadRead(ctx, id)
+	if th.Kind != store.ThreadStream { // v3: the views mark what they show (POST /api/v3/read)
+		_, _ = s.store.MarkThreadRead(ctx, id)
+	}
 
 	if req.ForwardTo != "" {
 		// Where should this reply go: a new thread in another session.
@@ -539,6 +543,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	if atts, err := s.store.AttachmentsOfMessage(ctx, msg.ID); err == nil {
 		msg.Attachments = atts
 	}
+	s.v3TagPersonMessage(ctx, th.SessionID, msg.ID, req.TaskIDs, m.AnswersFor)
 	s.publishThread(th.SessionID, id)
 	s.wakePending(th.SessionID)
 	if req.Resume {
@@ -717,6 +722,11 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 		httpError(w, 400, "status must be working or idle")
 		return
 	}
+	if req.Status == store.StatusIdle {
+		v3Turns.end(sess.ID)
+		noteIdle(sess.ID)
+		defer func() { go s.goalTick() }()
+	}
 	if sess.Status != store.StatusEnded && sess.Status != req.Status {
 		if err := s.store.SetSessionStatus(r.Context(), sess.ID, req.Status); err != nil {
 			storeError(w, err)
@@ -785,6 +795,8 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		Attachments []string   `json:"attachments"`
 		Review      *reviewReq `json:"review"`
 		Status      string     `json:"status"`
+		// TaskIDs (v3): the tasks the message is about; the turn's untagged messages of the person get them too.
+		TaskIDs []string `json:"task_ids"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -793,10 +805,18 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if strings.TrimSpace(req.Status) != "" {
 		v, ok := store.NormalizeThreadStatus(req.Status)
 		if !ok {
-			httpError(w, 400, "unknown status "+req.Status+" (working, need_action, blocked or finished)")
-			return
+			if _, isTask := store.NormalizeTaskStatus(req.Status); !isTask {
+				httpError(w, 400, "unknown status "+req.Status+" (working, needs_you, blocked or done)")
+				return
+			}
+			v = store.ThreadWorking
 		}
 		status = v
+	}
+	taskIDs, msg := s.sameProjectTasks(r.Context(), sess, req.TaskIDs)
+	if msg != "" {
+		httpError(w, 404, msg)
+		return
 	}
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
@@ -844,7 +864,16 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		title = cleanTitle(req.Subject)
 	}
 	var threadID, messageID, subject string
-	isNew := req.ThreadID == ""
+	isNew := false
+	if req.ThreadID == "" {
+		// v3: the session's stream.
+		stream, err := s.store.StreamThread(ctx, sess.ID)
+		if err != nil {
+			storeError(w, err)
+			return
+		}
+		req.ThreadID = stream
+	}
 	if !isNew {
 		th, err := s.store.GetThread(ctx, req.ThreadID)
 		if err != nil || th.SessionID != sess.ID {
@@ -914,7 +943,11 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			return
 		}
 	}
+	tagged, decision := s.v3AgentReply(ctx, sess, messageID, taskIDs, req.Status)
 	s.publishThread(sess.ID, threadID)
+	if subject == "" {
+		subject = firstLine(body)
+	}
 	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body, len(questions) > 0, s.artifactFiles(snaps, inline))
 	type qInfo struct {
 		Key    string `json:"key"`
@@ -925,7 +958,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	for _, q := range questions {
 		qs = append(qs, qInfo{q.Key, q.Kind, q.Prompt})
 	}
-	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs,
+	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_ids": tagged, "decision": decision,
 		"attachments": attsOut, "images_not_shown": notShown})
 }
 
@@ -961,6 +994,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
 			s.commandInject(r.Context(), pending)
+			s.v3Inject(r.Context(), pending)
 			s.modPendingServed(sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
@@ -972,6 +1006,7 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			s.linearInject(r.Context(), pending)
 			s.forkInject(r.Context(), sess.ID, pending)
 			s.commandInject(r.Context(), pending)
+			s.v3Inject(r.Context(), pending)
 			s.modPendingServed(sess.ID, pending)
 			writeJSON(w, 200, pending)
 			return
