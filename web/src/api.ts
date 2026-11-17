@@ -859,7 +859,7 @@ export type About = {
   data_dir: string
 }
 
-export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'topics' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'slack' | 'open'; session_id?: string; thread_id?: string; url?: string }
+export type ServerEvent = { type: 'sessions' | 'threads' | 'thread' | 'topics' | 'tasks' | 'settings' | 'hosts' | 'devices' | 'projects' | 'notifications' | 'linear' | 'slack' | 'open'; session_id?: string; thread_id?: string; url?: string }
 
 export class ApiError extends Error {
   constructor(
@@ -889,7 +889,7 @@ export async function ensureSession(): Promise<void> {
   await Promise.race([probe, new Promise((r) => setTimeout(r, 6000))])
 }
 
-async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const send = () =>
     fetch(path, {
       method,
