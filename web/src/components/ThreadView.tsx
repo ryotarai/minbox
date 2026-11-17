@@ -471,7 +471,8 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
 
   useHotkeys(
     {
-      r: () => replyRef.current?.focus(),
+      // With text selected in a message (the Reply bubble shown), R quotes it, as the bubble does.
+      r: () => (quote ? quoteIntoReply() : replyRef.current?.focus()),
       e: markRead,
       'shift+e': archive,
       j: () => step(1),
@@ -712,10 +713,12 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => e.preventDefault()} // a tap must not clear the selection before the click
           onClick={quoteIntoReply}
+          title={phone ? undefined : 'Reply (R)'}
           style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
           className="fixed z-[30] flex h-8 items-center gap-1.5 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] font-semibold text-fg shadow-pop hover:bg-raised"
         >
           ❝ Reply
+          {!phone && <Kbd className="ml-0.5 font-normal">R</Kbd>}
         </button>
       )}
 
