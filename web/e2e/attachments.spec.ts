@@ -62,6 +62,54 @@ test('each kind of attached file opens in its own viewer; a code line comment re
   expect(await joined(page)).toContain('> Use fmt here.')
 })
 
+test('Full screen covers the window and toggles back, by the button, F and Esc, also from inside an HTML page', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'kinds')
+  await expectTerminal(page, 'ready>')
+  await typeInTerminal(page, 'kinds')
+  await expectTerminal(page, /sent kinds in thr_\w+ 8/)
+  await page.getByTestId('thread-row').filter({ hasText: 'Many kinds' }).click()
+  const viewer = page.getByTestId('attachment-viewer')
+  const button = viewer.getByTestId('fullscreen')
+  const width = async () => (await viewer.boundingBox())!.width
+  for (const name of ['page.html', 'data.json']) {
+    await page.getByRole('button', { name: new RegExp(`(Open|View) ${name.replace('.', '\\.')}`) }).click()
+    await expect(viewer.getByRole('tab', { selected: true })).toHaveText(name)
+    // Beside the thread, with the Terminal tab next to the file's.
+    await expect(viewer.getByTestId('tab-terminal')).toBeVisible()
+    expect(await width()).toBeLessThan(1000)
+    await button.click()
+    await expect(button).toContainText('Exit full screen')
+    await expect.poll(width).toBe(1500)
+    expect((await viewer.boundingBox())!.x).toBe(0)
+    await button.click()
+    await expect(button).toContainText(/^.*Full screen/)
+    await expect(button).not.toContainText('Exit')
+    await expect.poll(width).toBeLessThan(1000)
+  }
+
+  // F and Esc with the focus on the page.
+  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('f')
+  await expect.poll(width).toBe(1500)
+  await page.keyboard.press('Escape')
+  await expect.poll(width).toBeLessThan(1000)
+  await expect(viewer).toBeVisible()
+
+  // F and Esc after a click inside the HTML page's sandboxed frame.
+  await page.getByRole('button', { name: /(Open|View) page\.html/ }).click()
+  const frame = viewer.frameLocator('[data-testid="html-view"]')
+  await frame.locator('#t').click()
+  await page.keyboard.press('f')
+  await expect(button).toContainText('Exit full screen')
+  await expect.poll(width).toBe(1500)
+  await frame.locator('#t').click()
+  await page.keyboard.press('Escape')
+  await expect.poll(width).toBeLessThan(1000)
+  await expect(viewer).toBeVisible()
+})
+
 test('the body draws diagrams and pages, shows its images, and its links to attached files open beside', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'rich')

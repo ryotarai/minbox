@@ -107,7 +107,8 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
   const folded = phone || paneW < FOLD_PANEL_BELOW
 
   return (
-    <div ref={paneRef} className={cx('relative flex min-w-0 bg-sunken', phone ? 'min-h-0 flex-1' : 'h-full', full && !phone && 'fixed inset-0 z-40')} data-testid="attachment-viewer" data-type={t ?? ''}>
+    // One position class only: with both, Tailwind's .relative comes later in the CSS and wins over .fixed.
+    <div ref={paneRef} className={cx('flex min-w-0 bg-sunken', phone ? 'relative min-h-0 flex-1' : full ? 'fixed inset-0 z-40' : 'relative h-full')} data-testid="attachment-viewer" data-type={t ?? ''}>
       <div className="flex min-w-0 flex-1 flex-col">
         {phone ? (
           <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line bg-surface pl-4 pr-1.5" data-testid="phone-viewer-header">
@@ -572,7 +573,9 @@ const ANNOTATE_SCRIPT = `<script>(function(){var on=false,last=null;function mar
 addEventListener('message',function(e){if(e.data&&e.data.mbAnnotate!==undefined){on=!!e.data.mbAnnotate;if(!on)mark(null)}});
 document.addEventListener('mouseover',function(e){if(on)mark(e.target)},true);
 document.addEventListener('click',function(e){if(!on)return;e.preventDefault();e.stopPropagation();var el=e.target,r=el.getBoundingClientRect();
-parent.postMessage({mbPin:1,tag:el.tagName.toLowerCase(),text:(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim().slice(0,200),x:r.left,y:r.bottom},'*')},true)})()</script>`
+parent.postMessage({mbPin:1,tag:el.tagName.toLowerCase(),text:(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim().slice(0,200),x:r.left,y:r.bottom},'*')},true);
+addEventListener('keydown',function(e){if(e.defaultPrevented||e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;var t=e.target;if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))return;
+if(e.key==='f'||e.key==='Escape')parent.postMessage({mbKey:e.key},'*')})})()</script>`
 
 function HtmlView({ d, version, bodyRef, onPin }: { d: AttachmentDetail; version: Version; bodyRef: React.RefObject<HTMLDivElement | null>; onPin: (p: Pending) => void }) {
   const [doc, setDoc] = useState<string | null>(null)
@@ -590,7 +593,12 @@ function HtmlView({ d, version, bodyRef, onPin }: { d: AttachmentDetail; version
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow) return
-      const m = e.data as { mbPin?: number; tag: string; text: string; x: number; y: number }
+      const m = e.data as { mbPin?: number; mbKey?: string; tag: string; text: string; x: number; y: number }
+      // F and Esc pressed inside the page (focus in the frame): the viewer's shortcuts, as if pressed outside.
+      if (typeof m?.mbKey === 'string' && (m.mbKey === 'f' || m.mbKey === 'Escape')) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: m.mbKey }))
+        return
+      }
       if (m?.mbPin !== 1) return
       const fr = frame.current!.getBoundingClientRect()
       const box = bodyRef.current!.getBoundingClientRect()
