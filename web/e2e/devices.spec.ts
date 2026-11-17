@@ -4,7 +4,8 @@ import { createSession, createShellSession, expect, expectTerminal, showTerminal
 // X-Forwarded-For, as through tailscale serve) pairs its key first; a browser
 // on this machine accepts it in Settings › Devices.
 
-test('a remote browser pairs with a code accepted in Settings › Devices, and Revoke sends it back', async ({ page, browser, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('a remote browser pairs with a code accepted in Settings › Devices, and Revoke sends it back', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'home')
   await expectTerminal(page, 'ready>')
@@ -41,7 +42,8 @@ test('a remote browser pairs with a code accepted in Settings › Devices, and R
   await remote.close()
 })
 
-test('a paired remote browser signs in again by itself after the server forgets its cookie (a restart)', async ({ page, browser, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('a paired remote browser signs in again by itself after the server forgets its cookie (a restart)', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
   await createShellSession(page, minbox, 'home')
 

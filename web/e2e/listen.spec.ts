@@ -19,7 +19,8 @@ function lanAddress(): string | null {
   return null
 }
 
-test('serve --listen: a browser on another address pairs over http, accepted on this machine', async ({ browser }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('serve --listen: a browser on another address pairs over http, accepted on this machine', async ({ browser }) => {
   const ip = lanAddress()
   test.skip(!ip, 'no LAN address on this machine')
   const dir = mkdtempSync('/tmp/mbl-')

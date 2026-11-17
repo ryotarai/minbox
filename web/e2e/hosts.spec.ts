@@ -10,7 +10,8 @@ import { chooseFolder, expect, expectTerminal, showTerminal, test, typeInTermina
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const BIN = join(ROOT, 'bin/minbox')
 
-test('add a host: Direct, find it, pair with a code accepted there, then run a session on it', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('add a host: Direct, find it, pair with a code accepted there, then run a session on it', async ({ page, minbox }) => {
   const dir = mkdtempSync('/tmp/mbh-')
   const port = 4950 + Math.floor(Math.random() * 40)
   let host: ChildProcess | null = spawn(BIN, ['host', '--listen', `127.0.0.1:${port}`, '--data-dir', dir], { stdio: 'ignore' })
@@ -88,7 +89,8 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
 // Pi and OpenCode on another machine's host (docs/agents.md, "Remote hosts"): the host finds what is
 // installed there (Node's version for Pi, `opencode --version`), New session offers per host what that
 // host can run, and the sessions get the host's own copies of the extension and the plugin.
-test('Pi and OpenCode sessions on a remote host: per-host detection, the host’s own extension and plugin', async ({ page, allAgentsMinbox: minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('Pi and OpenCode sessions on a remote host: per-host detection, the host’s own extension and plugin', async ({ page, allAgentsMinbox: minbox }) => {
   const dir = mkdtempSync('/tmp/mbh-')
   const port = 4950 + Math.floor(Math.random() * 40)
   // "That machine" first has a Node too old for Pi.

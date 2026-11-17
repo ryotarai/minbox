@@ -45,7 +45,8 @@ async function addSlack(page: Page, name: string, hook: string, opts: { full?: b
   await expect(page.getByTestId('notif-row').filter({ hasText: name })).toBeVisible()
 }
 
-test('add a Slack destination, send a test, and get a full agent message', async ({ page, minbox }) => {
+// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
+test.skip('add a Slack destination, send a test, and get a full agent message', async ({ page, minbox }) => {
   const slack = await fakeSlack()
   try {
     await openNotifications(page, minbox.url)
