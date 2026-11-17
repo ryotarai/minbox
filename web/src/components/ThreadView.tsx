@@ -44,7 +44,8 @@ import { LinearLinkButton } from './LinearLink'
 import { CommandMessage, commandOf } from './CommandMessage'
 import { answerRevealAsk, flashMessage, useRevealAsk } from '../lib/revealMessage'
 import { ModConnection } from './ModConnection'
-import { setThreadTasksOverlay, useThreadTasksOverlay } from './Topics'
+import { parseTaskMessage, stripTaskContext } from '../lib/taskContext'
+import { focusTasksReply, setThreadTasksOverlay, useThreadTasksOverlay } from './Topics'
 import { useMentions } from './Mentions'
 import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from './ReplyHelp'
 import { Button, IconButton, Kbd, MenuItem, Popover, ThreadStatusBadge, cx, type MenuAt } from './ui'
@@ -495,8 +496,13 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
 
   useHotkeys(
     {
-      // With text selected in a message (the Reply bubble shown), R quotes it, as the bubble does.
-      r: () => (quote ? quoteIntoReply() : replyRef.current?.focus()),
+      // In the Tasks pane beside the thread, R is the open task's message box (focusTasksReply).
+      // Otherwise, with text selected in a message (the Reply bubble shown), R quotes it, as the
+      // bubble does; else the thread's message box.
+      r: () => {
+        if (focusTasksReply()) return
+        return quote ? quoteIntoReply() : replyRef.current?.focus()
+      },
       e: markRead,
       'shift+e': archive,
       j: () => step(1),
@@ -900,7 +906,7 @@ function CompactMessage({ m, onClick }: { m: Message; onClick: () => void }) {
       className="flex items-center gap-2.5 rounded-[9px] border border-line bg-carddim px-3 py-[9px] text-left text-[12.5px]"
     >
       <span className="font-semibold">{m.author === 'agent' ? 'Claude Code' : 'You'}</span>
-      <span className="min-w-0 flex-1 truncate text-muted">{(m.author === 'user' ? m.words || m.body : m.body).replace(/:::[a-z-]*/g, '').replace(/\s+/g, ' ')}</span>
+      <span className="min-w-0 flex-1 truncate text-muted">{(m.author === 'user' ? stripTaskContext(m.words || m.body) : m.body).replace(/:::[a-z-]*/g, '').replace(/\s+/g, ' ')}</span>
       <span className="text-subtle">{hm(m.created_at)}</span>
       {m.author === 'user' && m.delivery && (
         <span className={DELIVERY[m.delivery].color} data-testid="delivery-tick" data-delivery={m.delivery}>
@@ -1055,6 +1061,8 @@ function UserMessage({
   }
   const qs = m.answers_for ? questionsOf(m.answers_for) : []
   const words = m.words ?? (m.answers?.length ? '' : m.body)
+  // Sent from a task's pane: its context folds into a chip, the person's text stays in front.
+  const task = words ? parseTaskMessage(words) : null
   return (
     <article data-testid="message" data-author="human" data-message-id={m.id} {...menu.props} className="group flex flex-col gap-2 rounded-xl bg-[#1a1a1f] px-3.5 py-3 [[data-theme=light]_&]:bg-raised">
       <MessageMenu at={menu.at} onClose={menu.close} text={words} onFork={onFork} />
@@ -1065,7 +1073,10 @@ function UserMessage({
         <span className="flex-1" />
         <MessageForkControls onFork={onFork} phone={phone} />
       </div>
-      {words && <MessageBody text={words} message={m} baseDir={session.cwd} onOpen={onOpen} author="you" className={phone ? 'text-[15px]' : 'text-[13.5px]'} />}
+      {task && <TaskContextChip task={task} />}
+      {(task ? task.text : words) && (
+        <MessageBody text={task ? task.text : words} message={m} baseDir={session.cwd} onOpen={onOpen} author="you" className={phone ? 'text-[15px]' : 'text-[13.5px]'} />
+      )}
       {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={onOpen} openId={openId} newestId={newestId} />}
       {(m.answers?.length ?? 0) > 0 && (
         <div data-testid="sent-answers" className="flex flex-col gap-[3px] border-t border-[#2a2a30] pt-2 text-[13px] text-muted">
@@ -1082,6 +1093,28 @@ function UserMessage({
       )}
       {(m.annotations?.length ?? 0) > 0 && <div className="text-[12.5px] text-muted">💬 {plural(m.annotations!.length, 'annotation')}</div>}
     </article>
+  )
+}
+
+/**
+ * The task a message from a task's pane is about: "Task: <title>", its quoted context (what the
+ * agent got with it) on a click.
+ */
+function TaskContextChip({ task }: { task: { title: string; context: string[] } }) {
+  return (
+    <details data-testid="task-context" className="group/task self-start text-[12px] text-muted">
+      <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-1 rounded-full border border-line2 px-2 py-px marker:hidden [&::-webkit-details-marker]:hidden">
+        <span className="text-subtle transition-transform group-open/task:rotate-90">▸</span>
+        <span className="truncate">
+          Task: <span data-testid="task-context-title" className="text-fg2">{task.title}</span>
+        </span>
+      </summary>
+      <div data-testid="task-context-body" className="mt-1.5 flex flex-col gap-0.5 border-l-2 border-line2 pl-2.5 text-[12px] leading-[1.45]">
+        {task.context.map((l, i) => (
+          <span key={i}>{l}</span>
+        ))}
+      </div>
+    </details>
   )
 }
 

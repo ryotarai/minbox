@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from 'react'
-import { api, type Topic, type TopicDetail, type TopicStatus, type TopicsResult } from '../api'
+import { api, type Topic, type TopicDetail, type TopicMessage, type TopicStatus, type TopicsResult } from '../api'
 import { useApp } from '../lib/app'
 import { isMac } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { renderMarkdown } from '../lib/markdown'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { revealMessage } from '../lib/revealMessage'
+import { taskMessage } from '../lib/taskContext'
 import { ContextMenu, useContextMenu } from './ContextMenu'
 import { IconBack, IconCheck, IconClose, IconMore, IconSend } from './icons'
 import { ThreadProjectBadge } from './ThreadList'
@@ -532,11 +533,6 @@ function TopicCard({
 
 const STATUS_LABEL: Record<TopicStatus, string> = { in_progress: 'In progress', waiting_on_you: 'Waiting on you', done: 'Done' }
 
-/** The message prefix that says which task a message from the pane is about. */
-export function topicPrefix(title: string): string {
-  return `[Task: ${title}]`
-}
-
 /**
  * A topic's pane: the fuller summary (Markdown), its steps as a read-only checklist with the
  * progress, the thread's messages about it (a click opens the thread at that message), and a box
@@ -558,19 +554,18 @@ function TopicPane({
   t: Topic
   now: number
   phone: boolean
-  /** The message box (the board's pane only: a thread's Tasks pane sits beside the thread's own box). */
-  draft?: string
-  onDraft?: (v: string) => void
+  /** The message box's unsent text (kept per task by the caller) and its element (R focuses it). */
+  draft: string
+  onDraft: (v: string) => void
   replyRef?: React.RefObject<HTMLTextAreaElement | null>
   onClose: () => void
   onMove: (s: TopicStatus) => void
   onOpenThread: (messageId?: string) => void
-  /** Inside a thread's Tasks pane: fills it, Back goes to the list, no thread link and no message box. */
+  /** Inside a thread's Tasks pane: fills it, Back goes to the list, no thread link. */
   inThread?: boolean
 }) {
-  const { topicsVersion, threadVersion, sessions, toast, error } = useApp()
+  const { topicsVersion, threadVersion } = useApp()
   const [detail, setDetail] = useState<TopicDetail | null>(null)
-  const [sending, setSending] = useState(false)
   const bump = threadVersion[t.thread_id] ?? 0
   useEffect(() => {
     let live = true
@@ -601,25 +596,6 @@ function TopicPane({
     const el = listRef.current
     if (el && listAtBottom.current) el.scrollTop = el.scrollHeight
   }, [t.id, msgs?.length, lastMsg])
-  const session = sessions?.find((s) => s.id === t.session_id)
-  const prefix = topicPrefix(t.title)
-  const mod = isMac() ? '⌘' : 'Ctrl+'
-
-  const send = async () => {
-    const text = (draft ?? '').trim()
-    if (!text || sending) return
-    setSending(true)
-    try {
-      await api.reply(t.thread_id, { words: `${prefix}\n${text}` })
-      onDraft?.('')
-      toast(`Sent to “${thread}”`)
-    } catch (e) {
-      error(e)
-    } finally {
-      setSending(false)
-    }
-  }
-
   const statusTone = t.status === 'waiting_on_you' ? 'border-wait/60 text-wait' : t.status === 'done' ? 'border-line2 text-subtle' : 'border-accent/50 text-accent'
   return (
     <aside
@@ -775,45 +751,92 @@ function TopicPane({
         </section>
       </div>
 
-      {!inThread && (
-      <form
-        data-testid="topic-pane-compose"
-        className={cx('flex shrink-0 flex-col gap-2 border-t border-line py-3', phone ? 'px-3 pb-[max(12px,env(safe-area-inset-bottom))]' : 'px-4')}
-        onSubmit={(e) => {
-          e.preventDefault()
-          void send()
-        }}
-      >
-        {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={replyRef}
-            data-testid="topic-pane-input"
-            value={draft ?? ''}
-            rows={phone ? 2 : 3}
-            placeholder={phone ? 'Message the thread about this task…' : 'Message the thread about this task… (R)'}
-            onChange={(e) => onDraft?.(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {
-                e.preventDefault()
-                void send()
-              } else if (e.key === 'Escape') {
-                // Esc leaves the box first; a second one closes the pane.
-                e.preventDefault()
-                e.stopPropagation()
-                e.currentTarget.blur()
-              }
-            }}
-            className="min-h-0 flex-1 resize-none rounded-lg border border-linestrong bg-surface px-2.5 py-2 text-[13.5px] text-fg outline-none placeholder:text-subtle focus:border-accent"
-          />
-          <Button type="submit" variant="primary" size="sm" data-testid="topic-pane-send" disabled={!draft?.trim() || sending} title={`Send (${mod}↵)`} className="h-9">
-            <IconSend size={14} />
-            Send
-          </Button>
-        </div>
-      </form>
-      )}
+      <TopicCompose t={t} msgs={msgs} thread={thread} phone={phone} inThread={inThread} draft={draft} onDraft={onDraft} replyRef={replyRef} />
     </aside>
+  )
+}
+
+/**
+ * A task's message box: sends the text to the task's thread headed with "[Task: <title>]" and a
+ * short quoted context (lib/taskContext), as the thread's own box would (an ended session keeps it until resumed). ⌘↵ sends, Esc leaves the box.
+ * In the board's pane and in a thread's Tasks pane alike.
+ */
+function TopicCompose({
+  t,
+  msgs,
+  thread,
+  phone,
+  inThread,
+  draft,
+  onDraft,
+  replyRef,
+}: {
+  t: Topic
+  /** The task's related messages (the context names the latest, so the agent can find them). */
+  msgs: TopicMessage[] | null
+  thread: string
+  phone: boolean
+  inThread?: boolean
+  draft: string
+  onDraft: (v: string) => void
+  replyRef?: React.RefObject<HTMLTextAreaElement | null>
+}) {
+  const { sessions, toast, error } = useApp()
+  const [sending, setSending] = useState(false)
+  const session = sessions?.find((s) => s.id === t.session_id)
+  const mod = isMac() ? '⌘' : 'Ctrl+'
+  const send = async () => {
+    const text = draft.trim()
+    if (!text || sending) return
+    setSending(true)
+    try {
+      await api.reply(t.thread_id, { words: taskMessage(t, msgs, text) })
+      onDraft('')
+      // Beside the thread the message shows up there; elsewhere (the board, full screen) say so.
+      if (!inThread || phone) toast(`Sent to “${thread}”`)
+    } catch (e) {
+      error(e)
+    } finally {
+      setSending(false)
+    }
+  }
+  return (
+    <form
+      data-testid="topic-pane-compose"
+      className={cx('flex shrink-0 flex-col gap-2 border-t border-line py-3', phone ? 'px-3 pb-[max(12px,env(safe-area-inset-bottom))]' : 'px-4')}
+      onSubmit={(e) => {
+        e.preventDefault()
+        void send()
+      }}
+    >
+      {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
+      <div className="flex items-end gap-2">
+        <textarea
+          ref={replyRef}
+          data-testid="topic-pane-input"
+          value={draft ?? ''}
+          rows={phone ? 2 : 3}
+          placeholder={phone ? 'Message the thread about this task…' : 'Message the thread about this task… (R)'}
+          onChange={(e) => onDraft?.(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) {
+              e.preventDefault()
+              void send()
+            } else if (e.key === 'Escape') {
+              // Esc leaves the box first; a second one closes the pane.
+              e.preventDefault()
+              e.stopPropagation()
+              e.currentTarget.blur()
+            }
+          }}
+          className="min-h-0 flex-1 resize-none rounded-lg border border-linestrong bg-surface px-2.5 py-2 text-[13.5px] text-fg outline-none placeholder:text-subtle focus:border-accent"
+        />
+        <Button type="submit" variant="primary" size="sm" data-testid="topic-pane-send" disabled={!draft?.trim() || sending} title={`Send (${mod}↵)`} className="h-9">
+          <IconSend size={14} />
+          Send
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -844,13 +867,14 @@ export function useThreadTasksOverlay(): boolean {
  * The open thread's tasks (its topics): beside the thread on a desktop (between the thread and the
  * agent terminal), full screen on a tablet or phone. The list groups them by status (In progress,
  * Waiting on you, Done); selecting one shows its summary, steps and related messages (a click shows
- * the message in the thread), with Done / Reopen and the card menu's Move to. No message box: the
- * thread's own is right there.
+ * the message in the thread), with Done / Reopen and the card menu's Move to, and the same message
+ * box as the board's pane (a draft per task; the message shows up in the thread beside it).
  */
 export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; phone?: boolean; onClose: () => void }) {
   const { topicsVersion, error, navigate } = useApp()
   const [res, setRes] = useState<TopicsResult | null>(null)
   const [selId, setSelId] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [reload, setReload] = useState(0)
   const [now, setNow] = useState(Date.now())
   const seq = useRef(0)
@@ -880,6 +904,15 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
     api.setTopicStatus(id, status).catch((e) => {
       error(e)
       setReload((v) => v + 1)
+    })
+  }
+  const asideRef = useRef<HTMLElement>(null)
+  const select = (id: string) => {
+    setSelId(id)
+    // The card goes away with the list: keep the keyboard in the pane.
+    requestAnimationFrame(() => {
+      const a = document.activeElement
+      if (!a || a === document.body) asideRef.current?.focus()
     })
   }
   const back = () => {
@@ -919,7 +952,8 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
   )
 
   return (
-    <aside data-testid="thread-tasks" data-thread-id={threadId} aria-label="Tasks" className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
+    // tabIndex -1: a click anywhere in it puts the keyboard here (R is then the task's box).
+    <aside ref={asideRef} tabIndex={-1} data-testid="thread-tasks" data-thread-id={threadId} aria-label="Tasks" className="flex h-full min-h-0 min-w-0 flex-col bg-bg outline-none">
       {!(phone && selected) && header}
       {selected ? (
         <TopicPane
@@ -928,6 +962,8 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
           now={now}
           phone={!!phone}
           inThread
+          draft={drafts[selected.id] ?? ''}
+          onDraft={(v) => setDrafts((d) => ({ ...d, [selected.id]: v }))}
           onClose={back}
           onMove={(st) => move(selected.id, st)}
           onOpenThread={reveal}
@@ -967,7 +1003,7 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
                     dragging={false}
                     showProject={false}
                     compact
-                    onSelect={() => setSelId(t.id)}
+                    onSelect={() => select(t.id)}
                     onMove={(s) => move(t.id, s)}
                     onFocus={() => {}}
                   />
@@ -978,6 +1014,24 @@ export function ThreadTasks({ threadId, phone, onClose }: { threadId: string; ph
       )}
     </aside>
   )
+}
+
+/**
+ * R beside a thread: while the keyboard is in the thread's Tasks pane (or its full-screen view is
+ * open), R goes to the open task's message box instead of the thread's. True when it took the key
+ * (the thread view's R then does nothing); false leaves R to the thread.
+ */
+export function focusTasksReply(): boolean {
+  const a = document.activeElement
+  const inPane = !!a?.closest?.('[data-testid="thread-tasks"]')
+  if (!inPane && !tasksOverlay) return false
+  const box = document.querySelector<HTMLTextAreaElement>('[data-testid="thread-tasks"] [data-testid="topic-pane-input"]')
+  if (box) {
+    box.focus()
+    return true
+  }
+  // No task open: in the pane, the thread's box as usual; full screen, it is hidden behind, so nothing.
+  return tasksOverlay
 }
 
 /**

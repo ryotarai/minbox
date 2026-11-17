@@ -76,7 +76,7 @@ test('desktop: the toggle shows this thread’s tasks beside it, before the term
     await page.getByTestId('topic-pane-back').click()
   }
 
-  // Selecting a task: its detail in the pane (no thread link, no message box), Back to the list.
+  // Selecting a task: its detail in the pane (no thread link; a message box), Back to the list.
   await card(page, 'Search box UI').click()
   const detail = pane(page).getByTestId('topic-pane')
   await expect(detail).toBeVisible()
@@ -84,7 +84,46 @@ test('desktop: the toggle shows this thread’s tasks beside it, before the term
   await expect(detail.getByTestId('topic-pane-progress')).toHaveText('1/2 done')
   await expect(detail.getByTestId('topic-pane-detail').locator('strong')).toHaveText('search field')
   await expect(detail.getByTestId('topic-pane-thread')).toHaveCount(0)
-  await expect(detail.getByTestId('topic-pane-compose')).toHaveCount(0)
+  await expect(detail.getByTestId('topic-pane-compose')).toBeVisible()
+
+  // R in the pane: the task's box (the thread's own box stays put); Esc leaves it. Outside the pane,
+  // R is the thread's box as before.
+  await detail.getByTestId('topic-pane-detail').click()
+  await page.keyboard.press('r')
+  const input = detail.getByTestId('topic-pane-input')
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(input).not.toBeFocused()
+  await expect(detail).toBeVisible()
+  await page.getByTestId('thread-subject').click()
+  await page.keyboard.press('r')
+  await expect(input).not.toBeFocused()
+  await expect(page.getByTestId('reply-box')).toBeFocused()
+  await page.getByTestId('reply-box').blur()
+
+  // Send: the thread beside it shows the message at once (the context as a "Task" chip), and the
+  // agent gets "[Task: …]", the context and the text.
+  await input.fill('Use a 200 ms debounce.')
+  await input.press(`${MOD}+Enter`)
+  await expect(input).toHaveValue('')
+  const sentMsg = page.locator('[data-testid="message"]').filter({ hasText: 'Use a 200 ms debounce.' })
+  await expect(sentMsg).toBeVisible()
+  await expect(sentMsg.getByTestId('task-context-title')).toHaveText('Search box UI')
+  type Msg = { author: string; words?: string; body: string; delivery?: string }
+  const sent = async (text: string) => {
+    const th: { messages: Msg[] } = await (await page.request.get(`${minbox.url}/api/threads/${search}`)).json()
+    return th.messages.find((m) => m.author === 'user' && (m.words || m.body).endsWith(`\n\n${text}`))
+  }
+  await expect.poll(async () => (await sent('Use a 200 ms debounce.'))?.delivery, SLOW).toBe('delivered')
+  const words = (await sent('Use a 200 ms debounce.'))!.words!
+  expect(words.startsWith('[Task: Search box UI]\n> Task context (from minbox): Building the search field and results list\n')).toBe(true)
+  expect(words).toContain('Steps: 1/2 done; open: Show the results')
+  // A draft per task: typed text stays with its task.
+  await input.fill('half a thought')
+  await detail.getByTestId('topic-pane-back').click()
+  await card(page, 'Search box UI').click()
+  await expect(pane(page).getByTestId('topic-pane-input')).toHaveValue('half a thought')
+  await pane(page).getByTestId('topic-pane-input').fill('')
 
   // A related message: shown in the thread (the same thread stays open).
   await detail.getByTestId('topic-message').first().click()
@@ -181,9 +220,21 @@ test('phone: the header button opens the thread’s tasks full screen, with Back
   await expect(page.getByTestId('topic-pane-title')).toHaveText('Search box UI')
   await page.getByTestId('topic-pane-back').click()
   await expect(card(page, 'Index format')).toBeVisible()
+  // Its message box sends from full screen too; the message is in the thread behind.
   await card(page, 'Search box UI').click()
+  await page.getByTestId('topic-pane-input').fill('Phone note on search.')
+  await page.getByTestId('topic-pane-send').click()
+  await expect(page.getByTestId('topic-pane-input')).toHaveValue('')
+  await expect
+    .poll(async () => {
+      const th: { messages: { author: string; words?: string; delivery?: string }[] } = await (await page.request.get(`${minbox.url}/api/threads/${search}`)).json()
+      const m = th.messages.find((x) => x.author === 'user' && (x.words ?? '').endsWith('\n\nPhone note on search.'))
+      return m && m.words!.startsWith('[Task: Search box UI]\n> Task context (from minbox): ') ? m.delivery : undefined
+    }, SLOW)
+    .toBe('delivered')
   await page.getByTestId('topic-message').first().click()
   await expect(full).toHaveCount(0)
+  await expect(page.locator('[data-testid="message"]').filter({ hasText: 'Phone note on search.' }).getByTestId('task-context-title')).toHaveText('Search box UI')
   await expect(page.locator('[data-testid="message"][data-jumped="true"]')).toContainText('Add search to the inbox.')
 
   // Back closes the full-screen tasks.

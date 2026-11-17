@@ -572,7 +572,7 @@ func (s *Server) getTopic(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]msg, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, msg{ID: m.ID, Author: m.Author, Kind: m.Kind, CreatedAt: m.CreatedAt, Excerpt: truncRunes(strings.Join(strings.Fields(m.Text), " "), topicsExcerptLen)})
+		out = append(out, msg{ID: m.ID, Author: m.Author, Kind: m.Kind, CreatedAt: m.CreatedAt, Excerpt: truncRunes(strings.Join(strings.Fields(withoutTaskContext(m.Text)), " "), topicsExcerptLen)})
 	}
 	writeJSON(w, 200, map[string]any{"topic": t, "messages": out})
 }
@@ -591,4 +591,18 @@ func (s *Server) listTopics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"topics": ts, "enabled": s.topicsOn(r.Context()), "done_days": int(topicsDoneWindow / (24 * time.Hour))})
+}
+
+// withoutTaskContext drops the quoted task context a message sent from a task's pane carries after
+// its "[Task: <title>]" line (web/src/lib/taskContext.ts), so its excerpt shows the person's text.
+func withoutTaskContext(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "[Task: ") || !strings.HasPrefix(lines[1], "> Task context (from minbox): ") {
+		return text
+	}
+	i := 1
+	for i < len(lines) && strings.HasPrefix(lines[i], "> ") {
+		i++
+	}
+	return lines[0] + "\n" + strings.Join(lines[i:], "\n")
 }
