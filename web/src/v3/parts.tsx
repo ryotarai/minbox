@@ -1,5 +1,5 @@
-// The pieces the v3 views share: task links, status dots, progress bars, checklists, the timeline,
-// the task picker, a message with the tasks it is about (and the agent's decision when it made one),
+// The pieces the v3 views share: task links, status dots, progress bars, checklists, the task picker,
+// a message with the tasks it is about (and the agent's decision when it made one),
 // its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
@@ -20,7 +20,6 @@ import {
   currentStep,
   hhmm,
   leaves,
-  lineOf,
   short,
   tagColor,
   textOf,
@@ -190,34 +189,11 @@ export function toggled(steps: Step[], path: number[]): Step[] {
   return next
 }
 
-const EVENT_COLOR: Record<string, string> = { status: 'var(--mb-work)', created: 'var(--mb-work)', step: 'var(--mb-ok)', criterion: 'var(--mb-ok)', handoff: 'var(--mb-purple)', auto: 'var(--mb-purple)', answer: 'var(--mb-purple)' }
-
-/** Events worth a line between messages (adding / moving messages is visible in the messages). */
+/** Events worth a line between a task's messages: a hand-off and an autonomous run starting, pausing or
+ *  ending, which nothing else shows. Status, step, criterion and report changes already show in the
+ *  checklist and on the board, so a line for each would only be noise in the conversation. */
 export function shownEvent(e: TaskEvent): boolean {
-  return !['link', 'unlink', 'tag', 'untag', 'answer'].includes(e.kind) && e.text !== 'Task created (from the earlier inbox)'
-}
-
-export function Timeline({ events, messages, n, byId }: { events: TaskEvent[]; messages?: V3Message[]; n: number; byId: Map<string, Session> }) {
-  const items = [
-    ...events.filter(shownEvent).map((e) => ({ t: e.at, color: EVENT_COLOR[e.kind] ?? 'var(--mb-faint)', text: e.text, id: e.id })),
-    ...(messages ?? []).map((m) => ({
-      t: m.created_at,
-      color: m.author === 'user' ? 'var(--mb-purple)' : m.open ? 'var(--mb-wait)' : 'var(--mb-faint)',
-      text: (m.author === 'user' ? 'You: ' : agentName(byId, m.session_id) + ': ') + lineOf(m),
-      id: m.id,
-    })),
-  ].sort((a, b) => (a.t < b.t ? 1 : -1))
-  return (
-    <ul className="v-tl" data-testid="timeline">
-      {items.slice(0, n).map((e) => (
-        <li key={e.id}>
-          <span className="v-m" style={{ background: e.color }} />
-          <span className="v-tm">{hhmm(e.t)}</span>
-          <span className="v-tx">{e.text}</span>
-        </li>
-      ))}
-    </ul>
-  )
+  return e.kind === 'handoff' || e.kind === 'auto'
 }
 
 // ---- the task picker ----
