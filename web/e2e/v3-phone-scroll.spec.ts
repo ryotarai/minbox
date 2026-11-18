@@ -40,7 +40,7 @@ function png(w: number, h: number): Buffer {
 }
 
 async function upload(m: Minbox, name: string, body: Buffer): Promise<string> {
-  const r = await fetch(`${m.url}/api/uploads?name=${encodeURIComponent(name)}`, { method: 'POST', body })
+  const r = await fetch(`${m.url}/api/uploads?name=${encodeURIComponent(name)}`, { method: 'POST', body: new Uint8Array(body) })
   const j = await r.json()
   return j.upload.upload_id
 }
