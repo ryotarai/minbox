@@ -1,75 +1,55 @@
 # minbox
 
-minbox puts your Claude Code sessions, their terminals and a threaded inbox on one screen.
-Claude sends questions and reports as threads and keeps working; you answer when you have a
-moment, from your desk or your phone, and the answer reaches Claude as a new turn.
+minbox puts your coding agents (Claude Code, Pi, OpenCode), their terminals and the work they do on one screen.
+You talk to each agent in one running conversation, its **stream**; the agent keeps a **task** for each piece of
+work, with a checklist it ticks as it goes; and when it needs a decision it asks a **question** and keeps working.
+You answer when you have a moment, from your desk or your phone, and the answer reaches the agent as a new turn.
 
-<p align="center"><img src="docs/img/readme/hero-desktop.png" alt="minbox on a desktop: projects on the left, the threads list, an open thread with Claude's question card, and the session's terminal" width="900"></p>
+<p align="center"><img src="docs/img/readme/hero-desktop.png" alt="minbox on a desktop: projects and agents on the left, the agent's Tasks pane, and its page with the selected task's card (status, summary, checklist) above the agent's question with its choices and an attached file" width="900"></p>
 
-- **Threads first.** One list of every thread, newest activity first. Each thread has a status
-  (**working**, **need action**, **finished**) that Claude sets and you can change by hand.
-  Filter by Waiting or Unread, group by activity, status or session.
-- **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one. New
-  work for a project with no agent named (a Slack DM, ⇧N's *Let minbox choose*, a thread from an issue or a
-  Slack thread) goes to the agent a helper model picks among the project's running agents, else to a new
-  agent. Give a project an icon (an emoji
-  or an uploaded image); it replaces the initials on the narrow rail's tiles. Change a project's
-  folder from its menu: new sessions use the new one, and existing sessions move to it at their next start (a fresh
-  Claude conversation there, told the old folder and session id so it can read the earlier transcript).
-- **Thread**: Claude's messages with question cards (single, multiple and free-text choice),
-  action items, attachments you can annotate, and guided reviews of its changes. Your reply
-  reaches Claude when it is idle. It is never typed into the terminal, so a half-typed prompt is
-  safe. Haiku can draft up to three one-click replies.
-- **Commands**: a reply that starts with `!` runs as a shell command in the session's folder (60 s limit);
-  the result shows in the thread and reaches Claude with your next message. See [docs/thread-commands.md](docs/thread-commands.md).
-- **Tasks**: a board of what the threads are working on, across all threads (In progress · Waiting on you ·
-  Done in the last 7 days). The agents keep them themselves with their `create_task` / `update_task` tools
-  (a thread can have several, each with a checklist of steps); you can move a card by hand too. Click a card
-  to open its pane and thread. The checklist button in a thread's header shows that thread's tasks in a pane
-  beside it (between the thread and the agent terminal; full screen on a phone).
-- **New thread from a reply**: long-press (or right-click) the reply box's send button to start a new thread
-  from the text in it, in the same or another session of the project.
-- **File mentions**: type `@` at the start of a word in a reply or a new thread for a popup of files and
-  folders of the session's folder (also `../`, `~/`, absolute paths); the text sent is `@path`.
-- **Diagrams**: the draw button right of the paperclip, in a new thread and in a reply, opens a
-  drawing tool in a large modal: select/move, rectangle, ellipse, line, arrow, text (double-click
-  to edit), pen and eraser; 7 colors (including white), 3 widths, fill, undo/redo. Drag a
-  rubber band or Shift-click to multi-select (⌘/Ctrl+A for all); Option/Alt-drag duplicates.
-  **Done** attaches a PNG. Before sending, the pencil on its tile reopens the drawing, and the
-  pencil on any attached image (png, jpeg, webp, gif) lets you draw on top of it.
-- **Terminal**: the session's Claude Code in your browser (ghostty-web), clickable in its
-  full-screen UI. You can type into it at any time. Paste an image with ⌘V and minbox uploads it
-  and types its path. Each Claude session also has a companion shell (Ctrl+`).
-- **One binary**. The web UI, the server, the terminal host and the Claude Code mod are all in
-  `minbox`, with SQLite for storage.
-- **Anywhere**. Serve minbox on your tailnet and pair your phone, get Slack notifications, and run
-  sessions on other machines (remote hosts).
+- **One stream per agent.** Each agent (a Claude Code, Pi or OpenCode session in a project folder) has one
+  conversation, like a chat with a colleague. Write to it; there is no thread to pick first.
+- **Tasks.** Every message belongs to exactly one task. The agent creates and updates tasks itself with its
+  `create_task` / `update_task` tools: a title, a one-line summary of where it stands, a status (working, needs you,
+  blocked, done) and a checklist. A quick question gets a small task of its own, done at once.
+- **The Board.** Home is the Board across all agents and projects: what **needs you** (questions and tasks waiting on
+  you), **goals**, what is **working**, what went quiet, and what was done in the last two days.
+- **Questions.** An agent writes a `:::question` block (pick one, pick any, or free text, with a recommended
+  answer). It shows on the Board under NEEDS YOU; you answer with a click or a tap in the agent's page. The reply
+  never goes through the terminal, so a half-typed prompt there is safe.
+- **Goals.** An outcome with *done when* criteria ("CI green on main"); minbox can keep the agent going, turn after
+  turn, until they are met.
+- **Terminal, shell and files** beside the stream, an attachment viewer you can draw on, previews of Markdown,
+  HTML and Mermaid, and a phone layout.
+- **One binary**, with SQLite for storage. Serve it on your tailnet and pair your phone, get Slack notifications,
+  and run agents on other machines.
 
-minbox runs **Claude Code**, **Pi** ([`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 1.x)
-or **OpenCode** 2.x in each session; any one alone is enough (a machine with only Pi or only OpenCode, and no `claude`, works).
-It talks to the agent through a Claude Code mod (a hooks module), a Pi extension or an OpenCode plugin, not by typing into the
-terminal. How agents are modelled, Pi's specifics and what is not verified yet: [docs/agents.md](docs/agents.md); OpenCode:
-[docs/opencode.md](docs/opencode.md). Pi gets a `minbox_subagent` tool (parallel read-only children, and
-writing children in their own git worktrees on `minbox-sub/*` branches that the main agent merges): see "Pi subagents" there. Background and design goals:
-[WHAT.md](WHAT.md) (Japanese).
+Background and design goals: [WHAT.md](WHAT.md) (Japanese); the v3 redesign: [docs/v3/](docs/v3/).
 
 ## The screen
 
-Columns, left to right: **projects | threads | thread | terminal** (on a desktop width the terminal is hidden by
-default: the threads are all you need; the **Terminal** button in the thread header shows it and hides it again, and the
-choice is remembered in this browser). The layout follows the window width:
+<p align="center"><img src="docs/img/readme/board.png" alt="The Board: NEEDS YOU with a question and a task waiting on the person, GOALS with a goal and the task serving it, WORKING with three tasks and their progress, and DONE folded" width="900"></p>
+
+- **Left**: the projects rail (a tile per project; ＋ adds one), then **Board**, **Search** (`/`), **Quick actions**
+  (`⌘K`) and **Agents**, grouped by project, with their state (working, idle) and unread counts. The ＋ beside a
+  project's name starts a new agent there.
+- **Board** (home): NEEDS YOU, GOALS, WORKING, IDLE (open but quiet for more than 3 days), BLOCKED, DONE (last 2
+  days, folded). `J`/`K` move, `Enter` opens the task (a question: its task, at the question), `X` marks it done (or
+  reopens it), `I` ignores a question that no longer matters (the agent is not told).
+- **An agent's page**: its **Tasks** pane (OPEN TASKS; RECENTLY DONE, muted; DONE THIS WEEK, folded; unread tasks in
+  bold) beside its stream. Click a task to select it: the page shows its card (title, summary, status, agents, and
+  the checklist, whose steps you can tick too) above the messages about it; click it again for the whole stream.
+  Tick the checkboxes of several tasks to see them side by side, each with its own reply box. `⇧T` folds the pane.
+- **Side panes** (header buttons, or keys): the agent's **Terminal** (`T`), its companion **Shell** (``Ctrl+` ``)
+  and its **Files** (`⇧F`: the folder's tree and a viewer with word wrap and full screen). Column edges can be dragged.
+
+<p align="center"><img src="docs/img/readme/terminal.png" alt="An agent's stream with its question card, and the agent's Claude Code terminal open beside it" width="900"></p>
 
 | Width | Layout |
 | --- | --- |
-| 1100 px and up | Threads and thread next to the project column; the terminal is a third column you show with the **Terminal** button (it is hidden by default), plus the companion shell pane beside it (the **Open shell** icon in the thread header, ⌘K Open shell or Ctrl+`; it opens with or without the terminal). Column edges can be dragged. |
-| 700-1099 px | Two panes: threads + thread, or thread + terminal (the **Terminal** button in the thread header; back returns to the list). |
-| below 700 px (phone) | One screen at a time: thread list, thread, terminal. The project switcher is a sheet; the companion shell is a full-screen overlay (the shell icon in the thread or terminal header, or the `...` menu). |
-
-<p align="center"><img src="docs/img/readme/tablet.png" alt="minbox on a tablet: the threads list beside a finished thread with reply questions" width="480"></p>
-
-Resizing across a band keeps the selected thread, session and draft. A session's `...` menu
-(Rename, Resume / **Restart**, Stop, Archive, Delete) sits over its terminal. Restart kills the
-running Claude and resumes the conversation in one step; a running turn is interrupted.
+| 1100 px and up | Sidebar, Tasks pane, stream and the side panes you open. |
+| 700–1099 px | The stream with one side pane at a time; checked tasks show one column at a time, with tabs. |
+| below 700 px (phone) | One screen at a time, with tabs **Board · Agents · Search**. A task's checklist folds to a progress bar under its title; the terminal, shell, files and tasks open as sheets. |
 
 ## Install
 
@@ -80,7 +60,7 @@ each agent it starts (`claude --plugin-dir`, `pi -e`, OpenCode's `OPENCODE_CONFI
 nothing else to install: no `claude plugin install`, no marketplace, nothing next to the binary.
 
 You also need a coding agent on `PATH`: Claude Code with mod support, Pi 1.x (Node 22.19+) or OpenCode 2.x.
-With several installed the New session dialog lets you pick; with one it just uses that one.
+With several installed the New agent dialog lets you pick; with one it just uses that one.
 
 ### From a release (macOS, Linux; arm64, amd64)
 
@@ -133,9 +113,11 @@ minbox pair accept 482-913   # shows the browser and its key, asks Accept it? [y
 The page goes on by itself. Upgrading from a version that trusted any browser on 127.0.0.1:
 your browser shows that screen once; do the same.
 
-Click **+ New** and pick a directory (it becomes a project). minbox starts `claude` there with
-its mod loaded. When Claude needs something from you, its thread is marked **need action**, moves
-up the list and shows the question.
+Add a project (the ＋ at the bottom of the projects rail, or **Start one in a folder…**) and start an agent in it:
+minbox starts `claude` there with its mod loaded. Then write to it in its stream, or press `⇧N` anywhere: with a
+project selected, **Let minbox choose** sends the message to the agent whose work fits (a helper model picks among
+the project's running agents) or to a new one. The agent puts the request in a task, and when it needs you, the
+question shows on the Board under NEEDS YOU.
 
 ```sh
 minbox status              # running? its URL and log (exit code 3 when stopped)
@@ -172,130 +154,144 @@ binary; the sessions resume (or, if you untick that, end).
 | `--no-open` | | Do not open the browser |
 | `--foreground` | | Do not daemonize |
 
+## Working with agents
+
+- **Writing.** The reply box at the bottom of an agent's page shows `to: <agent>` and, with a task selected,
+  `about: <task>`. Without a task the agent decides: an open task the message is about, or new work (a new task).
+  `⌘↵` sends. A message reaches the agent when it is idle; one queued behind a working turn can be cancelled or
+  sent now.
+- **Moving a message.** A message's `⋯` menu: **Reply**, **Copy text**, **Move to another task…** (an agent reply takes
+  the message it answered along; a task left empty by mistake is removed), **Mark unread from here**, and **Start new
+  thread from here** (hand the message to another agent or a new one; [docs/thread-fork.md](docs/thread-fork.md)).
+- **Answering.** Question cards take a click per choice, **Other…** for your own words, **Add note**, **Accept
+  recommended**, **Skip** or **Ignore**. The answer is about the question's task, and the agent gets it under
+  "## Answers to your questions". Agents also send `:::actions` checklists for things only you can do.
+- **Help me reply** (on by default): when the agent's message is the last one, a helper model drafts a few questions
+  with options that help you decide your reply; what you pick is added to your message as `Q: … → A: …` lines. When
+  the agent's shell command was denied, a **Run yourself** chip offers `!<command>`.
+- **Commands**: a message that starts with `!` runs as a shell command in the agent's folder (60 s limit); the result
+  shows in the stream and goes to the agent at once. See [docs/thread-commands.md](docs/thread-commands.md).
+- **Attachments**: paste (`⌘V`), drop, or the attach button (on a phone, photo or file). Type `@` for a popup of the
+  agent's files and folders. The draw button opens a sketcher (shapes, arrows, text, pen; **Done** attaches a PNG),
+  and the pencil on an attached image draws on top of it.
+- **What agents send** shows in place: Markdown with code, tables and Mermaid diagrams, images, and file attachments
+  that open in a viewer (Markdown and HTML previews, code, PDFs). You can draw on an image and comment on a spot of
+  it, a moment of a video or a passage of a document; your notes go to the agent with your next message. Agents can also send a **guided review** of their
+  changes, section by section.
+- **Goals**: when you ask for an outcome ("keep fixing until CI is green"), the agent may make a goal with *done when*
+  criteria and tasks under it. The Board shows it under GOALS with **Start run** / **Pause** / **Stop**: while a run
+  is on, minbox continues the agent after each turn until the criteria are met; a question from the run waits for you.
+- **Search** (`/`): tasks (title, steps, summary) and messages, with the match marked. **Quick actions** (`⌘K`): one
+  fuzzy list of actions, agents, tasks and projects (`>` actions, `@` agents, `#` tasks, `!` projects).
+- **The agent's menu** (`⋯` in its header, or right-click / long-press its row): Rename, **Restart** (kills the
+  running agent and resumes its conversation in one step) or Resume, Stop, Archive, Delete.
+- **Terminal**: the agent's own Claude Code (or Pi, OpenCode) in the browser (ghostty-web), clickable in its
+  full-screen UI. You can type into it at any time; paste an image with `⌘V` and minbox uploads it and types its path.
+
+## Keyboard
+
+Press `?` for the full list. ⌘ is Ctrl on Linux and Windows. Single-key shortcuts can be turned
+off in **Settings → General**.
+
+| Keys | |
+| --- | --- |
+| `⌘K` | Quick actions (`>` actions, `@` agents, `#` tasks, `!` projects) |
+| `⇧N` | New message (minbox picks the agent by default) |
+| `/` | Search |
+| `g b` · `g a` | Board · first agent |
+| `J` / `K`, `Enter` | Move on the Board, open the task (at the question) |
+| `X` · `I` | Done / reopen the focused task · ignore the focused question |
+| `E` · `F2` | Rename the task |
+| `N` | Next agent with unread messages |
+| `R`, `⌘↵` | Reply (quotes the selected text), send |
+| `T` · ``Ctrl+` `` · `⇧F` · `⇧T` | Terminal · shell · files · Tasks pane of the agent |
+| `Z` | Undo the last action |
+| `⇧D` | Decision mode: every waiting question, one at a time, `1`–`9` to pick (when on in Settings) |
+| `Esc` | Close / back |
+
+While the terminal has focus, only `⌘K` is minbox's (Ctrl+K stays the shell's), and Shift+Enter
+types a newline in Claude Code. In Claude Code's full-screen UI, clicks and the wheel go to
+Claude Code; Shift+drag selects text. The terminal and the event stream reconnect by
+themselves after a network drop or a server restart.
+
 ## How it works
 
 <p align="center"><img src="docs/images/architecture.svg" alt="Architecture: browsers talk to the minbox server; the server talks to a local terminal host over a unix socket and to remote hosts with signed requests; the minbox mod inside each Claude Code calls the server's agent API" width="920"></p>
 
-- **The server** (`minbox start`, Go) does the following:
-  - serves the web UI, the REST API, server-sent events and the terminal WebSockets;
-  - serves the agent API that the mod calls;
-  - keeps sessions, threads and topics in SQLite (`modernc.org/sqlite`, no cgo).
-- **The terminal host** (`minbox host`) is a separate process that owns the PTYs.
-  - The server starts it when none is running.
-  - Restarting or upgrading the server leaves the running sessions alone.
-  - The two check each other's protocol version and restart the host only when they must.
-  - When the host is gone (after a reboot, `minbox restart --host`, or Restart in Settings → Hosts), the server starts a new
-    one and the sessions that were open resume with `claude --resume`. Sessions you stopped, or
-    that Claude ended itself, stay stopped.
-- **The PTY** takes the size of the smallest screen attached to it, and grows back when that
-  screen leaves.
-- **The minbox mod** (`plugin/minbox`) is embedded in the binary and loaded with
-  `claude --plugin-dir`. It gives Claude these tools:
+- **The server** (`minbox start`, Go) serves the web UI, the REST API, server-sent events and the terminal
+  WebSockets, and the agent API that the mods call. It keeps projects, agents, messages and tasks in SQLite
+  (`modernc.org/sqlite`, no cgo).
+- **The terminal host** (`minbox host`) is a separate process that owns the PTYs. The server starts it when none is
+  running; restarting or upgrading the server leaves the running agents alone. When the host is gone (after a reboot,
+  `minbox restart --host`, or Restart in Settings → Hosts), the server starts a new one and the agents that were open
+  resume (`claude --resume`). Agents you stopped, or that ended themselves, stay stopped.
+- **The PTY** takes the size of the smallest screen attached to it, and grows back when that screen leaves.
+- **The minbox mod** (`plugin/minbox`, a Claude Code hooks module; Pi gets an extension, OpenCode a plugin) is
+  embedded in the binary. It talks to minbox's agent API, not by typing into the terminal, and gives the agent these
+  tools:
 
   | Tool | What it does |
   | --- | --- |
-  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review, about one task (`task_id`). It has no `status`: one is refused; a task's status is set with `update_task`. |
-  | `read_thread` | Read any thread by id, also another session's: the newest 30 messages (`limit` up to 100), older ones with `before`, long text cut with a marker. Without an id: list this session's threads |
-  | `set_session_title` | Set the title of the session |
-  | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |
-  | `create_task`, `update_task`, `list_tasks` | Keep the Tasks board: a task per piece of work in a thread, its steps ticked as it goes, its status (In progress / Waiting on you / Done) |
-  | `list_projects`, `get_project` | Projects (folder, host, default agent, session and thread counts) and one project with its sessions. Read-only |
-  | `list_sessions` | Sessions by project, status or agent. Read-only |
-  | `list_threads` | Threads across all sessions, filtered by project, session, status, who is waited on, unread and words. Read-only |
-  | `search` | Full-text search of thread titles, messages and attachments (the ⌘K search). Read-only |
+  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review, about one task (`task_id`) |
+  | `create_task`, `update_task`, `list_tasks` | Keep its tasks and goals: title, summary, status, checklist (`check_steps`), criteria |
+  | `read_thread` | Read a conversation, also another agent's: the newest 30 messages (`limit` up to 100), older ones with `before` |
+  | `set_session_title` | Say what it is working on now |
+  | `open_url` | Open a page in your browser, wherever you are (`open URL` on the host is refused) |
+  | `list_projects`, `get_project`, `list_sessions`, `list_threads`, `search` | Read-only lookups across projects, agents and messages |
 
-  minbox's instructions are one text, owned by the server. They reach Claude two ways:
-  - `--append-system-prompt`;
-  - the mod re-injects the same text (the `instructions` of the hello) on the first prompt, after
-    a compaction and every 20th prompt, because models forget the first instruction.
+  Any one of Claude Code, Pi and OpenCode alone is enough. How agents are modelled, Pi's specifics (including its
+  `minbox_subagent` tool) and OpenCode's: [docs/agents.md](docs/agents.md), [docs/opencode.md](docs/opencode.md).
 
-  They ask Claude to send every question, decision or request for action to the inbox. If a
-  turn still ends with a question asked only in the chat, the mod reminds Claude once. By default
-  (**Settings → Prompts**) they also ask the main agent to run one subagent per thread and to use
-  git worktrees for the subagents' changes (the orchestrator prompt); you can add your own
-  extra instructions there.
-
-  **Is the mod connected?** The mod sends a heartbeat every 15 s. A small dot beside the session
-  name shows it (green: connected; red "no heartbeat for 2 m": stale); click it for the diagnostics
-  and **Copy diagnostics**. The server logs `modconn:` lines for hello, deliveries and
-  connected/stale transitions. See [docs/mod-connection.md](docs/mod-connection.md). A changed mod
-  loads only in a Claude Code session started after the update.
-
-  **Thread status** becomes `working` when you write, `need action` when Claude sends a
-  question, and Claude sets it with `status`, e.g. `finished` when it is done. You can change it
-  by hand from the thread's `...` menu (**Mark as**).
+- **Instructions.** minbox's instructions are one text, owned by the server, given at start
+  (`--append-system-prompt`) and re-injected on the first prompt, after a compaction and every 20th prompt. They ask
+  the agent to send every question or request for action through minbox (if a turn still ends with a question asked
+  only in the terminal, the mod reminds it once) and to keep its tasks current. By default (**Settings → Prompts**,
+  the orchestrator prompt) they also ask Claude Code to work like an orchestrator: one subagent per task, writing
+  subagents in their own git worktrees, one integration subagent merging at a time, the main agent staying
+  responsive to you, and subagents ticking their task's steps themselves (they get the task id and step numbers).
+  You can add your own instructions there.
+- **Is the mod connected?** The mod sends a heartbeat every 15 s; a dot in the agent's header shows it (green:
+  connected; red: stale); click it for diagnostics. See [docs/mod-connection.md](docs/mod-connection.md).
 
 ### A question and its answer
 
 <p align="center"><img src="docs/images/message-flow.svg" alt="Message flow: Claude sends a question with send_message; the server notifies the inbox; the person answers; the mod long-polls, claims the reply once Claude is idle, submits it as a new turn and marks it delivered" width="920"></p>
 
-1. **Claude asks.** It calls `send_message`, which returns at once.
-2. **You answer.** The thread shows the question (with reply questions, if on), and you answer it at any time, on any device.
-3. **The mod waits for a quiet moment.** It long-polls for your reply and waits until Claude is
-   idle (or delivers at once if you pressed *Send now*).
-4. **The reply arrives once.** The mod claims the reply, submits it as a plugin turn
-   (`$.prompt.submit`) and marks it delivered.
-   - Claude receives the answers under "## Answers to your questions".
-   - If the submit fails, the claim is released, so a reply is never lost or delivered twice.
-   - A reply queued behind a working turn can be cancelled, or sent now. If the mod has gone
-     quiet, the thread offers **Restart** for the session.
+1. **The agent asks.** It calls `send_message`, which returns at once, and keeps working.
+2. **You answer** in the agent's page (from the Board, the stream or a notification), at any time, on any device.
+3. **The mod waits for a quiet moment.** It long-polls for your reply and waits until the agent is idle (or delivers
+   at once if you pressed *Send now*).
+4. **The reply arrives once.** The mod claims it, submits it as a new turn and marks it delivered. If the submit
+   fails, the claim is released, so a reply is never lost or delivered twice.
 
-## Notifications
+## Integrations
+
+### Slack notifications
 
 <p align="center"><img src="docs/img/readme/notifications.png" alt="Settings, Notifications: two Slack destinations with masked webhook URLs and the link address" width="720"></p>
 
-**Settings → Notifications** sends every new message from Claude to Slack, with the full message
-text (questions as readable Markdown), whether or not a browser is open. A destination is either:
+**Settings → Notifications** sends every new message from an agent to Slack, with the full text (questions as
+readable Markdown), whether or not a browser is open. A destination is an
+[incoming webhook](https://api.slack.com/messaging/webhooks), or a **Slack app** (bot token + channel): messages are
+grouped in Slack threads, the files the agent attaches are uploaded there too, and with your **user ID** as the
+channel the notifications come as DMs from the bot. Limit a destination to messages that need your answer, or send
+only the title. Set the **public URL** (e.g. your Tailscale URL) so each notification links back to minbox. Secrets
+stay on the server and are shown masked. Browser notifications, a sound and the tab-title count are under
+**Settings → General**.
 
-- an [incoming webhook](https://api.slack.com/messaging/webhooks); or
-- a **Slack app** (bot token + channel): all messages of one thread are grouped as replies in one
-  Slack thread, and "Send test" checks the token and shows the workspace and bot name. The
-  channel field takes a channel ID, `#name`, or your **user ID** (Slack profile → ⋮ → Copy member
-  ID) to get the notifications as a DM from the bot: no invite, only the `chat:write` scope, but
-  the app's Messages tab must be on (App Home → Show Tabs → Messages Tab, "Allow users to send
-  Slash commands and messages from the messages tab"). The first message of each Slack thread
-  mentions you (`<@U…>`: the user ID in Channel, else the first allowed user ID), because Slack
-  only notifies you about replies in a thread you are part of; turn that off with *Mention me
-  when starting a thread*. A thread you start by DMing the bot is rooted at your own message:
-  Claude's messages arrive as replies under it (no new top-level post, no mention).
-- **Artifacts in Slack**: the files Claude attaches to a message (images, HTML, any file) and the
-  images its message shows are uploaded to the same Slack thread (*Send artifacts*, on by default;
-  scope `files:write`; up to 10 files and 20 MB each, larger ones are skipped with a log line). The
-  message itself is never held back or repeated if an upload fails; the destination shows the error.
-- **Reply from Slack** (opt-in, per Slack app destination): switch on *Receive messages from Slack*
-  (DM only, so Channel must be your user ID) and minbox polls Slack with the bot token: no public
-  URL, no Socket Mode. A reply you write in a notification's Slack thread lands in that minbox
-  thread, and a DM to the bot starts a new thread. Its project is chosen in this order: a
-  `#project-name text` prefix (no model call); else **Claude Haiku** (*Let Claude Haiku pick the
-  project*, on by default) is given the DM text and your project names with their latest thread
-  titles and picks one (it can only answer with an existing project, otherwise it is treated as
-  unsure; at most 10 calls a minute, 20 s each; the DM text is sent to Claude). When Haiku is
-  unsure, minbox does **not** guess: it replies in the Slack thread asking which project (listing
-  the names) and holds your message and its images; your answer in that thread, together with
-  the earlier conversation, goes to Haiku again, and the minbox thread is created then, in the
-  project it names (later replies in the Slack thread go to it). Still unsure: it asks again, up
-  to 3 questions, then uses the *Fallback project* if one is set, otherwise tells you in Slack that
-  it dropped the message. If the model run itself fails (for example no coding agent is installed), or *Let Claude
-  Haiku pick* is off, the *Fallback project* is used straight away; with none, the DM is ignored. Only allowed members' DMs ever reach the model. The
-  model is `claude-haiku-5-5` (override: `MINBOX_PICK_MODEL`), run like the reply suggestions; on a machine without `claude` the same pick runs through Pi (its own default model, or `MINBOX_PI_HELPER_MODEL`). Only the user IDs in *Allowed Slack user IDs* are accepted (default: you);
-  delivered messages get a 👀. **Images and files you send** in Slack (a DM, or a reply in a
-  notification's thread) are downloaded with the bot token (scope `files:read`) and attached to
-  the minbox message exactly like a file you attach in the web UI, so Claude gets their paths:
-  images, text and JSON files and PDFs only, 5 files and 20 MB each at most, only from allowed
-  members; anything else is skipped with a note in the message. Add the `im:history` scope (and `reactions:write` for the 👀) under
-  OAuth & Permissions and reinstall the app. Messages arrive within the poll interval (30 s to
-  5 min; polling slows down when nothing is going on) and polling stays within 20 Slack calls a
-  minute and obeys `Retry-After`. Each poll reads the latest 200 top-level messages of the DM (one
-  call), so replies in threads older than those are not seen. Note that Slack limits `conversations.history`/`replies` to
-  1 request a minute for apps distributed in the Marketplace (and non-Marketplace apps created
-  after 2025-05-29 that are commercially distributed), not for an internal app of your workspace.
+**Reply from Slack** (opt-in, Slack app, DM only): minbox polls Slack with the bot token (no public URL, no Socket
+Mode). A reply in a notification's Slack thread reaches that agent; a new DM to the bot is new work: its project comes
+from a `#project text` prefix, else a helper model (Claude Haiku by default) picks it (asking you in Slack when it is
+unsure, then a *Fallback project*), and in that project the helper picks the agent whose work fits, else a new agent
+starts. Images and files you send are attached like files from the web UI. Scopes, setup steps, polling limits and
+the receiving status: [docs/api-contract.md](docs/api-contract.md) ("Notifications").
 
 **Slack app setup** (the same steps are in the destination's form):
 
 1. [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From scratch*.
 2. OAuth & Permissions → Bot Token Scopes: `chat:write`, `im:history` (to receive),
-   `files:write` (to send Claude's images and files), `files:read` (to take images you send) and
-   optionally `reactions:write` (the 👀). Not needed: `chat:write.public`, `im:write`, `channels:*`.
+   `files:write` (to send the agent's images and files), `files:read` (to take images you send) and
+   optionally `reactions:write` (a 👀 on delivered messages).
 3. App Home → Show Tabs → turn **Messages Tab** on, and tick *Allow users to send Slash commands
    and messages from the messages tab*.
 4. Install to Workspace (**Reinstall** after every scope change), then copy the *Bot User OAuth
@@ -305,110 +301,46 @@ text (questions as readable Markdown), whether or not a browser is open. A desti
    DM channel is learned from the first notification or test, and receiving needs it.
 7. Turn *Receive messages from Slack* on, set *Allowed Slack user IDs* and a *Fallback project*.
 
-**Receiving status.** Under a destination with receiving on, the card lists: whether the receiver
-runs, the last poll (time and ok / error), the next poll (or "paused until … (rate limited)") and
-the current interval (longer than the setting when polling slowed down while nothing is going on),
-whether the DM is known, how many messages were delivered since receiving was switched on and
-when, how many notification threads are watched, and warnings: Channel is not a user ID, no
-allowed users, no project route (Fallback project empty and Claude pick off; a `#project` prefix
-still works), missing scopes (`im:history`, `reactions:write`). **Check receiving now** runs one
-poll cycle immediately (the normal cycle: same allowlist, call budget, de-duplication; while Slack
-has asked to wait nothing is called) and shows what it did, e.g. "fetched 200 messages, 0 new" or
-the error. To debug further: the destination's red *Failed … Receiving from Slack: …* line, and
-`grep "slack inbound" ~/.minbox/minbox.log`.
+### Linear
 
-You can limit a destination to messages that need your answer, or send only the title. Set the
-**public URL** (e.g. your Tailscale URL) there so each notification has an "Open thread" link.
-Secrets stay on the server and are shown masked. Browser notifications, a sound and the tab-title
-count are separate settings under **Settings → General**. Format and retry rules:
-[docs/api-contract.md](docs/api-contract.md) ("Notifications").
+Connect under **Settings → Integrations → Linear** (OAuth through Linear's remote MCP server; the minbox server keeps
+the tokens, the agent gets no Linear tools). Link an agent's conversation to an issue with the Linear button above its
+stream (search, `ENG-123`, an issue URL, or **New issue**, pre-filled by your local coding agent). minbox moves a
+backlog/todo issue to In Progress when work starts, keeps one progress comment up to date, and shows new comments in
+the stream, handed to the agent as untrusted external content. **My issues** (`⌘K` → Open My issues) lists the issues
+assigned to you; starting work from one goes to the agent the helper picks in the project. Details:
+[docs/linear.md](docs/linear.md).
 
-## Linear
+### Slack (personal)
 
-Link a thread to a Linear issue (`ENG-123` or an issue URL, in the thread header). Log in once under
-**Settings → Integrations → Linear → Connect** (OAuth through Linear's remote MCP server; the minbox server
-does the login and keeps the tokens, the agent gets no Linear tools). When the thread starts working,
-minbox moves a backlog/todo issue to In Progress and keeps one progress comment up to date; thread status is
-not mirrored. New comments on the issue are fetched when you open the thread, shown in it, and handed to the
-agent in front of your next message (marked as untrusted external content; filterable by author). Details,
-limits and what is unverified against the real Linear: [docs/linear.md](docs/linear.md).
-
-**Link an issue**: the small **+ (Linear icon)** left of the thread's "N messages · X min" line opens a dialog
-that searches Linear as you type (or takes `ENG-123` / an issue URL); Enter links the pick. Its **New issue**
-entry opens **Create Linear issue**: a dialog pre-filled from the thread by
-your local coding agent (Claude Code or Pi) and Linear's own teams, states, labels and projects. It opens at
-once, the guess fills in only what you have not typed, and nothing is sent to Linear until you press Create;
-the thread is then linked to the new issue. **Settings → Integrations → Linear → "Auto-fill: extra prompt"**
-takes your own instructions for that guess (for example "Write titles in English. Always add label 'agent'.
-Keep descriptions under 15 lines."); they never change the output format or the rule that ids must exist in Linear.
-
-**My issues** (project rail, above *All projects*, and the phone's project sheet; only while Linear is connected):
-the Linear issues **assigned to you**, grouped by workflow state, with search, *Show closed* and Refresh. Pick one to
-read it (description as Markdown, comments, the minbox threads already linked) and press **Start thread**: the project
-is picked for you (a thread already linked to the issue, a project named like the Linear project or team, else the helper
-agent), the session defaults to *Let minbox choose* (the helper picks one of the project's agents whose work fits,
-else a new agent starts), and the new thread is linked to the issue at once. The agent
-gets the issue as clearly marked untrusted context in front of your request. **New issue** writes an issue from plain
-language (Japanese or English): *Generate* drafts title, description and guesses with your local coding agent; you edit
-everything and press Create. Details: [docs/linear.md](docs/linear.md#my-issues).
-
-**Slack** (project rail, above *My issues*, and the phone's project sheet; only while your personal Slack token is
-connected): the Slack threads and DMs that **need your reply**, found with your own Slack **user token** (you create
-an internal Slack app and paste its `xoxp-…` token in *Settings → Integrations → Slack (personal)*; read-only scopes,
-never posts). A helper agent on this machine reads each candidate thread and sorts it into *Needs reply* / *Maybe*;
-rows show the last message, the reason, urgency and an unread dot for DMs. **Dismiss** (it returns when a new message
-arrives), **Snooze**, or **Start minbox thread**: the project is picked for you, the session defaults to *Let minbox
-choose*, and the agent gets the Slack thread as clearly marked untrusted context. Setup, scopes, the manifest, rate
-limits, privacy and what is unverified: [docs/slack-personal.md](docs/slack-personal.md).
-
-## Search and quick actions
-
-<p align="center"><img src="docs/img/readme/palette.png" alt="The ⌘K palette with the query 'audit', listing a session, a thread and actions" width="800"></p>
-
-`⌘K` (or `/`) opens a quick-open palette: actions, projects, sessions and threads in one
-fuzzy-searched list. Start with a prefix to search one kind: `>` actions, `@` sessions,
-`#` threads, `!` projects. Threads match their title and the session and project names;
-sessions match name, title and folder. `↵` runs the highlighted row.
-
-## Start a thread from a message
-
-Hover a message (or use its "…" menu, the only way on a phone) and choose **Start new thread from here**. The dialog
-puts the new thread in this session (default), a new session in any project, or another session, shows the exact text
-the new agent will receive first (the quoted message, the id of the source thread and how to read it with `read_thread`)
-and takes an optional request. The new thread shows where it came from; the source thread shows a marker under the
-message, and its agent hears of forks into other sessions with your next message. Details: [docs/thread-fork.md](docs/thread-fork.md).
+With your own Slack **user token** (read-only scopes, never posts; *Settings → Integrations → Slack (personal)*),
+`⌘K` → Open Slack lists the Slack threads and DMs that **need your reply**, sorted by a local helper agent. Dismiss,
+snooze, or start minbox work from one: the agent gets the Slack thread as clearly marked untrusted context. Setup and
+privacy: [docs/slack-personal.md](docs/slack-personal.md).
 
 ## Other devices and machines
 
 ### Your phone and other browsers
 
-<p align="center"><img src="docs/img/readme/phone-trio.png" alt="minbox on a phone: the thread list, a thread with a question card, and the terminal" width="720"></p>
+<p align="center"><img src="docs/img/readme/phone-trio.png" alt="minbox on a phone: the Board, a task's card with its checklist and a reply help question, and a task waiting on the person with an attached file" width="720"></p>
 
 ```sh
 minbox start --tailscale            # https://<this machine>.<tailnet>.ts.net
 ```
 
-The first time a browser opens minbox (on another machine or on this one), it shows a pairing
-code and its key's fingerprint. Accept it in one of these places:
-- in a browser already paired (**Settings → Devices**);
-- with `minbox pair accept <code>` in a terminal on the server's machine.
+Every browser pairs once, on another machine or on this one: it shows a pairing code and its key's fingerprint.
+Accept it in a browser already paired (**Settings → Devices**) or with `minbox pair accept <code>` in a terminal on
+the server's machine. **Settings → Devices** lists the paired browsers; **Revoke** sends one back to its pairing screen.
+The browser keeps a device key (never sent) and signs in by itself afterwards.
 
-**Settings → Devices** lists the paired browsers; **Revoke** sends one back to its pairing screen.
+Why this machine's browser pairs too: any process here can reach 127.0.0.1, coding agents with a shell among them. A
+paired browser's key is what tells your browser from them; the agents' own API uses a per-session token.
+`minbox pair accept` asks on an interactive terminal only (an agent's shell tool has none), and the mods refuse a
+shell command that runs it. A process running as your user can still read and write minbox's data folder
+(`~/.minbox`), so this keeps an agent from acting as you by accident or through a prompt injection; it is not a wall
+against code that sets out to defeat it.
 
-Why this machine's browser pairs too: any process here can reach 127.0.0.1, coding agents with a
-shell among them. A paired browser's key (kept in the browser, never sent) is what tells your
-browser from them; the agents' own API uses a per-session token. `minbox pair accept` asks on an
-interactive terminal only (an agent's shell tool has none) and the mods refuse a shell command
-that runs it. A process running as your user can still read and write minbox's data folder
-(`~/.minbox`), so this keeps an agent from acting as you by accident or through a prompt
-injection; it is not a wall against code that sets out to defeat it.
-
-The browser keeps a device key, and after pairing it signs in by itself. On a phone, minbox
-opens as the thread list; a thread opens full screen, with a Thread | Terminal switch. The
-terminal fits the screen, scrolls with a swipe, and stays visible above the keyboard.
-Attachments open in a full-screen viewer (close with the x button, back or Escape).
-
-### Sessions on another machine
+### Agents on another machine
 
 Run a host there and add it in **Settings → Hosts**:
 
@@ -418,67 +350,25 @@ minbox host --listen 0.0.0.0:4849   # or directly, over TCP
 minbox pair list                    # servers and browsers waiting to be paired
 ```
 
-1. The server asks to pair; accept with `minbox pair accept <code>` on that machine.
-2. From then on, every request the server sends to the host is signed with the server's ed25519
-   key.
-
-Sessions there run with that machine's own `$SHELL`, environment and files. Their mods reach the
-server back through the same connection. Claude Code, Pi and OpenCode sessions all run there: the
-host has its own copy of the mod, the Pi extension and the OpenCode plugin, and Settings → Hosts shows
-which agents that machine has (Pi needs Node 22.19+ there, OpenCode must be 2.x). New session offers
-the agents of the host you pick. Update `minbox` on the other machine too: Pi and OpenCode need a host
-of this version (protocol 5).
-
-## Keyboard
-
-Press `?` for the full list. ⌘ is Ctrl on Linux and Windows. Single-key shortcuts can be turned
-off in **Settings → General**.
-
-| Keys | |
-| --- | --- |
-| `⌘K` / `/` | Quick open (`>` actions, `@` sessions, `#` threads, `!` projects) |
-| ``Ctrl+` `` | Companion shell pane (overlay on phone and tablet) |
-| `Esc` | Close the top layer |
-| `↑` `↓`, `↵` | Move, open |
-| `J` / `K` | Next / previous thread |
-| `N` / `Q` | First new thread / open questions |
-| `R`, `⌘↵` | Reply, send |
-| `E` / `⇧E` / `Z` | Mark read / archive thread / undo |
-| `⇧F10` | Row menu |
-| `]` `[` / `O` / `F` | Next, previous attachment / the latest / full screen |
-
-While the terminal has focus, only `⌘K` is minbox's (Ctrl+K stays the shell's), and Shift+Enter
-types a newline in Claude Code. In Claude Code's full-screen UI, clicks and the wheel go to
-Claude Code; Shift+drag selects text. The terminal and the event stream reconnect by
-themselves after a network drop or a server restart, and the open thread reloads.
+The server asks to pair; accept with `minbox pair accept <code>` on that machine. From then on every request the
+server sends to the host is signed with the server's ed25519 key. Agents there run with that machine's own `$SHELL`,
+environment and files, and their mods reach the server back through the same connection. Claude Code, Pi and
+OpenCode all run there (Settings → Hosts shows which that machine has); update `minbox` on it too.
 
 ## Settings
 
-Text size and theme (light, dark, match system; the terminal follows it live with a light palette),
-browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
-questions), **Notifications**, **Hosts**, **Devices**, optional parts (Decision mode),
-archived sessions and threads, storage and About.
+**General** (text size; theme: light, dark or system, the terminal follows it; browser notifications; single-key
+shortcuts), **Notifications**, **Integrations** (Linear, Slack personal), **Hosts**, **Devices**, **Prompts** (the
+orchestrator prompt, extra instructions, Help me reply), **Capabilities** (the coding agents installed and the default
+for new agents; optional parts such as Decision mode), **Archived**, **Storage** and **About**.
 
-**Help me reply** (on by default): when the last message of a thread is the agent's, minbox asks
-Haiku through `claude -p` for a few questions that help you decide your reply, each with options to pick
-(single or multiple choice, plus "Other…" for your own words). What you pick is added to your reply as
-`Q: … → A: …` lines (a preview shows it) when you press Send; answer nothing and the reply goes as typed.
-When the agent tried a shell command and it was denied (you rejected the prompt, a permission rule, a hook),
-a "Run yourself" chip offers `!<command>` to run it yourself: the agent's integration reports the denial as it
-happens, nothing is guessed from the message text. The recent text
-of the thread goes to Anthropic for that; turn it off in **Settings → Prompts**. Without `claude`
-the default agent runs it instead (Pi: `pi --print`, its own default model, or `MINBOX_PI_HELPER_MODEL`; OpenCode only
-when neither Claude Code nor Pi is installed: `opencode run`, `MINBOX_OPENCODE_HELPER_MODEL`); with no
-coding agent installed the feature is simply off.
+**Trust folders Claude starts in** (on by default): before a Claude Code agent starts, minbox marks its folder trusted
+in Claude Code's config on the machine it runs on (only `projects["<folder>"].hasTrustDialogAccepted` in
+`~/.claude.json`), so it does not stop at the "Do you trust this folder?" dialog ([docs/agents.md](docs/agents.md)).
 
-**Coding agents** (Settings → Capabilities): which of Claude Code, Pi and OpenCode are installed (OpenCode with its
-version; 1.x is shown as unsupported), and the default for new sessions (projects can set their own in their edit dialog).
-Pi has no permission prompts and its own subagent tool instead of the orchestrator prompt; OpenCode runs with `--auto`
-and `--standalone`. Both also run on other hosts (each host's agents are listed there and in Settings → Hosts).
-**Trust folders Claude starts in** (on by default): before a Claude Code session starts, minbox marks its folder trusted in
-Claude Code's config on the machine it runs on (`projects["<folder>"].hasTrustDialogAccepted` in `~/.claude.json`, or
-`$CLAUDE_CONFIG_DIR/.claude.json`), so it does not stop at the "Do you trust this folder?" dialog. Only that key is
-added; the rest of the file is kept as it is (docs/agents.md, "Claude Code's folder trust").
+The helper model (Help me reply, picking an agent or a project, Linear drafts) runs through `claude -p` with Claude
+Haiku; without `claude`, through Pi or OpenCode; with no coding agent installed those features are off. The recent
+text they work on is sent to the model's provider.
 
 ## Development
 
@@ -489,12 +379,13 @@ make test-pi        # the Pi extension's tests (node --test plugin/pi/minbox.tes
 make test-opencode  # the OpenCode plugin's tests (node --test plugin/opencode/*.test.ts)
 make test-e2e       # builds, then Playwright (cd web && npx playwright test) against a fake claude (no model calls)
 cd web && MINBOX_REAL_CLAUDE=1 npx playwright test real-claude   # a real Claude Code (Haiku)
-cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts   # regenerate docs/img/readme/
+cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts   # regenerate docs/img/readme/ (make build first)
 ```
 
-The e2e suites start their own servers on free ports, so several can run at once, and their cleanup kills only their own fake-claude processes.
-
-The suite runs fully parallel with 6 workers (about 55 s instead of 2.5 min; 8 workers give about 43 s but threads-first turns flaky on a busy machine). Pick another count with `PW_WORKERS=4 npx playwright test` or `--workers=N`; much above 8 on a laptop makes timing-sensitive tests flaky, and fewer is kinder when other suites run on the same machine. Run one spec with `npx playwright test e2e/shell-pane.spec.ts` (add `-g "part of the title"` for one test); the binary embeds the web assets, so `make build` first.
+The e2e suites start their own servers on free ports, so several can run at once, and their cleanup kills only their
+own fake-claude processes. The suite runs fully parallel with 6 workers; pick another count with
+`PW_WORKERS=4 npx playwright test` or `--workers=N`. Run one spec with `npx playwright test e2e/v3-triage.spec.ts`
+(add `-g "part of the title"` for one test); the binary embeds the web assets, so `make build` first.
 
 Contributing: do not add or lock an npm package version published less than 72 hours ago
 (`web/.npmrc` enforces it for `npm install`); see [CLAUDE.md](CLAUDE.md).
@@ -509,12 +400,13 @@ cmd/minbox/         CLI: start/stop/restart/status, host, pair
 internal/server/    HTTP API, SSE, agent API, sessions, hosts, pairing
 internal/termhost/  the terminal host (PTYs, attach protocol)
 internal/store/     SQLite store
+internal/agent/     the Agent interface: Claude Code, Pi and OpenCode adapters (docs/agents.md)
 plugin/minbox/      the Claude Code mod (hooks module)
 plugin/pi/          the Pi extension (minbox.ts)
 plugin/opencode/    the OpenCode 2.x plugin (index.ts, minbox.ts)
-internal/agent/     the Agent interface: Claude Code, Pi and OpenCode adapters (docs/agents.md)
-web/                React + Vite + Tailwind UI, ghostty-web terminal, Playwright tests
-docs/               API contract, linear.md, UI notes (ui-v2-threads.md, ui-v2-projects.md), screenshots, diagrams
+web/src/v3/         the UI: Board, agent pages, tasks (React + Vite, ghostty-web terminal)
+web/e2e/            Playwright tests (v3-*.spec.ts: one per use case, docs/v3/usecases.md)
+docs/               API contract (api-contract.md, v3/api.md), the v3 design (v3/), integrations, screenshots, diagrams
 ```
 
 ## Acknowledgements

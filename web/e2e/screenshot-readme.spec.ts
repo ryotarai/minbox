@@ -3,314 +3,237 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createSession, expect, expectTerminal, selectProject, test, trustBrowser, typeInTerminal } from './fixtures'
+import { expect, expectTerminal, test, trustBrowser, typeInTerminal, type Minbox } from './fixtures'
+import { api, startAgent, type Agent } from './v3'
 
 // Not a check: the README's screenshots (docs/img/readme/), from a made-up scene. Regenerate with
-//   cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts
-// Everything in them is invented: three projects, a few threads and a canned terminal transcript.
+//   make build && cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts
+// Everything in them is invented: three projects, four agents, their tasks and messages, and a canned
+// terminal transcript. The fake claude does not answer by itself here (FAKE_AGENT=0): the scene's agent
+// messages and tasks are written through the agent API with each session's own token.
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SUGGESTIONS = join(process.env.TMPDIR ?? '/tmp', `minbox-readme-suggest-${process.pid}.json`)
-if (process.env.SCREENSHOTS === '1') process.env.FAKE_SUGGEST_FILE = SUGGESTIONS
+if (process.env.SCREENSHOTS === '1') {
+  process.env.FAKE_SUGGEST_FILE = SUGGESTIONS
+  process.env.FAKE_AGENT = '0'
+}
 
 const OUT = process.env.SCREENSHOT_DIR ?? resolve(__dirname, '../../docs/img/readme')
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
 const MIN = 60_000
-const PALETTE_QUERY = 'audit'
 
-type Msg = { subject: string; body: string; status?: string; attachments?: string[]; ago: number }
+const dbOf = (m: Minbox) => {
+  const db = readdirSync(m.dataDir).find((f) => f.endsWith('.db'))
+  if (!db) throw new Error('no database in ' + m.dataDir)
+  return join(m.dataDir, db)
+}
+const sql = (m: Minbox, q: string) => execFileSync('sqlite3', [dbOf(m)], { input: '.timeout 5000\n' + q + '\n' }).toString().trim()
 
-const AUDIT_BODY = `I looked at how \`api-gateway\` would write its audit log, and the choice is between two stores.
+/** The agent API, as the agent's mod calls it (its session's token). */
+async function as(m: Minbox, a: Agent, method: string, path: string, body?: unknown): Promise<any> {
+  const token = sql(m, `SELECT token FROM sessions WHERE id='${a.id}';`)
+  const r = await fetch(m.url + path, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+  const text = await r.text()
+  if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${text}`)
+  return text ? JSON.parse(text) : null
+}
 
-## What I found
+type Step = [string, boolean]
+const steps = (s: Step[]) => s.map(([text, done]) => ({ text, done }))
 
-- Roughly **1.2k writes per minute**, about 400 bytes each, and almost no updates.
+const AUDIT_Q = `I looked at how \`api-gateway\` would write its audit log; the choice is between two stores.
+
+- Roughly **1.2k writes a minute**, about 400 bytes each, almost no updates.
 - Reads are rare: an admin searches by actor or by day.
-- A Postgres runs for billing, but not in every environment.
+- Postgres already runs for billing, but not in every environment.
 
-## The table
-
-\`\`\`sql
-CREATE TABLE audit_events (
-  id INTEGER PRIMARY KEY,
-  at TIMESTAMP NOT NULL,
-  actor TEXT NOT NULL,
-  action TEXT NOT NULL
-);
-\`\`\`
+The schema I would start with is attached.
 
 :::question
 Which database should hold the audit log?
 
 SQLite needs nothing new to run. Postgres is easier to query across several gateways.
 
-- [ ] SQLite — one file, no new service
+- [ ] SQLite — one file per gateway, no new service
 - [ ] Postgres — shared, but a new dependency per environment
 - [ ] Keep the log files — no database yet
 
 Recommended: SQLite
 :::`
 
-const MESSAGES: Record<string, Msg[]> = {
-  'api-gateway/main': [
-    {
-      subject: 'Add a Retry-After header to 429 responses',
-      body: 'Done. Every 429 now carries `Retry-After` (seconds until the bucket refills), and the limiter tests cover it.\n\n## What changed\n\n- `internal/limit/limiter.go`: the refill time is returned with the decision\n- `internal/http/middleware.go`: the header is set once, in one place\n- 14 tests pass, including the burst case\n\n```go\nif !d.Allowed {\n\tw.Header().Set(\"Retry-After\", s)\n\tw.WriteHeader(429)\n\treturn\n}\n```\n\nI did not touch the per-route limits.',
-      status: 'finished',
-      ago: 6,
-    },
-    {
-      subject: 'Rate limiter: token bucket or sliding window?',
-      body: 'I kept the token bucket. It is already what the config describes, and it needs one counter per key instead of a list of timestamps.\n\nIf you want a hard per-minute cap later, the sliding window fits behind the same interface.',
-      status: 'finished',
-      ago: 140,
-    },
-  ],
-  'api-gateway/audit-log': [
-    { subject: 'Pick a database for the audit log', body: AUDIT_BODY, status: 'need_action', attachments: ['audit-schema.sql'], ago: 2 },
-  ],
-  'docs-site/main': [
-    {
-      subject: 'Draft the v2 migration guide',
-      body: 'The draft is in `docs/migrate-v2.md`: renamed options, removed flags and a before/after config example. I left three `TODO` markers where I could not verify behavior.',
-      status: 'finished',
-      attachments: ['migrate-v2.md'],
-      ago: 38,
-    },
-    { subject: 'Broken links in the API reference', body: 'Crawling the built site: 212 pages checked, 9 broken links so far. Fixing the redirects first.', status: 'working', ago: 1 },
-  ],
-  'mobile-app/main': [
-    { subject: 'Flaky test in checkout_spec', body: 'It fails about one run in six. The cart total is read before the price update lands. I am adding a wait on the update and running the spec 50 times.', status: 'working', ago: 4 },
-    { subject: 'Bump React Native to 0.76', body: 'Upgraded and both apps build. The only code change was a renamed `Platform` import.', status: 'finished', ago: 1560 },
-  ],
-  'mobile-app/permissions': [
-    {
-      subject: 'Wording for the notification permission prompt',
-      body: 'The iOS prompt shows once, so the pre-prompt screen matters.\n\n:::question\nWhich headline should the pre-prompt use?\n- [ ] "Stay on top of your orders"\n- [ ] "Get delivery updates"\nRecommended: "Get delivery updates"\n:::',
-      status: 'need_action',
-      ago: 17,
-    },
-  ],
-}
-
 const D = '\x1b[2m'
 const R = '\x1b[0m'
 const B = '\x1b[1m'
 const G = '\x1b[32m'
-const PAD = 18
-const PHONE_PAD = 8
-const EARLIER = [
-  `${B}> Add an audit trail for admin actions in api-gateway${R}`,
-  '',
-  `${G}\u25cf${R} ${B}Update${R}(internal/audit/writer.go)`,
-  `  ${D}\u23bf  Updated with 23 additions and 4 removals${R}`,
-  '',
-  `${G}\u25cf${R} ${B}Bash${R}(go test ./internal/audit/...)`,
-  `  ${D}\u23bf  ok  api-gateway/internal/audit  0.412s${R}`,
-  '',
-  `${G}\u25cf${R} Events are written through a small interface now.`,
-  '  Next I need to decide where they are stored.',
-  '',
-  '',
-]
-const TRANSCRIPT = [
-  ...EARLIER,
-  `${B}> Compare SQLite and Postgres for the audit log${R}`,
-  '',
-  `${G}●${R} I’ll look at how the gateway writes events today`,
-  '  and what the deployment already runs.',
-  '',
-  `${G}●${R} ${B}Search${R}(pattern: "audit", path: "internal")`,
-  `  ${D}⎿  Found 11 files${R}`,
-  '',
-  `${G}●${R} ${B}Read${R}(internal/audit/writer.go)`,
-  `  ${D}⎿  Read 148 lines${R}`,
-  '',
-  `${G}●${R} ${B}Read${R}(deploy/compose.yaml)`,
-  `  ${D}⎿  Read 62 lines${R}`,
-  '',
-  `${G}●${R} ${B}Write${R}(audit-schema.sql)`,
-  `  ${D}⎿  Wrote 7 lines${R}`,
-  '',
-  `${G}●${R} ${B}minbox - send_message${R}(subject: "Pick a datab…")`,
-  `  ${D}⎿  Sent to the inbox${R}`,
-  '',
-  `${G}●${R} The question is in your inbox. I will carry on`,
-  '  when you answer.',
-  ...Array(PAD).fill(''),
-  `${D}╭${'─'.repeat(52)}╮${R}`,
-  `${D}│${R} >${' '.repeat(50)}${D}│${R}`,
-  `${D}╰${'─'.repeat(52)}╯${R}`,
-  `${D}  ? for shortcuts${R}`,
-].join('\n')
-
-const PHONE_TRANSCRIPT = [
-  `${B}> Compare SQLite and Postgres${R}`,
-  '',
-  `${G}\u25cf${R} I\u2019ll check how the gateway`,
-  '  writes events today.',
-  '',
-  `${G}\u25cf${R} ${B}Search${R}("audit", internal)`,
-  `  ${D}\u23bf  Found 11 files${R}`,
-  '',
-  `${G}\u25cf${R} ${B}Read${R}(audit/writer.go)`,
-  `  ${D}\u23bf  Read 148 lines${R}`,
-  '',
-  `${G}\u25cf${R} ${B}Read${R}(deploy/compose.yaml)`,
-  `  ${D}\u23bf  Read 62 lines${R}`,
-  '',
-  `${G}\u25cf${R} ${B}Write${R}(audit-schema.sql)`,
-  `  ${D}\u23bf  Wrote 7 lines${R}`,
-  '',
-  `${G}\u25cf${R} ${B}minbox - send_message${R}`,
-  `  ${D}\u23bf  Sent to the inbox${R}`,
-  '',
-  `${G}\u25cf${R} The question is in your inbox.`,
-  '  I will carry on when you answer.',
-  '',
-  ...Array(PHONE_PAD).fill(''),
-  `${D}\u256d${'\u2500'.repeat(36)}\u256e${R}`,
-  `${D}\u2502${R} >${' '.repeat(34)}${D}\u2502${R}`,
-  `${D}\u2570${'\u2500'.repeat(36)}\u256f${R}`,
-  `${D}  ? for shortcuts${R}`,
-].join('\n')
-
-async function poll(fn: () => Promise<boolean>, what: string) {
-  for (let i = 0; i < 100; i++) {
-    if (await fn()) return
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  throw new Error('timed out: ' + what)
-}
+/** The terminal pane: a canned Claude Code-like transcript (typed into the fake as `transcript <file>`). */
+const TRANSCRIPT = (width: number, pad: number) =>
+  [
+    `${B}> Add an audit trail for admin actions: who did what, when.${R}`,
+    '',
+    `${G}●${R} ${B}minbox - create_task${R}(title: "Store the audit log…")`,
+    `  ${D}⎿  Task created${R}`,
+    '',
+    `${G}●${R} ${B}Search${R}(pattern: "requireAdmin", path: "internal")`,
+    `  ${D}⎿  Found 14 files${R}`,
+    '',
+    `${G}●${R} ${B}Update${R}(internal/audit/writer.go)`,
+    `  ${D}⎿  Updated with 23 additions and 4 removals${R}`,
+    '',
+    `${G}●${R} ${B}Bash${R}(go test ./internal/audit/...)`,
+    `  ${D}⎿  ok  api-gateway/internal/audit  0.412s${R}`,
+    '',
+    `${G}●${R} ${B}minbox - update_task${R}(check_steps: [1, 2])`,
+    `  ${D}⎿  Steps 1, 2 done${R}`,
+    '',
+    `${G}●${R} ${B}Write${R}(audit-schema.sql)`,
+    `  ${D}⎿  Wrote 8 lines${R}`,
+    '',
+    `${G}●${R} ${B}minbox - send_message${R}(question: "Which database…")`,
+    `  ${D}⎿  Sent; the person answers in minbox${R}`,
+    '',
+    `${G}●${R} The question is in minbox. I will carry on`,
+    '  when you answer.',
+    ...Array(pad).fill(''),
+    `${D}╭${'─'.repeat(width)}╮${R}`,
+    `${D}│${R} >${' '.repeat(width - 2)}${D}│${R}`,
+    `${D}╰${'─'.repeat(width)}╯${R}`,
+    `${D}  ? for shortcuts${R}`,
+  ].join('\n')
 
 test.use({ deviceScaleFactor: 1.5 })
-
-/** A made-up incoming-webhook URL, assembled at run time: secret scanners flag the literal form. */
-function fakeWebhook(channel: string, fill: string): string {
-  return ['https:/', ['hooks', 'slack', 'com'].join('.'), 'services', 'T01AB2CD3', channel, fill.repeat(24)].join('/')
-}
 
 test('README screenshots', async ({ page, minbox, browser }) => {
   test.skip(process.env.SCREENSHOTS !== '1', 'set SCREENSHOTS=1')
   test.setTimeout(300_000)
   mkdirSync(OUT, { recursive: true })
-  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the job queue?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'we already run it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'A later migration' }, { label: 'Backups' }] }]))
-  const specDir = join(minbox.dataDir, 'spec')
-  mkdirSync(specDir, { recursive: true })
-  const dirOf = (p: string) => {
-    const d = join(minbox.dataDir, 'work', p)
-    mkdirSync(d, { recursive: true })
-    return d
-  }
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the audit log?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'billing already runs it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'Retention' }, { label: 'Backups' }] }]))
   const shot = async (name: string, p: Page = page) => {
     await p.waitForTimeout(700)
     await p.screenshot({ path: `${OUT}/${name}.png` })
   }
-  const threadCount = async () => ((await (await fetch(minbox.url + '/api/threads')).json()) as any[]).length
 
+  // Agents (fake claude sessions) in three projects.
+  const audit = await startAgent(minbox, 'audit-log', 'work/api-gateway')
+  const limits = await startAgent(minbox, 'limits', 'work/api-gateway')
+  const docs = await startAgent(minbox, 'docs', 'work/docs-site')
+  const checkout = await startAgent(minbox, 'checkout', 'work/mobile-app')
+  writeFileSync(join(minbox.dataDir, 'work/api-gateway/audit-schema.sql'), 'CREATE TABLE audit_events (\n  id     INTEGER PRIMARY KEY,\n  at     TIMESTAMP NOT NULL,\n  actor  TEXT NOT NULL,\n  action TEXT NOT NULL,\n  target TEXT\n);\nCREATE INDEX audit_events_at ON audit_events (at);\n')
+  writeFileSync(join(minbox.dataDir, 'work/docs-site/migrate-v2.md'), '# Migrating to v2\n\nThree options were renamed and two flags were removed.\n\n## Renamed options\n\n| v1 | v2 |\n| --- | --- |\n| `base_url` | `site.url` |\n| `theme` | `site.theme` |\n')
+
+  const ages: [string, number][] = [] // message id, minutes ago
+  const span: Record<string, [number, number]> = {} // task id -> its first and last message (minutes ago)
+  const aged = (task: string, ago: number) => {
+    const [first, last] = span[task] ?? [ago, ago]
+    span[task] = [Math.max(first, ago), Math.min(last, ago)]
+  }
+  const person = async (a: Agent, words: string, task: string, ago: number) => {
+    const r = await api(minbox, 'POST', `/api/v3/sessions/${a.id}/messages`, { words, task_id: task })
+    ages.push([r.id ?? r.message?.id, ago])
+    aged(task, ago)
+  }
+  const agent = async (a: Agent, body: string, task: string, ago: number, extra: Record<string, unknown> = {}) => {
+    const r = await as(minbox, a, 'POST', '/api/agent/messages', { body, task_id: task, ...extra })
+    ages.push([r.message_id ?? r.id, ago])
+    aged(task, ago)
+    return r
+  }
+  const task = async (a: Agent, fields: Record<string, unknown>) => (await as(minbox, a, 'POST', '/api/agent/tasks', fields)).task_id as string
+
+  // api-gateway / audit-log
+  const tAudit = await task(audit, { title: 'Store the audit log for admin actions', summary: 'Writer and tests done; waiting on the database choice before the migration', steps: steps([['Find every admin action that changes state', true], ['Write events through one interface', true], ['Pick the store', false], ['Migration and retention job', false], ['Open the PR', false]]) })
+  await person(audit, 'Add an audit trail for admin actions: who did what, when. Keep it cheap to run.', tAudit, 52)
+  await agent(audit, 'On it. I found **14 admin handlers** that change state; each now calls `audit.Record(ctx, action, target)`. `go test ./internal/audit/...` passes.', tAudit, 31)
+  await agent(audit, AUDIT_Q, tAudit, 3, { attachments: ['audit-schema.sql'] })
+  const tAuditDone = await task(audit, { title: 'Explain the admin role checks', status: 'done', summary: 'Answered: roles come from the session, checked in one middleware' })
+  await person(audit, 'Where are admin roles checked today?', tAuditDone, 70)
+  await agent(audit, 'In one place: `internal/http/admin.go` reads the role from the session and rejects everything else with 403.', tAuditDone, 69)
+
+  // api-gateway / rate-limits
+  const tRetry = await task(limits, { title: 'Add a Retry-After header to 429 responses', status: 'done', summary: 'Merged: every 429 carries Retry-After', steps: steps([['Return the refill time with the decision', true], ['Set the header in the middleware', true], ['Tests for the burst case', true]]) })
+  await person(limits, 'Make 429s tell clients when to retry.', tRetry, 180)
+  await agent(limits, 'Done. Every 429 now carries `Retry-After` (seconds until the bucket refills); 14 limiter tests pass.', tRetry, 150)
+  const tRoutes = await task(limits, { title: 'Per-route rate limits', summary: 'Config parsed; wiring the limiter per route', steps: steps([['Config format for per-route limits', true], ['Parse and validate it', true], ['One bucket per route and key', false], ['Docs', false]]) })
+  await person(limits, 'Next: let routes set their own limits in the config.', tRoutes, 40)
+  await agent(limits, 'Config parsing is in; `routes[].limit` accepts `100/min` or `5/s`. Wiring the limiter now.', tRoutes, 8)
+
+  // docs-site / docs
+  const tGuide = await task(docs, { title: 'Draft the v2 migration guide', status: 'needs_you', summary: 'Draft ready for review; three TODOs need your call', steps: steps([['List renamed options and removed flags', true], ['Before/after config example', true], ['Review', false]]) })
+  await person(docs, 'Write a migration guide for v2.', tGuide, 120)
+  await agent(docs, 'The draft is in `migrate-v2.md`: renamed options, removed flags and a before/after config. I left three `TODO` markers where I could not verify behavior.', tGuide, 38, { attachments: ['migrate-v2.md'] })
+  const tLinks = await task(docs, { title: 'Fix broken links in the API reference', summary: '212 pages crawled, 9 broken links; fixing the redirects', steps: steps([['Crawl the built site', true], ['Fix redirects', false], ['Re-crawl', false]]) })
+  await person(docs, 'Some links in the API reference 404. Can you find and fix them?', tLinks, 25)
+  await agent(docs, 'Crawled the built site: 212 pages, **9 broken links**, all from the `/v1/` → `/reference/` move. Fixing the redirects first.', tLinks, 2)
+
+  // mobile-app / checkout
+  const tFlaky = await task(checkout, { title: 'Fix the flaky checkout_spec', summary: 'Found the race: the total is read before the price update lands', steps: steps([['Reproduce (fails 1 run in 6)', true], ['Find the race', true], ['Wait on the price update', false], ['Run the spec 50 times', false]]) })
+  await person(checkout, 'checkout_spec fails on CI now and then. Please fix it.', tFlaky, 30)
+  await agent(checkout, 'It fails about one run in six: the cart total is read before the price update lands. Adding a wait on the update, then 50 runs.', tFlaky, 4)
+
+  // A goal the flaky-test task serves (no autonomous run: the fake does not answer continuations here).
+  const tGoal = await task(checkout, { title: 'CI green on main', kind: 'goal', criteria: [{ text: 'checkout_spec passes 50 runs in a row', done: false }, { text: 'No skipped tests in the e2e suite', done: true }, { text: 'main stays green for a day', done: false }] })
+  await as(minbox, checkout, 'PATCH', `/api/agent/tasks/${tFlaky}`, { goal_id: tGoal })
+  span[tGoal] = [90, 4]
+
+  // Believable ages (the server stamps everything "now"), and a made-up home folder.
+  const now = Date.now()
+  const at = (mins: number) => now - mins * MIN
+  const real = join(minbox.dataDir, 'work')
+  sql(
+    minbox,
+    [
+      ...ages.map(([id, mins]) => `UPDATE messages SET created_at=${at(mins)} WHERE id='${id}'; UPDATE message_tasks SET created_at=${at(mins)} WHERE message_id='${id}';`),
+      ...Object.entries(span).map(([id, [first, last]]) => `UPDATE tasks SET created_at=${at(first)}, updated_at=${at(last)}, done_at=CASE WHEN done_at IS NULL THEN NULL ELSE ${at(last)} END WHERE id='${id}'; UPDATE task_events SET at=${at(first)} WHERE task_id='${id}';`),
+      `UPDATE sessions SET cwd = replace(cwd, '${real}', '/home/dev'); UPDATE projects SET dir = replace(dir, '${real}', '/home/dev');`,
+    ].join('\n'),
+  )
+  await as(minbox, checkout, 'POST', '/api/agent/status', { status: 'working' })
+  await as(minbox, docs, 'POST', '/api/agent/status', { status: 'working' })
+
+  // Desktop, dark: the agent's page with the task selected (its card and checklist above its messages).
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.setViewportSize({ width: 1600, height: 1000 })
-  await page.goto(minbox.url)
-
-  // Sessions and their threads.
-  const sessions: [string, string][] = [
-    ['api-gateway', 'main'],
-    ['api-gateway', 'audit-log'],
-    ['docs-site', 'main'],
-    ['mobile-app', 'main'],
-    ['mobile-app', 'permissions'],
-  ]
-  let n = 0
-  const agos: Record<string, number> = {}
-  for (const [proj, name] of sessions) {
-    const dir = dirOf(proj)
-    await createSession(page, dir, name)
-    await expectTerminal(page, 'ready>')
-    if (proj === 'api-gateway' && name === 'audit-log') {
-      writeFileSync(join(dir, 'audit-schema.sql'), 'CREATE TABLE audit_events (\n  id     INTEGER PRIMARY KEY,\n  at     TIMESTAMP NOT NULL,\n  actor  TEXT NOT NULL,\n  action TEXT NOT NULL,\n  target TEXT\n);\nCREATE INDEX audit_events_at ON audit_events (at);\n')
-    }
-    if (proj === 'docs-site') writeFileSync(join(dir, 'migrate-v2.md'), '# Migrating to v2\n\nThree options were renamed and two flags were removed.\n\n## Renamed options\n\n| v1 | v2 |\n| --- | --- |\n| `base_url` | `site.url` |\n| `theme` | `site.theme` |\n')
-    for (const m of MESSAGES[`${proj}/${name}`] ?? []) {
-      const file = join(specDir, `m${++n}.json`)
-      writeFileSync(file, JSON.stringify({ subject: m.subject, body: m.body, status: m.status, attachments: m.attachments }))
-      const before = await threadCount()
-      await typeInTerminal(page, `send ${file}`)
-      await poll(async () => (await threadCount()) > before, m.subject)
-      agos[m.subject] = m.ago
-    }
-  }
-
-  // Give the threads believable ages (the server stamps everything "now").
-  const db = readdirSync(minbox.dataDir).find((f) => f.endsWith('.db'))
-  if (!db) throw new Error('no database in ' + minbox.dataDir)
-  const now = Date.now()
-  const sql = Object.entries(agos)
-    .map(([s, mins]) => {
-      const at = now - mins * MIN
-      const q = s.replace(/'/g, "''")
-      return `UPDATE messages SET created_at=${at} WHERE thread_id IN (SELECT id FROM threads WHERE subject='${q}'); UPDATE threads SET created_at=${at}, updated_at=${at} WHERE subject='${q}';`
-    })
-    .join('\n')
-  // Show the made-up home directory instead of the test's temp directory.
-  const real = join(minbox.dataDir, 'work')
-  const paths = `UPDATE sessions SET cwd = replace(cwd, '${real}', '/home/dev'); UPDATE projects SET dir = replace(dir, '${real}', '/home/dev');`
-  execFileSync('sqlite3', [join(minbox.dataDir, db)], { input: '.timeout 5000\n' + sql + '\n' + paths })
-
-  // The open session's terminal: a canned transcript instead of the fake's plain output.
-  const tfile = join(specDir, 'transcript.txt')
-  writeFileSync(tfile, TRANSCRIPT)
-  await page.goto(minbox.url + '/#')
-  await page.reload()
-  await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
-  await expect(page.getByTestId('terminal-session-name')).toHaveText('audit-log')
-  await typeInTerminal(page, `transcript ${tfile}`)
-  await expectTerminal(page, 'The question is in your inbox')
-  const rz = (await page.getByTestId('resizer').first().boundingBox())!
-  await page.mouse.move(rz.x + rz.width / 2, 400)
-  await page.mouse.down()
-  await page.mouse.move(rz.x + rz.width / 2 + 90, 400, { steps: 6 })
-  await page.mouse.up()
-  const showCard = (p: Page) => p.getByTestId('question-card').first().evaluate((el) => el.scrollIntoView({ block: 'end' }))
-  await showCard(page)
+  await page.goto(`${minbox.url}/#s=${audit.id}&v=agent&k=${tAudit}`)
+  await expect(page.getByTestId('task-card')).toBeVisible()
+  await expect(page.getByTestId('question-card').first()).toBeVisible()
   await shot('hero-desktop')
 
-  // The palette over the same layout.
-  await page.keyboard.press(`${MOD}+k`)
-  await expect(page.getByTestId('palette')).toBeVisible()
-  await page.getByTestId('palette-input').fill(PALETTE_QUERY)
-  await expect(page.getByTestId('palette-item').first()).toBeVisible()
-  await shot('palette')
-  await page.keyboard.press('Escape')
+  // The Board.
+  await page.setViewportSize({ width: 1600, height: 680 })
+  await page.goto(`${minbox.url}/#`)
+  await expect(page.getByTestId('group-goals')).toBeVisible()
+  await shot('board')
 
-  // Tablet: the list beside a finished thread, with the reply questions.
-  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'What next?', kind: 'single', options: [{ label: 'Open a PR' }, { label: 'Add a test for the 60 s cap' }] }, { question: 'Also cover?', kind: 'multi', options: [{ label: 'The websocket route' }, { label: 'Uploads' }] }]))
-  await page.setViewportSize({ width: 834, height: 1112 })
-  await page.goto(minbox.url + '/#')
-  await expect(page.getByTestId('tablet')).toBeVisible()
-  await page.getByTestId('thread-row').filter({ hasText: 'Retry-After' }).click()
-  await expect(page.getByTestId('reply-q')).toHaveCount(2)
-  await shot('tablet')
+  // A side pane: the stream with the agent's terminal beside it.
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(`${minbox.url}/#s=${audit.id}&v=agent`)
+  await expect(page.getByTestId('stream-view')).toBeVisible()
+  const tfile = join(minbox.dataDir, 'transcript.txt')
+  writeFileSync(tfile, TRANSCRIPT(52, 18))
+  await typeInTerminal(page, `transcript ${tfile}`)
+  await expectTerminal(page, 'when you answer')
+  await shot('terminal')
 
-  // Phone: three screens, composed into one image.
-  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the job queue?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'we already run it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'A later migration' }, { label: 'Backups' }] }]))
+  // Phone, dark: the Board, a task in its agent's page, another; composed into one image.
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark', hasTouch: true, isMobile: true })
   await trustBrowser(ctx)
   const ph = await ctx.newPage()
   await ph.goto(minbox.url + '/#')
-  await expect(ph.getByTestId('phone-home')).toBeVisible()
-  await expect(ph.getByTestId('thread-row').first()).toBeVisible()
+  await expect(ph.getByTestId('phone-tabs')).toBeVisible()
+  await expect(ph.getByTestId('task-row').first()).toBeVisible()
   await shot('_phone-1', ph)
-  await ph.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
-  await expect(ph.getByTestId('phone')).toHaveAttribute('data-screen', 'thread')
-  await expect(ph.getByTestId('question-card').first()).toBeVisible()
-  await showCard(ph)
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Routes without a limit of their own?', kind: 'single', options: [{ label: 'Use the global limit' }, { label: 'No limit' }] }]))
+  await ph.goto(`${minbox.url}/#s=${limits.id}&v=agent&k=${tRoutes}`)
+  await expect(ph.getByTestId('task-card')).toBeVisible()
+  const toggle = ph.getByTestId('task-checklist').getByTestId('task-checklist-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.tap()
+  await expect(ph.getByTestId('task-checklist').getByTestId('step').first()).toBeVisible()
+  await expect(ph.getByTestId('reply-q')).toHaveCount(1)
   await shot('_phone-2', ph)
-  await ph.getByTestId('thread-open-terminal').click()
-  await expect(ph.getByTestId('phone')).toHaveAttribute('data-screen', 'terminal')
-  const tfile2 = join(specDir, 'transcript-phone.txt')
-  writeFileSync(tfile2, PHONE_TRANSCRIPT)
-  await typeInTerminal(ph, `transcript ${tfile2}`)
-  await expectTerminal(ph, 'when you answer')
+  // A task waiting on the person, with the agent's attachment.
+  writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'The three TODOs?', kind: 'single', options: [{ label: 'Keep them for now' }, { label: 'Resolve them before publishing' }] }, { question: 'Also cover?', kind: 'multi', options: [{ label: 'Plugins' }, { label: 'Themes' }] }]))
+  await ph.goto(`${minbox.url}/#s=${docs.id}&v=agent&k=${tGuide}`)
+  await expect(ph.getByTestId('task-card')).toBeVisible()
+  await expect(ph.getByTestId('reply-q')).toHaveCount(2)
   await shot('_phone-3', ph)
   await ctx.close()
   const urls = ['_phone-1', '_phone-2', '_phone-3'].map((n) => 'data:image/png;base64,' + readFileSync(`${OUT}/${n}.png`).toString('base64'))
@@ -322,8 +245,7 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   await comp.close()
   for (const n of ['_phone-1', '_phone-2', '_phone-3']) rmSync(`${OUT}/${n}.png`)
 
-  // Settings -> Notifications with a Slack destination (a made-up webhook).
-  await page.setViewportSize({ width: 1600, height: 1000 })
+  // Settings -> Notifications with two Slack destinations (made-up webhooks).
   await page.goto(minbox.url + '/#v=settings&ss=notifications')
   await expect(page.getByTestId('notif-list')).toBeVisible()
   await page.getByTestId('notif-public-url').fill('https://devbox.example-tailnet.ts.net/')
@@ -343,3 +265,8 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   await page.waitForTimeout(500)
   await page.screenshot({ path: `${OUT}/notifications.png`, clip: { x: 0, y: 0, width: 1240, height: 600 } })
 })
+
+/** A made-up incoming-webhook URL, assembled at run time: secret scanners flag the literal form. */
+function fakeWebhook(channel: string, fill: string): string {
+  return ['https:/', ['hooks', 'slack', 'com'].join('.'), 'services', 'T01AB2CD3', channel, fill.repeat(24)].join('/')
+}
