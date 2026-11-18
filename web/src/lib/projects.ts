@@ -36,14 +36,9 @@ export function statOf(sessions: Session[]): ProjectStat {
   return { waiting, unread, live: running.length, working, state }
 }
 
-/** The project's main session (when it is still listed). */
-export function mainSessionOf(project: Project | null | undefined, sessions: Session[] | null): Session | undefined {
-  return project?.main_session_id ? sessions?.find((s) => s.id === project.main_session_id) : undefined
-}
-
-/** Stats per project id (and '' = all projects), from the sessions list. The dot is the main session's. */
+/** Stats per project id (and '' = all projects), from the sessions list. */
 export function useProjectStats(): Map<string, ProjectStat> {
-  const { sessions, projects } = useApp()
+  const { sessions } = useApp()
   return useMemo(() => {
     const by = new Map<string, Session[]>()
     for (const s of sessions ?? []) {
@@ -52,14 +47,11 @@ export function useProjectStats(): Map<string, ProjectStat> {
     }
     const out = new Map<string, ProjectStat>()
     for (const [k, v] of by) {
-      const st = statOf(v)
-      const main = mainSessionOf(projects?.find((p) => p.id === k), sessions)
-      if (main && st.state !== 'waiting') st.state = main.status === 'working' ? 'working' : main.status === 'ended' ? 'ended' : 'idle'
-      out.set(k, st)
+      out.set(k, statOf(v))
     }
     out.set('', statOf(sessions ?? []))
     return out
-  }, [sessions, projects])
+  }, [sessions])
 }
 
 /** The selected project: '' = All projects (also when the remembered one is gone). */

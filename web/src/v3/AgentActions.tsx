@@ -1,5 +1,5 @@
 // The agent's actions in its stream header: the mod connection badge, Resume for an ended agent, and
-// the session menu (rename, set as main, restart / resume, stop, archive, delete) that main had on
+// the session menu (rename, restart / resume, stop, archive, delete) that main had on
 // the session rows and the terminal header. Also the agent rows' right-click / long-press menu.
 import { useEffect, useRef, useState } from 'react'
 import { api, type Session } from '../api'
@@ -28,7 +28,7 @@ export function AgentActions({ session }: { session: Session }) {
         className="v-btn"
         data-testid="agent-menu"
         aria-label="Agent actions"
-        title={`Agent info and actions (${session.cwd}): rename, set as main, restart, stop, archive, delete`}
+        title={`Agent info and actions (${session.cwd}): rename, restart, stop, archive, delete`}
         style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 6px' }}
         onClick={(e) => setMenu(menu ? null : e.currentTarget)}
       >

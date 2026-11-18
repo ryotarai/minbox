@@ -109,15 +109,16 @@ test('desktop: entry above All projects only when connected; list, search, detai
   await page.getByTestId('issues-refresh').click()
   await expect(page.getByTestId('issues-error')).toHaveCount(0)
 
-  // Start a thread from ENG-202 (Todo): project auto-selected, session = the project's main session.
+  // Start a thread from ENG-202 (Todo): project auto-selected, session = "Let minbox choose" (the helper picks the agent).
   await page.getByTestId('issue-start-thread').click()
   const dlg = page.getByTestId('issue-thread-dialog')
   await expect(dlg).toBeVisible()
   await expect(page.getByTestId('issue-pick-note')).toBeVisible() // "Auto-selected: ..."
   await expect(page.getByTestId('issue-pick-picking')).toHaveCount(0)
   const sess = page.getByTestId('issue-thread-session')
-  await expect(sess).not.toHaveValue('new')
-  await expect(sess.locator('option:checked')).toContainText('Main session')
+  await expect(sess).toHaveValue('auto')
+  await expect(sess.locator('option:checked')).toContainText('Let minbox choose')
+  await expect(page.getByTestId('issue-thread-warning')).toContainText('minbox picks the agent')
   const preview = page.getByTestId('issue-thread-preview')
   await expect(preview).toContainText('<linear_issue_handoff')
   await expect(preview).toContainText('issue: ENG-202')
@@ -181,7 +182,7 @@ test('desktop: entry above All projects only when connected; list, search, detai
   await expect(page).not.toHaveURL(/v=issues/)
 })
 
-test('desktop: with several projects the helper picks one; the main session is the default; changing the project re-defaults it', async ({ page, minbox }) => {
+test('desktop: with several projects the helper picks one; "Let minbox choose" is the default session; changing the project re-defaults it', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'alpha')
@@ -195,13 +196,13 @@ test('desktop: with several projects the helper picks one; the main session is t
   await expect(page.getByTestId('issue-pick-note')).toHaveAttribute('data-source', 'llm', { timeout: 15_000 })
   const proj = page.getByTestId('issue-thread-project')
   const sess = page.getByTestId('issue-thread-session')
-  await expect(sess.locator('option:checked')).toContainText('Main session')
-  const before = await sess.inputValue()
-  // Choose the other project: the session follows to that project's main session.
+  await expect(sess).toHaveValue('auto')
+  // A session picked by hand; choosing the other project goes back to "Let minbox choose".
+  const agent = await sess.locator('option').evaluateAll((os) => (os as HTMLOptionElement[]).map((o) => o.value).find((v) => v !== 'auto' && v !== 'new'))
+  await sess.selectOption(agent!)
   const other = await proj.locator('option').evaluateAll((os, cur) => (os as HTMLOptionElement[]).map((o) => o.value).find((v) => v !== cur), await proj.inputValue())
   await proj.selectOption(other!)
-  await expect(sess.locator('option:checked')).toContainText('Main session')
-  expect(await sess.inputValue()).not.toBe(before)
+  await expect(sess).toHaveValue('auto')
   // New session stays selectable.
   await sess.selectOption('new')
   await expect(page.getByTestId('issue-thread-session-name')).toBeVisible()

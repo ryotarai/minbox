@@ -60,7 +60,7 @@ export function V3App() {
   useEffect(() => setHidden(new Set()), [board])
   const agents = useMemo(() => {
     const live = (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell' && (!projectId || s.project_id === projectId))
-    return live.sort((a, b) => Number(b.is_main) - Number(a.is_main) || ((a.last_activity ?? '') < (b.last_activity ?? '') ? 1 : -1))
+    return live.sort((a, b) => ((a.last_activity ?? '') < (b.last_activity ?? '') ? 1 : -1))
   }, [sessions, projectId])
   // Plain login shells an older build left (they can no longer be made): listed apart, they open on their terminal.
   const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
@@ -556,7 +556,7 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
   const hint = agentHint(sessions ?? [], a)
   const u = counts?.unread ?? 0
   const waits = (counts?.open_questions ?? 0) > 0
-  // Right-click / long press / Shift+F10: the session menu (rename, set as main, restart, stop, archive, delete).
+  // Right-click / long press / Shift+F10: the session menu (rename, restart, stop, archive, delete).
   const menu = useContextMenu()
   const shell = a.kind === 'shell'
   return (
@@ -576,8 +576,7 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
         <span className="v-nm v-tline">
           <span>{a.name}</span>
           <small>
-            {hint && !a.is_main ? hint + ' · ' : ''}
-            {a.is_main ? 'main · ' : ''}
+            {hint ? hint + ' · ' : ''}
             {shell ? 'shell' : agentKindLabel(a.agent)}
             {a.host_name && a.host_id !== 'local' ? ' · ' + a.host_name : ''}
           </small>
@@ -640,13 +639,17 @@ function NoAgents({ noProjects, onNewAgent }: { noProjects: boolean; onNewAgent:
   )
 }
 
-/** ⇧N: a message to an agent (the project's main one by default) or to a new agent. The agent decides what it is. */
+/**
+ * ⇧N: a message to an agent or to a new agent. The agent decides what it is. With a project selected the
+ * default is "Let minbox choose": the server's helper picks one of the project's running agents whose work
+ * fits, else a new agent starts (POST /api/v3/new without to). Otherwise the most recently active agent.
+ */
 function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; initialTo?: string; onClose: () => void }) {
   const { error, projects, toast, setOverlay } = useApp()
   const { id: projectId } = useSelectedProject()
   const nav = useNav()
-  const main = agents.find((a) => a.is_main) ?? agents[0]
-  const [to, setTo] = useState(initialTo ?? main?.id ?? 'new')
+  const canAuto = !!projectId && agents.length > 0
+  const [to, setTo] = useState(initialTo ?? (canAuto ? 'auto' : agents[0]?.id ?? 'new'))
   const [name, setName] = useState('')
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
@@ -655,19 +658,19 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
   const io = fileInputHandlers(addFiles, addPastedText)
   const fileInput = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
-  const mention = useMentions({ sessionId: to !== 'new' ? to : null, value: body, onChange: setBody, inputRef: bodyRef, agents: false })
+  const mention = useMentions({ sessionId: to !== 'new' && to !== 'auto' ? to : null, value: body, onChange: setBody, inputRef: bodyRef, agents: false })
   const uploading = files.some((f) => f.state === 'uploading')
   const canSend = (!!body.trim() || files.some((f) => f.state === 'done')) && !uploading && !busy
-  const project = projectId || (to !== 'new' ? agents.find((a) => a.id === to)?.project_id : '') || projects?.[0]?.id || ''
+  const project = projectId || (to !== 'new' && to !== 'auto' ? agents.find((a) => a.id === to)?.project_id : '') || projects?.[0]?.id || ''
   const send = async () => {
     if (!canSend) return
     setBusy(true)
     try {
       const ups = uploadIds('v3:new')
-      const m = await v3.newMessage({ to, project_id: project, words: body.trim(), name: to === 'new' ? name.trim() : undefined, uploads: ups.length ? ups : undefined })
+      const m = await v3.newMessage({ to: to === 'auto' ? '' : to, project_id: project, words: body.trim(), name: to === 'new' ? name.trim() : undefined, uploads: ups.length ? ups : undefined })
       clearFiles('v3:new')
       onClose()
-      const sid = to === 'new' ? undefined : to
+      const sid = to === 'new' || to === 'auto' ? undefined : to
       if (to === 'new') toast('Started a new agent')
       // The message lands in that agent's stream.
       const target = sid ?? (await waitSession(m.thread_id))
@@ -692,10 +695,11 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
         <div className="v-rowf">
           To
           <select aria-label="To" data-testid="new-to" value={to} onChange={(e) => setTo(e.target.value)}>
+            {canAuto && <option value="auto">Let minbox choose (an agent whose work fits, else a new one)</option>}
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
-                {a.is_main ? ' (main)' : agentHint(agents, a) ? ` (${agentHint(agents, a)})` : ''} · {agentKindLabel(a.agent)}
+                {agentHint(agents, a) ? ` (${agentHint(agents, a)})` : ''} · {agentKindLabel(a.agent)}
                 {a.title ? ' — ' + a.title.slice(0, 40) : ''}
               </option>
             ))}
@@ -784,7 +788,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
   const rows: [string, string][] = [
     ['?', 'This help'],
     [mod + 'K', 'Quick actions: go to a task, an agent or a project, or run an action (> actions · @ agents · # tasks · ! projects)'],
-    ['⇧N', 'New message (to the main agent by default)'],
+    ['⇧N', 'New message (minbox picks the agent by default)'],
     ['/', 'Search'],
     ['g b · g a', 'Board · first agent'],
     ['J / K', 'Move on the Board'],
