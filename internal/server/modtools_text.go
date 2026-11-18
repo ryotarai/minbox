@@ -404,6 +404,7 @@ var taskDescription = map[string]string{
 		"Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.",
 		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. Keep summary current: one line on where it stands now, updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board.",
 		"message_ids: earlier messages that are about this task.",
+		"title: rename it when the work's scope becomes clear or changes, not on every step.",
 	}, " "),
 	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
 }
@@ -426,7 +427,7 @@ func taskSchema(tool string) jobj {
 	case "update_task":
 		return jobj{"type": "object", "properties": jobj{
 			"task_id":        jobj{"type": "string", "description": "The task or goal to update (from create_task or list_tasks)."},
-			"title":          jobj{"type": "string"},
+			"title":          jobj{"type": "string", "description": "A new name, when the work's scope has become clear or changed (2 to 8 words, in the person's language). A name the person gave the task is kept."},
 			"summary":        jobj{"type": "string", "description": summaryGuide},
 			"detail":         jobj{"type": "string", "description": "The fuller summary (Markdown); replaces the current one."},
 			"report":         jobj{"type": "string", "description": "The latest report the person reads on the Board."},
@@ -664,7 +665,11 @@ func taskText(tool string, v any) string {
 		}
 		return strings.Join(append(lines, taskLines(t)...), "\n")
 	case "update_task":
-		return strings.Join(append([]string{kind + " updated."}, taskLines(t)...), "\n")
+		head := []string{kind + " updated."}
+		if n := jstr(jget(v, "note")); n != "" {
+			head = append(head, squash(n))
+		}
+		return strings.Join(append(head, taskLines(t)...), "\n")
 	case "list_tasks":
 		ts := jarr(jget(v, "tasks"))
 		if len(ts) == 0 {

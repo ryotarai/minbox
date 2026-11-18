@@ -189,11 +189,12 @@ export function toggled(steps: Step[], path: number[]): Step[] {
   return next
 }
 
-/** Events worth a line between a task's messages: a hand-off and an autonomous run starting, pausing or
- *  ending, which nothing else shows. Status, step, criterion and report changes already show in the
- *  checklist and on the board, so a line for each would only be noise in the conversation. */
+/** Events worth a line between a task's messages: a hand-off, an autonomous run starting, pausing or
+ *  ending, and a rename (rare, and the old name is otherwise lost), which nothing else shows. Status,
+ *  step, criterion and report changes already show in the checklist and on the board, so a line for
+ *  each would only be noise in the conversation. */
 export function shownEvent(e: TaskEvent): boolean {
-  return e.kind === 'handoff' || e.kind === 'auto'
+  return e.kind === 'handoff' || e.kind === 'auto' || e.kind === 'title'
 }
 
 // ---- the task picker ----
