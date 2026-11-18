@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
 import { useMentions } from '../components/Mentions'
-import { useApp } from '../lib/app'
+import { railWidth, useApp } from '../lib/app'
 import { isMac } from '../lib/format'
 import { NotificationAsk, SessionMenu } from '../components/Sidebar'
 import { PhoneProjectButton } from '../components/PhoneProjects'
@@ -261,19 +261,19 @@ export function V3App() {
     const w = clamp(start + (swapped ? dx : -dx) / zoom, 240, Math.max(240, room))
     setLayout(wide ? { v3WideW: Math.round(w) } : { v3SideW: Math.round(w) })
   }
-  const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - 56 - 360)))) })
+  const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - railWidth(layout) - 360)))) })
   const layoutKind = isPhone ? 'phone' : isTablet ? 'tablet' : 'desktop'
   return (
     <div className="v-app" data-testid="v3-app" data-view={view} data-layout={layoutKind} data-pane={view === 'agent' ? pane : undefined} style={style}>
       {!isPhone && (
-        <div className="v-rail" style={{ width: 56, flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
+        <div className="v-rail" data-testid="rail-column" style={{ width: railWidth(layout), flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
           {isTablet && !showSidebar && (
             <button type="button" className="v-railbtn" data-testid="sidebar-toggle" aria-label="Show the sidebar" title="Board, Search and the agents" onClick={() => setSbOpen(true)}>
               ☰
             </button>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ProjectRail narrow />
+            <ProjectRail />
           </div>
         </div>
       )}
