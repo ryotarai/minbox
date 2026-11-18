@@ -37,7 +37,7 @@ test('an old #v=task link is replaced with the agent page, the task selected (an
   await expect.poll(() => page.url()).toBe('about:blank')
 })
 
-test("the task card: its checklist with progress n/m beside the title (below it on a phone); no ✕, no Open, no status line under the agent's name", async ({ page, minbox }) => {
+test("the task card: its checklist (just the steps: no progress bar, no n/m) beside the title (below it on a phone); no ✕, no Open, no status line under the agent's name", async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const t = await taskNamed(minbox, /Fix the gauge reading/)
@@ -46,16 +46,15 @@ test("the task card: its checklist with progress n/m beside the title (below it 
   await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`)
   const card = page.getByTestId('task-card')
   const check = card.getByTestId('task-checklist')
-  // No heading: the progress bar (segments, n/m) is the first row, level with the title; the steps below.
+  // No heading, no progress bar, no count: the first step is the first row, level with the title.
   await expect(check).not.toContainText('CHECKLIST')
   await expect(check.getByTestId('step')).toHaveCount(4)
-  const progress = check.getByTestId('task-checklist-progress')
-  await expect(progress.getByTestId('progress').locator('i')).toHaveCount(4)
-  await expect(progress).toHaveText('0/4')
-  const pb = (await progress.boundingBox())!
+  await expect(check.getByTestId('progress')).toHaveCount(0)
+  await expect(check.getByTestId('task-checklist-toggle')).toHaveCount(0)
+  await expect(check).not.toContainText('0/4')
+  const sb = (await check.getByTestId('step').first().boundingBox())!
   const tb = (await card.getByTestId('task-title').boundingBox())!
-  expect(Math.abs(pb.y + pb.height / 2 - (tb.y + tb.height / 2))).toBeLessThan(6)
-  expect((await check.getByTestId('step').first().boundingBox())!.y).toBeGreaterThan(pb.y + pb.height - 1)
+  expect(Math.abs(sb.y + sb.height / 2 - (tb.y + tb.height / 2))).toBeLessThan(6)
   await expect(check.locator('.v-st.doing .v-now')).toHaveText('now')
   // A right column beside the title, status and agents.
   const title = (await card.getByTestId('task-title').boundingBox())!
@@ -68,7 +67,8 @@ test("the task card: its checklist with progress n/m beside the title (below it 
 
   // A click ticks a step.
   await check.getByTestId('step').first().click()
-  await expect(check).toContainText('1/4')
+  await expect(check.getByTestId('step').first()).toHaveClass(/\bdone\b/)
+  await expect(check).not.toContainText('1/4')
   await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/tasks/${t.id}`)).task.steps[0].done).toBe(true)
 
   // Gone: the card's ✕ and Open, and the line under the agent's name ("idle · … · on <task>").
@@ -84,8 +84,19 @@ test("the task card: its checklist with progress n/m beside the title (below it 
   const t2 = (await card.getByTestId('task-title').boundingBox())!
   const l2 = (await check.boundingBox())!
   expect(l2.y).toBeGreaterThan(t2.y + t2.height - 1)
-  await check.getByTestId('task-checklist-progress').click() // four steps start folded on a phone
+  // Four steps start folded on a phone: the progress bar (no count) and a chevron.
+  const toggle = check.getByTestId('task-checklist-toggle')
+  await expect(toggle.getByTestId('progress').locator('i')).toHaveCount(4)
+  await expect(toggle).toHaveText('')
+  await toggle.click()
   await expect(check.getByTestId('step')).toHaveCount(4)
+  // Open: no bar, only a small chevron at the list's top right.
+  await expect(check.getByTestId('progress')).toHaveCount(0)
+  const cb = (await toggle.boundingBox())!
+  const lb = (await check.boundingBox())!
+  expect(cb.width).toBeLessThan(30)
+  expect(Math.abs(cb.x + cb.width - (lb.x + lb.width))).toBeLessThan(2)
+  expect(Math.abs(cb.y - lb.y)).toBeLessThan(2)
   await shot(page, 'card-phone')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 })
@@ -98,7 +109,8 @@ test('a long checklist stays a short box until Show all', async ({ page, minbox 
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`)
   const check = page.getByTestId('task-checklist')
-  await expect(check).toContainText('6/9')
+  await expect(check.locator('.v-st.done')).toHaveCount(6)
+  await expect(check).not.toContainText('6/9')
   const box = check.getByTestId('task-checklist-list')
   const folded = (await box.boundingBox())!.height
   expect(folded).toBeLessThan(130)
@@ -140,7 +152,7 @@ test('a task no agent has touched opens in its project\'s most recently active a
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test('the checklist folds to its progress bar (a tap on it), the choice kept for every task across reloads; a short list starts open, a long one folded', async ({ page, minbox }) => {
+  test('the checklist folds to its progress bar (a tap on it; open, a chevron at the top right folds it), the choice kept for every task across reloads; a short list starts open, a long one folded', async ({ page, minbox }) => {
     const a = await startAgent(minbox, 'api')
     const mk = async (title: string, n: number) => {
       const t = await api(minbox, 'POST', '/api/v3/tasks', { title, session_id: a.id })
@@ -150,17 +162,19 @@ test.describe('phone', () => {
     const short = await mk('Short one', 3)
     const long = await mk('Long one', 6)
     const check = page.getByTestId('task-checklist')
-    const toggle = check.getByTestId('task-checklist-progress')
+    const toggle = check.getByTestId('task-checklist-toggle')
 
-    // No choice yet: three steps open, six folded (only the bar and n/m).
+    // No choice yet: three steps open (no bar), six folded (only the bar, no count).
     await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${short.id}`)
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(check.getByTestId('step')).toHaveCount(3)
+    await expect(check.getByTestId('progress')).toHaveCount(0)
+    await shot(page, 'card-phone-open')
     await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${long.id}`)
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(check.getByTestId('step')).toHaveCount(0)
-    await expect(toggle.getByTestId('progress')).toBeVisible()
-    await expect(toggle).toHaveText('1/6')
+    await expect(toggle.getByTestId('progress').locator('i')).toHaveCount(6)
+    await expect(toggle).toHaveText('')
     await shot(page, 'card-phone-folded')
 
     // Open it: kept across a reload, and for the other task too.
@@ -176,7 +190,7 @@ test.describe('phone', () => {
     await page.reload()
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${short.id}`)
-    await expect(check.getByTestId('task-checklist-progress')).toHaveText('1/3')
+    await expect(toggle.getByTestId('progress').locator('i')).toHaveCount(3)
     await expect(check.getByTestId('step')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
   })

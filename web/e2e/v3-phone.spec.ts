@@ -29,10 +29,10 @@ test('phone: tabs, a task in its agent page with its checklist, an agent stream,
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   await expect(page).toHaveURL(new RegExp(`s=${a.id}.*v=agent.*k=${t.id}`))
   const check = page.getByTestId('task-card').getByTestId('task-checklist')
-  // Four steps: folded to the progress bar at first; a tap on it shows them.
+  // Four steps: folded to the progress bar (no count) at first; a tap on it shows them.
   await expect(check.getByTestId('progress')).toBeVisible()
   await expect(check.getByTestId('step')).toHaveCount(0)
-  await check.getByTestId('task-checklist-progress').tap()
+  await check.getByTestId('task-checklist-toggle').tap()
   await expect(check.getByTestId('step')).toHaveCount(4)
   const title = (await page.getByTestId('task-title').boundingBox())!
   expect((await check.boundingBox())!.y).toBeGreaterThan(title.y + title.height - 1)
