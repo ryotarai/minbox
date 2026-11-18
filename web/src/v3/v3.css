@@ -39,6 +39,7 @@
 .v-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .d-wait { background: var(--mb-wait); } .d-work { background: var(--mb-work); } .d-block { background: var(--mb-danger); } .d-idle, .d-done { background: var(--mb-faint); } .d-goal { background: var(--mb-purple); }
 .v-live { animation: v-pulse 1.4s infinite; }
+@media (prefers-reduced-motion: reduce) { .v-live { animation: none; } }
 @keyframes v-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mb-work) 65%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 
 /* main */
