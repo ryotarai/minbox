@@ -45,10 +45,16 @@ test("the task card: its checklist with progress n/m beside the title (below it 
   await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`)
   const card = page.getByTestId('task-card')
   const check = card.getByTestId('task-checklist')
-  await expect(check).toContainText('CHECKLIST')
+  // No heading: the progress bar (segments, n/m) is the first row, level with the title; the steps below.
+  await expect(check).not.toContainText('CHECKLIST')
   await expect(check.getByTestId('step')).toHaveCount(4)
-  await expect(check.getByTestId('progress').locator('i')).toHaveCount(4)
-  await expect(check).toContainText('0/4')
+  const progress = check.getByTestId('task-checklist-progress')
+  await expect(progress.getByTestId('progress').locator('i')).toHaveCount(4)
+  await expect(progress).toHaveText('0/4')
+  const pb = (await progress.boundingBox())!
+  const tb = (await card.getByTestId('task-title').boundingBox())!
+  expect(Math.abs(pb.y + pb.height / 2 - (tb.y + tb.height / 2))).toBeLessThan(6)
+  expect((await check.getByTestId('step').first().boundingBox())!.y).toBeGreaterThan(pb.y + pb.height - 1)
   await expect(check.locator('.v-st.doing .v-now')).toHaveText('now')
   // A right column beside the title, status and agents.
   const title = (await card.getByTestId('task-title').boundingBox())!
