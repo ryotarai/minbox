@@ -105,6 +105,7 @@ export function TaskView({
   const nearQ = answersNearQuestions(items.flatMap((it) => ('m' in it ? [it.m] : [])))
   const lastBy: Record<string, V3Message> = {}
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
+  const assigned = t.agents.find((a) => a.role === 'assigned') ?? t.agents[0]
   const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
   const lastReport = t.report || lastAgentMsg?.body || ''
   const markUnread = (m: V3Message) =>
@@ -341,9 +342,7 @@ export function TaskView({
                 </div>
               )
             })}
-            {typing.map((s) => (
-              <WorkingLine key={s!.id} name={s!.name} />
-            ))}
+            {t.status === 'working' && <WorkingLine name={assigned ? agentName(byId, assigned.session_id) : ''} />}
           </div>
         </div>
         </div>
