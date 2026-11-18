@@ -13,7 +13,7 @@ import { useContextMenu } from '../components/ContextMenu'
 import { projectHueStyle } from '../lib/projectColor'
 import { V3Palette, type PaletteCtx } from './Palette'
 import { RenameAgentDialog } from './AgentActions'
-import { Resizer, clamp, useSidePane, useWindowWidth, useZoom } from './layout'
+import { MIN_PANE, MIN_STREAM, Resizer, clamp, fitPanes, useSidePanes, useWindowWidth, useZoom, type PaneKind } from './layout'
 import { agentKindLabel } from '../lib/agents'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { ProjectRail } from '../components/ProjectRail'
@@ -62,21 +62,32 @@ export function V3App() {
   const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
   const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : route.view === 'columns' ? 'columns' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
-  const [pane, setPane] = useSidePane(current)
+  const side = useSidePanes(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
   useEffect(() => setTasksOver(false), [view, route.s])
   // The agent's Tasks pane (desktop and tablet; a plain shell has none). Beside the stream, shown or
   // folded to a strip as the person left it (kept in the layout); with no room for it (a tablet, or a
-  // narrow window with the terminal open) a strip that unfolds over the stream.
+  // narrow window with side panes open) a strip that unfolds over the stream.
   const zoom = useZoom()
   const winW = useWindowWidth() / zoom
   const hasTasks = !isPhone && view === 'agent' && !!current && current.kind !== 'shell'
   const tasksW = clamp(layout.v3TasksW ?? 260, 200, 480)
   const sbShownW = !isPhone && !isTablet ? clamp(layout.v3SidebarW ?? 236, 200, 480) : 0
-  const wideW = layout.v3WideW ?? Math.min(winW * 0.46, 760)
-  const tasksCompact = isTablet || (pane !== 'tasks' && winW - railWidth(layout) - sbShownW - tasksW - wideW < 380)
+  // The agent's side panes (terminal | shell | files after the stream), each its own width. When the stream
+  // would get narrower than MIN_STREAM beside them, the Tasks pane folds to its strip first; still too
+  // narrow, the panes squeeze toward MIN_PANE and the ones opened longest ago stop showing (fitPanes).
+  const wantW = (p: PaneKind) => clamp(layout.v3PaneW?.[p] ?? (p === 'files' ? 400 : layout.v3WideW ?? Math.min(winW * 0.46, 760)), MIN_PANE, 4000)
+  const openW = side.open.reduce((n, p) => n + wantW(p), 0)
+  const tasksCompact = isTablet || (side.open.length > 0 && winW - railWidth(layout) - sbShownW - tasksW - openW < MIN_STREAM)
   const tasksShown = tasksCompact ? tasksOver : !layout.v3TasksHidden
   const showTasks = useCallback((show: boolean) => (tasksCompact ? setTasksOver(show) : setLayout({ v3TasksHidden: !show })), [tasksCompact, setLayout])
+  const tasksSpace = !hasTasks ? 0 : tasksShown && !tasksCompact ? tasksW : 34
+  const fitted = isPhone ? { shown: side.open, widths: {} } : fitPanes(side.open, wantW, winW - railWidth(layout) - sbShownW - tasksSpace - MIN_STREAM - 2 * side.open.length)
+  const shownPanes = view === 'agent' ? fitted.shown : []
+  // The stream beside them (each pane's edge and border take a pixel or two): narrow, its header keeps to icons.
+  const streamNarrow = !isPhone && shownPanes.length > 0 && winW - railWidth(layout) - sbShownW - tasksSpace - shownPanes.reduce((n, p) => n + (fitted.widths[p] ?? 0), 0) < 480
+  const { show: showPane, close: closePane } = side
+  const togglePane = useCallback((p: PaneKind) => (shownPanes.includes(p) ? closePane(p) : showPane(p)), [shownPanes.join(' '), showPane, closePane]) // eslint-disable-line react-hooks/exhaustive-deps
   // The Board's own count of NEEDS YOU, so the badge never counts an entry the Board does not show.
   const needs = needsCount(board, hidden)
   const unread = board ? Object.values(board.agents).reduce((n, a) => n + a.unread, 0) : 0
@@ -91,7 +102,7 @@ export function V3App() {
   }, [view, route.s, sessions, projectId])
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
-  const paletteCtx: PaletteCtx = { agent: current, pane, setPane, tasksPane: hasTasks ? { shown: tasksShown, show: showTasks } : undefined, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
+  const paletteCtx: PaletteCtx = { agent: current, panes: shownPanes, togglePane, tasksPane: hasTasks ? { shown: tasksShown, show: showTasks } : undefined, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
 
   // ---- keys ----
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -165,7 +176,7 @@ export function V3App() {
     }
     if (view === 'agent' && e.key === 'F' && e.shiftKey) {
       e.preventDefault()
-      return setPane(pane === 'files' ? 'tasks' : 'files')
+      return togglePane('files')
     }
     // ⇧T: show or fold the agent's Tasks pane; T: its terminal.
     if (view === 'agent' && e.key === 'T' && e.shiftKey) {
@@ -173,7 +184,7 @@ export function V3App() {
       if (hasTasks) showTasks(!tasksShown)
       return
     }
-    if (view === 'agent' && (e.key === 't' || e.key === 'T')) return setPane(pane === 'terminal' ? 'tasks' : 'terminal')
+    if (view === 'agent' && (e.key === 't' || e.key === 'T')) return togglePane('terminal')
     if (e.key === 'n' && !e.shiftKey) {
       // N: the first agent with unread messages (the selected project's first, then any).
       const counts = board?.agents ?? {}
@@ -226,7 +237,7 @@ export function V3App() {
   // Ctrl+` shows and hides the agent's shell, also from inside a terminal (caught before it sees the key).
   const shellRef = useRef(() => {})
   shellRef.current = () => {
-    if (view === 'agent') setPane(pane === 'shell' ? 'tasks' : 'shell')
+    if (view === 'agent') togglePane('shell')
   }
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -250,7 +261,7 @@ export function V3App() {
   const byId = useSessionsById()
   let main: React.ReactNode
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
-  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
+  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
   else if (view === 'columns') main = <ColumnsView tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
@@ -276,8 +287,8 @@ export function V3App() {
   const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
   // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
   const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
-  const wide = view === 'agent' && (pane !== 'tasks' || sheet)
-  const hasSide = !isPhone && ((view === 'agent' && pane !== 'tasks') || view === 'task')
+  const wide = view === 'agent' && (shownPanes.length > 0 || sheet)
+  const hasSide = !isPhone && view === 'task'
   const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
   const style = {
     '--v-sb-w': sbW + 'px',
@@ -292,13 +303,25 @@ export function V3App() {
   const dragSide = (dx: number, start: number) => {
     const room = (mainEl()?.offsetWidth ?? winW) - 320
     const w = clamp(start + (swapped ? dx : -dx) / zoom, 240, Math.max(240, room))
-    setLayout(wide ? { v3WideW: Math.round(w) } : { v3SideW: Math.round(w) })
+    setLayout({ v3SideW: Math.round(w) })
+  }
+  // An agent's side pane's edge (on the stream's side of it): up to as wide as leaves the stream MIN_STREAM.
+  // (A declaration: StreamView above gets it.)
+  function dragPane(p: PaneKind) {
+    return (dx: number, start: number) => {
+      const now = document.querySelector<HTMLElement>(`.v-main > [data-side-pane="${p}"]`)?.offsetWidth ?? start
+      const col = document.querySelector<HTMLElement>('.v-main > .v-col')?.offsetWidth ?? MIN_STREAM
+      const w = clamp(start + (swapped ? dx : -dx) / zoom, MIN_PANE, Math.max(MIN_PANE, now + col - MIN_STREAM))
+      // The others keep the widths they show now (squeezed ones too), so only this one moves.
+      const others = Object.fromEntries(shownPanes.filter((q) => q !== p).map((q) => [q, fitted.widths[q]]))
+      setLayout({ v3PaneW: { ...layout.v3PaneW, ...others, [p]: Math.round(w) } })
+    }
   }
   const dragTasks = (dx: number, start: number) => setLayout({ v3TasksW: Math.round(clamp(start + dx / zoom, 200, 480)) })
   const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - railWidth(layout) - 360)))) })
   const layoutKind = isPhone ? 'phone' : isTablet ? 'tablet' : 'desktop'
   return (
-    <div className="v-app" data-testid="v3-app" data-view={view} data-layout={layoutKind} data-pane={view === 'agent' ? pane : undefined} style={style}>
+    <div className="v-app" data-testid="v3-app" data-view={view} data-layout={layoutKind} data-panes={view === 'agent' ? shownPanes.join(' ') : undefined} style={style}>
       {!isPhone && (
         <div className="v-rail" data-testid="rail-column" style={{ width: railWidth(layout), flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
           {isTablet && !showSidebar && (
@@ -703,10 +726,10 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['Z', 'Undo the last action (done, archive)'],
     ['N', 'Next agent with unread messages'],
     ['R', 'Reply: quote the selected text, or focus the reply box'],
-    ['T', 'Terminal of the agent'],
+    ['T', 'Terminal of the agent (show / hide; it stands beside the shell and the files)'],
     ['⇧T', 'Tasks pane of the agent (show / fold)'],
-    ['Ctrl+`', 'Shell of the agent'],
-    ['⇧F', 'Files of the agent'],
+    ['Ctrl+`', 'Shell of the agent (show / hide)'],
+    ['⇧F', 'Files of the agent (show / hide)'],
     ['⇧D', 'Decision mode (when on in Settings)'],
     ['Esc', 'Close / back (where you came from, else the Board)'],
   ]

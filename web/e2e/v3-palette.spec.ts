@@ -181,7 +181,7 @@ test('⌘K works from inside the focused terminal and a text box; actions act (s
   await page.keyboard.press('Escape')
 
   await openPalette(page)
-  await page.getByTestId('palette-input').fill('>open shell')
+  await page.getByTestId('palette-input').fill('>show shell')
   await expect(items(page).first()).toHaveAttribute('data-id', 'shell-pane')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('shell-pane')).toBeVisible()
@@ -192,7 +192,8 @@ test('⌘K works from inside the focused terminal and a text box; actions act (s
   await openPalette(page)
   await page.getByTestId('palette-input').fill('>show files')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('pane-files')).toHaveClass(/on/)
+  await expect(page.getByTestId('files-toggle')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('shell-pane')).toBeVisible() // beside it, not replaced
 
   await openPalette(page)
   await page.getByTestId('palette-input').fill('>open board')

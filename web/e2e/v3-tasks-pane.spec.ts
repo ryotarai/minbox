@@ -30,8 +30,8 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
   await expect(pane).toHaveAttribute('data-shown', 'true')
   await expect(pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`)).toBeVisible()
   await expect(pane.getByTestId('task-standing')).toBeVisible()
-  // No side pane until the terminal, shell or files open; no Tasks tab in it.
-  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  // No side pane until the terminal, shell or files open; no tab strip (each pane shows on its own).
+  await expect(page.locator('[data-side-pane]')).toHaveCount(0)
 
   // The order, left to right.
   await page.getByTestId('terminal-toggle').click()
@@ -40,14 +40,14 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
   const sb = await box(page, 'sidebar')
   const tp = await box(page, 'tasks-pane')
   const sv = await box(page, 'stream-view')
-  const side = await box(page, 'agent-side')
+  const side = await box(page, 'side-terminal')
   expect(sb.x + sb.width).toBeLessThanOrEqual(tp.x + 1)
   expect(tp.x + tp.width).toBeLessThanOrEqual(sv.x + 1)
   expect(sv.x + sv.width).toBeLessThanOrEqual(side.x + 1)
   expect(sv.width).toBeGreaterThanOrEqual(380)
   await snap(page, 'desktop-terminal')
-  await page.getByTestId('side-close').click()
-  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  await page.getByTestId('terminal-close').click()
+  await expect(page.locator('[data-side-pane]')).toHaveCount(0)
   await snap(page, 'desktop')
 
   // Its edge drags; the width is kept.
