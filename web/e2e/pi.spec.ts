@@ -12,6 +12,9 @@ test('with two agents installed the dialog offers both and starts a Pi session',
   await expectTerminal(page, /fake-pi session=[0-9a-f-]{36}[\s\S]*extension=minbox\.ts/)
   await expectTerminal(page, 'hello agent=pi orchestration=no tools=minbox_')
   await expect(page.getByTestId('agent-tag').first()).toHaveText('Pi')
+  // Mod protocol 1: the tool set is the server's, and the session is not flagged as an old mod.
+  await expectTerminal(page, 'tool set 12 tools, send=yes')
+  await expect(page.locator('[data-testid="mod-conn"][data-outdated]')).toHaveCount(0)
 
   await typeInTerminal(page, 'args')
   await expectTerminal(page, /args \[[\s\S]*\]\s*ready>/)
@@ -30,7 +33,7 @@ test('a Pi session reports status and its messages; the person’s messages from
 
   // Pi sends a question (as the extension's minbox_send_message does): it waits on the Board.
   await typeInTerminal(page, 'ask')
-  await expectTerminal(page, /sent question in thr_/)
+  await expectTerminal(page, 'sent question: Sent to the person in minbox asking 1 question.')
   await expect(page.getByTestId('board-badge')).toHaveText('1')
 
   // A message from the agent's stream is picked up (claim -> delivered) by the Pi side.

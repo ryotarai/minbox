@@ -48,14 +48,18 @@ export function ModConnection({ session, phone }: { session: Session; phone?: bo
   const c = modConnLabel(session, now)
   if (!c) return null
   const color = c.state === 'connected' ? 'bg-ok' : c.state === 'stale' ? 'bg-danger' : 'bg-subtle'
+  // An integration of an older mod protocol works; the badge says a restart loads the current one
+  // (in its title and details, so the header keeps its width).
+  const title = session.mod_outdated ? `${c.detail} · ${OUTDATED}` : c.detail
   return (
     <>
       <button
         type="button"
         data-testid="mod-conn"
         data-state={c.state}
-        aria-label={c.detail}
-        title={c.detail}
+        data-outdated={session.mod_outdated ? 'true' : undefined}
+        aria-label={title}
+        title={title}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         className={cx('flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border-0 bg-transparent px-1.5 py-0.5 hover:bg-raised', phone ? 'text-[11.5px]' : 'text-[11.5px]', c.state === 'stale' ? 'text-dangerfg' : 'text-subtle')}
       >
@@ -68,6 +72,8 @@ export function ModConnection({ session, phone }: { session: Session; phone?: bo
     </>
   )
 }
+
+const OUTDATED = 'old mod — restart to update'
 
 /** The diagnostics of one session's mod connection, with a copy button for a bug report. */
 function ModConnectionDetails({ session }: { session: Session }) {
@@ -110,6 +116,11 @@ function ModConnectionDetails({ session }: { session: Session }) {
           Copy diagnostics
         </Button>
       </div>
+      {session.mod_outdated && (
+        <div data-testid="mod-outdated" className="text-[12.5px] text-fg2">
+          <b>{OUTDATED}.</b> This session runs an older minbox mod (protocol {info.mod_protocol ?? 0}; the server speaks {info.server_protocol ?? '?'}). It keeps working; restart the session (agent menu → Restart) to load the current one.
+        </div>
+      )}
       {row('Heartbeat', info.heartbeat ? `yes (${info.beats} so far, seq ${info.seq})` : 'none yet (an old mod only makes calls)')}
       {row('Last heartbeat', info.last_beat_at ? `${info.last_beat_at} (${info.age_s !== null ? ago(info.age_s * 1000) + ' ago' : ''})` : null)}
       {row('Last call', info.last_contact_at)}

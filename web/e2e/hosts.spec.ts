@@ -168,7 +168,7 @@ test('Pi and OpenCode sessions on a remote host: per-host detection, the host’
     await typeInTerminal(page, 'paths')
     await expectTerminal(page, 'paths n=2 under-root=yes')
     await typeInTerminal(page, 'ask')
-    await expectTerminal(page, /sent question in thr_/)
+    await expectTerminal(page, 'sent question: Sent to the person in minbox')
     await page.getByTestId('composer-text').fill('SQLite it is')
     await page.getByTestId('composer-send').click()
     await expectTerminal(page, '<<< inbox')

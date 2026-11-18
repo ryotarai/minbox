@@ -12,7 +12,7 @@ which is dual-licensed under MIT and Apache-2.0. minbox uses it under the MIT Li
 - `internal/attach/kind.go` — file-kind detection regular expressions
 - `web/src/lib/uploads.tsx`, `web/src/lib/attachments.ts` — `isLongPaste`, `pastedName`, `formatBytes`, `sizeLine`, `changeState`
 - `web/src/components/MessageBody.tsx` — `attachmentForLink` (simplified port)
-- `plugin/minbox/hooks/text.ts` — `ATTACHMENTS_GUIDE` and other tool-description text
+- `internal/server/modtext.go` — `attachmentsGuide` and other tool-description text (formerly `plugin/minbox/hooks/text.ts`)
 - UI strings (for example the queued-reply notice) and section labels
 
 ## Plannotator license (MIT)

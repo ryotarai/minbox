@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """A stand-in for `claude` in end-to-end tests: it talks to minbox's agent API
-the way the minbox mod does (hello, send_message, pending -> claim -> delivered),
-and echoes what it receives to the terminal, without a real model.
+the way the minbox mod did before mod protocol 1 (hello, send_message, pending -> claim -> delivered),
+and echoes what it receives to the terminal, without a real model. It deliberately stays on protocol 0
+(the endpoints a session started with an older mod keeps calling): every suite that uses it checks that
+old integrations keep working; fake-pi.py and fake-opencode.py speak protocol 1 (docs/mod-protocol.md).
 
 Typed commands (one per line):
   ask        send a message with a question block

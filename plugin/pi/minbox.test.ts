@@ -1,12 +1,18 @@
-// Tests of the Pi extension against a mock of Pi's ExtensionAPI and a scripted minbox server.
+// Tests of the Pi extension as a proxy (mod protocol 1) against a mock of Pi's ExtensionAPI and a
+// scripted minbox server serving the real tool set (plugin/testdata/manifest-pi.json, kept equal to
+// the server's by TestManifestFixtures). The wording is the server's and is tested there.
 // Run: node --test plugin/pi/minbox.test.ts   (Node 22.18+ strips the types itself)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { install, TOOL_PREFIX, type Deps } from './minbox.ts'
+import { readFileSync } from 'node:fs'
+import { install, type Deps } from './minbox.ts'
+
+const MANIFEST = JSON.parse(readFileSync(new URL('../testdata/manifest-pi.json', import.meta.url), 'utf8'))
 
 type Call = { method: string; path: string; body: any }
+type Item = { id: string; text: string; urgent?: boolean }
 
-function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail?: (c: Call) => boolean; reply?: (c: Call) => unknown } = {}) {
+function setup(opts: { env?: Record<string, string>; pending?: () => Item[]; fail?: (c: Call) => boolean; reply?: (c: Call) => unknown; manifest?: () => any; toolsVersion?: () => string } = {}) {
   const handlers = new Map<string, Function>()
   const tools = new Map<string, any>()
   const sent: { text: string; opts?: any }[] = []
@@ -36,7 +42,11 @@ function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail
       calls.push(c)
       if (opts.fail?.(c)) return { ok: false, status: 500, text: async () => '{"error":"boom"}' }
       const ok = (v: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) })
-      if (u.pathname === '/api/agent/pending' && init.method === 'GET') return ok((opts.pending ? opts.pending() : []).filter((p: any) => !done.has(p.id)))
+      const r = opts.reply?.(c)
+      if (r !== undefined) return ok(r)
+      if (u.pathname === '/api/agent/tools') return ok(opts.manifest ? opts.manifest() : MANIFEST)
+      if (u.pathname === '/api/agent/heartbeat') return ok({ ok: true, protocol: 1, tools_version: opts.toolsVersion ? opts.toolsVersion() : MANIFEST.version })
+      if (u.pathname === '/api/agent/pending' && init.method === 'GET') return ok({ protocol: 1, items: (opts.pending ? opts.pending() : []).filter((p) => !done.has(p.id)), joiner: '\n---\n' })
       if (u.pathname.endsWith('/claim')) return ok({ claimed: true })
       if (u.pathname.endsWith('/release')) {
         order.push('release')
@@ -47,16 +57,14 @@ function setup(opts: { env?: Record<string, string>; pending?: () => any[]; fail
         done.add(decodeURIComponent(u.pathname.split('/').slice(-2)[0]))
         return ok({ ok: true })
       }
-      if (u.pathname === '/api/agent/messages') return ok({ thread_id: 'thr_1', new_thread: true })
-      if (u.pathname === '/api/agent/title') return ok({ ok: true, title: 'T' })
-      const r = opts.reply?.(c)
-      if (r !== undefined) return ok(r)
-      return ok({})
+      if (u.pathname === '/api/agent/tool') return ok(c.body.args?.fail ? { ok: false, error: 'body is required.' } : { ok: true, text: `RESULT ${c.body.tool}` })
+      return ok({ ok: true })
     },
   }
   const ext = install(pi, deps)
   const ctx = (idle: () => boolean) => ({ sessionManager: { getSessionId: () => 'conv-1', getSessionFile: () => '/s/a_conv-1.jsonl' }, isIdle: idle })
-  return { handlers, tools, sent, calls, order, ext, ctx, advance: (ms: number) => (clock += ms), setSendThrows: (v: boolean) => (sendThrows = v) }
+  const events = () => calls.filter((c) => c.path === '/api/agent/event').map((c) => c.body)
+  return { handlers, tools, sent, calls, order, ext, ctx, events, advance: (ms: number) => (clock += ms), setSendThrows: (v: boolean) => (sendThrows = v) }
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 30))
@@ -68,87 +76,85 @@ test('does nothing without the minbox environment', () => {
   assert.equal(t.handlers.size, 0)
 })
 
-test('registers the minbox tools under Pi names', () => {
+test("session_start says hello (protocol 1) and registers the server's tools as served", async () => {
   const t = setup()
-  for (const n of ['send_message', 'read_thread', 'set_session_title', 'open_url', 'list_projects', 'get_project', 'list_sessions', 'list_threads', 'search']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
-  assert.deepEqual(t.tools.get('minbox_send_message').parameters.required, ['body'])
-  t.ext!.stop()
-})
-
-test('send_message validates, posts, and throws on a server error', async () => {
-  const t = setup({ fail: (c) => c.path === '/api/agent/title' })
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
+  const hello = t.calls.find((c) => c.path === '/api/agent/hello')!
+  assert.deepEqual([hello.body.agent, hello.body.agent_session_id, hello.body.session_file, hello.body.protocol], ['pi', 'conv-1', '/s/a_conv-1.jsonl', 1])
+  assert.deepEqual([...t.tools.keys()], MANIFEST.tools.map((x: any) => x.name))
   const send = t.tools.get('minbox_send_message')
-  await assert.rejects(send.execute('1', { body: '', status: 'working', thread_title: 'x' }), /body is required/)
-  const r = await send.execute('1', { body: 'hi', task_ids: ['tsk_1'] })
-  assert.match(r.content[0].text, /Sent to the person in minbox/)
-  const post = t.calls.find((c) => c.path === '/api/agent/messages')!
-  assert.deepEqual(post.body, { body: 'hi', task_ids: ['tsk_1'] })
-  await assert.rejects(t.tools.get('minbox_set_session_title').execute('1', { title: 'T' }), /minbox: boom/)
+  assert.equal(send.label, 'minbox: send message')
+  assert.deepEqual(send.parameters.required, ['body'])
+  assert.match(t.tools.get('minbox_create_task').description, /minbox_update_task/)
   t.ext!.stop()
 })
 
-test('bash commands that open a page on the host are blocked', async () => {
+test("a tool call goes to the server with its arguments; its text is the result, a failure throws the server's words", async () => {
+  const t = setup({ fail: (c) => c.path === '/api/agent/tool' && c.body.args?.down })
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
+  const send = t.tools.get('minbox_send_message')
+  const r = await send.execute('1', { body: 'hi', task_ids: ['tsk_1'] })
+  assert.equal(r.content[0].text, 'RESULT minbox_send_message')
+  assert.deepEqual(t.calls.find((c) => c.path === '/api/agent/tool')!.body, { tool: 'minbox_send_message', args: { body: 'hi', task_ids: ['tsk_1'] } })
+  await assert.rejects(send.execute('1', { fail: true }), /^Error: body is required\.$/)
+  await assert.rejects(send.execute('1', { down: true }), /minbox: boom/)
+  t.ext!.stop()
+})
+
+test("the server's guards block bash commands that open a page on the host", async () => {
   const t = setup()
+  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
   const h = t.handlers.get('tool_call')!
   const blocked = await h({ toolName: 'bash', input: { command: 'gh pr view --web' } })
   assert.equal(blocked.block, true)
-  assert.match(blocked.reason, /minbox_open_url/)
+  assert.equal(blocked.reason, MANIFEST.guards[0].deny)
   assert.equal(await h({ toolName: 'bash', input: { command: 'ls -la' } }), undefined)
   assert.equal(await h({ toolName: 'read', input: { path: 'a' } }), undefined)
   t.ext!.stop()
 })
 
-test('agent_start and agent_settled report working and idle', async () => {
+test('agent_start and agent_settled go to the server as turn events', async () => {
   const t = setup()
   await t.handlers.get('agent_start')!({})
+  await t.handlers.get('agent_start')!({}) // already busy: not again
   await t.handlers.get('agent_settled')!({ aborted: false })
   await settle()
-  const st = t.calls.filter((c) => c.path === '/api/agent/status').map((c) => c.body.status)
-  assert.deepEqual(st, ['working', 'idle'])
+  assert.deepEqual(t.events().map((e) => e.type), ['turn.start', 'turn.complete'])
   t.ext!.stop()
 })
 
-test('session_start sends the hello with the conversation id and file, then delivery waits for quiet', async () => {
-  let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: db', body: 'use sqlite', new_thread: false, urgent: false }]
+test("delivery waits for quiet, then sends the server's text and marks it delivered", async () => {
+  let pending: Item[] = [{ id: 'm1', text: 'WAKE 1' }, { id: 'm2', text: 'WAKE 2' }]
   const t = setup({ pending: () => pending })
   await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
-  const hello = t.calls.find((c) => c.path === '/api/agent/hello')!
-  assert.deepEqual([hello.body.agent, hello.body.agent_session_id, hello.body.session_file], ['pi', 'conv-1', '/s/a_conv-1.jsonl'])
   await settle()
   assert.equal(t.sent.length, 0, 'not quiet yet: nothing is claimed')
   assert.equal(t.calls.some((c) => c.path.includes('/claim')), false)
+  assert.ok(t.calls.find((c) => c.path.startsWith('/api/agent/pending?'))!.path.includes('proto=1'))
   t.advance(5000)
   await settle()
-  assert.equal(t.sent.length, 1)
-  assert.match(t.sent[0].text, /minbox inbox: Re: db \(thread_id: thr_9\)/)
-  assert.match(t.sent[0].text, /minbox_send_message/)
-  assert.equal(t.sent[0].opts, undefined)
-  // claim -> send -> delivered
-  const seq = t.calls.map((c) => c.path.replace(/\?.*/, '').replace(/.*\//, '')).filter((p) => ['claim', 'delivered'].includes(p))
-  assert.deepEqual(seq.slice(0, 2), ['claim', 'delivered'])
-  assert.deepEqual(t.order.slice(0, 2), ['send', 'delivered'])
+  assert.deepEqual(t.sent, [{ text: 'WAKE 1\n---\nWAKE 2', opts: undefined }])
+  assert.deepEqual(t.order.slice(0, 3), ['send', 'delivered', 'delivered'])
   t.ext!.stop()
   pending = []
 })
 
 test('a busy Pi takes only urgent messages, as steering; a failed delivery is released', async () => {
-  let pending: any[] = [
-    { id: 'w', thread_id: 'a', subject: 's', body: 'wait', new_thread: false, urgent: false },
-    { id: 'u', thread_id: 'b', subject: 's', body: 'now', new_thread: false, urgent: true },
+  let pending: Item[] = [
+    { id: 'w', text: 'wait' },
+    { id: 'u', text: 'now', urgent: true },
   ]
   const t = setup({ pending: () => pending })
   await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => false))
   await t.handlers.get('agent_start')!({})
   await settle()
   assert.ok(t.sent.length >= 1)
-  assert.deepEqual(t.sent[0].opts, { deliverAs: 'steer' })
-  assert.match(t.sent[0].text, /now/)
-  assert.doesNotMatch(t.sent[0].text, /wait/)
+  assert.deepEqual(t.sent[0], { text: 'now', opts: { deliverAs: 'steer' } })
   t.ext!.stop()
   pending = []
   await settle()
 
-  const t2 = setup({ pending: () => [{ id: 'u', thread_id: 'b', subject: 's', body: 'now', new_thread: false, urgent: true }] })
+  const t2 = setup({ pending: () => [{ id: 'u', text: 'now', urgent: true }] })
   t2.setSendThrows(true)
   await t2.handlers.get('session_start')!({ reason: 'startup' }, t2.ctx(() => true))
   await settle()
@@ -158,17 +164,15 @@ test('a busy Pi takes only urgent messages, as steering; a failed delivery is re
 })
 
 test('a busy turn with no event for 120 s is given up on, unless a subagent or a tool update shows life', async () => {
-  const statuses = (t: ReturnType<typeof setup>) => t.calls.filter((c) => c.path === '/api/agent/status').map((c) => c.body.status)
-  // No sign of life: the stale rule turns it idle again.
+  const last = (t: ReturnType<typeof setup>) => t.events().filter((e) => e.type.startsWith('turn.')).at(-1)?.type
   const a = setup()
   await a.handlers.get('session_start')!({ reason: 'startup' }, a.ctx(() => false))
   await a.handlers.get('agent_start')!({})
   a.advance(130_000)
   await settle()
-  assert.equal(statuses(a).at(-1), 'idle')
+  assert.equal(last(a), 'turn.complete')
   a.ext!.stop()
 
-  // The shared marker (subagent.ts) counts as life.
   const { touchBusy } = await import('./busy.ts')
   const b = setup()
   await b.handlers.get('session_start')!({ reason: 'startup' }, b.ctx(() => false))
@@ -177,10 +181,9 @@ test('a busy turn with no event for 120 s is given up on, unless a subagent or a
   b.advance(130_000)
   touchBusy()
   await settle()
-  assert.equal(statuses(b).at(-1), 'working')
+  assert.equal(last(b), 'turn.start')
   b.ext!.stop()
 
-  // So does a tool_execution_update (a streaming minbox_subagent result).
   const c = setup()
   await c.handlers.get('session_start')!({ reason: 'startup' }, c.ctx(() => false))
   await c.handlers.get('agent_start')!({})
@@ -188,163 +191,49 @@ test('a busy turn with no event for 120 s is given up on, unless a subagent or a
   c.advance(130_000)
   await c.handlers.get('tool_execution_update')!({})
   await settle()
-  assert.equal(statuses(c).at(-1), 'working')
+  assert.equal(last(c), 'turn.start')
   c.ext!.stop()
 })
 
-test('navigation tools are read-only GETs on the agent API, with filters passed through', async () => {
-  const t = setup({
-    reply: (c) =>
-      c.path.startsWith('/api/agent/projects') && !c.path.includes('/projects/')
-        ? [{ id: 'prj_1', name: 'minbox', dir: '/w/minbox', host_name: 'local', default_agent: 'pi', session_count: 2, live_sessions: 1, thread_count: 3, need_action: 1, unread: 2, last_activity: '2026-11-10T01:02:03Z' }]
-        : c.path.startsWith('/api/agent/inbox')
-          ? { threads: [{ id: 'thr_9', subject: 'Plan', status: 'need_action', project_name: 'minbox', session_name: 's', open_questions: 1, unread: 1, message_count: 4, last_author: 'agent', updated_at: '2026-11-10T01:02:03Z', last_body: 'A or B?' }], total: 7, has_more: true }
-          : c.path.startsWith('/api/agent/search')
-            ? { threads: [], messages: [{ thread_id: 'thr_9', subject: 'Plan', session_name: 's', author: 'user', snippet: 'the zeppelin', created_at: '2026-11-10T01:02:03Z' }], files: [] }
-            : undefined,
-  })
-  const projects = await t.tools.get('minbox_list_projects').execute('1', {})
-  assert.match(projects.content[0].text, /prj_1 "minbox" · \/w\/minbox on local · default agent pi · 2 sessions \(1 live\)/)
-  const threads = await t.tools.get('minbox_list_threads').execute('1', { project_id: 'prj_1', awaiting: 'person', unread: true, query: 'plan b', limit: 5, archived: false })
-  const call = t.calls.find((c) => c.path.startsWith('/api/agent/inbox'))!
-  assert.equal(call.method, 'GET')
-  assert.equal(call.path, '/api/agent/inbox?project_id=prj_1&awaiting=person&unread=1&q=plan+b&limit=5')
-  assert.match(threads.content[0].text, /thr_9 "Plan" · need_action · minbox \/ s · 1 open question · 1 unread/)
-  assert.match(threads.content[0].text, /\(1 of 7 threads shown/)
-  const found = await t.tools.get('minbox_search').execute('1', { query: 'zeppelin', from: 'person', session_id: 'self' })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/search?q=zeppelin&session_id=self&from=user')
-  assert.match(found.content[0].text, /thread thr_9 "Plan" \(session s\) · person 2026-11-10 01:02: the zeppelin/)
-  await t.tools.get('minbox_get_project').execute('1', { project_id: 'a/b' })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/projects/a%2Fb')
-  await t.tools.get('minbox_list_sessions').execute('1', { status: 'idle', agent: 'pi' })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/sessions?status=idle&agent=pi')
-  await assert.rejects(t.tools.get('minbox_search').execute('1', { query: ' ' }), /query is required/)
-  await assert.rejects(t.tools.get('minbox_get_project').execute('1', {}), /project_id is required/)
-  assert.ok(t.calls.every((c) => c.method === 'GET' || !c.path.startsWith('/api/agent/') || ['/api/agent/hello', '/api/agent/status'].includes(c.path)))
-  assert.match(t.tools.get('minbox_list_threads').description, /minbox_read_thread/)
-  t.ext!.stop()
-})
-
-test('read_thread pages: limit and before are passed on, the answer says what is missing', async () => {
-  const msgs = [1, 2].map((i) => ({ id: `msg_${i}`, author: i === 1 ? 'user' : 'agent', body: `body ${i}`, created_at: `t${i}` }))
-  const t = setup({
-    reply: (c) =>
-      c.path.startsWith('/api/agent/threads/')
-        ? { id: 'thr_5', subject: 'Long', status: 'working', project_name: 'minbox', session_name: 'other', own: false, open_questions: 0, message_count: 40, has_more: true, older: 38, next_before: 'msg_1', messages: msgs }
-        : c.path === '/api/agent/threads'
-          ? []
-          : undefined,
-  })
-  const r = await t.tools.get('minbox_read_thread').execute('1', { thread_id: 'thr_5', limit: 2, before: 'msg_9' })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/threads/thr_5?limit=2&before=msg_9')
-  const text = r.content[0].text
-  assert.match(text, /Showing the newest 2 of 40 messages; 38 older ones are not shown\. For them call minbox_read_thread with this thread_id and before "msg_1"/)
-  assert.match(text, /session other \(not yours\)/)
-  assert.match(text, /\[agent · t2 · msg_2\]\nbody 2/)
-  await t.tools.get('minbox_read_thread').execute('1', {})
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/threads')
-  t.ext!.stop()
-})
-
-test('a heartbeat goes out with the loop (every 15 s) carrying state, version and its own events', async () => {
-  const t = setup({ fail: (c) => c.path === '/api/agent/title' })
+test('a heartbeat carries state, protocol and its own events; a new tools_version registers the set again', async () => {
+  let version = MANIFEST.version
+  let manifest = MANIFEST
+  const t = setup({ fail: (c) => c.path === '/api/agent/title', toolsVersion: () => version, manifest: () => manifest })
   await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
   await settle()
   const beats = () => t.calls.filter((c) => c.path === '/api/agent/heartbeat')
   assert.equal(beats().length, 1)
-  assert.deepEqual([beats()[0]!.body.seq, beats()[0]!.body.agent, beats()[0]!.body.state], [1, 'pi', 'idle'])
-  assert.equal(typeof beats()[0]!.body.ext_version, 'string')
-  await t.tools.get('minbox_set_session_title').execute('1', { title: 'T' }).catch(() => {})
+  assert.deepEqual([beats()[0]!.body.seq, beats()[0]!.body.agent, beats()[0]!.body.state, beats()[0]!.body.protocol], [1, 'pi', 'idle', 1])
+  // The server changed its tool set: one tool more, one fewer.
+  manifest = { ...MANIFEST, version: 'v2', tools: [...MANIFEST.tools.filter((x: any) => x.name !== 'minbox_search'), { name: 'minbox_new', description: 'NEW', input_schema: { type: 'object' } }] }
+  version = 'v2'
   t.advance(16_000)
   await settle()
-  assert.equal(beats().length >= 2, true)
-  const last = beats().pop()!
-  assert.equal(last.body.seq >= 2, true)
-  assert.match(JSON.stringify(last.body.events), /api-error/)
+  assert.equal(t.tools.get('minbox_new').description, 'NEW')
+  assert.equal(t.tools.get('minbox_search').exposure, 'hidden')
+  assert.equal(t.calls.filter((c) => c.path === '/api/agent/tools').length, 2)
   t.ext!.stop()
 })
 
-test('a bash call another extension blocked is reported with its thread; a later run clears it', async () => {
-  let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: deploy', body: 'go', new_thread: false, urgent: true }]
-  const t = setup({ pending: () => pending })
+test('bash outcomes go to the server: a block with its reason, a run without its output', async () => {
+  const t = setup()
   await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
-  await settle()
-  pending = []
-  assert.equal(t.sent.length, 1, 'the message in thr_9 is delivered')
-  await t.handlers.get('agent_start')!({})
   const start = t.handlers.get('tool_execution_start')!
   const end = t.handlers.get('tool_execution_end')!
   const text = (s: string) => ({ content: [{ type: 'text', text: s }] })
-  const reports = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands')
-  const ran = () => t.calls.filter((c) => c.path === '/api/agent/denied-commands/ran')
-
-  // Blocked by another extension: ended in error, never ran (no durationMs).
   await start({ toolCallId: 'c1', toolName: 'bash', args: { command: ' npm publish ' } })
-  await end({ toolCallId: 'c1', toolName: 'bash', isError: true, result: text('Blocked by permission-gate: publishing needs approval') })
-  await settle()
-  assert.equal(reports().length, 1)
-  assert.deepEqual([reports()[0].body.command, reports()[0].body.reason, reports()[0].body.thread_id], ['npm publish', 'Blocked by permission-gate: publishing needs approval', 'thr_9'])
-
-  // A command that ran and failed, an abort, bad arguments: not denials.
+  await end({ toolCallId: 'c1', toolName: 'bash', isError: true, result: text('Blocked by permission-gate') })
   await start({ toolCallId: 'c2', toolName: 'bash', args: { command: 'false' } })
-  await end({ toolCallId: 'c2', toolName: 'bash', isError: true, durationMs: 3, result: text('exit code 1') })
-  await start({ toolCallId: 'c3', toolName: 'bash', args: { command: 'sleep 100' } })
-  await end({ toolCallId: 'c3', toolName: 'bash', isError: true, result: text('Operation aborted') })
-  // The extension's own refusal (a page opened on the host) is not reported either.
-  await t.handlers.get('tool_call')!({ toolCallId: 'c4', toolName: 'bash', input: { command: 'open https://example.com' } })
-  await start({ toolCallId: 'c4', toolName: 'bash', args: { command: 'open https://example.com' } })
-  await end({ toolCallId: 'c4', toolName: 'bash', isError: true, result: text('minbox: this would open the page on the host machine') })
+  await end({ toolCallId: 'c2', toolName: 'bash', isError: true, durationMs: 3, result: text('secret output') })
+  // The extension's own refusal is not reported.
+  await t.handlers.get('tool_call')!({ toolCallId: 'c3', toolName: 'bash', input: { command: 'open https://example.com' } })
+  await start({ toolCallId: 'c3', toolName: 'bash', args: { command: 'open https://example.com' } })
+  await end({ toolCallId: 'c3', toolName: 'bash', isError: true, result: text('refused') })
   await settle()
-  assert.equal(reports().length, 1)
-
-  // The denied command runs later (allowed this time): cleared once.
-  await start({ toolCallId: 'c5', toolName: 'bash', args: { command: 'npm publish' } })
-  await end({ toolCallId: 'c5', toolName: 'bash', isError: false, durationMs: 900, result: text('published') })
-  await start({ toolCallId: 'c6', toolName: 'bash', args: { command: 'npm publish' } })
-  await end({ toolCallId: 'c6', toolName: 'bash', isError: false, durationMs: 900, result: text('published') })
-  await settle()
-  assert.equal(ran().length, 1)
-  assert.deepEqual(ran()[0].body, { command: 'npm publish' })
-
-  // After the turn, a block has no thread (the server gives it the agent's next message's).
-  await t.handlers.get('agent_settled')!({})
-  await start({ toolCallId: 'c7', toolName: 'bash', args: { command: 'rm -rf dist' } })
-  await end({ toolCallId: 'c7', toolName: 'bash', isError: true, result: text('blocked') })
-  await settle()
-  assert.equal(reports().length, 2)
-  assert.equal(reports()[1].body.thread_id, undefined)
-  t.ext!.stop()
-})
-
-test('task tools keep the Board: create, update, list', async () => {
-  let pending: any[] = [{ id: 'm1', thread_id: 'thr_9', subject: 'Re: search', body: 'go', new_thread: false, urgent: true }]
-  const t = setup({
-    pending: () => pending,
-    reply: (c) =>
-      c.path === '/api/agent/tasks' && c.method === 'POST'
-        ? { task_id: 'tpc_1', tagged_messages: ['m1'], task: { id: 'tpc_1', status: 'working', title: c.body.title, summary: '', steps: c.body.steps ?? [] } }
-        : c.path.startsWith('/api/agent/tasks/')
-          ? { task_id: 'tpc_1', task: { id: 'tpc_1', status: c.body.status ?? 'working', title: 'Search UI', summary: '', steps: [{ text: 'Add the field', done: true }] } }
-          : c.path.startsWith('/api/agent/tasks')
-            ? { tasks: [{ id: 'tpc_1', status: 'done', title: 'Search UI', summary: 'Shipped', steps: [] }] }
-            : undefined,
-  })
-  for (const n of ['create_task', 'update_task', 'list_tasks']) assert.ok(t.tools.has(TOOL_PREFIX + n), n)
-  assert.match(t.tools.get('minbox_create_task').description, /minbox_update_task/)
-  await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
-  await settle()
-  pending = []
-  await t.handlers.get('agent_start')!({})
-  await assert.rejects(t.tools.get('minbox_create_task').execute('1', { title: '' }), /title is required/)
-  const created = await t.tools.get('minbox_create_task').execute('1', { title: 'Search UI', steps: [{ text: 'Add the field' }] })
-  const post = t.calls.find((c) => c.path === '/api/agent/tasks' && c.method === 'POST')!
-  assert.deepEqual(post.body, { title: 'Search UI', steps: [{ text: 'Add the field', done: false }] })
-  assert.match(created.content[0].text, /task_id tpc_1\)\. The person's message of this turn/)
-  const updated = await t.tools.get('minbox_update_task').execute('1', { task_id: 'tpc_1', status: 'done', check_steps: [1] })
-  assert.deepEqual([t.calls.at(-1)!.method, t.calls.at(-1)!.path, t.calls.at(-1)!.body], ['PATCH', '/api/agent/tasks/tpc_1', { status: 'done', check_steps: [1] }])
-  assert.match(updated.content[0].text, /1\. \[x\] Add the field/)
-  const listed = await t.tools.get('minbox_list_tasks').execute('1', { all: true })
-  assert.equal(t.calls.at(-1)!.path, '/api/agent/tasks?all=1')
-  assert.match(listed.content[0].text, /tpc_1 \[done\] Search UI — Shipped/)
+  const bash = t.events().filter((e) => e.type === 'bash')
+  assert.deepEqual(bash, [
+    { type: 'bash', phase: 'end', id: 'c1', command: ' npm publish ', is_error: true, ran: false, text: 'Blocked by permission-gate' },
+    { type: 'bash', phase: 'end', id: 'c2', command: 'false', is_error: true, ran: true },
+  ])
   t.ext!.stop()
 })
