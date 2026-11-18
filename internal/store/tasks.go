@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   kind TEXT NOT NULL DEFAULT '',
   parent_id TEXT NOT NULL DEFAULT '',
   criteria TEXT NOT NULL DEFAULT '[]',
-  auto TEXT NOT NULL DEFAULT '{}'
+  auto TEXT NOT NULL DEFAULT '{}',
+  title_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_origin ON tasks(origin) WHERE origin != '';
@@ -167,6 +168,21 @@ type Task struct {
 	ParentID string     `json:"parent_id"`
 	Criteria []TaskStep `json:"criteria"`
 	Auto     AutoRun    `json:"auto"`
+	// TitleBy is who named the task last: TitleByPerson or TitleByAgent ("" for older tasks, as an
+	// agent's). An agent's rename of a task the person named is not applied (see agentUpdateTask).
+	TitleBy string `json:"title_by"`
+}
+
+// Who named a task (Task.TitleBy).
+const (
+	TitleByPerson = "person"
+	TitleByAgent  = "agent"
+)
+
+// taskAddedColumns are the columns added to tasks after its first version (taskSchema has them for a
+// new database).
+var taskAddedColumns = []struct{ table, column, def string }{
+	{"tasks", "title_by", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // KindGoal is the kind of a goal.
@@ -212,12 +228,15 @@ type TaskRef struct {
 
 const taskCols = `id, project_id, title, summary, detail, status, steps, report, links, created_by, created_at, updated_at, done_at, manual_status, manual_at, kind, parent_id, criteria, auto`
 
+// taskReadCols are the columns scanTask reads: taskCols (what the inserts write) and title_by.
+const taskReadCols = taskCols + `, title_by`
+
 func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
 	var steps, links, criteria, auto string
 	var created, updated int64
 	var done, manual sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Summary, &t.Detail, &t.Status, &steps, &t.Report, &links, &t.CreatedBy, &created, &updated, &done, &t.ManualStatus, &manual, &t.Kind, &t.ParentID, &criteria, &auto); err != nil {
+	if err := row.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Summary, &t.Detail, &t.Status, &steps, &t.Report, &links, &t.CreatedBy, &created, &updated, &done, &t.ManualStatus, &manual, &t.Kind, &t.ParentID, &criteria, &auto, &t.TitleBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -351,6 +370,13 @@ func (s *Store) createTask(ctx context.Context, projectID, by string, f TaskFiel
 		id, projectID, title, str(f.Summary), str(f.Detail), status, jsonText(steps), str(f.Report), jsonText(links), by, ms(now), ms(now), done, str(f.Kind), str(f.ParentID), jsonText(criteria), origin); err != nil {
 		return nil, err
 	}
+	titleBy := TitleByPerson
+	if by != "" {
+		titleBy = TitleByAgent
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET title_by=? WHERE id=?`, titleBy, id); err != nil {
+		return nil, err
+	}
 	who := "you"
 	if by != "" {
 		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO task_agents(task_id, session_id, role, created_at) VALUES(?,?,?,?)`, id, by, RoleAssigned, ms(now)); err != nil {
@@ -416,7 +442,13 @@ func (s *Store) UpdateTask(ctx context.Context, id, by string, f TaskFields) (*T
 			return nil, ErrTaskTitle
 		}
 		if t.Title != cur.Title {
-			evs = append(evs, ev{"title", "Renamed to “" + t.Title + "”"})
+			w := "Renamed: " + cur.Title + " → " + t.Title
+			t.TitleBy = TitleByAgent
+			if by == "" {
+				w += " (you)"
+				t.TitleBy = TitleByPerson
+			}
+			evs = append(evs, ev{"title", w})
 		}
 	}
 	if f.Summary != nil {
@@ -514,8 +546,8 @@ func (s *Store) UpdateTask(ctx context.Context, id, by string, f TaskFields) (*T
 	if manualAt != nil {
 		mAt = ms(*manualAt)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET title=?, summary=?, detail=?, status=?, steps=?, report=?, links=?, updated_at=?, done_at=?, manual_status=?, manual_at=?, kind=?, parent_id=?, criteria=? WHERE id=?`,
-		t.Title, t.Summary, t.Detail, t.Status, jsonText(t.Steps), t.Report, jsonText(t.Links), ms(now), done, manualStatus, mAt, t.Kind, t.ParentID, jsonText(t.Criteria), id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET title=?, summary=?, detail=?, status=?, steps=?, report=?, links=?, updated_at=?, done_at=?, manual_status=?, manual_at=?, kind=?, parent_id=?, criteria=?, title_by=? WHERE id=?`,
+		t.Title, t.Summary, t.Detail, t.Status, jsonText(t.Steps), t.Report, jsonText(t.Links), ms(now), done, manualStatus, mAt, t.Kind, t.ParentID, jsonText(t.Criteria), t.TitleBy, id); err != nil {
 		return nil, err
 	}
 	for _, e := range evs {
@@ -545,7 +577,7 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 
 // GetTask returns a task with its agents.
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
-	t, err := scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE id=?`, id))
+	t, err := scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskReadCols+` FROM tasks WHERE id=?`, id))
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +645,7 @@ func (s *Store) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error) {
 		where += ` AND EXISTS(SELECT 1 FROM task_agents ta WHERE ta.task_id=t.id AND ta.session_id=?)`
 		args = append(args, q.SessionID)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("t.", taskCols)+` FROM tasks t LEFT JOIN projects p ON p.id=t.project_id
+	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("t.", taskReadCols)+` FROM tasks t LEFT JOIN projects p ON p.id=t.project_id
 	  WHERE `+where+` ORDER BY CASE WHEN t.status='done' THEN 1 ELSE 0 END, COALESCE(t.done_at,0) DESC, t.updated_at DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -1015,7 +1047,7 @@ func (s *Store) SetAuto(ctx context.Context, taskID string, a AutoRun) error {
 
 // RunningGoals lists the goals whose autonomous run is on.
 func (s *Store) RunningGoals(ctx context.Context) ([]Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE kind='goal' AND json_extract(auto,'$.state')='running'`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+taskReadCols+` FROM tasks WHERE kind='goal' AND json_extract(auto,'$.state')='running'`)
 	if err != nil {
 		return nil, err
 	}

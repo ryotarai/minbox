@@ -11,7 +11,8 @@ and `usecases.md` for what the screens do with them.
   steps [{text, done, steps?}] (one level of nesting), report, links [{kind, label, url, state}],
   created_by, manual_status/manual_at, kind ('' | 'goal'), parent_id (the goal it serves),
   criteria [{text, done}] (a goal's "done when"), auto {state: ''|running|paused|stopped, session_id,
-  max_turns, turns, until, reason, last_at}`.
+  max_turns, turns, until, reason, last_at}`, title_by (`person` | `agent` | '' for older tasks: who
+  named it last; see the PATCH rows).
 - **A message's tasks** (`message_tasks`, formerly `message_tags`): a message is *about* zero or more
   tasks (many to many). `source: agent | auto | person` says how the link was made (the agent named
   the task, a rule such as an answer inheriting its question's tasks, or the person).
@@ -28,7 +29,7 @@ and `usecases.md` for what the screens do with them.
 | --- | --- | --- |
 | GET | `/api/v3/board?project=` | `{tasks: [BoardTask], questions: [V3Message], agents: {session_id: {unread, open_questions}}}`. BoardTask = Task + `open_questions, unread, message_count, last_activity, last_agent, needs_you, criteria_done, task_ids` (a goal's tasks). Done tasks of the last 7 days. |
 | GET | `/api/v3/tasks/{id}` | `{task: BoardTask, messages: [V3Message + gap], events, tasks: [BoardTask] (a goal's), goal: Task?}`. `gap`: other messages of the same stream (about other tasks or none) since its previous message about this task. |
-| PATCH | `/api/v3/tasks/{id}` | `{title?, status?, summary?, steps?, criteria?, parent_id?}` by the person (status is marked manual). |
+| PATCH | `/api/v3/tasks/{id}` | `{title?, status?, summary?, steps?, criteria?, parent_id?}` by the person (status is marked manual). A new title is a timeline event `title` ("Renamed: old → new (you)") and makes `title_by` `person`. |
 | POST | `/api/v3/tasks` | `{project_id?, title, kind?, session_id?, message_ids?}`: the task picker's "New task" (the messages become about it). |
 | POST | `/api/v3/tasks/{id}/auto` | `{action: start|pause|stop, session_id?, max_turns?}`: a goal's autonomous run. |
 | GET | `/api/v3/sessions/{id}/stream?limit=&before=&after=` | `{messages: [V3Message], has_more, tasks, stream_thread_id}`. V3Message = Message + `session_id, tasks [{task_id, title, status, source}], segment?, open`. |
@@ -67,7 +68,7 @@ tiles with remove and upload progress; they go as `uploads`.
 | --- | --- |
 | `POST /api/agent/messages` | `{body, task_ids?, attachments?, review?}`; `thread_id` / `thread_title` / `status` are accepted but not needed (legacy). Every message goes to the stream; a legacy `thread_id` of an older thread makes the message about that thread's task (when the migration made one), `thread_title` is ignored. `task_ids` are the tasks the reply is about, **and the turn's person's messages that are about no task yet** become about them too; tasks created in the turn count too; the tasks of the turn's (task-view) messages are inherited. `status` applies to the named tasks. Answer adds `task_ids`, `decision` and `note`: when the message went in no task, `note` says so and how to place it and the turn's person's messages (update_task / create_task `message_ids`). |
 | `POST /api/agent/tasks` | `{title, kind?: "goal", goal_id?, summary?, detail?, status?, steps?, criteria?, autonomous?, max_turns?, message_ids?}` → `{task_id, task, tagged_messages, similar_tasks?, note?}`. The turn's person's messages about no task, and later replies in the turn, are about it; so are `message_ids` (an agent reply brings its turn's messages in no task). `status: "done"` makes a quick exchange's small task, closed at once. `similar_tasks` ([{id, title, status}]) and `note` name open tasks with a similar title: the agent should keep using one of them rather than creating more. |
-| `PATCH /api/agent/tasks/{id}` | `{title?, summary?, detail?, status?, report?, steps?, check_steps?, uncheck_steps?, criteria?, check_criteria?, goal_id?, links?, message_ids?, autonomous?}`. Any task of the project; the agent becomes involved. `message_ids`: earlier messages that are about it (an agent reply brings the person's messages it answered that are in no task). All criteria met (or done) ends a goal's run. |
+| `PATCH /api/agent/tasks/{id}` | `{title?, summary?, detail?, status?, report?, steps?, check_steps?, uncheck_steps?, criteria?, check_criteria?, goal_id?, links?, message_ids?, autonomous?}`. Any task of the project; the agent becomes involved. `message_ids`: earlier messages that are about it (an agent reply brings the person's messages it answered that are in no task). All criteria met (or done) ends a goal's run. A `title` renames it (event "Renamed: old → new", `title_by` `agent`), except a task the person named (`title_by` `person`): that title is kept, the rest is applied, and the answer's `note` (shown in the tool result) tells the agent to suggest a name to the person instead. |
 | `GET /api/agent/tasks[?all=1]` | `{tasks}`: the caller's (or the project's open) tasks and goals. |
 | `GET /api/agent/pending` | each message also has `tasks: [{task_id, title, status}]` (the tasks it is about) and `stream`. A goal's continuation has `kind: "continue"`; minbox's request to place messages in tasks has `kind: "place"` (its body, written by the server, is the whole turn text: the integrations pass it on as it is). |
 

@@ -190,7 +190,7 @@ export function toggled(steps: Step[], path: number[]): Step[] {
   return next
 }
 
-const EVENT_COLOR: Record<string, string> = { status: 'var(--mb-work)', created: 'var(--mb-work)', step: 'var(--mb-ok)', criterion: 'var(--mb-ok)', handoff: 'var(--mb-purple)', auto: 'var(--mb-purple)', answer: 'var(--mb-purple)' }
+const EVENT_COLOR: Record<string, string> = { status: 'var(--mb-work)', created: 'var(--mb-work)', step: 'var(--mb-ok)', criterion: 'var(--mb-ok)', title: 'var(--mb-accent)', handoff: 'var(--mb-purple)', auto: 'var(--mb-purple)', answer: 'var(--mb-purple)' }
 
 /** Events worth a line between messages (adding / moving messages is visible in the messages). */
 export function shownEvent(e: TaskEvent): boolean {
