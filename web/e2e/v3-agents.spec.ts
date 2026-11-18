@@ -118,18 +118,23 @@ test('all projects: the agents are grouped under their project; one project show
   await expect(page.getByTestId('sidebar-new-agent')).toHaveCount(0)
   const plusWeb = groups.filter({ hasText: 'web-agent' }).getByTestId('project-new-agent')
   await expect(plusWeb).toHaveAttribute('aria-label', 'New agent in web')
-  await groups.filter({ hasText: 'web-agent' }).getByTestId('agent-group-head').hover()
-  await expect(plusWeb).toHaveCSS('opacity', '1')
+  // Always shown: visible right after load, with no hover or focus.
+  await page.mouse.move(0, 0)
+  await expect(page.getByTestId('project-new-agent')).toHaveCount(2)
+  for (const plus of await page.getByTestId('project-new-agent').all()) {
+    await expect(plus).toBeVisible()
+    await expect(plus).toHaveCSS('opacity', '1')
+    await expect(plus).toHaveCSS('visibility', 'visible')
+  }
   await plusWeb.click()
   const dlg = page.getByRole('dialog', { name: 'New session' })
   await expect(dlg).toBeVisible()
   await expect(page.getByTestId('new-session-project-name')).toHaveText('web')
   await page.keyboard.press('Escape')
   await expect(dlg).toHaveCount(0)
-  // Keyboard: Tab reaches the ＋ (shown on focus); Enter opens the dialog in that project.
+  // Keyboard: Tab reaches the ＋; Enter opens the dialog in that project.
   const plusApi = groups.filter({ hasText: 'api-agent' }).getByTestId('project-new-agent')
   await plusApi.focus()
-  await expect(plusApi).toHaveCSS('opacity', '1')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('new-session-project-name')).toHaveText('api')
   await page.keyboard.press('Escape')
