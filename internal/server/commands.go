@@ -131,7 +131,7 @@ func splitCommandNote(rest string) (command, note string) {
 const commandFollowUp = "I ran the command above myself; its result is above. Take it into account and carry on."
 
 // replyCommand handles a "!" reply: store the message, answer at once, run in the background.
-func (s *Server) replyCommand(w http.ResponseWriter, r *http.Request, th *store.Thread, words string) {
+func (s *Server) replyCommand(w http.ResponseWriter, r *http.Request, th *store.Thread, words string, taskIDs []string) {
 	ctx := r.Context()
 	command, note := splitCommandNote(words)
 	if len([]rune(command)) > commandMaxLen {
@@ -153,6 +153,8 @@ func (s *Server) replyCommand(w http.ResponseWriter, r *http.Request, th *store.
 		return
 	}
 	_, _ = s.store.MarkThreadRead(ctx, th.ID)
+	// Written from a task: the command (and its output) is about it.
+	s.v3TagPersonMessage(ctx, th.SessionID, msg.ID, taskIDs, "")
 	// The person runs a command the agent was denied: it is no longer offered.
 	s.denied.resolve(th.SessionID, command)
 	if c, err := s.store.GetCommand(ctx, msg.ID); err == nil {

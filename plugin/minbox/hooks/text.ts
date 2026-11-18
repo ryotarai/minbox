@@ -8,7 +8,7 @@ export const SEND_DESCRIPTION = [
   "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal.",
   'Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).',
   'It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.',
-  'Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person\'s message). The person\'s messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves; a quick answer needs none.',
+  'Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person\'s message). The person\'s messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves. Every message must be about a task: a quick answer goes in the task it is about.',
   '`thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation\'s task).',
   'attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.',
 ].join(' ')
@@ -240,7 +240,7 @@ export type Pending = Message & {
   urgent?: boolean
   new_thread: boolean
   in_reply_to?: Message | null
-  /** v3: the message's tasks, whether it is in the stream, and its kind ("continue": a goal's run). */
+  /** v3: the message's tasks, whether it is in the stream, and its kind ("continue": a goal's run; "place": minbox asks to put messages in tasks). */
   tasks?: { task_id: string; title: string; status?: string }[] | null
   stream?: boolean
   kind?: string
@@ -289,13 +289,13 @@ export function tasksLine(p: Pending): string {
 }
 
 const STREAM_LINE =
-  'Decide what it is about: an open task (reply with send_message and its task_ids; prefer this when one fits), new work the person asked for (create_task, then reply), or nothing that needs a task (just reply).'
+  'Decide which task it is about: an open task (reply with send_message and its task_ids; prefer this when one fits), or new work the person asked for (create_task, then reply). Every message must be about a task: a quick question that fits none gets a small task of its own (create_task, status done once answered).'
 
 /** The turn text for the person's messages from the inbox (one or more). */
 export function wakeText(pending: Pending[], sendTool: string, readTool: string): string {
   const parts = pending.map((p) => {
     if (p.stream) {
-      if (p.kind === 'continue') return p.body.trim()
+      if (p.kind === 'continue' || p.kind === 'place') return p.body.trim()
       const tl = tasksLine(p)
       return [
         `minbox: a message from the person (message ${p.id})${tl ? '' : '.'}`,
@@ -327,6 +327,7 @@ export type SendResult = {
   questions?: { key: string; prompt: string }[]
   attachments?: { id: string; name: string; kind: string; path: string }[]
   images_not_shown?: { ref: string; reason: string; not_yet?: boolean }[]
+  note?: string
 }
 
 function plural(n: number, word: string): string {
@@ -355,6 +356,7 @@ export function sentText(r: SendResult): string {
         : `The message was sent, but this image will not show: ${n.ref} (${n.reason}). Copy the image to a plain folder and link that path, or attach it with attachments.`,
     )
   }
+  if (r.note) lines.push(r.note)
   return lines.join(' ')
 }
 

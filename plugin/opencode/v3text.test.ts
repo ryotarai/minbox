@@ -14,12 +14,17 @@ test('a stream message asks the agent to decide; one written from a task names i
   assert.match(about, /Tasks: tsk_1 "Fix gauge" \(they wrote it about these tasks\)/)
   const cont = wakeText([{ ...base, id: 'm3', kind: 'continue', body: 'minbox goal (autonomous run, turn 1 of 20): go' }], 's', 'r')
   assert.equal(cont, 'minbox goal (autonomous run, turn 1 of 20): go')
+  assert.match(plain, /Every message must be about a task/)
+  assert.doesNotMatch(plain, /nothing that needs a task/)
+  const place = wakeText([{ ...base, id: 'm4', kind: 'place', body: 'minbox: these messages of your conversation with the person are in no task yet.' }], 's', 'r')
+  assert.equal(place, 'minbox: these messages of your conversation with the person are in no task yet.')
 })
 
 test('send_message needs only a body; the reply says which tasks it is about', () => {
   assert.deepEqual(sendRequest({ body: ' ' }), { error: 'body is required.' })
   assert.deepEqual(sendRequest({ body: 'x', task_ids: ['a', 3], subject: 'old' }), { body: { body: 'x', task_ids: ['a'], thread_title: 'old' } })
   assert.match(sentText({ thread_id: 't', new_thread: false, task_ids: ['tsk_1'] }), /About task tsk_1\./)
+  assert.match(sentText({ thread_id: 't', new_thread: false, task_ids: [], note: 'This message is in no task yet.' }), /This message is in no task yet\.$/)
 })
 
 test('create_task: similar open tasks are named so the agent keeps using one', () => {
