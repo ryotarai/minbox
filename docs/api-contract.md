@@ -424,9 +424,9 @@ and the extended `read_thread` are GETs on `/api/agent/*` with the session's bea
 They answer projections of the stored rows, never tokens, notification destinations, Slack or device data, project icons or the agent's
 conversation ids. Text and schemas: `internal/server/modtools_text.go` (served to every integration, docs/mod-protocol.md). Lists are bounded (`limit`, default 50, at most 200) and say `total` and `has_more`.
 
-- `GET /api/agent/projects?archived=1` -> `[{id, name, dir, host_id, host_name, default_agent, main_session_id, pinned, archived, session_count, live_sessions, thread_count, need_action, unread, last_activity}]` (thread counts: live threads, archived ones excluded).
+- `GET /api/agent/projects?archived=1` -> `[{id, name, dir, host_id, host_name, default_agent, pinned, archived, session_count, live_sessions, thread_count, need_action, unread, last_activity}]` (thread counts: live threads, archived ones excluded).
   `GET /api/agent/projects/{id}` -> the same plus `sessions: [agentSession]` (Claude-kind sessions, newest first, at most 50); 404 `no such project`.
-- `GET /api/agent/sessions?project_id=&status=&agent=&archived=1&limit=` -> `{sessions: [{id, name, title, cwd, status, agent, kind, project_id, host_id, host_name, is_main, archived, unread, waiting, last_activity, self?}], total, has_more}`. Shell terminals are not listed; `archived=1` lists archived sessions instead of live ones.
+- `GET /api/agent/sessions?project_id=&status=&agent=&archived=1&limit=` -> `{sessions: [{id, name, title, cwd, status, agent, kind, project_id, host_id, host_name, archived, unread, waiting, last_activity, self?}], total, has_more}`. Shell terminals are not listed; `archived=1` lists archived sessions instead of live ones.
 - `GET /api/agent/inbox?project_id=&session_id=(id|self)&status=&awaiting=person|agent&unread=1&q=&archived=1&limit=` -> `{threads: [{id, subject, name?, session_id, session_name, project_id, project_name, status, section, updated_at, unread, open_questions, message_count, last_author, last_body (at most 300 bytes), archived, self?}], total, has_more}`, newest first, across all live sessions (with `session_id`, also an archived session's).
   `status` is working | need_action | blocked | finished (aliases accepted); `awaiting=person`: status need_action or open questions; `awaiting=agent`: the person wrote last; `q`: all words in subject, name or last message (case-insensitive). Bad `status` / `awaiting`: 400. `archived=1` lists archived threads instead of live ones.
   (`GET /api/agent/threads` stays: this session's threads, an array, used for the open-threads reminder.)
@@ -869,7 +869,7 @@ A project is `(host, dir)` plus a name; sessions (so threads, messages, attachme
 Design: `docs/ui-v2-projects.md`.
 
 ```
-Project: { id, name, dir, host_id, host_name, main_session_id: string  // '' = none yet; created_at, archived_at: string|null, pinned_at: string|null,
+Project: { id, name, dir, host_id, host_name, created_at, archived_at: string|null, pinned_at: string|null,
            session_count,   // every session of it, archived and ended too
            live_sessions,   // not ended, not archived
            last_activity }  // newest session or thread update
@@ -879,8 +879,7 @@ POST   /api/projects                  {dir, host_id?, name?} → 201 Project
                                         dir is resolved on the host (~ ok) and must be a folder there (400);
                                         name defaults to the last folder; names are unique, case-insensitive (400);
                                         a live project for (host, dir) exists → 409; an archived one is brought back
-PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, main_session_id?} → Project
-                                        main_session_id must be a Claude Code session of the project (400)
+PATCH  /api/projects/{id}             {name?, pinned?, dir?, host_id?, default_agent?} → Project
                                         dir is resolved/checked as in POST (400; another live project has it -> 409) and may change at any
                                         time. New sessions (POST /api/sessions with project_id) start in the new dir. Existing Claude Code
                                         sessions whose cwd is the old dir get `relocate_to` = new dir (Session field, omitted when empty);
@@ -931,15 +930,28 @@ POST   /api/projects/{id}/unarchive   restores the sessions that were archived w
 - Migration of existing data (startup, in `store.Open`): see "Migration notes" in `docs/ui-v2-projects.md`. The change is
   additive (table `projects`, nullable column `sessions.project_id`).
 
-### Main session
+### Choosing the agent for new work (no main session)
 
-- `Session.is_main`; `Project.main_session_id`. At most one per project. The first Claude Code session created in a
-  project becomes main (also through `(host, cwd)` resolution, i.e. the plugin/CLI path). `POST /api/sessions` takes
-  `main?: bool` to promote the new session.
-- `POST /api/sessions/{id}/archive` and `DELETE /api/sessions/{id}` answer 409 for a main session while the project has
-  another live Claude Code session, unless `?promote=<session id>` names one (made main in the same request). A last
-  Claude session leaves the project without main. Ending/stopping a session never changes main.
-- Migration picks one per project (live > ended > archived, newest first, never a shell).
+Projects have no main session (removed 2026-11-19: `Session.is_main`, `Project.main_session_id`, `POST /api/sessions
+{main}`, `PATCH /api/projects/{id} {main_session_id}` and `?promote=` are gone; the `projects.main_session_id` column
+stays in the database, unread and unwritten). Any session archives (once ended) and deletes without conditions.
+
+New work in a project with no agent named goes to an agent chosen by `pickAgent` (`internal/server/agentpick.go`):
+a Slack DM (`slack_app` receiving), `POST /api/v3/new` with `project_id` and no `to`, and a thread started from a Linear
+issue or a Slack thread with `target: {kind: "auto", project_id}`.
+
+- Candidates: the project's **live agents** (Claude-kind sessions, not archived, not ended), most recently active
+  first, at most 12. None: a new agent starts, no model call.
+- The helper (the project pick's: `Config.PickModel`, Claude Haiku by default, or Pi / OpenCode as for reply
+  suggestions; empty temp dir, prompt on stdin, 20 s timeout) gets each agent's id, name, title, status, last activity
+  and up to 4 recent tasks (title — summary, "(done)"), and the work (the DM, the composer's words, or the subject,
+  request and handoff of the issue / Slack thread; cut to 2000 characters) between `<agents>` / `<work>` delimiters as
+  untrusted data. Schema: `{"agent": "<id>" | "new" | null}`.
+- `"new"`: a new agent starts in the project (as `POST /api/v3/new {to: "new"}`: the project's default agent kind).
+  A listed id: that agent. `null`, an id that is not a candidate, an error, no helper installed or a timeout: the
+  **fallback**, the most recently active live agent.
+- The issue / Slack thread preview with `auto` warns "minbox picks the agent when you start: …"; a chosen existing
+  session that is working warns that its one conversation takes the new thread after its current work.
 
 ## Thread status
 
@@ -1064,7 +1076,7 @@ The token is shown masked as `xoxb-…` + last 4 characters, never in full, neve
 
 Extra config fields: `receive` (bool, default **false**; nothing is polled unless true; requires `channel` to be a user ID, i.e. a
 DM, else 400), `allowed_users` (comma separated member IDs `U…`/`W…`; empty defaults to the `channel` user; only these members'
-messages are taken), `default_project` (a project NAME; a DM starts a new thread in its main session; empty: DMs are ignored, one
+messages are taken), `default_project` (a project NAME; a DM starts a new thread with the agent the helper picks there, see "Choosing the agent for new work"; empty: DMs are ignored, one
 log line; relabelled "Fallback project (when Claude cannot tell)"), `pick_project` (bool, default **true**; only matters when
 `receive` is on), `poll_interval` (select `30|60|120|300` seconds, default 60). Transport is polling of the Web API with the bot token
 (no Socket Mode, no public URL). Code: `internal/notify/slackinbound.go` (poller), `internal/server/slackinbound.go` (turns a
@@ -1097,8 +1109,8 @@ message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply
   --json-schema`, no tools, no settings, empty temp dir, prompt on stdin; `Config.SuggestCommand`/first word of the Claude
   command), with `--model` = `Config.PickModel` (env `MINBOX_PICK_MODEL`, default `claude-haiku-5-5`). One call per new DM, 20 s
   timeout, the text cut to 2000 characters, at most 10 calls per minute per destination (over the cap: fallback). The prompt holds
-  the text in `<message>` tags and up to 40 projects (archived projects and projects without a main session left out) as `id`,
-  name and the titles of their 3 newest threads, with the instruction that both are untrusted data. The answer must be
+  the text in `<message>` tags and up to 40 projects (archived projects and the catch-all "No project" left out) as `id`,
+  name and the titles of their 3 most recently changed tasks, with the instruction that both are untrusted data. The answer must be
   `{"project_id": "<id>"|null}`; it is only ever compared with the listed project ids (anything else, `null`, an error or a
   timeout means "unsure" and falls back); it is never executed or shown. Logs name the outcome (prefix, Claude, fallback and why),
   never the message text. `NewThread` accepts a project id as well as a name. The D… channel is learned from
@@ -1244,7 +1256,8 @@ project_id, updated_at}]}`.
   Empty `q` -> no issues (Linear is not asked); `q` over 200 characters -> 400; not connected -> 409 `linear_login`; Linear's errors as for the list.
 - `GET /api/linear/issues/{identifier}[?refresh=1]` -> `{issue: IssueView (with description), comments: [{id, author, body, url, created_at}] (oldest first, the latest 50, minbox's own progress
   comment left out), comments_total, comments_error?, fetched_at}` (cached 30 s). 400 not an identifier.
-- `POST /api/linear/issues/{identifier}/thread` body `{target: {kind: "session", session_id} | {kind: "new_session", project_id, agent?, name?}, subject?, instruction?}` -> 201
+- `POST /api/linear/issues/{identifier}/thread` body `{target: {kind: "session", session_id} | {kind: "new_session", project_id, agent?, name?} | {kind: "auto", project_id}, subject?, instruction?}` -> 201
+  (`auto`: the helper picks one of the project's live agents for the issue, else a new agent starts; see "Choosing the agent for new work")
   `{thread, session, link_error?}`. Creates a thread whose first message is `instruction` (default "Work on Linear issue ENG-123: ..."), links it to the issue as `PUT /api/threads/{id}/linear` does
   (baseline of the existing comments; the In Progress rule applies when it starts working), and stores a **handoff** (table `thread_handoffs`) that `GET /api/agent/pending` puts in front of that
   first message exactly once (like a fork's): `<linear_issue_handoff source="untrusted-external" issue="ENG-123">` with identifier, title, url, state, priority, team, project, labels, assignee, a

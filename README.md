@@ -9,8 +9,10 @@ moment, from your desk or your phone, and the answer reaches Claude as a new tur
 - **Threads first.** One list of every thread, newest activity first. Each thread has a status
   (**working**, **need action**, **finished**) that Claude sets and you can change by hand.
   Filter by Waiting or Unread, group by activity, status or session.
-- **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one; each
-  project has a main session that new threads go to by default. Give a project an icon (an emoji
+- **Projects.** A project is a folder on a host. Sessions, threads and drafts belong to one. New
+  work for a project with no agent named (a Slack DM, ⇧N's *Let minbox choose*, a thread from an issue or a
+  Slack thread) goes to the agent a helper model picks among the project's running agents, else to a new
+  agent. Give a project an icon (an emoji
   or an uploaded image); it replaces the initials on the narrow rail's tiles. Change a project's
   folder from its menu: new sessions use the new one, and existing sessions move to it at their next start (a fresh
   Claude conversation there, told the old folder and session id so it can read the earlier transcript).
@@ -293,7 +295,8 @@ Keep descriptions under 15 lines."); they never change the output format or the 
 the Linear issues **assigned to you**, grouped by workflow state, with search, *Show closed* and Refresh. Pick one to
 read it (description as Markdown, comments, the minbox threads already linked) and press **Start thread**: the project
 is picked for you (a thread already linked to the issue, a project named like the Linear project or team, else the helper
-agent), the session defaults to that project's main session, and the new thread is linked to the issue at once. The agent
+agent), the session defaults to *Let minbox choose* (the helper picks one of the project's agents whose work fits,
+else a new agent starts), and the new thread is linked to the issue at once. The agent
 gets the issue as clearly marked untrusted context in front of your request. **New issue** writes an issue from plain
 language (Japanese or English): *Generate* drafts title, description and guesses with your local coding agent; you edit
 everything and press Create. Details: [docs/linear.md](docs/linear.md#my-issues).
@@ -303,8 +306,8 @@ connected): the Slack threads and DMs that **need your reply**, found with your 
 an internal Slack app and paste its `xoxp-…` token in *Settings → Integrations → Slack (personal)*; read-only scopes,
 never posts). A helper agent on this machine reads each candidate thread and sorts it into *Needs reply* / *Maybe*;
 rows show the last message, the reason, urgency and an unread dot for DMs. **Dismiss** (it returns when a new message
-arrives), **Snooze**, or **Start minbox thread**: the project is picked for you, the session defaults to its main
-session, and the agent gets the Slack thread as clearly marked untrusted context. Setup, scopes, the manifest, rate
+arrives), **Snooze**, or **Start minbox thread**: the project is picked for you, the session defaults to *Let minbox
+choose*, and the agent gets the Slack thread as clearly marked untrusted context. Setup, scopes, the manifest, rate
 limits, privacy and what is unverified: [docs/slack-personal.md](docs/slack-personal.md).
 
 ## Search and quick actions

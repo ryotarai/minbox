@@ -15,9 +15,7 @@ resources under a project. The project is the top-level scope of the UI, left of
 | Archive | Only when no session is live (not ended, not archived). Archiving also archives the project's ended sessions (same timestamp); unarchiving restores exactly those. Unarchiving or restarting a session, or creating a session in it, unarchives its project. |
 | Delete | Deletes the project and ALL its sessions and threads (messages, annotations, attachments), stopping running sessions first; the folder on disk is not touched; cannot be undone. `GET /api/projects/{id}/delete-preview` gives the counts. The UI opens a confirm dialog: with sessions it warns `This also deletes N sessions and M threads (all messages and attachments). K are running and will be stopped. The folder on disk is not touched. This cannot be undone.` and the destructive button reads `Delete project and N sessions`; an empty project gets a plain confirm. Same dialog on phone. |
 | Order | Pinned first, then most recent activity (latest session/thread update). `PATCH {pinned:true}` pins. No manual drag. |
-| Main session | Each project has at most one **main session**: `projects.main_session_id` (nullable; it must be a Claude Code session of the project, never a shell). A new thread goes to it by default. Session JSON has `is_main`, project JSON `main_session_id`. |
-| Becoming main | The first Claude Code session created in a project (UI, plugin/CLI by `(host, dir)`, `POST /api/sessions`) becomes main when the project has none. Later ones are extra; `POST /api/sessions {main:true}`, `PATCH /api/projects/{id} {main_session_id}`, the picker's `Set as main`, the session `...` menu and the palette action promote one. The `+ New session…` dialog has a `Make main session` checkbox when the project already has a main one. |
-| Main lifecycle | Stopping/ending keeps it main (the composer says `Session ended: Claude gets this after Resume`, as for any ended session). Archiving or deleting the main session is 409 while the project has another live Claude Code session, unless the request promotes one (`?promote=<session id>` on `POST /api/sessions/{id}/archive` and `DELETE /api/sessions/{id}`). If it is the last one the project is left without main; the next Claude session started there becomes main. The UI offers `Set as main` first and shows the 409 text otherwise. |
+| No main session | (Removed 2026-11-19.) Projects used to have a **main session** that new threads went to by default. Now new work with no agent named goes to the agent the helper model picks among the project's live agents, else a new agent (see api-contract.md, "Choosing the agent for new work"). The `projects.main_session_id` column stays in the database but is neither read nor written; sessions archive and delete without conditions. |
 | Selected project | A browser preference (`minbox:v2-filter.project`), next to the existing session filter. `''` = All projects. Selecting a thread or session of another project (palette, link) switches the project to it. |
 
 ## Desktop wireframe (1500 px)
@@ -71,7 +69,7 @@ chips to it. List rows carry no project or session chip, also in `All projects`.
 
 ## Composer target
 
-With a project selected the target defaults to the project's **main session** (marked `main` in the list; other rows have `Set as main` on hover). In All projects it is the open session's, as before. A session picked by hand holds while the open session does not change.
+(v2; superseded by v3's ⇧N.) With a project selected the target defaulted to the project's main session, which no longer exists. In All projects it is the open session's, as before. A session picked by hand holds while the open session does not change.
 
 ```
  to: * deploy-api  v              <- scoped to the selected project
@@ -129,9 +127,7 @@ created more sessions) changes nothing for already assigned sessions.
    `No project` (dir `''`).
 4. Name = last path component of dir (`/` for the root). A name already used (case-insensitive) becomes
    `name (host name)` for a remote host, and `name 2`, `name 3`... if still taken.
-5. Each project without a valid main session gets one: its most recently active Claude Code session, a live one
-   before an ended one before an archived one; none when it only has shell sessions. (This runs on every start, so a
-   main session deleted by the old build is replaced.)
+5. (Removed: each project used to get a main session here.)
 6. A project whose sessions are all archived is archived (`archived_at` = latest session archive time).
 7. `created_at` = oldest session of the group. Threads, messages, attachments, drafts (browser local)
    are untouched: they hang off sessions.
