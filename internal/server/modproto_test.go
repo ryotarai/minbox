@@ -288,6 +288,59 @@ func TestInstructionsCarryTheOrchestration(t *testing.T) {
 	}
 }
 
+// TestNoPlaceholderSends: every agent is told, in the system prompt, the per-prompt standing
+// instructions and the send_message / create_task descriptions, that a send reaches the person at
+// once (no placeholder text) and must wait for the result it needs (no batching with create_task).
+func TestNoPlaceholderSends(t *testing.T) {
+	e := newEnv(t)
+	withPi(e, "sleep 1")
+	withOpenCode(e, "opencode v2.1.4")
+	prefixes := map[string]string{"claude": "mcp__minbox__", "pi": "minbox_", "opencode": "minbox_"}
+	for kind, prefix := range prefixes {
+		var sess *store.Session
+		if kind == "claude" {
+			sess = e.createSession()
+		} else {
+			s, code, o := e.createAgentSession(kind)
+			if s == nil {
+				t.Fatalf("%s: %d %v", kind, code, o)
+			}
+			sess = s
+		}
+		instr := []string{
+			"never send placeholder, test or draft text, only the final message",
+			"Do not put " + prefix + "send_message in the same parallel batch as a call whose result it needs (e.g. " + prefix + "create_task's task id): wait for that result, then send; never guess ids.",
+		}
+		_, hello, _ := e.do("POST", "/api/agent/hello", map[string]any{"agent": kind, "protocol": 1}, bearer(sess))
+		_, o, _ := e.do("POST", "/api/agent/event", map[string]any{"type": "prompt"}, bearer(sess))
+		c, _ := o["context"].([]any)
+		if len(c) != 1 {
+			t.Fatalf("%s prompt: %v", kind, o)
+		}
+		for _, want := range instr {
+			if !strings.Contains(hello["instructions"].(string), want) {
+				t.Errorf("%s hello: missing %q", kind, want)
+			}
+			if !strings.Contains(c[0].(string), want) {
+				t.Errorf("%s standing instructions: missing %q", kind, want)
+			}
+		}
+		descs := map[string]string{}
+		for _, tl := range manifestFor(kind).Tools {
+			descs[strings.TrimPrefix(tl.Name, prefix)] = tl.Description
+		}
+		if d := descs["send_message"]; !strings.Contains(d, "never send placeholder, test or draft text") || !strings.Contains(d, "Do not call it in the same parallel batch as a call whose result it needs") {
+			t.Errorf("%s send_message description: %q", kind, d)
+		}
+		if d := descs["create_task"]; !strings.Contains(d, "do not call "+map[bool]string{true: "", false: prefix}[kind == "claude"]+"send_message in the same parallel batch") {
+			t.Errorf("%s create_task description: %q", kind, d)
+		}
+	}
+	if got := fallbackReminderText("S"); !strings.Contains(got, "never send placeholder, test or draft text") || !strings.Contains(got, "never guess ids") {
+		t.Errorf("fallback reminder: %q", got)
+	}
+}
+
 func TestBashOutcomesReportDeniedCommands(t *testing.T) {
 	p := newProto(t)
 	ctx := context.Background()

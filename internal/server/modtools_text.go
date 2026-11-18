@@ -397,7 +397,7 @@ var taskDescription = map[string]string{
 		"The person's message that asked for it goes in it by itself, and so does your reply in this turn when it names no other task (send_message task_id).",
 		"If the result lists similar_tasks that are the same work, use that task (send_message task_id) and do not create more.",
 		"kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.",
-		"It returns the task id; keep the task current with update_task.",
+		"It returns the task id; keep the task current with update_task. A reply that needs the id waits for this result: do not call send_message in the same parallel batch.",
 	}, " "),
 	"update_task": strings.Join([]string{
 		"Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.",
