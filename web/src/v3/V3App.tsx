@@ -67,7 +67,8 @@ export function V3App() {
     if (overlay) return
     if (e.key === 'Escape') {
       if (typing) return
-      if (route.f) return
+      // A file open (its viewer's Esc leaves full screen, then closes it), or a menu that took the key.
+      if (route.f || e.defaultPrevented || document.querySelector('[data-testid="attachment-viewer"]')) return
       if (view !== 'board') {
         e.preventDefault()
         nav.board()

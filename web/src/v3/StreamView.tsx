@@ -1,7 +1,7 @@
 // An agent's stream: "what is this agent doing?" One conversation, oldest to newest, with task chips
 // under the messages and the agent's decision under its replies; its tasks, terminal, shell and files
 // beside it.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
@@ -92,7 +92,7 @@ export function StreamView({
   // What it is on now: the open task of its newest message that is about one.
   const nowOn = [...msgs].reverse().flatMap((m) => m.tasks).map((r) => openTasks.find((t) => t.id === r.task_id)).find((t) => !!t)
   const hint = agentHint(sessions ?? [], sess)
-  const draftKey = s?.stream_thread_id || 'v3:agent:' + id
+  const draftKey = 'v3:agent:' + id
   const send = async (o: Outgoing) => {
     const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: o.words, words: o.words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: id, tasks: [], open: 0, pending: true }
     if (!o.forward_to && o.words) setPending((p) => [...p, tmp])
@@ -102,6 +102,8 @@ export function StreamView({
       void _to
       await v3.send(id, { ...rest, task_ids: tids.length ? tids : undefined, uploads: o.uploads.length ? o.uploads : undefined })
       reload()
+      // The server has it now: the stand-in goes once the reload shows it (or the message was cancelled).
+      setTimeout(() => setPending((p) => p.filter((x) => x !== tmp)), 1500)
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
       error(e)
@@ -287,7 +289,7 @@ export function StreamView({
                       </div>,
                     )
                   for (const f of (thread?.forks ?? []).filter((f) => f.from_message_id === m.id)) out.push(<ForkMarker key={'f' + f.thread_id} f={f} />)
-                  return out
+                  return <Fragment key={m.id}>{out}</Fragment>
                 })}
               {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
             </div>
@@ -374,9 +376,9 @@ export function StreamView({
               <ShellPane session={sess} onClose={() => setPane('tasks')} />
             </div>
           )}
-          {pane === 'files' && s?.stream_thread_id && (
+          {pane === 'files' && s && (
             <div style={{ flex: 1, minHeight: isPhone ? 420 : 0, overflow: 'hidden' }}>
-              <FilesPane session={sess} threadId={s.stream_thread_id} onClose={() => setPane('tasks')} />
+              <FilesPane session={sess} threadId={s.stream_thread_id} draftKey={draftKey} onClose={() => setPane('tasks')} />
             </div>
           )}
         </aside>

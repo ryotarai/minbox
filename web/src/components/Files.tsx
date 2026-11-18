@@ -42,7 +42,7 @@ export function insertFileMention(threadId: string, path: string) {
 const LazyFilesPane = lazy(() => import('./FilesPane').then((m) => ({ default: m.FilesPane })))
 
 /** The Files pane, loaded on first use. */
-export function FilesPane(props: { session: Session; threadId: string; phone?: boolean; onClose: () => void }) {
+export function FilesPane(props: { session: Session; threadId: string; draftKey?: string; phone?: boolean; onClose: () => void }) {
   return (
     <Suspense fallback={<div className="px-3.5 py-3 text-[12.5px] text-subtle">Loading…</div>}>
       <LazyFilesPane {...props} />

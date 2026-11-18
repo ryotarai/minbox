@@ -51,7 +51,7 @@ const TREE_STYLE: React.CSSProperties = {
  * "Insert @mention" (the viewer's button, the row menu, or @ on a row) writes its path into the
  * thread's message box. Paths are relative to the session's folder, as the @ completion writes them.
  */
-export function FilesPane({ session, threadId, phone, onClose }: { session: Session; threadId: string; phone?: boolean; onClose: () => void }) {
+export function FilesPane({ session, threadId, draftKey, phone, onClose }: { session: Session; threadId: string; /** Where @ mentions go (default: the thread's reply draft). */ draftKey?: string; phone?: boolean; onClose: () => void }) {
   const { error, threadVersion } = useApp()
   const [listing, setListing] = useState<FileTreeListing | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
@@ -133,7 +133,7 @@ export function FilesPane({ session, threadId, phone, onClose }: { session: Sess
   }
   const insert = (p: string) => {
     if (phone) onClose()
-    insertFileMention(threadId, p)
+    insertFileMention(draftKey ?? threadId, p)
   }
 
   // Keys typed in the tree (its search box, type-ahead, arrows) stay there: the thread's single-key
