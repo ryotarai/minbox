@@ -530,6 +530,9 @@ func migrate(db *sql.DB) error {
 	if err := migrateV3(context.Background(), db); err != nil {
 		return fmt.Errorf("v3: %w", err)
 	}
+	if err := migrateOneTask(context.Background(), db); err != nil {
+		return fmt.Errorf("one task per message: %w", err)
+	}
 	// Hosts added with a shared token (before pairing) must be paired again.
 	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
 		return err

@@ -417,11 +417,18 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		ForwardTo   string             `json:"forward_to"`
 		Resume      bool               `json:"resume"`
 		Uploads     []string           `json:"uploads"`
-		// TaskIDs (v3): tags of the message (it was written from a task's view).
+		// TaskID (v3): the task the message is about (it was written from a task's view). task_ids
+		// is the older name (its first element counts).
+		TaskID  string   `json:"task_id"`
 		TaskIDs []string `json:"task_ids"`
 	}
 	if !decode(w, r, &req) {
 		return
+	}
+	if req.TaskID != "" {
+		req.TaskIDs = []string{req.TaskID}
+	} else if len(req.TaskIDs) > 1 {
+		req.TaskIDs = req.TaskIDs[:1]
 	}
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -807,10 +814,17 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		Attachments []string   `json:"attachments"`
 		Review      *reviewReq `json:"review"`
 		Status      string     `json:"status"`
-		// TaskIDs (v3): the tasks the message is about; the turn's untagged messages of the person get them too.
+		// TaskID (v3): the one task the message is about; the turn's person's messages in no task get
+		// it too. TaskIDs is its older name, kept as an alias: one element.
+		TaskID  string   `json:"task_id"`
 		TaskIDs []string `json:"task_ids"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	named, msg := oneTask(req.TaskID, req.TaskIDs)
+	if msg != "" {
+		httpError(w, 400, msg)
 		return
 	}
 	status := ""
@@ -825,7 +839,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		}
 		status = v
 	}
-	taskIDs, msg := s.sameProjectTasks(r.Context(), sess, req.TaskIDs)
+	taskIDs, msg := s.sameProjectTasks(r.Context(), sess, named)
 	if msg != "" {
 		httpError(w, 404, msg)
 		return
@@ -879,8 +893,9 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	isNew := false
 	// v3: every message goes to the session's stream. The older contract's thread_id (a thread of
 	// before v3) says which task the message is about; its thread_title names an open task of the
-	// session at most (it never renames anything: the stream has no title).
-	if req.ThreadID != "" {
+	// session at most (it never renames anything: the stream has no title). Both count only when the
+	// message names no task.
+	if req.ThreadID != "" && len(taskIDs) == 0 {
 		if th, err := s.store.GetThread(ctx, req.ThreadID); err == nil && th.SessionID == sess.ID && th.Kind != store.ThreadStream {
 			if id, err := s.store.TaskOfThread(ctx, th.ID); err == nil && id != "" {
 				taskIDs = appendNew(taskIDs, id)
@@ -966,7 +981,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	for _, q := range questions {
 		qs = append(qs, qInfo{q.Key, q.Kind, q.Prompt})
 	}
-	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_ids": tagged, "decision": decision,
+	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_id": firstNonEmpty(tagged...), "task_ids": tagged, "decision": decision,
 		"attachments": attsOut, "images_not_shown": notShown, "note": note})
 }
 

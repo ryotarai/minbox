@@ -72,7 +72,8 @@ export type TaskDetail = { task: BoardTask; messages: V3Message[]; events: TaskE
 export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string }
 export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tasks: TaskRef[] }[] }
 
-export type SendRequest = ReplyRequest & { task_ids?: string[] }
+/** task_id: the one task the message is about (a message belongs to exactly one task). */
+export type SendRequest = ReplyRequest & { task_id?: string }
 
 const q = (o: Record<string, string | undefined>) => {
   const p = new URLSearchParams()
@@ -91,12 +92,10 @@ export const v3 = {
     call<Stream>('GET', `/api/v3/sessions/${session}/stream` + q({ before: opts.before, after: opts.after, limit: opts.limit ? String(opts.limit) : undefined })),
   send: (session: string, req: SendRequest, thread?: string) => call<Message>('POST', `/api/v3/sessions/${session}/messages` + q({ thread }), req),
   newMessage: (req: SendRequest & { to: string; project_id: string; agent?: string; name?: string }) => call<Message>('POST', '/api/v3/new', req),
-  /** The message is (also) about the task. */
-  link: (msg: string, task_id: string) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/tasks`, { task_id }),
-  /** The message is not about the task. */
-  unlink: (msg: string, task: string) => call<{ ok: boolean }>('DELETE', `/api/v3/messages/${msg}/tasks/${task}`),
+  /** The message moves to the task (it leaves the one it was in: a message belongs to exactly one task). */
+  setTask: (msg: string, task_id: string) => call<{ ok: boolean; from: string }>('PUT', `/api/v3/messages/${msg}/task`, { task_id }),
   /** An agent reply and the person's messages it answered move to another task (or a new one). */
-  move: (msg: string, body: { from?: string; to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/move`, body),
+  move: (msg: string, body: { to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/move`, body),
   read: (ids: string[]) => call<{ marked: number }>('POST', '/api/v3/read', { message_ids: ids }),
   search: (qs: string, project: string) => call<SearchResult>('GET', '/api/v3/search' + q({ q: qs, project })),
 }

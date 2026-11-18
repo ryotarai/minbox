@@ -400,7 +400,8 @@ func (s *Server) v3Stream(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/v3/sessions/{id}/messages: the person writes to the agent (in its stream). The body is
 // the reply's ({words, answers_for?, answers?, uploads?, annotations?, urgent?, resume?}) plus
-// task_ids: tags the message gets (a message from a task view). A message answering a question of
+// task_id: the task the message is about (a message from a task view; task_ids, the older name, takes
+// one). A message answering a question of
 // an older thread goes to that thread.
 func (s *Server) v3Send(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -429,7 +430,7 @@ func (s *Server) v3Send(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, r)
 }
 
-// POST /api/v3/new {to: <session id> | "new", project_id, agent?, name?, words, task_ids?, uploads?}:
+// POST /api/v3/new {to: <session id> | "new", project_id, agent?, name?, words, task_id?, uploads?}:
 // the composer's message: to an agent's stream, or to a new agent (session) started for it.
 func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -543,8 +544,10 @@ func v3TaskError(w http.ResponseWriter, err error) {
 	storeError(w, err)
 }
 
-// POST /api/v3/messages/{id}/tasks {task_id}: the person says a message is (also) about a task.
-func (s *Server) v3LinkTask(w http.ResponseWriter, r *http.Request) {
+// PUT /api/v3/messages/{id}/task {task_id} (POST /api/v3/messages/{id}/tasks, the older name, is the
+// same): the person moves a message to a task. A message belongs to exactly one task, so it leaves the
+// one it was in; both tasks' timelines say so.
+func (s *Server) v3SetTask(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TaskID string `json:"task_id"`
 	}
@@ -553,52 +556,55 @@ func (s *Server) v3LinkTask(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	mid := r.PathValue("id")
-	if _, err := s.store.GetTask(ctx, body.TaskID); err != nil {
-		storeError(w, err)
-		return
-	}
-	added, err := s.store.LinkMessages(ctx, body.TaskID, []string{mid}, store.LinkPerson)
+	to, err := s.store.GetTask(ctx, body.TaskID)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	if len(added) == 0 {
-		if _, _, err := s.store.MessageSession(ctx, mid); err != nil {
-			storeError(w, err)
-			return
+	if _, _, err := s.store.MessageSession(ctx, mid); err != nil {
+		storeError(w, err)
+		return
+	}
+	from, _ := s.store.TaskOfMessage(ctx, mid)
+	added, err := s.store.LinkMessages(ctx, to.ID, []string{mid}, store.LinkPerson)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if len(added) > 0 {
+		if from != "" {
+			_ = s.store.AddTaskEvent(ctx, from, "unlink", "A message moved by you to “"+to.Title+"”", "", mid)
+			_ = s.store.AddTaskEvent(ctx, to.ID, "link", "A message moved here by you", "", mid)
+		} else {
+			_ = s.store.AddTaskEvent(ctx, to.ID, "link", "A message added by you", "", mid)
 		}
-	} else {
-		_ = s.store.AddTaskEvent(ctx, body.TaskID, "link", "A message added by you", "", mid)
+		s.publishTasks()
 	}
 	s.publishMessage(ctx, mid)
-	writeJSON(w, 200, map[string]any{"ok": true, "added": len(added) > 0})
+	writeJSON(w, 200, map[string]any{"ok": true, "added": len(added) > 0, "task_id": to.ID, "from": from})
 }
 
-// DELETE /api/v3/messages/{id}/tasks/{task}: the person says a message is not about that task.
+// DELETE /api/v3/messages/{id}/tasks/{task}: kept for older clients. A message is always in exactly
+// one task: it is moved to another (PUT …/task), never taken out, so its task answers 409.
 func (s *Server) v3UnlinkTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mid, tid := r.PathValue("id"), r.PathValue("task")
-	// Every message is about a task: its last one goes only by moving it to another.
-	if tags, err := s.store.TasksOf(ctx, []string{mid}); err == nil && len(tags[mid]) == 1 && tags[mid][0].TaskID == tid {
-		httpError(w, 409, "a message is always about a task: move it to another task instead")
-		return
-	}
-	ok, err := s.store.UnlinkMessage(ctx, mid, tid)
+	cur, err := s.store.TaskOfMessage(ctx, mid)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	if ok {
-		_ = s.store.AddTaskEvent(ctx, tid, "unlink", "A message taken out by you", "", mid)
+	if cur == tid {
+		httpError(w, 409, "a message is always about exactly one task: move it to another task instead")
+		return
 	}
-	s.publishMessage(ctx, mid)
-	writeJSON(w, 200, map[string]any{"ok": true, "removed": ok})
+	writeJSON(w, 200, map[string]any{"ok": true, "removed": false})
 }
 
-// POST /api/v3/messages/{id}/move {from?, to?, title?}: "Move to task…" on an agent reply: the reply
-// and the person's messages it answered (its turn) move from task `from` (or from no task) to `to`, or
-// to a new task named `title`. A task the agent created in that turn that is left with no messages is
-// deleted.
+// POST /api/v3/messages/{id}/move {to?, title?, from? (ignored: the reply's own task)}: "Move to
+// another task…" on an agent reply: the reply and the person's messages it answered (its turn) that
+// were in the reply's task move to `to`, or to a new task named `title`. A task the agent created in
+// that turn that is left with no messages is deleted.
 func (s *Server) v3Move(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		From  string `json:"from"`
@@ -637,29 +643,30 @@ func (s *Server) v3Move(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	ids := append([]string{m.ID}, m.TurnOf...)
+	from, _ := s.store.TaskOfMessage(ctx, m.ID)
+	// The turn's messages go along when they were with the reply (or in no task); one the person put
+	// in another task stays there.
+	ids := []string{m.ID}
+	for _, id := range m.TurnOf {
+		if cur, _ := s.store.TaskOfMessage(ctx, id); cur == "" || cur == from {
+			ids = append(ids, id)
+		}
+	}
 	if _, err := s.store.LinkMessages(ctx, to, ids, store.LinkPerson); err != nil {
 		storeError(w, err)
 		return
 	}
-	if body.From != "" && body.From != to {
-		for _, id := range ids {
-			_, _ = s.store.UnlinkMessage(ctx, id, body.From)
-		}
-	}
 	removed := ""
-	if body.From != "" && body.From != to {
-		from, err := s.store.GetTask(ctx, body.From)
-		if err == nil {
-			toTask, _ := s.store.GetTask(ctx, to)
+	if from != "" && from != to {
+		if ft, err := s.store.GetTask(ctx, from); err == nil {
 			title := ""
-			if toTask != nil {
+			if toTask, _ := s.store.GetTask(ctx, to); toTask != nil {
 				title = toTask.Title
 			}
-			_ = s.store.AddTaskEvent(ctx, from.ID, "unlink", "Messages moved by you to “"+title+"”", "", m.ID)
-			if n, _ := s.store.TaskCount(ctx, from.ID); n == 0 && m.Decision == store.DecisionCreated && m.DecisionTask == from.ID {
-				_ = s.store.DeleteTask(ctx, from.ID)
-				removed = from.Title
+			_ = s.store.AddTaskEvent(ctx, ft.ID, "unlink", "Messages moved by you to “"+title+"”", "", m.ID)
+			if n, _ := s.store.TaskCount(ctx, ft.ID); n == 0 && m.Decision == store.DecisionCreated && m.DecisionTask == ft.ID {
+				_ = s.store.DeleteTask(ctx, ft.ID)
+				removed = ft.Title
 			}
 		}
 	}

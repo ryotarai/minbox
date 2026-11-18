@@ -40,14 +40,14 @@ func TestWakeTextOfAThreadReply(t *testing.T) {
 
 func TestWakeTextOfAStreamMessage(t *testing.T) {
 	plain := wakeText(wakeMsg{ID: "m1", ThreadID: "thr_s", Body: "fix the gauge", Stream: true}, "minbox_send_message", "minbox_read_thread")
-	if !strings.Contains(plain, "a message from the person (message m1).") || !regexp.MustCompile(`open task .*task_ids.*new work the person asked for \(create_task`).MatchString(plain) || strings.Contains(plain, "thread_id") {
+	if !strings.Contains(plain, "a message from the person (message m1).") || !regexp.MustCompile(`open task .*task_id\b.*new work the person asked for \(create_task`).MatchString(plain) || strings.Contains(plain, "thread_id") {
 		t.Fatalf("plain:\n%s", plain)
 	}
 	if !strings.Contains(plain, "Answer it with minbox_send_message, even briefly") || !strings.HasSuffix(plain, "\n\nfix the gauge") {
 		t.Fatalf("plain:\n%s", plain)
 	}
-	about := wakeText(wakeMsg{ID: "m2", Body: "status?", Stream: true, Tasks: []wakeTask{{ID: "tsk_1", Title: "Fix gauge", Status: "working"}, {ID: "tsk_2", Title: "Docs\n x", Status: "needs_you"}}}, "s", "r")
-	if !strings.Contains(about, `Tasks: tsk_1 "Fix gauge"; tsk_2 "Docs x" (needs_you) (they wrote it about these tasks).`) || strings.Contains(about, streamLine) {
+	about := wakeText(wakeMsg{ID: "m2", Body: "status?", Stream: true, Tasks: []wakeTask{{ID: "tsk_2", Title: "Docs\n x", Status: "needs_you"}}}, "s", "r")
+	if !strings.Contains(about, `Task: tsk_2 "Docs x" (needs_you) (they wrote it about this task; reply with its task_id).`) || strings.Contains(about, streamLine) || strings.Contains(about, "Tasks:") {
 		t.Fatalf("about:\n%s", about)
 	}
 	cont := wakeText(wakeMsg{ID: "m3", Kind: "continue", Stream: true, Body: " minbox goal (autonomous run, turn 1 of 20): go\n"}, "s", "r")
@@ -221,7 +221,7 @@ func TestTaskCallsAndText(t *testing.T) {
 		t.Fatal(c.Query)
 	}
 	created := taskText("create_task", js(t, `{"task_id":"n","tagged_messages":["m1"],"task":{"id":"n","status":"working","title":"Fix PDF"},"note":"An open task looks like the same work.","similar_tasks":[{"id":"o","title":"PDF attachments","status":"needs_you"}]}`))
-	if !strings.HasPrefix(created, "Task created (task_id n). The person's message of this turn and your replies in it belong to it. Keep it current with update_task.\nAn open task looks like the same work. Similar open tasks: o \"PDF attachments\" (needs_you). If one is the same work, keep using it") {
+	if !strings.HasPrefix(created, "Task created (task_id n). The person's message of this turn went in it; your reply goes in it too unless it names another task (task_id). Keep it current with update_task.\nAn open task looks like the same work. Similar open tasks: o \"PDF attachments\" (needs_you). If one is the same work, keep using it") {
 		t.Fatalf("created:\n%s", created)
 	}
 	goal := taskText("update_task", js(t, `{"task":{"id":"g","kind":"goal","status":"working","title":"Green CI","manual_status":"blocked","auto":{"state":"running"},"summary":"almost",
