@@ -131,7 +131,26 @@ export function TaskChip({ task, shortN = 40, goal, onRemove }: { task: { task_i
   )
 }
 
-export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'needs_you' | 'kind'> & { open_questions?: number }; live?: boolean }) {
+/** The task a message is in (one per message): the one the agent decided on, else its first. */
+export function msgTask(m: Pick<V3Message, 'tasks' | 'decision_task'>): TaskRef | undefined {
+  return m.tasks.find((t) => t.task_id === m.decision_task) ?? m.tasks[0]
+}
+
+/**
+ * A run of messages in one task starts with this line ("── ● Fix the gauge ────"), like a topic
+ * separator in a chat: the task is named once above its messages, again when the task changes.
+ */
+export function TaskTopic({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
+  const t = tasks.find((x) => x.id === task.task_id)
+  return (
+    <div className="v-topic" data-testid="task-topic" data-task={task.task_id}>
+      <StatusDot t={{ status: t?.status ?? task.status, kind: t?.kind ?? '', needs_you: (t as BoardTask | undefined)?.needs_you }} />
+      <TaskChip task={task} shortN={60} goal={t?.kind === 'goal'} />
+    </div>
+  )
+}
+
+export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'> & { needs_you?: boolean; open_questions?: number }; live?: boolean }) {
   const c = t.needs_you || (t.open_questions ?? 0) > 0 || t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : t.kind === 'goal' ? 'd-goal' : 'd-work'
   return <span className={`v-dot ${c}${live ? ' v-live' : ''}`} data-status={t.status} />
 }
@@ -403,7 +422,10 @@ export function MessageView({
 }: {
   m: V3Message
   tasks: Task[]
-  /** Shown in this task's view: it is not named under each message (every message there is about it). */
+  /**
+   * The task already named above this message (the task view, or the topic line of its run in the
+   * stream): not repeated in its header.
+   */
   inTask?: string
   ctx?: boolean
   unread?: boolean
@@ -515,7 +537,9 @@ export function MessageView({
   const decisionTask = m.decision_task ? taskOf(m.decision_task) ?? m.tasks.find((t) => t.task_id === m.decision_task) : undefined
   // The decision is worth a line only when it changed something: a new task, or the person's move.
   const showDecision = !me && (decision === 'created' || decision === 'moved') && !!decisionTask
-  const shown = about.filter((t) => t.task_id !== inTask && !(showDecision && t.task_id === m.decision_task))
+  // The task shows above the message (the stream's topic line, or the task view itself); here only
+  // when it is another one (a message shown as context in a task view).
+  const shown = about.filter((t) => t.task_id !== inTask)
   return (
     <div
       ref={ref}
@@ -524,6 +548,7 @@ export function MessageView({
       data-author={me ? 'user' : 'agent'}
       data-message-id={m.id}
       data-thread-id={m.thread_id}
+      data-task={msgTask(m)?.task_id}
       {...ctxMenu.props}
     >
       <ContextMenu at={ctxMenu.at} onClose={ctxMenu.close} testid="message-context-menu" className="w-[250px]">
@@ -559,13 +584,79 @@ export function MessageView({
           </button>
         )}
         <span>{hhmm(m.created_at)}</span>
-        {!me && !m.pending && (
-          <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
-            <IconThumb size={13} />
-          </button>
-        )}
         {m.pending && <span>sending…</span>}
         {me && m.delivery && m.delivery !== 'delivered' && !m.pending && <span data-testid="delivery">{m.delivery === 'queued' ? 'queued' : m.delivery}</span>}
+        {!m.pending && (
+          <span className="v-slot" data-testid="about">
+            {about.length === 0 && (
+              <span className="v-k" data-testid="unplaced">
+                waiting for {name} to place it in a task
+              </span>
+            )}
+            {shown.map((t) => (
+              <span key={t.task_id} className="v-intask">
+                <StatusDot t={{ status: taskOf(t.task_id)?.status ?? t.status, kind: taskOf(t.task_id)?.kind ?? '' }} />
+                <TaskChip task={t} goal={taskOf(t.task_id)?.kind === 'goal'} />
+              </span>
+            ))}
+            {showDecision && (
+              <span className="v-k" data-testid="decision" data-decision={decision} title={decisionTask!.title}>
+                {decision === 'created' ? '→ new task' : '→ moved here by you'}
+              </span>
+            )}
+            {!me && (
+              <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
+                <IconThumb size={13} />
+              </button>
+            )}
+            <span className="v-more" ref={menuRef}>
+              <button type="button" className="v-dots" data-testid="msg-menu" aria-label="Which task this message is about" title="Which task is this about?" onClick={() => setMenu(!menu)}>
+                <IconMoreV size={14} />
+              </button>
+              {menu && (
+                <div className="v-menu" role="menu">
+                  <button type="button" role="menuitem" data-testid="message-reply-item" onClick={() => (setMenu(false), reply())}>
+                    Reply
+                  </button>
+                  <button type="button" role="menuitem" data-testid="message-copy-item" onClick={() => (setMenu(false), copy())}>
+                    Copy text
+                  </button>
+                  <button type="button" role="menuitem" data-testid="message-fork-item" onClick={() => (setMenu(false), startFork())}>
+                    Start new thread from here
+                  </button>
+                  {!me && onUnread && (
+                    <button type="button" role="menuitem" data-testid="message-unread" onClick={() => (setMenu(false), onUnread(m))}>
+                      Mark unread from here
+                    </button>
+                  )}
+                  <hr className="v-menusep" />
+                  <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
+                    {about.length ? 'Move to another task…' : 'Put in a task…'}
+                  </button>
+                  {about.length > 0 && (
+                    <button type="button" role="menuitem" data-testid="menu-also" onClick={() => (setMenu(false), setPick({ mode: 'also' }))}>
+                      Also about another task…
+                    </button>
+                  )}
+                  {about.length > 1 && inTask && about.some((t) => t.task_id === inTask) && (
+                    <button type="button" role="menuitem" data-testid="menu-out" onClick={() => (setMenu(false), unlink(inTask))}>
+                      Take out of this task
+                    </button>
+                  )}
+                </div>
+              )}
+            </span>
+            {pick && (
+              <TaskPicker
+                tasks={tasks}
+                exclude={pick.mode === 'also' ? about.map((t) => t.task_id) : []}
+                head={pick.mode === 'move' ? (me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…') : 'Also about…'}
+                onPick={(r) => void choose(r)}
+                onClose={() => setPick(null)}
+              />
+            )}
+          </span>
+        )}
       </div>
       <div className="v-bd">
         {segs.map((seg, i) => {
@@ -588,71 +679,6 @@ export function MessageView({
         {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={(a) => onOpenAttachment(a, m)} openId={null} newestId={null} />}
         {!me && questions.length > 0 && <AnswerBar m={m} onSent={onChanged} testid="send-answers" />}
       </div>
-      {!m.pending && (
-        <div className="v-about" data-testid="about">
-          {shown.length > 0 && <span className="v-k">in</span>}
-          {about.length === 0 && (
-            <span className="v-k" data-testid="unplaced">
-              waiting for {name} to place it in a task
-            </span>
-          )}
-          {shown.map((t) => (
-            <TaskChip key={t.task_id} task={t} goal={taskOf(t.task_id)?.kind === 'goal'} />
-          ))}
-          {showDecision && (
-            <span className="v-note" data-testid="decision" data-decision={decision}>
-              <span className="v-k">{decision === 'created' ? '→ new task' : '→ moved by you to'}</span>
-              <TaskChip task={{ task_id: m.decision_task!, title: decisionTask!.title }} />
-            </span>
-          )}
-          <span className="v-more" ref={menuRef}>
-            <button type="button" className="v-dots" data-testid="msg-menu" aria-label="Which task this message is about" title="Which task is this about?" onClick={() => setMenu(!menu)}>
-              <IconMoreV size={14} />
-            </button>
-            {menu && (
- <div className="v-menu" role="menu">
-                <button type="button" role="menuitem" data-testid="message-reply-item" onClick={() => (setMenu(false), reply())}>
-                  Reply
-                </button>
-                <button type="button" role="menuitem" data-testid="message-copy-item" onClick={() => (setMenu(false), copy())}>
-                  Copy text
-                </button>
-                <button type="button" role="menuitem" data-testid="message-fork-item" onClick={() => (setMenu(false), startFork())}>
-                  Start new thread from here
-                </button>
-                {!me && onUnread && (
-                  <button type="button" role="menuitem" data-testid="message-unread" onClick={() => (setMenu(false), onUnread(m))}>
-                    Mark unread from here
-                  </button>
-                )}
-                <hr className="v-menusep" />
-                <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
-                  {about.length ? 'Move to another task…' : 'Put in a task…'}
-                </button>
-                {about.length > 0 && (
-                  <button type="button" role="menuitem" data-testid="menu-also" onClick={() => (setMenu(false), setPick({ mode: 'also' }))}>
-                    Also about another task…
-                  </button>
-                )}
-                {about.length > 1 && inTask && about.some((t) => t.task_id === inTask) && (
-                  <button type="button" role="menuitem" data-testid="menu-out" onClick={() => (setMenu(false), unlink(inTask))}>
-                    Take out of this task
-                  </button>
-                )}
-              </div>
-            )}
-          </span>
-          {pick && (
-            <TaskPicker
-              tasks={tasks}
-              exclude={pick.mode === 'also' ? about.map((t) => t.task_id) : []}
-              head={pick.mode === 'move' ? (me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…') : 'Also about…'}
-              onPick={(r) => void choose(r)}
-              onClose={() => setPick(null)}
-            />
-          )}
-        </div>
-      )}
     </div>
   )
 }
