@@ -1,70 +1,35 @@
 /**
- * The minbox mod. minbox starts Claude Code with `--plugin-dir <this plugin>`
- * and the environment MINBOX_TOKEN (this session's bearer token) and
- * MINBOX_SERVER_FILE (a JSON file holding the server's current URL).
+ * The minbox mod: a thin proxy between Claude Code and the minbox server (mod protocol 1,
+ * docs/mod-protocol.md). minbox starts Claude Code with `--plugin-dir <this plugin>` and the
+ * environment MINBOX_TOKEN (this session's bearer token) and MINBOX_SERVER_FILE (a JSON file holding
+ * the server's current URL).
  *
- * - Registers `send_message`, `read_thread`, `set_session_title`, `open_url`, the task tools of
- *   tasks.ts (create_task, update_task, list_tasks: the agent keeps the person's Tasks board) and the
- *   read-only navigation tools of nav.ts (list_projects, get_project, list_sessions, list_threads,
- *   search), served over minbox's HTTP API, and system prompt sections asking Claude to
- *   keep the session's title (shown in the session list) current and to open
- *   pages with `open_url`: in the person's browser, not on the host. Bash
- *   commands that would open a page on the host are refused.
- * - Long-polls the server for the person's messages. Once Claude has been idle
- *   for two ticks, each is claimed (so one mod instance delivers it), submitted
- *   as a plugin turn with `$.prompt.submit`, then acknowledged as delivered.
- *   A failed submit releases the claim; nothing is delivered twice.
- * - Reports whether Claude is working or idle (main-loop turn.start / turn.complete).
- * - Reports Bash commands that were denied (tool.check deny verdicts, auto mode's
- *   classic.PermissionDenied, and a tool.call result worded as a refusal: the person rejecting the
- *   prompt, a deny rule), and the later successful run of one; the reply area offers the latest
- *   as "Run yourself" (denied.ts).
- * - Sends a heartbeat every HEARTBEAT_MS (its state, last poll / delivery, and a tail of its own
+ * The mod holds no wording and makes no decisions about what the agent reads: the server does.
+ * - Tools: the tool set (names, descriptions, schemas, deferred or not) comes from GET
+ *   /api/agent/tools and is registered as given; every call goes to POST /api/agent/tool, whose text
+ *   is the result (or the refusal). A heartbeat answer naming another tools_version re-registers the
+ *   set (`$.tool.register` replaces a name registered again).
+ * - Guards: the server's guards refuse host tool calls (a Bash command that would open a page on the
+ *   host) with the server's text.
+ * - Delivery: long-polls GET /api/agent/pending?proto=1. Once Claude has been idle for two ticks each
+ *   message is claimed (so one mod instance delivers it), its text (the server's) is submitted as a
+ *   plugin turn with `$.prompt.submit`, then acknowledged as delivered. A failed submit releases the
+ *   claim; nothing is delivered twice.
+ * - Events: turn.start / turn.complete (main loop), session.end, session.compact, each prompt, and
+ *   Bash outcomes (tool.check verdicts, auto mode's PermissionDenied, tool results) go to POST
+ *   /api/agent/event. The answer says what to add to the prompt (context) and what to submit once
+ *   idle (a reminder), which the person typing first cancels.
+ * - Heartbeat every HEARTBEAT_MS (its state, last poll / delivery, protocol, and a tail of its own
  *   event log) so the server can tell a live mod from a silent one; see docs/mod-connection.md.
- * - Adds a one-paragraph reminder of the inbox to the first prompt, and the
- *   session's open threads to the first prompt after a compaction.
  *
  * Anywhere else (no MINBOX_TOKEN, a -p run) every hook passes through.
  */
 import type { Register } from 'claude-code'
-import { claudeRanOk, claudeRefusal, DENIED_MAX, normCommand, shortReason, type DeniedReport } from './denied'
-import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from './nav'
-import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from './tasks'
-import {
-  READ_DESCRIPTION,
-  READ_SCHEMA,
-  READ_TOOL,
-  readPath,
-  SEND_DESCRIPTION,
-  SEND_SCHEMA,
-  sendRequest,
-  SEND_TOOL,
-  openDeny,
-  opensBrowser,
-  OPEN_DESCRIPTION,
-  OPEN_SCHEMA,
-  OPEN_TOOL,
-  fallbackReminderText,
-  instructionsText,
-  openThreadsText,
-  asksPerson,
-  nudgeText,
-  replyNudgeText,
-  sentText,
-  serverUrlOf,
-  threadListText,
-  threadText,
-  TITLE_DESCRIPTION,
-  TITLE_SCHEMA,
-  TITLE_TOOL,
-  wakeText,
-  type Pending,
-  type Thread,
-} from './text'
+import { argsOf, guardDeny, manifestOf, pendingOf, PROTOCOL, serverUrlOf, type Manifest, type PendingItem } from './proxy'
 
 const TICK_MS = 1000
 /** The mod's version, reported in every heartbeat (keep in step with .claude-plugin/plugin.json). */
-export const MOD_VERSION = '0.1.0'
+export const MOD_VERSION = '0.2.0'
 /** A heartbeat this often; the server calls the connection stale after 45 s without one. */
 const HEARTBEAT_MS = 15_000
 /** The mod's own event log keeps this many recent events; the last HEARTBEAT_EVENTS ride each heartbeat. */
@@ -72,12 +37,14 @@ const MAX_EVENTS = 60
 const HEARTBEAT_EVENTS = 25
 /** This many failed calls in a row make the connection "offline" (one toast, one event). */
 const OFFLINE_AFTER_FAILURES = 3
-/** The server's instructions are repeated on every Nth prompt (models forget the first instruction); the default N is 20. The first prompt after each hello and the first after a compaction carry them too. MINBOX_ORCHESTRATOR_EVERY overrides N. */
-const ORCHESTRATOR_EVERY = 20
 const POLL_WAIT_S = 20
 const IDLE_TICKS = 2
 /** Every call gives up after this (the long poll waits POLL_WAIT_S on the server, plus a margin). */
 const CALL_TIMEOUT_MS = 8000
+/** A tool call may take longer (a message with attachments is snapshotted first). */
+const TOOL_TIMEOUT_MS = 60_000
+/** A prompt waits this long at most for the server's context. */
+const PROMPT_TIMEOUT_MS = 3000
 const POLL_TIMEOUT_MS = (POLL_WAIT_S + 10) * 1000
 /** A poll running longer than this many ticks is abandoned (a backstop to the call timeouts). */
 const POLL_STUCK_TICKS = 60
@@ -87,6 +54,8 @@ const POLL_STUCK_TICKS = 60
  * into a turn that is running after all just waits there: the engine runs it once idle.
  */
 const BUSY_STALE_TICKS = 120
+/** The keys Claude Code adds to a tool call's input. */
+const HOST_KEYS = ['tool', 'tool_use_id', 'consent', 'agentId', 'requestMeta']
 
 type Conn = { token: string; serverFile: string; owner: string }
 
@@ -102,17 +71,11 @@ let pollTicks = 0
 /** Ticks spent busy since the last hook event. */
 let busyTicks = 0
 let lastClaudeSessionId: string | null = null
-let sendToolName = `mcp__minbox__${SEND_TOOL}`
-let readToolName = `mcp__minbox__${READ_TOOL}`
-let titleToolName = `mcp__minbox__${TITLE_TOOL}`
-let openToolName = `mcp__minbox__${OPEN_TOOL}`
-/** The server's instructions from the hello (null: none, e.g. the hello failed or the server is old). */
-let instructions: string | null = null
-/** Prompts seen in this session. */
-let promptCount = 0
-/** The hello delivered the instructions and no prompt has carried them since: the next one does. */
-let orchestratorFresh = false
 let helloing: Promise<void> | null = null
+/** The server's tool set as registered, and the full names Claude Code gave them. */
+let manifest: Manifest | null = null
+let registering: Promise<void> | null = null
+const toolNames = new Map<string, string>()
 /** The mod's recent events (see ModEvent); a tail goes with each heartbeat. */
 let events: ModEvent[] = []
 let heartbeatTimer: { cancel(): void } | null = null
@@ -121,6 +84,7 @@ let heartbeatInFlight = false
 /** Consecutive failed API calls (status 0 or 5xx), and whether the connection is reported offline. */
 let failStreak = 0
 let offline = false
+let authWarned = false
 let lastPollAt: string | null = null
 let lastDeliveryAt: string | null = null
 /** Messages whose submit is running (never offered twice), and those submitted whose 'delivered' call failed (retried). */
@@ -129,52 +93,8 @@ const undeliveredAcks = new Set<string>()
 let timer: { cancel(): void } | null = null
 let busy = false
 let idleTicks = 0
-let remindNext = true
-let threadsNext = false
-/** send_message ran in the current main-loop turn. */
-let sentThisTurn = false
-/** The last turn asked the person in the chat only: remind Claude once idle. */
-let nudgeNext = false
-/** The running turn is that reminder (its own end never reminds again). */
-let nudging = false
-/** Threads whose messages were just delivered; they belong to the turn that starts next. */
-let deliveredThreads: string[] = []
-/** Threads the running turn is answering. */
-let turnThreads: string[] = []
-/** The next reminder is about these threads (a turn answered them without send_message). */
-let replyNudgeThreads: string[] = []
-
-/** Tool calls already reported as denied (by id), so the check, the classic event and the result report it once. */
-const reportedDenials = new Set<string>()
-/** Commands reported as denied in this process: running one later clears it on the server. */
-const deniedCommands = new Set<string>()
-
-/** The thread the running turn answers, when it is exactly one (else the server picks the next message's). */
-function currentThread(): string | undefined {
-  const threads = turnThreads.length > 0 ? turnThreads : deliveredThreads
-  return threads.length === 1 ? threads[0] : undefined
-}
-
-/** Reports a Bash command that was denied (once per tool call). */
-function reportDenied($: any, id: string, command: string, reason: string): void {
-  if (!conn || !command || command.length > DENIED_MAX) return
-  if (id) {
-    if (reportedDenials.has(id)) return
-    reportedDenials.add(id)
-    if (reportedDenials.size > 200) reportedDenials.delete(reportedDenials.values().next().value!)
-  }
-  deniedCommands.add(command)
-  note($, 'denied-command', `a Bash command was denied (${command.length} characters)`)
-  const body: DeniedReport = { command, reason: shortReason(reason), thread_id: currentThread(), at: new Date().toISOString() }
-  void api($, 'POST', '/api/agent/denied-commands', body)
-}
-
-/** A command denied earlier ran: it is no longer offered to the person. */
-function reportRan($: any, command: string): void {
-  if (!conn || !deniedCommands.has(command)) return
-  deniedCommands.delete(command)
-  void api($, 'POST', '/api/agent/denied-commands/ran', { command })
-}
+/** The server's reminder to submit once Claude is idle (null: none). */
+let held: string | null = null
 
 /** Records an event in the mod's ring buffer. Identical consecutive events are folded into a count. */
 function note($: any, kind: string, msg: string): void {
@@ -218,7 +138,6 @@ function trackConnection($: any, label: string, res: ApiResult): void {
     $.ui.toast('minbox: cannot reach the server; replies are held until it is back.')
   }
 }
-let authWarned = false
 
 function randomId(): string {
   const b = new Uint8Array(8)
@@ -288,23 +207,51 @@ async function apiOnce($: any, method: string, path: string, body?: unknown): Pr
   return { ok: false, status: 0, json: { error: 'the minbox server is not reachable' } }
 }
 
+const failText = (res: ApiResult) => `minbox: ${res.json?.error ?? `HTTP ${res.status}`}`
+
+/** Fetches the server's tool set and registers it (again, when it changed). */
+function refreshTools($: any): Promise<void> {
+  if (registering) return registering
+  registering = (async () => {
+    const res = await api($, 'GET', '/api/agent/tools')
+    const m = res.ok ? manifestOf(res.json) : null
+    if (!m) {
+      note($, 'tools-failed', `the tool set could not be fetched (${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}); retried`)
+      return
+    }
+    for (const t of m.tools) {
+      try {
+        const r = await $.tool.register({ name: t.name, description: t.description, inputSchema: t.input_schema, isDeferred: t.deferred === true })
+        toolNames.set(r?.tool ?? `mcp__minbox__${t.name}`, t.name)
+      } catch (err) {
+        note($, 'tool-register-failed', `${t.name}: ${String(err).slice(0, 120)}`)
+      }
+    }
+    if (manifest && manifest.version !== m.version) note($, 'tools-updated', `tool set ${manifest.version} -> ${m.version}`)
+    manifest = m
+  })().finally(() => {
+    registering = null
+  })
+  return registering
+}
+
 async function hello($: any): Promise<void> {
   const id = await $.session.id().catch(() => null)
   if (typeof id === 'string' && id !== lastClaudeSessionId) {
-    const res = await api($, 'POST', '/api/agent/hello', { claude_session_id: id })
+    const res = await api($, 'POST', '/api/agent/hello', { claude_session_id: id, agent: 'claude', ext_version: MOD_VERSION, protocol: PROTOCOL })
     if (!res.ok) note($, 'hello-failed', `hello failed: ${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}; retried every tick`)
     if (res.ok) {
       note($, 'hello', lastClaudeSessionId ? 'hello again (the conversation changed)' : 'hello ok')
       lastClaudeSessionId = id
-      instructions = typeof res.json?.instructions === 'string' && res.json.instructions.trim() ? res.json.instructions : null
-      orchestratorFresh = true
     }
   }
 }
 
-function status($: any, value: 'working' | 'idle'): void {
-  void api($, 'POST', '/api/agent/status', { status: value }).then((r) => {
-    if (!r.ok) note($, 'status-failed', `status ${value} not recorded: ${r.status === 0 ? 'not reachable' : 'HTTP ' + r.status}`)
+/** Forwards a hook's event; the server's answer says what to do. */
+function event($: any, body: Record<string, unknown>, timeoutMs = CALL_TIMEOUT_MS): Promise<ApiResult> {
+  return api($, 'POST', '/api/agent/event', body, timeoutMs).then((r) => {
+    if (!r.ok) note($, 'event-failed', `${String(body.type)} not recorded: ${r.status === 0 ? 'not reachable' : 'HTTP ' + r.status}`)
+    return r
   })
 }
 
@@ -317,6 +264,7 @@ async function heartbeat($: any): Promise<void> {
       seq: ++heartbeatSeq,
       agent: 'claude',
       ext_version: MOD_VERSION,
+      protocol: PROTOCOL,
       state: busy ? 'working' : 'idle',
       last_poll_at: lastPollAt ?? '',
       last_delivery_at: lastDeliveryAt ?? '',
@@ -330,10 +278,13 @@ async function heartbeat($: any): Promise<void> {
         offline,
         fail_streak: failStreak,
         owner_prefix: conn.owner.slice(0, 4),
+        tools_version: manifest?.version ?? '',
       },
       events: events.slice(-HEARTBEAT_EVENTS),
     })
     if (res.status === 404 || res.status === 405) note($, 'heartbeat-unsupported', 'the server has no heartbeat endpoint (an older minbox)')
+    const want = res.ok ? res.json?.tools_version : undefined
+    if (typeof want === 'string' && want !== manifest?.version) void refreshTools($)
   } finally {
     heartbeatInFlight = false
   }
@@ -351,7 +302,7 @@ async function acknowledge($: any, id: string): Promise<void> {
   else note($, 'ack-failed', `'delivered' for ${id} not recorded (${r.status === 0 ? 'not reachable' : 'HTTP ' + r.status}); retried`)
 }
 
-/** One tick: deliver the person's messages once Claude has been idle a while. */
+/** One tick: deliver the person's messages (and the server's reminder) once Claude has been idle a while. */
 async function tick($: any): Promise<void> {
   if (!conn) return
   if (busy && ++busyTicks >= BUSY_STALE_TICKS) {
@@ -360,21 +311,19 @@ async function tick($: any): Promise<void> {
     busyTicks = 0
     idleTicks = IDLE_TICKS
     note($, 'busy-stale', `no hook event for ${BUSY_STALE_TICKS} ticks while busy: treating Claude as idle`)
-    status($, 'idle')
+    void event($, { type: 'turn.complete', reason: 'stale' })
   }
   idleTicks = busy ? 0 : idleTicks + 1
-  if (nudgeNext && !busy && idleTicks >= IDLE_TICKS) {
-    nudgeNext = false
-    nudging = true
-    const threads = replyNudgeThreads
-    replyNudgeThreads = []
+  if (held !== null && !busy && idleTicks >= IDLE_TICKS) {
+    const text = held
+    held = null
     try {
-      await $.prompt.submit({ text: threads.length > 0 ? replyNudgeText(sendToolName, threads) : nudgeText(sendToolName) })
+      await $.prompt.submit({ text })
     } catch (err) {
-      nudging = false
       note($, 'nudge-failed', `reminder submit threw: ${String(err).slice(0, 150)}`)
     }
   }
+  if (!manifest && !registering) void refreshTools($)
   if (polling) {
     if (++pollTicks < POLL_STUCK_TICKS) return
     pollGen++ // abandon the stuck poll; its late results are dropped
@@ -390,23 +339,25 @@ async function tick($: any): Promise<void> {
     if (stale()) return
     // Wait on the server only while idle; while busy, just look.
     const wait = busy ? 0 : POLL_WAIT_S
-    const res = await api($, 'GET', `/api/agent/pending?owner=${encodeURIComponent(conn.owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
+    const res = await api($, 'GET', `/api/agent/pending?owner=${encodeURIComponent(conn.owner)}&wait=${wait}&proto=${PROTOCOL}`, undefined, POLL_TIMEOUT_MS)
     if (stale()) return
     if (res.ok) lastPollAt = new Date().toISOString()
-    if (res.ok && !Array.isArray(res.json)) note($, 'poll-bad-reply', 'the pending poll returned something that is not a list')
-    if (!res.ok || !Array.isArray(res.json) || res.json.length === 0) return
+    const answer = res.ok ? pendingOf(res.json) : null
+    if (res.ok && !answer) note($, 'poll-bad-reply', 'the pending poll returned something that is not a list of items')
+    if (!answer || answer.items.length === 0) return
+    const items = answer.items
     // A message whose submit went through but whose 'delivered' call failed is only acknowledged again, never submitted twice.
-    const submittedBefore = new Set((res.json as Pending[]).filter((p) => undeliveredAcks.has(p.id)).map((p) => p.id))
+    const submittedBefore = new Set(items.filter((p) => undeliveredAcks.has(p.id)).map((p) => p.id))
     for (const id of submittedBefore) await acknowledge($, id)
     // Deliver only into a quiet session, so the person's own typing goes first;
     // an urgent message (Send now, or one that waited long) goes in anyway.
     const quiet = !busy && idleTicks >= IDLE_TICKS
-    const due = (res.json as Pending[]).filter((p) => (quiet || p.urgent) && !inflight.has(p.id) && !submittedBefore.has(p.id))
+    const due = items.filter((p) => (quiet || p.urgent) && !inflight.has(p.id) && !submittedBefore.has(p.id))
     if (due.length === 0) {
-      if ((res.json as Pending[]).length > 0) note($, 'held', `${(res.json as Pending[]).length} message(s) waiting; busy=${busy} idle_ticks=${idleTicks}`)
+      note($, 'held', `${items.length} message(s) waiting; busy=${busy} idle_ticks=${idleTicks}`)
       return
     }
-    const claimed: Pending[] = []
+    const claimed: PendingItem[] = []
     for (const p of due) {
       const c = await api($, 'POST', pendingPath(p.id, 'claim'))
       if (c.ok && c.json?.claimed) claimed.push(p)
@@ -422,8 +373,7 @@ async function tick($: any): Promise<void> {
     }
     for (const p of claimed) inflight.add(p.id)
     try {
-      await $.prompt.submit({ text: wakeText(claimed, sendToolName, readToolName) })
-      deliveredThreads = [...new Set(claimed.map((p) => p.thread_id))]
+      await $.prompt.submit({ text: claimed.map((p) => p.text).join(answer.joiner) })
       lastDeliveryAt = new Date().toISOString()
       note($, 'delivered', `submitted ${claimed.length} message(s): ${claimed.map((p) => p.id).join(',')}`)
     } catch (err) {
@@ -443,30 +393,20 @@ async function tick($: any): Promise<void> {
   }
 }
 
+/** A Bash outcome, for the server to tell a refusal (offered as "Run yourself") from a run. */
+function bash($: any, body: Record<string, unknown>): void {
+  if (!conn || typeof body.command !== 'string' || !body.command.trim()) return
+  void event($, { type: 'bash', ...body })
+}
+
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const token = await $.env.get('MINBOX_TOKEN')
     const serverFile = await $.env.get('MINBOX_SERVER_FILE')
     if (!token || !serverFile || !e.isInteractive) return next(e)
     conn = { token, serverFile, owner: randomId() }
-    note($, 'session-start', `mod ${MOD_VERSION} started; owner ${conn.owner.slice(0, 4)}…`)
-
-    const send = await $.tool.register({ name: SEND_TOOL, description: SEND_DESCRIPTION, inputSchema: SEND_SCHEMA, isDeferred: false })
-    sendToolName = send?.tool ?? sendToolName
-    const read = await $.tool.register({ name: READ_TOOL, description: READ_DESCRIPTION, inputSchema: READ_SCHEMA, isDeferred: false })
-    readToolName = read?.tool ?? readToolName
-    const title = await $.tool.register({ name: TITLE_TOOL, description: TITLE_DESCRIPTION, inputSchema: TITLE_SCHEMA, isDeferred: false })
-    titleToolName = title?.tool ?? titleToolName
-    const open = await $.tool.register({ name: OPEN_TOOL, description: OPEN_DESCRIPTION, inputSchema: OPEN_SCHEMA, isDeferred: false })
-    openToolName = open?.tool ?? openToolName
-    // The Tasks board: the agent keeps its tasks itself (always loaded, so it uses them unprompted).
-    for (const name of TASK_TOOLS) {
-      await $.tool.register({ name, description: TASK_DESCRIPTION[name], inputSchema: TASK_SCHEMA[name] as any, isDeferred: false })
-    }
-    // Read-only navigation (projects, sessions, threads, search): deferred, found with ToolSearch.
-    for (const name of NAV_TOOLS) {
-      await $.tool.register({ name, description: NAV_DESCRIPTION[name], inputSchema: NAV_SCHEMA[name] as any, isDeferred: true })
-    }
+    note($, 'session-start', `mod ${MOD_VERSION} (protocol ${PROTOCOL}) started; owner ${conn.owner.slice(0, 4)}…`)
+    await refreshTools($)
 
     timer?.cancel()
     timer = $.clock.every(TICK_MS, () => tick($))
@@ -481,21 +421,14 @@ export const register: Register = (on) => {
     // session.end is a conversation lifecycle event, not the process's: /clear (and a resume) fire it
     // with no session.start after, and the process carries on under a new Claude session id. The tick
     // and heartbeat timers therefore keep running (they die with the process); the tick's hello
-    // follows the new id. Only the per-conversation state starts over.
+    // follows the new id. The server starts the conversation's state over.
     note($, 'session-end', `session.end (${(e as any).reason ?? '?'}): the mod keeps polling; the next hello follows the new conversation id`)
     if (conn) {
       busy = false
       busyTicks = 0
       idleTicks = 0
-      nudgeNext = false
-      nudging = false
-      sentThisTurn = false
-      turnThreads = []
-      deliveredThreads = []
-      replyNudgeThreads = []
-      threadsNext = false
-      remindNext = true // the new conversation has not seen the instructions
-      status($, 'idle')
+      held = null
+      void event($, { type: 'session.end' })
       void heartbeat($)
     }
     return next(e)
@@ -506,10 +439,7 @@ export const register: Register = (on) => {
       busy = true
       busyTicks = 0
       idleTicks = 0
-      sentThisTurn = false
-      turnThreads = deliveredThreads
-      deliveredThreads = []
-      status($, 'working')
+      void event($, { type: 'turn.start' })
     }
     return next(e)
   })
@@ -519,141 +449,77 @@ export const register: Register = (on) => {
       busy = false
       busyTicks = 0
       idleTicks = 0
-      // Asked the person in the chat but not in the inbox: remind Claude once.
-      const answered = e.reason === 'answer' && !e.isAborted
-      // A turn that handled an inbox message but sent nothing back: remind Claude once to reply there.
-      const missingReply = answered && !nudging && !sentThisTurn && turnThreads.length > 0
-      replyNudgeThreads = missingReply ? turnThreads : []
-      nudgeNext = missingReply || (answered && !nudging && !sentThisTurn && asksPerson(e.answer ?? ''))
-      turnThreads = []
-      nudging = false
-      status($, 'idle')
+      void event($, { type: 'turn.complete', reason: e.reason, aborted: e.isAborted === true, answer: e.answer ?? '' }).then((r) => {
+        const text = r.ok ? r.json?.submit_when_idle : undefined
+        if (typeof text === 'string' && text) held = text
+      })
     }
-    return next(e)
-  })
-
-  // Any tool call shows the turn is alive (see BUSY_STALE_TICKS).
-  on('tool.call', async ($, e: any, next) => {
-    busyTicks = 0
     return next(e)
   })
 
   on('session.compact', async ($, e, next) => {
     const res = await next(e)
-    if (conn && !e.agentId) threadsNext = true
+    if (conn && !e.agentId) void event($, { type: 'session.compact' })
     return res
   })
 
   on('prompt.submit', async ($, e, next) => {
     if (!conn) return next(e)
-    if (e.origin?.kind === 'composer') {
+    const typed = e.origin?.kind === 'composer'
+    if (typed) {
       idleTicks = 0 // the person typed: their turn goes first
-      nudgeNext = false // and they answered in the chat
+      held = null // and they answered in the chat
     }
-    promptCount++
-    if (helloing) await helloing.catch(() => {}) // the instructions come with the hello
-    const every = Number(await $.env.get('MINBOX_ORCHESTRATOR_EVERY')) || ORCHESTRATOR_EVERY
-    // One injection per prompt: first after a hello, after a compaction, or every Nth prompt.
-    const remind = remindNext || threadsNext || orchestratorFresh || promptCount % every === 0
-    if (!remind) return next(e)
-    const added: string[] = [instructions ? instructionsText(instructions) : fallbackReminderText(sendToolName)]
-    if (threadsNext) {
-      const res = await api($, 'GET', '/api/agent/threads')
-      const list = res.ok && Array.isArray(res.json) ? openThreadsText(res.json as Thread[]) : null
-      if (list) added.push(list)
-    }
-    remindNext = false
-    threadsNext = false
-    orchestratorFresh = false
+    if (helloing) await helloing.catch(() => {}) // the conversation is known first
+    const r = await event($, { type: 'prompt', origin: typed ? 'composer' : (e.origin?.kind ?? '') }, PROMPT_TIMEOUT_MS)
+    const added: string[] = r.ok && Array.isArray(r.json?.context) ? r.json.context.filter((c: unknown) => typeof c === 'string' && c) : []
+    if (added.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...added] })
   })
 
-  on('tool.call', { tool: `mcp__minbox__${SEND_TOOL}` }, async ($, e: any) => {
-    if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const req = sendRequest(e)
-    if ('error' in req) return { deny: req.error }
-    const res = await api($, 'POST', '/api/agent/messages', req.body)
-    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    sentThisTurn = true
-    return { result: sentText(res.json) }
-  })
-
-  on('tool.call', { tool: `mcp__minbox__${OPEN_TOOL}` }, async ($, e: any) => {
-    if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const url = typeof e.url === 'string' ? e.url.trim() : ''
-    if (!url) return { deny: 'url is required.' }
-    const res = await api($, 'POST', '/api/agent/open', { url })
-    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    return { result: `Opened ${res.json?.url ?? url} in the person's browser.` }
-  })
-
-  // Pages opened from Bash would open on the host, not where the person is. Every other Bash call
-  // runs, and one that turns out refused is reported as a denied command (see denied.ts).
-  on('tool.call', { tool: 'Bash' }, async ($, e: any, next) => {
-    if (conn && typeof e.command === 'string' && opensBrowser(e.command)) return { deny: openDeny(openToolName) }
+  // Every tool call: the server's tools are answered by the server; the host's own pass its guards;
+  // a Bash call's outcome is forwarded (see bash). Any call also shows the turn is alive (BUSY_STALE_TICKS).
+  on('tool.call', async ($, e: any, next) => {
+    busyTicks = 0
     if (!conn) return next(e)
-    const res = await next(e)
-    const command = normCommand(e.command)
+    const name = toolNames.get(e.tool)
+    if (name !== undefined) {
+      const res = await api($, 'POST', '/api/agent/tool', { tool: name, args: argsOf(e, HOST_KEYS) }, TOOL_TIMEOUT_MS)
+      if (!res.ok) return { deny: failText(res) }
+      if (res.json?.ok !== true) return { deny: String(res.json?.error ?? failText(res)) }
+      return { result: String(res.json.text ?? '') }
+    }
+    const command = typeof e.command === 'string' ? e.command : ''
+    const refused = guardDeny(manifest?.guards, e.tool, command)
+    if (refused !== null) return { deny: refused }
+    if (e.tool !== 'Bash') return next(e)
+    const res: any = await next(e)
     const id = typeof e.tool_use_id === 'string' ? e.tool_use_id : ''
-    const reason = claudeRefusal(res)
-    if (reason !== null) reportDenied($, id, command, reason)
-    else if (claudeRanOk(res)) reportRan($, command)
+    const isError = res?.isError === true
+    bash($, {
+      phase: 'result',
+      id,
+      command,
+      deny: typeof res?.deny === 'string' ? res.deny : undefined,
+      is_error: isError,
+      // Only an error's start: the server reads Claude Code's wording of a refusal from it.
+      text: isError && typeof res?.text === 'string' ? res.text.slice(0, 2000) : undefined,
+    })
     return res
   })
 
-  // The verdict of the permission check: a deny from a rule, the mode or a PreToolUse hook. The call
-  // never runs; it is reported here (the tool.call hook above would see the same refusal again).
+  // The verdict of the permission check: a deny from a rule, the mode or a PreToolUse hook.
   on('tool.check', { tool: 'Bash' }, async ($, e: any, next) => {
     const v = await next(e)
     if (conn && typeof e.tool_use_id === 'string' && e.tool_use_id && v?.decision === 'deny') {
-      const why = v.rule ? `denied by the rule ${v.rule}` : v.hook ? `denied by a ${v.hook} hook${v.reason ? ': ' + v.reason : ''}` : v.reason || 'denied'
-      reportDenied($, e.tool_use_id, normCommand(e.input?.command), why)
+      bash($, { phase: 'check', id: e.tool_use_id, command: e.input?.command, decision: 'deny', rule: v.rule, hook: v.hook, message: v.reason })
     }
     return v
   })
 
   // Auto mode's classifier refused the call.
   on('classic.PermissionDenied', async ($, e: any, next) => {
-    if (conn && e.tool_name === 'Bash') reportDenied($, typeof e.tool_use_id === 'string' ? e.tool_use_id : '', normCommand(e.tool_input?.command), e.reason || 'denied')
+    if (conn && e.tool_name === 'Bash') bash($, { phase: 'denied', id: typeof e.tool_use_id === 'string' ? e.tool_use_id : '', command: e.tool_input?.command, message: e.reason })
     return next(e)
   })
-
-  on('tool.call', { tool: `mcp__minbox__${TITLE_TOOL}` }, async ($, e: any) => {
-    if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const t = typeof e.title === 'string' ? e.title.trim() : ''
-    if (!t) return { deny: 'title is required.' }
-    const res = await api($, 'POST', '/api/agent/title', { title: t })
-    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    return { result: `Session title set: ${res.json?.title ?? t}` }
-  })
-
-  on('tool.call', { tool: `mcp__minbox__${READ_TOOL}` }, async ($, e: any) => {
-    if (!conn) return { deny: 'minbox is not connected in this session.' }
-    const id = typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : null
-    const res = await api($, 'GET', readPath(e))
-    if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-    return { result: id ? threadText(res.json as Thread, readToolName) : threadListText(res.json as Thread[]) }
-  })
-
-  for (const name of TASK_TOOLS) {
-    on('tool.call', { tool: `mcp__minbox__${name}` }, async ($, e: any) => {
-      if (!conn) return { deny: 'minbox is not connected in this session.' }
-      const req = taskRequest(name, e ?? {}, currentThread())
-      if ('error' in req) return { deny: req.error }
-      const res = await api($, req.method, req.path, req.body)
-      if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-      return { result: taskText(name, res.json) }
-    })
-  }
-
-  for (const name of NAV_TOOLS) {
-    on('tool.call', { tool: `mcp__minbox__${name}` }, async ($, e: any) => {
-      if (!conn) return { deny: 'minbox is not connected in this session.' }
-      const req = navPath(name, e)
-      if ('error' in req) return { deny: req.error }
-      const res = await api($, 'GET', req.path)
-      if (!res.ok) return { deny: `minbox: ${res.json?.error ?? `HTTP ${res.status}`}` }
-      return { result: navText(name, res.json) }
-    })
-  }
 }

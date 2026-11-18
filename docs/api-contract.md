@@ -174,7 +174,7 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
 
 - Who fills it: the agent of the thread's session, through its tools `create_task`, `update_task` and `list_tasks`
   (Claude Code: `mcp__minbox__*`, always loaded; Pi and OpenCode: `minbox_*`; text, schemas and the request of a call
-  in `plugin/minbox/hooks/tasks.ts`, shared by the mod, the Pi extension and the OpenCode plugin). The system prompt's
+  in `internal/server/modtools_text.go`, served to the mod, the Pi extension and the OpenCode plugin by mod protocol 1). The system prompt's
   `# minbox: tasks` section tells it when: a task per distinct piece of work the person asked for, its steps as a
   checklist ticked as it goes, `waiting_on_you` only while blocked on the person, `done` when finished. Nothing is
   read from the messages: the earlier helper-model extraction (Haiku re-reading each thread after its messages, on idle
@@ -400,9 +400,9 @@ SSE event types: `sessions`, `threads`, `thread`, `topics`, `settings`.
   The same for replies, answers to questions, quick-compose threads, queued and urgent messages.
   The answer-in-thread hint is worded as IMPORTANT (reply with the send tool and that thread id, even for a
   short answer; terminal text is not shown). The system prompt (`AgentSystemPrompt`) says the same. If a turn started by a delivered message ends (reason `answer`) without a
-  `send_message` call, the mod submits one reminder naming the thread(s) (`replyNudgeText`); the reminder's
-  own turn never reminds again.
-- `hello` answers `instructions`: the one instructions text, built by the same server function as `--append-system-prompt` (`AgentSystemPrompt`, plus the orchestration prompt while `orchestrator_prompt` is on, plus `The person adds: <prompt_extra>` when set). The mod injects it (wrapped as "minbox: standing instructions (still in force)") on the first prompt after each hello, on the first prompt after a compaction (with the open-threads list) and on every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` overrides), never twice in one prompt; without instructions it falls back to a short reminder. `prompt_extra` and `orchestrator` are still answered, for older mods only; the current mod ignores them.
+  `send_message` call, the server answers the mod's `turn.complete` event with one reminder (`replyNudgeText`), which
+  the mod submits once idle; the reminder's own turn never reminds again.
+- `hello` answers `instructions`: the one instructions text, built by the same server function as `--append-system-prompt` (`AgentSystemPrompt`, plus the orchestration prompt while `orchestrator_prompt` is on, plus `The person adds: <prompt_extra>` when set). The server adds it to a prompt (wrapped as "minbox: standing instructions (still in force)", the answer to the mod's `prompt` event; docs/mod-protocol.md) on the first prompt after each hello, on the first prompt after a compaction (with the open-threads list) and on every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` overrides), never twice in one prompt; without instructions it falls back to a short reminder. `prompt_extra` and `orchestrator` are still answered, for older mods only; the current mod ignores them.
 
 ## Task tools (the agent keeps the Tasks board)
 
@@ -417,7 +417,7 @@ Schemas: `create_task {thread_id?, title, summary?, detail?, status?, steps?: [{
 Tools `list_projects`, `get_project`, `list_sessions`, `list_threads`, `search` (Claude: `mcp__minbox__*`, deferred, found with ToolSearch; Pi: `minbox_*`)
 and the extended `read_thread` are GETs on `/api/agent/*` with the session's bearer token (401 without; `internal/server/agentread.go`).
 They answer projections of the stored rows, never tokens, notification destinations, Slack or device data, project icons or the agent's
-conversation ids. Text and schemas: `plugin/minbox/hooks/nav.ts` (shared by the mod and the Pi extension). Lists are bounded (`limit`, default 50, at most 200) and say `total` and `has_more`.
+conversation ids. Text and schemas: `internal/server/modtools_text.go` (served to every integration, docs/mod-protocol.md). Lists are bounded (`limit`, default 50, at most 200) and say `total` and `has_more`.
 
 - `GET /api/agent/projects?archived=1` -> `[{id, name, dir, host_id, host_name, default_agent, main_session_id, pinned, archived, session_count, live_sessions, thread_count, need_action, unread, last_activity}]` (thread counts: live threads, archived ones excluded).
   `GET /api/agent/projects/{id}` -> the same plus `sessions: [agentSession]` (Claude-kind sessions, newest first, at most 50); 404 `no such project`.
