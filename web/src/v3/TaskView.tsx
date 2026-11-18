@@ -12,7 +12,20 @@ import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } 
 import { QuoteBubble } from './quote'
 import { DeliveryLine } from '../components/ThreadView'
 
-export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: string; highlight: string | null; tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
+export function TaskView({
+  id,
+  highlight,
+  tasks,
+  onOpenAttachment,
+  column,
+}: {
+  id: string
+  highlight: string | null
+  tasks: BoardTask[]
+  onOpenAttachment: (a: Attachment, m: V3Message) => void
+  /** The columns view: one of several tasks side by side (a short header, no details pane, no conversation keys). */
+  column?: { onRemove: () => void }
+}) {
   const { error, sessions, isPhone, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
@@ -20,7 +33,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   const [ctx, setCtx] = useState<Record<string, V3Message[] | 'loading'>>({})
   const [to, setTo] = useState<string | null>(null)
   const [pending, setPending] = useState<V3Message[]>([])
-  const [sideOpen, setSideOpen] = useState(!isPhone)
+  const [sideOpen, setSideOpen] = useState(!isPhone && !column)
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     setTo(null)
@@ -30,7 +43,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   useMarkRead(d?.messages)
   const msgs = d?.messages ?? []
   const firstNew = useFirstNew(id, d?.messages)
-  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight)
+  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight && !column)
   const landed = useRef<string | null>(null)
   useLayoutEffect(() => {
     if (!d || landed.current === id || highlight) return
@@ -38,14 +51,20 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
     const box = scroller.current
     const el = box?.querySelector('[data-new-divider]')
     if (el && box) {
-      el.scrollIntoView({ block: 'start' })
+      // A column scrolls only itself (scrollIntoView would also move the row of columns sideways).
+      if (column) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
+      else el.scrollIntoView({ block: 'start' })
       follow.atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 60
     }
   })
-  useConversationKeys(scroller, msgs, onOpenAttachment)
+  useConversationKeys(scroller, msgs, onOpenAttachment, !column)
   const live = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell'), [sessions])
   if (!d)
-    return (
+    return column ? (
+      <div className="v-col v-column" data-testid="task-column" data-task={id}>
+        <div className="v-empty">Loading…</div>
+      </div>
+    ) : (
       <div className="v-col">
         <div className="v-head">
           <div className="v-r1">
@@ -191,9 +210,43 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
       )}
     </aside>
   )
+  const head = column ? (
+    <div className="v-head v-colhead">
+      <div className="v-r1">
+        <StatusDot t={t} live={typing.length > 0} />
+        <h2 data-testid="column-title" title={t.title}>
+          <button type="button" className="v-coltitle" title="Open the task" onClick={() => nav.task(t.id)}>
+            {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
+            {t.title}
+          </button>
+        </h2>
+        <button type="button" className="v-btn v-colx" data-testid="column-remove" aria-label={`Remove “${t.title}” from the columns`} title="Remove from the columns" onClick={column.onRemove}>
+          ✕
+        </button>
+      </div>
+      {(t.summary || t.last_line) && (
+        <div className="v-colsub" data-testid="column-subtitle" title={t.summary || t.last_line}>
+          {t.summary || t.last_line}
+        </div>
+      )}
+      <div className="v-r2">
+        <span className="v-cnt2">{STATUS_LABEL[t.status]}</span>
+        {t.agents.map((a) => (
+          <button type="button" key={a.session_id} className="v-chip" data-testid="task-agent" onClick={() => nav.agent(a.session_id)}>
+            <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
+            {agentName(byId, a.session_id)}
+          </button>
+        ))}
+        <button type="button" className="v-link" data-testid="column-open" style={{ marginLeft: 'auto' }} onClick={() => nav.task(t.id)}>
+          Open ↗
+        </button>
+      </div>
+    </div>
+  ) : null
   return (
     <>
-      <div className="v-col" data-testid="task-view" data-task={t.id}>
+      <div className={'v-col' + (column ? ' v-column' : '')} data-testid={column ? 'task-column' : 'task-view'} data-task={t.id} data-quote-scope={column ? '' : undefined}>
+        {head ?? (
         <div className="v-head">
           <div className="v-r1">
             <BackButton tasks={tasks} />
@@ -233,7 +286,8 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
             </span>
           </div>
         </div>
-        {isPhone && sideOpen && side}
+        )}
+        {isPhone && sideOpen && !column && side}
         <div className="v-convwrap">
         <NewPill n={follow.unseen} onClick={follow.toBottom} />
         <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>
@@ -300,7 +354,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
         />
       </div>
       <QuoteBubble box={scroller} />
-      {!isPhone && side}
+      {!isPhone && !column && side}
     </>
   )
 }

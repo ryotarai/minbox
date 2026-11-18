@@ -295,6 +295,9 @@ export function BoardView({
       <div className="v-head">
         <div className="v-r1">
           <h1>Board</h1>
+          <button type="button" className="v-btn" data-testid="open-columns" title="Tasks side by side (g c)" onClick={nav.columns}>
+            ▥ Columns
+          </button>
           <button type="button" className="v-btn" data-testid="new-message" onClick={() => setOverlay({ kind: 'v3-new' } as never)}>
             ＋ New message <span className="v-kbd v-hide-phone">⇧N</span>
           </button>
