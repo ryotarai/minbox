@@ -92,7 +92,7 @@ func manifestFor(kind string) modManifest {
 		for _, t := range navTools {
 			tools = append(tools, modTool{Name: t, Description: navDescription[t], InputSchema: navSchema(t), Deferred: true})
 		}
-		guards = []modGuard{{Tools: []string{"Bash"}, Patterns: openerPatterns, Deny: openDeny(prefix + toolOpen)}}
+		guards = []modGuard{{Tools: []string{"Bash"}, Patterns: openerPatterns, Deny: openDeny(prefix + toolOpen)}, {Tools: []string{"Bash"}, Patterns: pairAcceptPatterns, Deny: pairAcceptDeny}}
 	} else {
 		send := modTool{Name: prefix + toolSend, Description: sendDescription, InputSchema: sendSchema()}
 		read := modTool{Name: prefix + toolRead, Description: localNames(prefix, readDescription), InputSchema: readSchema()}
@@ -111,11 +111,12 @@ func manifestFor(kind string) modManifest {
 		tools = append(tools, send, read)
 		if kind == agent.Pi {
 			tools = append(append(tools, navs...), tasks...)
-			guards = []modGuard{{Tools: []string{"bash"}, Patterns: openerPatterns, Deny: openDeny(prefix + toolOpen)}}
+			guards = []modGuard{{Tools: []string{"bash"}, Patterns: openerPatterns, Deny: openDeny(prefix + toolOpen)}, {Tools: []string{"bash"}, Patterns: pairAcceptPatterns, Deny: pairAcceptDeny}}
 		} else {
 			tools = append(append(tools, tasks...), navs...)
 			guards = []modGuard{
 				{Tools: []string{"shell", "bash"}, Patterns: openerPatterns, Deny: openDeny(prefix + toolOpen)},
+				{Tools: []string{"shell", "bash"}, Patterns: pairAcceptPatterns, Deny: pairAcceptDeny},
 				{Tools: []string{"question"}, Deny: questionDeny(prefix + toolSend), MainOnly: true},
 			}
 		}

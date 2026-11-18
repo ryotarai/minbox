@@ -62,7 +62,7 @@ func TestManifestPerAgent(t *testing.T) {
 	if pi.Tools[1].Label != "minbox: read thread" || pi.Tools[2].Label != "minbox: list projects" || !strings.Contains(pi.Tools[1].Description, "minbox_list_threads") || strings.Contains(pi.Tools[11].Description, "Claude runs on") {
 		t.Fatalf("pi: %+v", pi.Tools[1])
 	}
-	if manifestFor("claude").Version == manifestFor("pi").Version || len(manifestFor("opencode").Guards) != 2 || manifestFor("claude").Guards[0].Deny != openDeny("mcp__minbox__open_url") {
+	if manifestFor("claude").Version == manifestFor("pi").Version || len(manifestFor("opencode").Guards) != 3 || manifestFor("claude").Guards[0].Deny != openDeny("mcp__minbox__open_url") {
 		t.Fatal("versions or guards")
 	}
 }
