@@ -19,7 +19,8 @@ import { getReplyDraft } from '../lib/drafts'
 import { threadArtifacts } from '../lib/attachments'
 import { DeliveryLine, ForkMarker, ThreadNotices, useThread } from '../components/ThreadView'
 import { ThreadMoreMenu } from '../components/ThreadMenu'
-import { LinearBar } from '../components/LinearBar'
+import { LinearBar, LinearEventItem, groupLinearEvents } from '../components/LinearBar'
+import { useHotkeys } from '../lib/hotkeys'
 import { LinearLinkButton } from '../components/LinearLink'
 import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
@@ -41,7 +42,7 @@ export function StreamView({
   setPane: (p: SidePane) => void
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
-  const { error, isPhone, sessions, toast } = useApp()
+  const { error, isPhone, sessions, toast, route } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -85,6 +86,23 @@ export function StreamView({
   useLayoutEffect(() => keep.after(), [older.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const files = threadArtifacts(msgs)
   useConversationKeys(scroller, msgs, onOpenAttachment)
+  // E: mark the conversation read (it moves to Quiet; its questions close), back to the Board.
+  useHotkeys(
+    {
+      e: () => {
+        const th = s?.stream_thread_id
+        if (!th) return false
+        api
+          .markRead(th)
+          .then(() => {
+            toast('Marked read', { action: 'Move back', undo: true, onAction: () => api.unmarkRead(th).catch(error) })
+            nav.board()
+          })
+          .catch(error)
+      },
+    },
+    !route.f,
+  )
   if (!sess) return <div className="v-col"><div className="v-empty">This agent is gone. Pick another one on the left.</div></div>
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
@@ -140,6 +158,8 @@ export function StreamView({
   }
   const lastUser = [...msgs].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
   const openQs = (s?.messages ?? []).reduce((n, m) => n + m.open, 0)
+  // The Linear issue's comments and changes between the messages (by time).
+  const linearEv = groupLinearEvents(shown, thread?.linear_events)
   let day = ''
   let seg = ''
   const terminalish = pane !== 'tasks'
@@ -254,6 +274,7 @@ export function StreamView({
                 shown.map((m, i) => {
                   const d = new Date(m.created_at).toDateString()
                   const out = []
+                  for (const ev of linearEv.before.get(m.id) ?? []) out.push(<LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)
                   if (d !== day) {
                     day = d
                     out.push(
@@ -291,6 +312,7 @@ export function StreamView({
                   for (const f of (thread?.forks ?? []).filter((f) => f.from_message_id === m.id)) out.push(<ForkMarker key={'f' + f.thread_id} f={f} />)
                   return <Fragment key={m.id}>{out}</Fragment>
                 })}
+              {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)}
               {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
             </div>
           </div>
