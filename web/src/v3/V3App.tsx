@@ -464,8 +464,8 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
         onDoubleClick={() => onRename(a)}
       >
         <span className={'v-dot ' + (a.status === 'working' ? 'd-work v-live' : waits ? 'd-wait' : a.status === 'ended' ? 'd-done' : 'd-idle')} />
-        <span className="v-nm">
-          {a.name}{' '}
+        <span className="v-nm v-tline">
+          <span>{a.name}</span>
           <small>
             {hint && !a.is_main ? hint + ' · ' : ''}
             {a.is_main ? 'main · ' : ''}
