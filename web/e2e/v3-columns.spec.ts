@@ -290,9 +290,9 @@ test.describe('tablet', () => {
     const t1 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Fix the gauge reading', session_id: a.id })
     const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
     await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
-    await page.getByTestId('tasks-pane-toggle').click()
+    // The Tasks pane beside the stream on a tablet with room for it.
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
     await page.getByTestId('agent-tasks-all').check()
-    await page.keyboard.press('Escape')
     await expect(page.getByTestId('columns-tabs')).toBeVisible()
     await expect(page.getByTestId('task-column')).toHaveCount(1)
     await expect(col(page, t1.id)).toBeVisible()

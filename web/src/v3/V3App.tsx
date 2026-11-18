@@ -73,19 +73,22 @@ export function V3App() {
     if (/(^#|&)v=columns(&|$)/.test(location.hash)) app.navigate({ view: 'main', k: null, s: null, m: null }, { push: false })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The agent's Tasks pane (desktop and tablet; a plain shell has none). Beside the stream, shown or
-  // folded to a strip as the person left it (kept in the layout); with no room for it (a tablet, or a
-  // narrow window with side panes open) a strip that unfolds over the stream.
+  // folded to a strip as the person left it (kept in the layout); with no room for it (the stream would
+  // get narrower than MIN_STREAM: a portrait tablet with a side pane or the sidebar open, a narrow window
+  // with side panes open) a strip that unfolds over the stream.
   const zoom = useZoom()
   const winW = useWindowWidth() / zoom
   const hasTasks = !isPhone && view === 'agent' && !!current && current.kind !== 'shell'
-  const tasksW = clamp(layout.v3TasksW ?? 260, 200, 480)
-  const sbShownW = !isPhone && !isTablet ? clamp(layout.v3SidebarW ?? 236, 200, 480) : 0
+  // A tablet's default is narrower, so the stream keeps its room beside it.
+  const tasksW = clamp(layout.v3TasksW ?? (isTablet ? 232 : 260), 200, 480)
+  // The sidebar beside them (a tablet's only when the rail's ☰ brought it back).
+  const sbShownW = !isPhone && (!isTablet || sbOpen) ? clamp(layout.v3SidebarW ?? 236, 200, 480) : 0
   // The agent's side panes (terminal | shell | files after the stream), each its own width. When the stream
   // would get narrower than MIN_STREAM beside them, the Tasks pane folds to its strip first; still too
   // narrow, the panes squeeze toward MIN_PANE and the ones opened longest ago stop showing (fitPanes).
   const wantW = (p: PaneKind) => clamp(layout.v3PaneW?.[p] ?? (p === 'files' ? 400 : layout.v3WideW ?? Math.min(winW * 0.46, 760)), MIN_PANE, 4000)
   const openW = side.open.reduce((n, p) => n + wantW(p), 0)
-  const tasksCompact = isTablet || (side.open.length > 0 && winW - railWidth(layout) - sbShownW - tasksW - openW < MIN_STREAM)
+  const tasksCompact = winW - railWidth(layout) - sbShownW - tasksW - openW < MIN_STREAM
   const tasksShown = tasksCompact ? tasksOver : !layout.v3TasksHidden
   const showTasks = useCallback((show: boolean) => (tasksCompact ? setTasksOver(show) : setLayout({ v3TasksHidden: !show })), [tasksCompact, setLayout])
   const tasksSpace = !hasTasks ? 0 : tasksShown && !tasksCompact ? tasksW : 34

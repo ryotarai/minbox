@@ -194,7 +194,7 @@ test('the side pane and sidebar edges drag; the widths are kept; swapped panes p
   expect(Math.abs((await box(page, 'side-files')).width - (s2.width - 40))).toBeLessThan(4)
 })
 
-for (const width of [700, 900, 1099]) {
+for (const width of [700, 768, 820, 900, 1024, 1099]) {
   test(`tablet ${width}px: two panes; the sidebar folds away on an agent; the terminal beside the stream`, async ({ page, minbox }) => {
     const a = await startAgent(minbox, 'alpha')
     await page.setViewportSize({ width, height: 800 })
@@ -208,8 +208,16 @@ for (const width of [700, 900, 1099]) {
     await page.getByTestId('agent-row').click()
     await expect(page.getByTestId('stream-view')).toBeVisible()
     await expect(page.getByTestId('sidebar')).toHaveCount(0)
+    // The Tasks pane beside the stream (the stream keeps MIN_STREAM)...
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
+    await expect(page.getByTestId('tasks-pane')).not.toHaveAttribute('data-overlay', 'true')
+    expect((await box(page, 'stream-view')).width).toBeGreaterThanOrEqual(380)
+    await noOverflow(page)
     await page.getByTestId('terminal-toggle').click()
     await expect(page.getByTestId('terminal-session-name')).toHaveText('alpha')
+    // ...folded to its strip while a side pane takes the room.
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-overlay', 'true')
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'false')
     const s = await box(page, 'stream-view')
     const t = await box(page, 'side-terminal')
     expect(s.width).toBeGreaterThanOrEqual(300)
@@ -223,6 +231,8 @@ for (const width of [700, 900, 1099]) {
     await noOverflow(page)
     await page.getByTestId('files-close').click()
     await expect(page.locator('[data-side-pane]')).toHaveCount(0)
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
+    await expect(page.getByTestId('tasks-pane')).not.toHaveAttribute('data-overlay', 'true')
 
     // The rail's ☰ brings the sidebar back; picking a row folds it again.
     await page.getByTestId('sidebar-toggle').click()
