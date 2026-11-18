@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
-import type { BoardTask, V3Message } from './data'
+import { unreadCls, type BoardTask, type V3Message } from './data'
 import { StatusDot } from './parts'
 import { TaskView } from './TaskView'
 
@@ -122,7 +122,7 @@ export function AgentColumns({ pick, tasks, onOpenAttachment }: { pick: ColumnPi
       <div className="v-colsone" data-testid="columns" data-tabs="true">
         <div className="v-coltabs" role="tablist" data-testid="columns-tabs">
           {sel.map((t) => (
-            <button type="button" role="tab" key={t.id} aria-selected={t === active} className={'v-coltab' + (t === active ? ' on' : '')} data-testid="columns-tab" data-task={t.id} onClick={() => setCur(t.id)}>
+            <button type="button" role="tab" key={t.id} aria-selected={t === active} className={'v-coltab' + (t === active ? ' on' : '') + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined} data-testid="columns-tab" data-task={t.id} onClick={() => setCur(t.id)}>
               <StatusDot t={t} />
               {t.title}
             </button>

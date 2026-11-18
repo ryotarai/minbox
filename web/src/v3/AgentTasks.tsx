@@ -6,7 +6,7 @@
 // task picked by its title), the pane ends with a message box to the agent itself (see PaneComposer).
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
-import { ago, standing, STATUS_LABEL, v3, type BoardTask } from './data'
+import { ago, standing, STATUS_LABEL, unreadCls, v3, type BoardTask } from './data'
 import { Composer, type Outgoing } from './Composer'
 import { Bar, StatusDot, useNav } from './parts'
 import { IconCheck, IconCheckSquare, IconFoldLeft, IconGoal, IconTasks } from '../components/icons'
@@ -48,7 +48,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
       </div>
       {open.map((t) => row(t,
         <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
-          <div className="v-a">
+          <div className={'v-a' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
             <StatusDot t={t} />
             {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
             {t.title}
@@ -71,7 +71,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
           </summary>
           {done.map((t) => row(t,
             <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
-              <div className="v-a">
+              <div className={'v-a' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
                 <StatusDot t={t} />
                 {t.title}
               </div>
@@ -107,6 +107,7 @@ export function TasksPane({
   const { open, done } = agentTasks(tasks, sessionId)
   const own = useColumnPick(sessionId, [...open, ...done])
   const checked = own.selected.length
+  const unread = [...open, ...done].filter((t) => (t.unread ?? 0) > 0).length
   // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
   // goes back to the stream; the shown one again closes it, back to the stream); a checkbox shows the
   // checked ones as columns (leaving the one task).
@@ -152,6 +153,7 @@ export function TasksPane({
       <IconTasks size={14} />
       <span className="v-tasks-strip-l">Tasks</span>
       <b>{open.length}</b>
+      {unread > 0 && <span className="v-unread" data-testid="tasks-strip-unread" title={`${unread} with unread messages`} />}
       {checked > 0 && (
         <span className="v-tasks-strip-checked" data-testid="tasks-strip-checked" title={`${checked} checked: shown as columns`}>
           <IconCheckSquare size={12} />
