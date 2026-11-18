@@ -327,7 +327,7 @@ function RailGlobal({ tiles }: { tiles: boolean }) {
 
 /** The far-left column: All projects, then the projects. 176 px with names, 56 px as tiles. */
 export function ProjectRail() {
-  const { projects, setOverlay, layout, setLayout, route, navigate } = useApp()
+  const { projects, sessions, setOverlay, layout, setLayout, route, navigate } = useApp()
   const { id: selectedProject } = useSelectedProject()
   const linear = useLinearStatus()
   const slack = useSlackStatus()
@@ -335,8 +335,11 @@ export function ProjectRail() {
   const onSlack = route.view === 'slack'
   // On the My issues screen no project is the current one: picking one goes back to the threads.
   const selected = onIssues || onSlack ? null : selectedProject
+  // An agent of another project open: picking a project leaves it for that project's Board.
+  const openAgent = route.view === 'agent' && route.s ? sessions?.find((s) => s.id === route.s) : undefined
   const selectProject = (id: string) => {
     if (onIssues || onSlack) navigate({ view: 'main' }, { push: true })
+    else if (id && openAgent && openAgent.project_id !== id) navigate({ view: 'main', s: null, k: null }, { push: true })
     selectProjectRaw(id)
   }
   const stats = useProjectStats()
