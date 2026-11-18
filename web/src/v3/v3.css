@@ -24,6 +24,11 @@
 .v-ag:hover, .v-ag.sel { background: var(--mb-rowsel); }
 .v-ag .v-nm { color: var(--mb-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v-ag .v-nm small { color: var(--mb-faint); font-size: 11px; margin-left: 4px; }
+/* A line of differently coloured parts: each part truncates itself, so the ellipsis takes the colour of the text it cuts; the trailing parts give way first. */
+.v-tline { display: flex; align-items: baseline; gap: 4px; }
+.v-tline > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.v-tline > * + * { flex-shrink: 10000; }
+.v-ag .v-nm.v-tline small { margin-left: 0; }
 .v-ag .v-doing { grid-column: 2 / 4; color: var(--mb-subtle); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v-sb-new { margin: 8px 12px 12px; border: 1px solid var(--mb-line2); border-radius: 8px; padding: 6px 10px; color: var(--mb-faint); font-size: 12px; display: flex; background: var(--mb-bg); text-align: left; }
 .v-sb-new .v-kbd { margin-left: auto; }
