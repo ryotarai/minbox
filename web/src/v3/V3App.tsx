@@ -1,11 +1,11 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
-// Board · Agents · Search. Keys: ⌘K J/K Space Enter 1–9 X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
+// Board · Agents · Search. Keys: ⌘K J/K Space Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
 import { useMentions } from '../components/Mentions'
-import { useApp } from '../lib/app'
+import { railWidth, useApp } from '../lib/app'
 import { isMac } from '../lib/format'
 import { NotificationAsk, SessionMenu } from '../components/Sidebar'
 import { PhoneProjectButton } from '../components/PhoneProjects'
@@ -25,7 +25,7 @@ import { TaskView } from './TaskView'
 import { StreamView } from './StreamView'
 import { SearchView } from './Search'
 import { v3, type V3Message } from './data'
-import { BackButton, rememberTaskTitles, agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
+import { BackButton, rememberTaskTitles, agentHint, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconPaperclip } from '../components/icons'
@@ -90,23 +90,6 @@ export function V3App() {
       if (view !== 'board') {
         e.preventDefault()
         app.goBack()
-      }
-      return
-    }
-    // ⌘↵ on a focused question card sends its picked answers.
-    if (view === 'board' && (e.metaKey || e.ctrlKey) && e.key === 'Enter' && focus?.startsWith('q:') && !(typing && t.matches?.('textarea'))) {
-      const m = board?.questions.find((x) => x.id === focus.slice(2))
-      if (m) {
-        e.preventDefault()
-        const idx = boardKeys(board, showDone, hidden, showQuiet).indexOf(focus)
-        sendAnswers(m)
-          .then((as) => {
-            if (!as.length) return
-            setHidden((h) => new Set(h).add(m.id))
-            app.toast(`Sent ${as.length > 1 ? `${as.length} answers` : 'your answer'}`)
-            setFocus(boardKeys(board, showDone, hidden, showQuiet)[idx + 1] ?? null)
-          })
-          .catch(app.error)
       }
       return
     }
@@ -177,10 +160,9 @@ export function V3App() {
     } else if (!focus) return
     else if (e.key === ' ') {
       e.preventDefault()
-      if (focus.startsWith('t:')) {
-        const id = focus.slice(2)
-        setExpanded((x) => ({ ...x, [id]: !x[id] }))
-      }
+      // A task row or a question row (keyed by its message) opens in place.
+      const id = focus.slice(2)
+      setExpanded((x) => ({ ...x, [id]: !x[id] }))
     } else if (e.key === 'Enter') {
       const [k, id] = focus.split(':') as [string, string]
       if (k === 't') nav.task(id)
@@ -188,12 +170,6 @@ export function V3App() {
         const m = board?.questions.find((x) => x.id === id)
         if (m) m.tasks[0] ? nav.task(m.tasks[0].task_id, m.id) : nav.agent(m.session_id, m.id)
       }
-    } else if (/^[1-9]$/.test(e.key) && focus.startsWith('q:')) {
-      // 1–9 picks a choice of the card's first question (nothing is sent: ⌘↵ or Send does).
-      const m = board?.questions.find((x) => x.id === focus.slice(2))
-      const q = m ? openQuestions(m).find((x) => x.kind === 'single' || x.kind === 'multi') : undefined
-      const c = q?.choices?.[Number(e.key) - 1]
-      if (m && q && c) pickChoice(m, q, c.label)
     } else if ((e.key === 'x' || e.key === 'X') && focus.startsWith('t:')) {
       const t = board?.tasks.find((x) => x.id === focus.slice(2))
       if (t) {
@@ -257,7 +233,6 @@ export function V3App() {
         showQuiet={showQuiet}
         setShowQuiet={setShowQuiet}
         hidden={hidden}
-        hide={(id) => setHidden((h) => new Set(h).add(id))}
       />
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
@@ -286,19 +261,19 @@ export function V3App() {
     const w = clamp(start + (swapped ? dx : -dx) / zoom, 240, Math.max(240, room))
     setLayout(wide ? { v3WideW: Math.round(w) } : { v3SideW: Math.round(w) })
   }
-  const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - 56 - 360)))) })
+  const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - railWidth(layout) - 360)))) })
   const layoutKind = isPhone ? 'phone' : isTablet ? 'tablet' : 'desktop'
   return (
     <div className="v-app" data-testid="v3-app" data-view={view} data-layout={layoutKind} data-pane={view === 'agent' ? pane : undefined} style={style}>
       {!isPhone && (
-        <div className="v-rail" style={{ width: 56, flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
+        <div className="v-rail" data-testid="rail-column" style={{ width: railWidth(layout), flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
           {isTablet && !showSidebar && (
             <button type="button" className="v-railbtn" data-testid="sidebar-toggle" aria-label="Show the sidebar" title="Board, Search and the agents" onClick={() => setSbOpen(true)}>
               ☰
             </button>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ProjectRail narrow />
+            <ProjectRail />
           </div>
         </div>
       )}
@@ -671,10 +646,9 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['/', 'Search'],
     ['g b · g a', 'Board · first agent'],
     ['J / K', 'Move on the Board'],
-    ['Space', 'Expand / collapse a task row'],
-    ['Enter', 'Open the task (a question: its task or agent)'],
-    ['1–9', 'Pick a choice of the focused question'],
-    ['⌘↵', 'Send the picked answers (Board) · send the message'],
+    ['Space', 'Expand / collapse a row on the Board'],
+    ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],
+    ['⌘↵', 'Send the message (with any answers picked in the task or stream)'],
     ['X', 'Done / reopen the focused task'],
     ['Z', 'Undo the last action (done, archive)'],
     ['N', 'Next agent with unread messages'],

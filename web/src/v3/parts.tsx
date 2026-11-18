@@ -1,5 +1,5 @@
-// The pieces the v3 views share: task links, status dots, progress bars, checklists, the timeline,
-// the task picker, a message with the tasks it is about (and the agent's decision when it made one),
+// The pieces the v3 views share: task links, status dots, progress bars, checklists, the task picker,
+// a message with the tasks it is about (and the agent's decision when it made one),
 // its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
@@ -20,7 +20,6 @@ import {
   currentStep,
   hhmm,
   leaves,
-  lineOf,
   short,
   tagColor,
   textOf,
@@ -190,34 +189,11 @@ export function toggled(steps: Step[], path: number[]): Step[] {
   return next
 }
 
-const EVENT_COLOR: Record<string, string> = { status: 'var(--mb-work)', created: 'var(--mb-work)', step: 'var(--mb-ok)', criterion: 'var(--mb-ok)', handoff: 'var(--mb-purple)', auto: 'var(--mb-purple)', answer: 'var(--mb-purple)' }
-
-/** Events worth a line between messages (adding / moving messages is visible in the messages). */
+/** Events worth a line between a task's messages: a hand-off and an autonomous run starting, pausing or
+ *  ending, which nothing else shows. Status, step, criterion and report changes already show in the
+ *  checklist and on the board, so a line for each would only be noise in the conversation. */
 export function shownEvent(e: TaskEvent): boolean {
-  return !['link', 'unlink', 'tag', 'untag', 'answer'].includes(e.kind) && e.text !== 'Task created (from the earlier inbox)'
-}
-
-export function Timeline({ events, messages, n, byId }: { events: TaskEvent[]; messages?: V3Message[]; n: number; byId: Map<string, Session> }) {
-  const items = [
-    ...events.filter(shownEvent).map((e) => ({ t: e.at, color: EVENT_COLOR[e.kind] ?? 'var(--mb-faint)', text: e.text, id: e.id })),
-    ...(messages ?? []).map((m) => ({
-      t: m.created_at,
-      color: m.author === 'user' ? 'var(--mb-purple)' : m.open ? 'var(--mb-wait)' : 'var(--mb-faint)',
-      text: (m.author === 'user' ? 'You: ' : agentName(byId, m.session_id) + ': ') + lineOf(m),
-      id: m.id,
-    })),
-  ].sort((a, b) => (a.t < b.t ? 1 : -1))
-  return (
-    <ul className="v-tl" data-testid="timeline">
-      {items.slice(0, n).map((e) => (
-        <li key={e.id}>
-          <span className="v-m" style={{ background: e.color }} />
-          <span className="v-tm">{hhmm(e.t)}</span>
-          <span className="v-tx">{e.text}</span>
-        </li>
-      ))}
-    </ul>
-  )
+  return e.kind === 'handoff' || e.kind === 'auto'
 }
 
 // ---- the task picker ----
@@ -286,7 +262,7 @@ export function TaskPicker({ tasks, exclude, head, onPick, onClose }: { tasks: T
 
 // ---- questions ----
 //
-// Answering never sends by itself: a pick (a click, a tap, 1–9) only selects, and the person can
+// Answering never sends by itself: a pick (a click or a tap) only selects, and the person can
 // change it, answer the message's other questions, add a note or free text, then Send once (the
 // button or ⌘↵). The picks are drafts kept per message (in this browser) until sent.
 
@@ -377,68 +353,7 @@ export async function sendAnswers(m: V3Message): Promise<Answer[]> {
   return list
 }
 
-/** Picks a choice of a question as a draft (1–9 on the Board): single replaces, multi toggles. */
-export function pickChoice(m: V3Message, q: Question, label: string) {
-  const cur = loadAnswers(m.id)[q.key]
-  const sel = cur?.selected ?? []
-  const next: Answer = q.kind === 'multi' ? { ...cur, key: q.key, selected: sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label] } : { key: q.key, selected: sel[0] === label ? [] : [label] }
-  const all = { ...loadAnswers(m.id) }
-  if (answerIsEmpty(next)) delete all[q.key]
-  else all[q.key] = next
-  saveAnswers(m.id, all)
-}
-
-/**
- * A question answered in place (the Board's cards): choices to pick (long ones stack, so none grows
- * into a giant button), Other… / a line of text. Picks are drafts; the card's Send sends them.
- */
-export function QuickAnswer({ m, q, keys }: { m: V3Message; q: Question; keys?: boolean }) {
-  const { drafts, set } = useAnswerDrafts(m.id)
-  const d = drafts[q.key]
-  const choices = q.choices ?? []
-  if (q.kind === 'action') return null
-  const long = choices.some((c) => c.label.length > 22) || choices.length > 4
-  const free = (
-    <input
-      className="v-free"
-      placeholder={q.kind === 'text' ? 'Your answer…' : 'Other…'}
-      aria-label={q.kind === 'text' ? 'Answer' : 'Other answer'}
-      data-testid="free-answer"
-      value={(q.kind === 'text' ? d?.text : d?.other) ?? ''}
-      onChange={(e) => set(q.kind === 'text' ? { key: q.key, text: e.target.value } : { ...d, key: q.key, other: e.target.value, selected: q.kind === 'single' && e.target.value ? [] : d?.selected })}
-    />
-  )
-  if (q.kind === 'text') return <div className="v-choices">{free}</div>
-  return (
-    <div className={'v-choices' + (long ? ' col' : '')}>
-      {choices.map((c, i) => {
-        const on = !!d?.selected?.includes(c.label)
-        return (
-          <button
-            type="button"
-            key={c.label}
-            className={'v-choice' + (c.recommended ? ' rec' : '') + (on ? ' on' : '')}
-            data-testid="choice"
-            aria-pressed={on}
-            title={c.label}
-            onClick={(e) => {
-              e.stopPropagation()
-              pickChoice(m, q, c.label)
-            }}
-          >
-            <span className="v-mark">{on ? (q.kind === 'multi' ? '☑' : '●') : q.kind === 'multi' ? '☐' : '○'}</span>
-            {keys && i < 9 && <span className="v-kbd">{i + 1}</span>}
-            <span className="v-cl">{c.label}</span>
-            {c.recommended ? <span className="v-rec">recommended</span> : null}
-          </button>
-        )
-      })}
-      {free}
-    </div>
-  )
-}
-
-/** "N answered · Send": under a message's questions (Board card, stream, task view). */
+/** "N answered · Send": under a message's questions (stream, task view). */
 export function AnswerBar({ m, onSent, testid = 'answers-send' }: { m: V3Message; onSent: (answers: Answer[]) => void; testid?: string }) {
   const { error } = useApp()
   const { drafts, clear } = useAnswerDrafts(m.id)

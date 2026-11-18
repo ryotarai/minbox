@@ -19,7 +19,7 @@ and `usecases.md` for what the screens do with them.
   the task, a rule such as an answer inheriting its question's task, or the person). V3Message keeps
   `tasks` as a list of at most one.
 - **Task agents** (`task_agents`): `role: assigned | involved`.
-- **Task events** (`task_events`): the timeline (`created, status, step, criterion, link, unlink,
+- **Task events** (`task_events`): the event log (`created, status, step, criterion, link, unlink,
   handoff, report, answer, auto, title, goal`).
 - **Message** gains `decision (existing|created|none|moved)`, `decision_task`, `turn_of [message id]`
   (the person's messages the reply answered). `read_at` is per message (as before). The UI shows the

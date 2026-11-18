@@ -26,15 +26,15 @@ test('a task set to needs you without a question: a row that says what it needs,
   await expect(page.getByTestId('board-badge')).toHaveText('1')
   await expect(needs.locator('.v-gh .v-n')).toHaveText('1')
 
-  // Expanded on the Board: the timeline names what changed.
+  // Expanded on the Board: checklist, last report and facts; no timeline.
   await row.locator('.v-line').click()
-  const tl = row.getByTestId('task-expanded').getByTestId('timeline')
-  await expect(tl).toContainText('Status → needs you')
-  for (const t of await tl.locator('.v-tx').allTextContents()) expect(t.trim()).not.toMatch(/^→/)
+  await expect(row.getByTestId('task-expanded').getByTestId('facts')).toContainText('Needs you')
+  await expect(row.getByTestId('task-expanded').getByTestId('timeline')).toHaveCount(0)
 
-  // The task view's events too.
+  // The task view no longer shows status lines in the conversation (only hand-offs and auto runs), so none is subjectless.
   await page.goto(minbox.url + `/#v=task&k=${gauge.id}`)
+  await expect(page.getByTestId('task-title')).toBeVisible()
   const evs = page.getByTestId('event')
-  await expect(evs.filter({ hasText: 'Status → needs you' })).toHaveCount(1)
+  await expect(evs.filter({ hasText: 'needs you' })).toHaveCount(0)
   for (const t of await evs.allTextContents()) expect(t.replace(/^\d\d:\d\d/, '').trim()).not.toMatch(/^→/)
 })
