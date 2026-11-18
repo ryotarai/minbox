@@ -51,6 +51,17 @@ async function streamThread(m: Minbox, a: Agent): Promise<string> {
 
 const q = (page: Page, i: number) => page.locator(`[data-testid="reply-q"][data-index="${i}"]`)
 
+/** The gap between the bottom of the reply help box and the top of the composer row that follows it
+ *  ("to <agent> | + about a task"): the box must not sit on it. */
+async function expectGapBelowHelp(scope: Page | ReturnType<Page['getByTestId']>) {
+  const gap = await scope.getByTestId('reply-qa').evaluate((el) => {
+    const next = el.nextElementSibling as HTMLElement | null
+    return next ? next.getBoundingClientRect().top - el.getBoundingClientRect().bottom : null
+  })
+  expect(gap).not.toBeNull()
+  expect(gap!).toBeGreaterThanOrEqual(6)
+}
+
 test('questions render with options; single, multi and Other compose into the reply with the typed text', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   await seed(page, minbox)
@@ -168,6 +179,7 @@ test('collapse and dismiss', async ({ page, minbox }) => {
   await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
   await page.getByTestId('reply-qa-toggle').click()
   await expect(page.getByTestId('reply-qa-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expectGapBelowHelp(page)
   await expect(page.getByTestId('reply-q')).toHaveCount(0)
   await expect(page.getByTestId('reply-qa-toggle')).toContainText('1 answered')
   await page.getByTestId('reply-qa-toggle').click()
@@ -201,6 +213,7 @@ test("a task's view: questions for the task's latest agent message; the answers 
   const box = page.getByTestId('task-composer')
   const tq = (i: number) => box.locator(`[data-testid="reply-q"][data-index="${i}"]`)
   await expect(box.getByTestId('reply-q')).toHaveCount(3)
+  await expectGapBelowHelp(box)
   // Drafted from the task's messages: no message of the person is in it (the stream has one).
   await expect(tq(0)).toContainText('How should it continue? (0)')
   await tq(0).getByRole('radio', { name: /Go ahead/ }).click()
@@ -275,6 +288,7 @@ test("an agent's page: a task opened from its Tasks pane has the questions for t
   const detail = page.getByTestId('agent-task-detail')
   await expect(detail.getByTestId('column-title')).toHaveText(/Typed in the terminal/)
   await expect(detail.getByTestId('reply-q')).toHaveCount(3)
+  await expectGapBelowHelp(detail)
   await expect(detail.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
 })
 
@@ -291,6 +305,7 @@ test("phone: a task's view has the questions above its reply box", async ({ page
   const panel = await box.getByTestId('reply-qa').boundingBox()
   const text = await box.getByTestId('composer-text').boundingBox()
   expect(panel!.y + panel!.height).toBeLessThanOrEqual(text!.y + 1)
+  await expectGapBelowHelp(box)
   await box.locator('[data-testid="reply-q"][data-index="0"]').getByRole('radio', { name: /Wait for me/ }).click()
   await box.getByTestId('composer-send').click()
   await expect.poll(() => lastWords(minbox.url)).toBe('Q: How should it continue? (0) → A: Wait for me')
@@ -361,6 +376,7 @@ test('phone: the questions sit above the compact composer and compose on Send', 
   const panel = await page.getByTestId('reply-qa').boundingBox()
   const box = await page.getByTestId('composer-text').boundingBox()
   expect(panel!.y + panel!.height).toBeLessThanOrEqual(box!.y + 1)
+  await expectGapBelowHelp(page)
   const opt = await q(page, 0).getByRole('radio', { name: /Go ahead/ }).boundingBox()
   expect(opt!.height).toBeGreaterThanOrEqual(40)
   await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
