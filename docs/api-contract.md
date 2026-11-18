@@ -255,7 +255,12 @@ use that only when no sensible options exist). Always 200 for generation problem
 404 for an unknown thread. No questions and no command is a valid (cached) answer: nothing to ask. `command` rides
 every answer (also `disabled`, `not_needed`, `no_agent` and errors) and is not cached.
 
-- `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent.
+- `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent
+  (minbox's own requests to the agent, kinds `place` and `continue`, are left out: the agent's message before them counts).
+- v3: a stream's help is `GET /api/threads/{stream_thread_id}/suggestions`; a task's view asks
+  `GET /api/v3/tasks/{id}/suggestions` (same answer): the prompt holds the task's messages (every agent's), the
+  last one decides `not_needed`, the cache key is (`task:<id>`, last message id), and `command` is the denied command
+  of the stream of the task's latest agent message.
   `no_agent`: no coding agent (claude, pi or opencode) is installed to run the helper (feature off, not an error).
 - Otherwise the request blocks (up to 50 s) for one helper run and returns it. Results are cached in memory per
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run

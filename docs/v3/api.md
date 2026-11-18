@@ -32,6 +32,7 @@ and `usecases.md` for what the screens do with them.
 | --- | --- | --- |
 | GET | `/api/v3/board?project=` | `{tasks: [BoardTask], questions: [V3Message], agents: {session_id: {unread, open_questions}}}`. BoardTask = Task + `open_questions, unread, message_count, last_activity, last_agent, needs_you, criteria_done, task_ids` (a goal's tasks). Done tasks of the last 7 days. |
 | GET | `/api/v3/tasks/{id}` | `{task: BoardTask, messages: [V3Message + gap], events, tasks: [BoardTask] (a goal's), goal: Task?}`. `gap`: other messages of the same stream (about other tasks or none) since its previous message about this task. |
+| GET | `/api/v3/tasks/{id}/suggestions` | The reply help of a task's view (docs/api-contract.md "Reply suggestions"): questions for the task's latest agent message, and the denied `command` of that message's stream. A stream's help is `GET /api/threads/{stream_thread_id}/suggestions`. |
 | PATCH | `/api/v3/tasks/{id}` | `{title?, status?, summary?, steps?, criteria?, parent_id?}` by the person (status is marked manual). A new title is a timeline event `title` ("Renamed: old → new (you)") and makes `title_by` `person`. |
 | POST | `/api/v3/tasks` | `{project_id?, title, kind?, session_id?, message_ids?}`: the task picker's "New task" (the messages become about it). |
 | POST | `/api/v3/tasks/{id}/auto` | `{action: start|pause|stop, session_id?, max_turns?}`: a goal's autonomous run. |

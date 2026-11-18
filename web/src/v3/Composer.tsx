@@ -47,6 +47,7 @@ export function Composer({
   messages = [],
   annotationKeys = [],
   helpThread,
+  helpTask,
 }: {
   toId: string
   toOptions: Session[]
@@ -66,6 +67,8 @@ export function Composer({
   annotationKeys?: string[]
   /** The stream's thread: the reply help's questions for the agent's last message. */
   helpThread?: string
+  /** A task's view: the reply help's questions for the task's latest agent message (kept by the task). */
+  helpTask?: string
 }) {
   const { isPhone, settings, toast, sessions } = useApp()
   const draft = useReplyDraft(draftKey)
@@ -100,10 +103,20 @@ export function Composer({
   const annoKeys = [...new Set([draftKey, ...annotationKeys])]
   const annos = annoKeys.flatMap((k) => getReplyDraft(k).annotations)
 
-  // Questions that help the person reply: the agent spoke last (in its stream) and asked nothing.
-  const last = messages.length ? messages[messages.length - 1] : undefined
-  const wantHelp = !!helpThread && settings.reply_suggestions && last?.author === 'agent' && !last.segment && openCount === 0 && target?.status !== 'ended'
-  const help = useReplyHelp(helpThread ?? '_', last?.id, !!wantHelp)
+  // Questions that help the person reply: the agent spoke last (in its stream, or about the task) and
+  // asked nothing. minbox's own requests to the agent (to place messages in tasks, a goal's "continue")
+  // do not count: the agent's message before them is the one to reply to (as on the server).
+  const last = [...messages].reverse().find((m) => !m.pending && m.kind !== ('place' as string) && m.kind !== ('continue' as string))
+  const helpOn = helpTask ? true : !!helpThread && !last?.segment
+  const wantHelp = helpOn && settings.reply_suggestions && last?.author === 'agent' && openCount === 0 && target?.status !== 'ended'
+  // A task's help: its answers are kept by the task; a denied command is the one of its last agent message's stream.
+  const help = useReplyHelp(
+    (helpTask ? last?.thread_id : helpThread) || '_',
+    last?.id,
+    !!wantHelp,
+    helpTask ? { key: 'v3:task:' + helpTask, fetch: () => v3.taskSuggestions(helpTask) } : {},
+  )
+  const helpCmdThread = helpTask ? (last?.thread_id ?? '') : (helpThread ?? '')
   const helpText = cmd || !wantHelp ? '' : help.text
 
   const uploading = files.some((f) => f.state === 'uploading')
@@ -204,7 +217,7 @@ export function Composer({
       {wantHelp && (
         <ReplyHelpPanel
           help={help}
-          threadId={helpThread!}
+          threadId={helpCmdThread}
           phone={isPhone}
           onSubmit={() => void send()}
           onEditCommand={(text) => {
