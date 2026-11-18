@@ -243,9 +243,10 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
       )}
 
       {!readOnly && (
-        <div className={cx('flex items-center gap-1', phone ? 'gap-2' : 'border-t border-sel pt-2')}>
+        // Wraps to a second line on a narrow card rather than breaking a label inside a word.
+        <div className={cx('flex flex-wrap items-center gap-1', phone ? 'gap-2' : 'border-t border-sel pt-2')}>
           {phone && showRecommended ? (
-            <button type="button" data-testid="accept-recommended" onClick={useRecommended} className="h-11 flex-1 rounded-[10px] border-0 bg-sel text-[14px] font-semibold">
+            <button type="button" data-testid="accept-recommended" onClick={useRecommended} className="h-11 flex-1 whitespace-nowrap rounded-[10px] border-0 bg-sel px-3 text-[14px] font-semibold">
               {recommendedLabel}
             </button>
           ) : null}
@@ -298,7 +299,7 @@ function CardLink({ children, onClick, testid, big, title }: { children: React.R
       data-testid={testid}
       title={title}
       onClick={onClick}
-      className={cx('rounded-[6px] border-0 bg-transparent px-2 text-muted hover:bg-raised hover:text-fg', big ? 'h-11 px-4 text-[14px]' : 'h-[30px] text-[12.5px]')}
+      className={cx('shrink-0 whitespace-nowrap rounded-[6px] border-0 bg-transparent px-2 text-muted hover:bg-raised hover:text-fg', big ? 'h-11 px-4 text-[14px]' : 'h-[30px] text-[12.5px]')}
     >
       {children}
     </button>
