@@ -15,6 +15,7 @@ import { IconAt, IconChevronRight, IconHash, IconSearch } from '../components/ic
 import { Kbd, Modal, cx } from '../components/ui'
 import { v3, STATUS_LABEL, type BoardTask } from './data'
 import type { PaneKind } from './layout'
+import { taskOwner } from './parts'
 
 type Kind = 'action' | 'agent' | 'task' | 'project'
 type Item = {
@@ -240,7 +241,8 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
           time: shortTime(t.last_activity),
           run: () => {
             remember({ k: 'task', id: t.id })
-            navigate({ view: 'task', k: t.id, m: null }, { push: true })
+            const s = sessions ? taskOwner(t, sessions) : null
+            navigate(s ? { view: 'agent', s, k: t.id, m: null, tab: 'inbox' } : { view: 'task', k: t.id, m: null }, { push: true })
           },
         }
       })

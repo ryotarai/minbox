@@ -18,7 +18,7 @@ test('reading a task marks its messages read; the stream marks the rest', async 
 
   // The task view reads its tagged message; the untagged one stays unread.
   await row.locator('.v-line').click()
-  await expect(page.getByTestId('task-view')).toBeVisible()
+  await expect(page.getByTestId('agent-task-detail')).toBeVisible()
   await expect.poll(async () => (await board(minbox)).agents[a.id].unread).toBe(1)
   await expect(page.locator(`[data-testid="agent-row"][data-session="${a.id}"]`).getByTestId('agent-unread')).toHaveText('1')
   await page.keyboard.press('Escape')

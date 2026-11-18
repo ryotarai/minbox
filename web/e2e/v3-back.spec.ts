@@ -31,9 +31,10 @@ async function setup(minbox: Parameters<typeof startAgent>[0]) {
 async function openTask(page: Page, t: { id: string }, tap = false) {
   const row = page.locator(`[data-testid="task-row"][data-task="${t.id}"] .v-line`)
   await expect(row).toBeVisible()
-  // A click (a tap) on the row opens the task.
+  // A click (a tap) on the row opens the task: in its agent's page, selected there.
   await (tap ? row.tap() : row.click())
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${t.id}`))
 }
 
 /** Board → the task (its row) → the agent (the task's agent chip). */
@@ -70,14 +71,20 @@ async function backTwiceThenBrowser(page: Page, press: () => Promise<void>) {
   await expect(back(page)).toHaveAccessibleName('Back to Board')
 }
 
-/** A link straight to the task: ‹ replaces it with the Board; the browser's back then leaves the app (no loop). */
+/** A link straight to the task (an old #v=task link: it becomes the agent's page, replaced): ‹ replaces
+ *  it with the agent's stream, then with the Board; the browser's back then leaves the app (no loop). */
 async function deepLink(page: Page, url: string, t: { id: string }, tap = false) {
   await page.goto('about:blank')
   await page.goto(url + `/#v=task&k=${t.id}`)
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
-  await expect(back(page)).toHaveAccessibleName('Back to Board')
-  await expect(back(page)).toHaveAttribute('data-to', 'board')
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${t.id}`))
+  await expect(back(page)).toHaveAccessibleName('Back to api')
+  await expect(back(page)).toHaveAttribute('data-to', 'agent')
   const len = await historyLength(page)
+  await (tap ? back(page).tap() : back(page).click())
+  await expect(page.getByTestId('stream-view')).not.toHaveAttribute('data-detail', /.+/)
+  expect(new URL(page.url()).hash).not.toContain('k=')
+  await expect(back(page)).toHaveAccessibleName('Back to Board')
   await (tap ? back(page).tap() : back(page).click())
   await expect(view(page)).toHaveAttribute('data-view', 'board')
   expect(new URL(page.url()).hash).toBe('')
@@ -109,12 +116,16 @@ test.describe('desktop', () => {
     await expect(view(page)).toHaveAttribute('data-view', 'board')
   })
 
-  test('a deep link: ‹ replaces it with the Board; Esc too', async ({ page, minbox }) => {
+  test('a deep link: ‹ replaces it with the stream, then the Board; Esc too', async ({ page, minbox }) => {
     const { t } = await setup(minbox)
     await deepLink(page, minbox.url, t)
     await page.goto(minbox.url + `/#v=task&k=${t.id}`)
     await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
     await page.getByTestId('task-title').click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('task-title')).toHaveCount(0)
+    await expect(page.getByTestId('stream-view').getByTestId('conv-bar')).toBeVisible()
+    await page.getByTestId('stream-view').locator('.v-scroll').click()
     await page.keyboard.press('Escape')
     await expect(view(page)).toHaveAttribute('data-view', 'board')
   })
@@ -165,9 +176,10 @@ test.describe('tablet', () => {
     await expect(page.getByTestId('sidebar-toggle')).toBeVisible()
     await expect(back(page)).toBeVisible()
     await expect(back(page)).toHaveText('Board')
+    // ‹ in the agent's header, above the task's card.
     const b = (await back(page).boundingBox())!
     const title = (await page.getByTestId('task-title').boundingBox())!
-    expect(b.x + b.width).toBeLessThanOrEqual(title.x + 1)
+    expect(b.y + b.height).toBeLessThanOrEqual(title.y + 1)
     expect(b.height).toBeGreaterThanOrEqual(38) // a touch target
     await snap(page, 'tablet-task')
     await page.getByTestId('task-agent').filter({ hasText: a.name }).tap()
@@ -248,13 +260,11 @@ test.describe('phone', () => {
     await tasksList.locator(`[data-testid="agent-task"][data-task="${t.id}"]`).tap()
     await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
     await expect(back(page)).toHaveAccessibleName('Back to api')
-    // The task's details (checklist, latest from the agent, facts) behind Details.
-    await expect(page.getByTestId('task-side')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Details' }).tap()
-    await expect(page.getByTestId('task-side')).toBeVisible()
-    await expect(page.getByTestId('task-side').getByTestId('step')).toHaveCount(4)
-    await expect(page.getByTestId('task-side')).toContainText('LATEST FROM THE AGENT')
-    await expect(page.getByTestId('task-side')).toContainText('FACTS')
+    // The task's checklist in its card, below the title (no Details pane).
+    await expect(page.getByTestId('task-card').getByTestId('task-checklist').getByTestId('step')).toHaveCount(4)
+    const card = (await page.getByTestId('task-title').boundingBox())!
+    const list = (await page.getByTestId('task-checklist').boundingBox())!
+    expect(list.y).toBeGreaterThan(card.y + card.height - 1)
     await back(page).tap()
     await expect(page.getByTestId('agent-side')).toHaveAttribute('data-sheet', 'true')
     await expect(page.getByTestId('agent-tasks')).toBeVisible()

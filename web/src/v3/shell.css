@@ -74,7 +74,6 @@
   .v-main.conv .v-convwrap { flex: 1; min-height: 0; }
   .v-main.conv .v-scroll { overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .v-main.conv .v-composer { position: relative; bottom: auto; flex: none; }
-  .v-main.conv > .v-col > .v-side { max-height: 40vh; overflow: auto; flex: none; }
 }
 
 /* The arrow everywhere, as in main (a native app's cursor): no pointing hand on rows, buttons and

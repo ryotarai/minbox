@@ -22,8 +22,10 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await expect(page.locator('[data-side-pane]')).toHaveCount(0)
   await shot(page, 'uc6-stream', 'dark')
 
-  // The header says what it is on now (one task), not a wall of every task.
-  await expect(stream.getByTestId('now-on')).toContainText('Fix the gauge reading')
+  // The header is the agent's name, kind and buttons: no status line under it (no "idle · … · on <task>").
+  await expect(stream.getByTestId('agent-state')).toHaveAttribute('data-state', 'idle')
+  await expect(stream.getByTestId('now-on')).toHaveCount(0)
+  await expect(stream.locator('.v-head .v-r2')).toHaveCount(0)
   // ⋯ → Put in a task… on the question about no task: a new task named in the picker.
   const q = stream.locator('[data-testid="v3-message"]').filter({ hasText: 'is the staging server up?' })
   await q.hover()
@@ -60,9 +62,10 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await expect(page.getByTestId('terminal')).toHaveCount(0)
   await expect(page.locator('[data-side-pane]')).toHaveCount(0)
 
-  // A task link opens its task.
+  // A task link opens its task: in the agent's page, selected.
   await stream.locator('[data-testid="task-link"][title="Staging health"] button').first().click()
   await expect(page.getByTestId('task-title')).toHaveText('Staging health')
+  await expect(page).toHaveURL(new RegExp(`s=${a.id}.*v=agent.*k=`))
 })
 
 test('older threads are segments of the stream, with a divider', async ({ page, minbox }) => {

@@ -122,7 +122,6 @@ select.v-chip { padding: 1px 4px; }
 .v-pill.run { color: var(--mb-purple); } .v-pill.pause { color: var(--mb-wait); }
 .v-sec { font-size: 11px; letter-spacing: .08em; font-weight: 600; color: var(--mb-subtle); margin: 12px 0 7px; display: flex; gap: 8px; align-items: center; }
 .v-sec .v-x { margin-left: auto; letter-spacing: 0; font-weight: 500; color: var(--mb-faint); }
-.v-report { background: var(--mb-sunken); border: 1px solid var(--mb-line); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; overflow-wrap: anywhere; }
 
 /* checklist */
 ul.v-steps { list-style: none; margin: 0; padding: 0; }
@@ -182,11 +181,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-composer > [data-reply-help] { margin-bottom: 8px; }
 .v-dialog [data-testid="compose-files"] { margin-bottom: 6px; }
 .v-hint { font-size: 12px; font-weight: 400; color: var(--mb-subtle); }
-.v-nowon { display: inline-flex; gap: 5px; align-items: center; min-width: 0; }
-.v-doingnow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
 .v-donelist summary { cursor: pointer; list-style: none; }
-.v-clamp { display: -webkit-box; -webkit-line-clamp: var(--l); -webkit-box-orient: vertical; overflow: hidden; }
-.v-report .md p { margin: 0 0 6px; } .v-report .md ul, .v-report .md ol { margin: 0 0 6px; padding-left: 18px; } .v-report .md h1, .v-report .md h2, .v-report .md h3 { font-size: 13px; margin: 4px 0; }
 .v-msg.me { align-self: flex-end; }
 .v-msg.me .v-w { justify-content: flex-end; }
 .v-msg.me .v-bd { background: var(--v-bubble); border-color: transparent; }
@@ -247,8 +242,6 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-tabs2 { display: flex; gap: 2px; border-bottom: 1px solid var(--mb-line); padding: 6px 10px 0; flex: none; }
 .v-tabs2 button { border: 0; background: none; padding: 5px 9px; font-size: 12px; color: var(--mb-subtle); border-bottom: 2px solid transparent; }
 .v-tabs2 button.on { color: var(--mb-fg); border-bottom-color: var(--mb-accent); }
-dl.v-facts { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 5px 10px; margin: 0; font-size: 12px; }
-dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
 .v-mt { padding: 7px 0; border-bottom: 1px solid var(--mb-line); cursor: pointer; background: none; border-left: 0; border-right: 0; border-top: 0; width: 100%; text-align: left; color: inherit; }
 .v-mt .v-a { display: flex; gap: 7px; align-items: center; color: var(--mb-fg); }
 .v-mt .v-b { display: flex; gap: 7px; align-items: center; padding-left: 15px; margin-top: 4px; }
@@ -287,7 +280,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 
 /* phone */
 .v-tabs { display: none; }
-.v-ph-only { display: none; }
 @media (max-width: 699px) {
   .v-app { flex-direction: column; }
   .v-sidebar, .v-rail { display: none; }
@@ -298,7 +290,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-row .v-line { grid-template-columns: minmax(0, 1fr) 44px; }
   .v-row .v-ext { display: none; }
   .v-hide-phone { display: none !important; }
-  .v-ph-only { display: initial; }
   .v-tabs { display: flex; border-top: 1px solid var(--mb-line); background: var(--mb-surface); padding: 4px 0 calc(8px + env(safe-area-inset-bottom)); flex: none; }
   .v-tabs button { flex: 1; border: 0; background: none; font-size: 11px; color: var(--mb-subtle); display: flex; flex-direction: column; align-items: center; gap: 1px; position: relative; padding: 4px 0; }
   .v-tabs button svg { display: block; margin-bottom: 2px; }
@@ -397,7 +388,7 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 .v-column .v-head .v-r2 { margin-top: 5px; flex-wrap: nowrap; overflow: hidden; }
 .v-column .v-conv { padding: 10px 12px; }
 .v-column .v-composer { margin: 0 10px 10px; }
-.v-coltitle { border: 0; background: none; padding: 0; color: inherit; font-weight: inherit; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.v-coltitle { display: block; width: 100%; border: 0; background: none; padding: 0; color: inherit; font-weight: inherit; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .v-coltitle:hover { text-decoration: underline; }
 .v-colx { padding: 1px 7px; }
 .v-colsub { margin-top: 4px; font-size: 12px; color: var(--mb-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -413,3 +404,16 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 .v-mt.sel { background: var(--mb-rowsel); box-shadow: inset 2px 0 0 var(--mb-accent); padding-left: 7px; padding-right: 4px; border-radius: 0 6px 6px 0; }
 .v-goal { margin-right: 4px; }
 .v-ev-ic { display: inline-flex; align-items: center; gap: 3px; }
+/* The task picked in the agent's page: a card with its checklist beside the title, status and agents
+   (a right column when there is room; below them on a narrow pane or a phone). */
+.v-taskcard { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: flex-start; }
+.v-taskcard-main { flex: 1 1 300px; min-width: 0; }
+.v-column .v-taskcard .v-r2 { flex-wrap: wrap; }
+.v-taskcheck { flex: 0 1 340px; min-width: 220px; }
+.v-taskcheck .v-sec { margin: 0 0 4px; }
+.v-taskcheck-bar { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; letter-spacing: 0; font-weight: 500; flex: 0 1 180px; min-width: 80px; }
+.v-taskcheck-bar .v-bar { width: auto; flex: 1; }
+.v-taskcheck-list { font-size: 12.5px; }
+.v-taskcheck-list.folded { max-height: 118px; overflow: auto; overscroll-behavior: contain; }
+.v-taskcheck-more { font-size: 12px; margin-top: 2px; border: 0; background: none; padding: 0; }
+@media (max-width: 699px) { .v-taskcheck { flex-basis: 100%; } }

@@ -15,7 +15,7 @@ test('task view: its messages, show context, reply to the last agent about the t
 
   await page.goto(minbox.url)
   await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).click()
-  const view = page.getByTestId('task-view')
+  const view = page.getByTestId('agent-task-detail')
   await expect(view.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   // 4 messages about it (2 asks, 2 replies); the chat between them is folded into a gap.
   await expect(view.getByTestId('v3-message')).toHaveCount(4)
@@ -38,8 +38,8 @@ test('task view: its messages, show context, reply to the last agent about the t
   // Hand off: a second agent; the message goes there with the task's tag, the task gains the agent.
   const b = await startAgent(minbox, 'worker')
   await page.getByTestId('composer-to').selectOption(b.id)
-  await page.getByTestId('composer-text').fill('please take over the tests for this')
-  await page.getByTestId('composer-send').click()
+  await view.getByTestId('composer-text').fill('please take over the tests for this')
+  await view.getByTestId('composer-send').click()
   await agentReply(minbox, b, /Noted for “Fix the gauge reading”/)
   await expect(view.getByTestId('event').filter({ hasText: 'Handed to worker by you' })).toBeVisible()
   const t = await api(minbox, 'GET', `/api/v3/tasks/${gauge.id}`)
