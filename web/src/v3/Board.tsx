@@ -5,6 +5,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { ago, short, standing, v3, type Board, type BoardTask, type V3Message } from './data'
+import { TaskRowMenu } from './RenameTask'
+import { IconMore } from '../components/icons'
+import type { MenuAt } from '../components/ui'
 import type { Question } from '../api'
 import { Bar, MessageBodyClamp, StatusDot, Steps, agentName, openQuestions, statusLabel, toggled, useNav, useSessionsById } from './parts'
 
@@ -102,6 +105,7 @@ export function BoardView({
   showQuiet,
   setShowQuiet,
   hidden,
+  onRename,
 }: {
   board: Board | null
   reload: () => void
@@ -114,12 +118,15 @@ export function BoardView({
   showQuiet: boolean
   setShowQuiet: (v: boolean) => void
   hidden: Set<string>
+  /** Rename a task (its row menu): the dialog is the app's, as for E / F2 on the focused row. */
+  onRename?: (t: BoardTask) => void
 }) {
   const { setOverlay, error } = useApp()
   const { project } = useSelectedProject()
   const byId = useSessionsById()
   const nav = useNav()
   const [dropping, setDropping] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ t: BoardTask; at: MenuAt } | null>(null)
   if (!board) return <div className="v-col"><div className="v-empty">Loading…</div></div>
   const g = groups(board, hidden)
   const needsN = needsCount(board, hidden)
@@ -207,6 +214,12 @@ export function BoardView({
           data-kind={t.kind || 'task'}
           draggable
           onDragStart={(e) => e.dataTransfer.setData('text/plain', t.id)}
+          onContextMenu={(e) => {
+            if ((e.target as Element).closest('a[href], input, textarea, select') || e.defaultPrevented) return
+            e.preventDefault()
+            setFocus(k)
+            setMenu({ t, at: { el: e.currentTarget, x: e.clientX, y: e.clientY } })
+          }}
         >
           <div
             className="v-line"
@@ -253,6 +266,20 @@ export function BoardView({
                   {pr.state ? ` · ${pr.state}` : ''}
                 </a>
               )}
+              <button
+                type="button"
+                className="v-more"
+                data-testid="task-row-more"
+                aria-label="Task actions"
+                title="Rename, open, done (right-click)"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setFocus(k)
+                  setMenu({ t, at: { el: e.currentTarget } })
+                }}
+              >
+                <IconMore size={14} />
+              </button>
             </div>
             <div className="v-age" title={t.status === 'done' ? 'done' : 'last activity'}>
               {ago(t.status === 'done' ? t.done_at : t.last_activity)}
@@ -346,6 +373,16 @@ export function BoardView({
         )}
         <div style={{ height: 60 }} />
       </div>
+      {menu && (
+        <TaskRowMenu
+          t={menu.t}
+          at={menu.at}
+          onClose={() => setMenu(null)}
+          onRename={() => onRename?.(menu.t)}
+          onOpen={() => nav.task(menu.t.id)}
+          onToggleDone={() => setStatus(menu.t, menu.t.status === 'done' ? 'working' : 'done')}
+        />
+      )}
     </div>
   )
 }
@@ -521,7 +558,7 @@ function agoWords(iso: string | null | undefined): string {
   return a === 'now' ? 'just now' : a ? a + ' ago' : ''
 }
 
-export function useBoard(): [Board | null, () => void] {
+export function useBoard(): [Board | null, () => void, (f: (b: Board | null) => Board | null) => void] {
   const { id } = useSelectedProject()
   const [board, setBoard] = useState<Board | null>(null)
   const key = id
@@ -530,7 +567,7 @@ export function useBoard(): [Board | null, () => void] {
     load()
   }, [load])
   useEffectV3(load)
-  return [board, load]
+  return [board, load, setBoard]
 }
 
 function useEffectV3(f: () => void) {

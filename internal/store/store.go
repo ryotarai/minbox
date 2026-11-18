@@ -509,7 +509,37 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(topicSchema); err != nil {
 		return err
 	}
-	for _, c := range append(addedColumns[:len(addedColumns):len(addedColumns)], topicAddedColumns...) {
+	if err := addColumns(db, append(addedColumns[:len(addedColumns):len(addedColumns)], topicAddedColumns...)); err != nil {
+		return err
+	}
+	if err := migrateProjects(context.Background(), db); err != nil {
+		return fmt.Errorf("projects: %w", err)
+	}
+	if err := migrateThreadStatus(context.Background(), db); err != nil {
+		return fmt.Errorf("thread status: %w", err)
+	}
+	if err := renameMessageTags(db); err != nil {
+		return fmt.Errorf("message_tasks: %w", err)
+	}
+	if _, err := db.Exec(taskSchema); err != nil {
+		return fmt.Errorf("tasks: %w", err)
+	}
+	if err := addColumns(db, taskAddedColumns); err != nil {
+		return fmt.Errorf("tasks: %w", err)
+	}
+	if err := migrateV3(context.Background(), db); err != nil {
+		return fmt.Errorf("v3: %w", err)
+	}
+	// Hosts added with a shared token (before pairing) must be paired again.
+	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
+		return err
+	}
+	return nil
+}
+
+// addColumns adds the columns a table does not have yet.
+func addColumns(db *sql.DB, cols []struct{ table, column, def string }) error {
+	for _, c := range cols {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, c.table)
 		if err != nil {
 			return err
@@ -531,25 +561,6 @@ func migrate(db *sql.DB) error {
 				return err
 			}
 		}
-	}
-	if err := migrateProjects(context.Background(), db); err != nil {
-		return fmt.Errorf("projects: %w", err)
-	}
-	if err := migrateThreadStatus(context.Background(), db); err != nil {
-		return fmt.Errorf("thread status: %w", err)
-	}
-	if err := renameMessageTags(db); err != nil {
-		return fmt.Errorf("message_tasks: %w", err)
-	}
-	if _, err := db.Exec(taskSchema); err != nil {
-		return fmt.Errorf("tasks: %w", err)
-	}
-	if err := migrateV3(context.Background(), db); err != nil {
-		return fmt.Errorf("v3: %w", err)
-	}
-	// Hosts added with a shared token (before pairing) must be paired again.
-	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {
-		return err
 	}
 	return nil
 }

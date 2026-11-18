@@ -195,3 +195,30 @@ func TestTasksTagsAndTurn(t *testing.T) {
 		t.Fatalf("unread again = %d", n)
 	}
 }
+
+// A database from before title_by gets the column; its tasks read as named by no one ("").
+func TestMigrateTitleBy(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "old.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := s.CreateTask(ctx, "", "", TaskFields{Title: ptr("Mine")})
+	if err != nil || tk.TitleBy != TitleByPerson {
+		t.Fatalf("%v %+v", err, tk)
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE tasks DROP COLUMN title_by`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	tk, err = s.GetTask(ctx, tk.ID)
+	if err != nil || tk.TitleBy != "" || tk.Title != "Mine" {
+		t.Fatalf("%v %+v", err, tk)
+	}
+}
