@@ -20,7 +20,7 @@ export function agentTasks(tasks: BoardTask[], sessionId: string) {
 
 /** The list itself (OPEN TASKS, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
  *  checkbox per task (shown as a column on the agent's page). onSelect: a task opens there (in the
- *  agent's page, selected: the one shown) instead of the task view. */
+ *  agent's page, selected: the one shown; clicking it again closes it) instead of the task view. */
 export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null }) {
   const nav = useNav()
   const { open, done } = agentTasks(tasks, sessionId)
@@ -108,10 +108,12 @@ export function TasksPane({
   const own = useColumnPick(sessionId, [...open, ...done])
   const checked = own.selected.length
   // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
-  // goes back to the stream); a checkbox shows the checked ones as columns (leaving the one task).
+  // goes back to the stream; the shown one again closes it, back to the stream); a checkbox shows the
+  // checked ones as columns (leaving the one task).
   const { route, navigate } = useApp()
   const detail = route.view === 'agent' ? route.k : null
-  const select = (id: string) => navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
+  const select = (id: string) =>
+    id === detail ? navigate({ k: null }, { push: false }) : navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
   const leave = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
     f(...a)
     if (detail) navigate({ k: null }, { push: false })

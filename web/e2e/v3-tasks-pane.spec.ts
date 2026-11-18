@@ -200,3 +200,32 @@ test('tablet 768px with the terminal open: no room, the Tasks pane is a strip th
   await expect(pane).toHaveAttribute('data-shown', 'true')
   await expect(pane).not.toHaveAttribute('data-overlay', 'true')
 })
+
+test('the shown task clicked again closes it: back to the agent stream, no k, the card not selected', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  await say(minbox, a, 'please fix the gauge reading')
+  const gauge = await taskNamed(minbox, /Fix the gauge reading/)
+  await agentReply(minbox, a, /created a task/)
+  for (const width of [1800, 900]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+    const card = page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`)
+    await expect(card).toBeVisible()
+    await expect(card).not.toHaveAttribute('aria-current', /.*/)
+
+    await card.click()
+    await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+    await expect(page).toHaveURL(new RegExp(`[#&]k=${gauge.id}`))
+    await expect(card).toHaveAttribute('aria-current', 'true')
+    await expect(card).toHaveClass(/\bsel\b/)
+
+    await card.click()
+    await expect(page).not.toHaveURL(/[#&]k=/)
+    await expect(page).toHaveURL(new RegExp(`[#&]s=${a.id}`))
+    await expect(page.getByTestId('agent-task-detail')).toHaveCount(0)
+    await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+    await expect(card).not.toHaveAttribute('aria-current', /.*/)
+    await expect(card).not.toHaveClass(/\bsel\b/)
+    await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
+  }
+})
