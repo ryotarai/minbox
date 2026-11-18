@@ -205,6 +205,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-note button.v-link { font-size: 11.5px; }
 .v-typing { color: var(--mb-faint); font-size: 12px; font-style: italic; display: flex; align-items: center; gap: 7px; }
 .v-typing .v-dot { width: 6px; height: 6px; }
+.v-typing .v-askstatus { font-style: normal; color: var(--mb-subtle); font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px; margin-left: 2px; }
 /* A soft band of the working blue sweeps across the words; the dots of the ellipsis bounce in turn. */
 .v-typing-t {
   background: linear-gradient(90deg, var(--mb-faint) 0%, var(--mb-faint) 40%, var(--mb-work) 50%, var(--mb-faint) 60%, var(--mb-faint) 100%);

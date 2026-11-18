@@ -43,6 +43,7 @@ import LMaximize2 from 'lucide-react/icons/maximize-2'
 import LMousePointer2 from 'lucide-react/icons/mouse-pointer-2'
 import LPen from 'lucide-react/icons/pen'
 import LMessageSquare from 'lucide-react/icons/message-square'
+import LMessageCircleQuestion from 'lucide-react/icons/message-circle-question-mark'
 import LThumbsUp from 'lucide-react/icons/thumbs-up'
 import LRotateCw from 'lucide-react/icons/rotate-cw'
 import LRotateCcw from 'lucide-react/icons/rotate-ccw'
@@ -129,6 +130,7 @@ export const IconExpand = /*#__PURE__*/ lucide(LMaximize2)
 export const IconSelect = /*#__PURE__*/ lucide(LMousePointer2)
 export const IconPen = /*#__PURE__*/ lucide(LPen)
 export const IconComment = /*#__PURE__*/ lucide(LMessageSquare)
+export const IconAskStatus = /*#__PURE__*/ lucide(LMessageCircleQuestion)
 export const IconThumb = /*#__PURE__*/ lucide(LThumbsUp)
 export const IconRefresh = /*#__PURE__*/ lucide(LRotateCw)
 export const IconUndo = /*#__PURE__*/ lucide(LRotateCcw)
