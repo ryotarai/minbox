@@ -440,6 +440,13 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 		httpError(w, 400, msg)
 		return
 	}
+	// The person's name for a task wins: an agent's rename of a task the person named is not applied,
+	// and the result says so (the person renames it again, or the agent asks them to).
+	note := ""
+	if f.Title != nil && cur.TitleBy == store.TitleByPerson && strings.Join(strings.Fields(*f.Title), " ") != cur.Title {
+		f.Title = nil
+		note = "The person named this task themselves, so its title stays “" + cur.Title + "”. If the work's scope has clearly changed, suggest a new name to them with send_message instead."
+	}
 	t, err := s.store.UpdateTask(ctx, cur.ID, sess.ID, f)
 	if err != nil {
 		v3TaskError(w, err)
@@ -473,7 +480,11 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 	t, _ = s.store.GetTask(ctx, t.ID)
 	s.modLog(sess.ID, "task-update", "task=%q status=%s", t.ID, t.Status)
 	s.publishTasks()
-	writeJSON(w, 200, map[string]any{"task_id": t.ID, "task": t, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria})
+	res := map[string]any{"task_id": t.ID, "task": t, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
+	if note != "" {
+		res["note"] = note
+	}
+	writeJSON(w, 200, res)
 }
 
 // GET /api/agent/tasks?all=1: the tasks and goals the caller is an agent of (open ones, and the ones

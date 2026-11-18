@@ -10,13 +10,14 @@ import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskC
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
+import { TaskTitle } from './RenameTask'
 import { DeliveryLine } from '../components/ThreadView'
 
 export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: string; highlight: string | null; tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
   const { error, sessions, isPhone, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
-  const [d, reload] = useLive<TaskDetail>(id, () => v3.task(id))
+  const [d, reload, setD] = useLive<TaskDetail>(id, () => v3.task(id))
   const [ctx, setCtx] = useState<Record<string, V3Message[] | 'loading'>>({})
   const [to, setTo] = useState<string | null>(null)
   const [pending, setPending] = useState<V3Message[]>([])
@@ -198,10 +199,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           <div className="v-r1">
             <BackButton tasks={tasks} />
             <StatusDot t={t} live={typing.length > 0} />
-            <h2 data-testid="task-title">
-              {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
-              {t.title}
-            </h2>
+            <TaskTitle t={t} goal={t.kind === 'goal'} onShow={(title) => setD((x) => (x ? { ...x, task: { ...x.task, title } } : x))} onSaved={reload} />
             <select
               className="v-chip"
               aria-label="Status"

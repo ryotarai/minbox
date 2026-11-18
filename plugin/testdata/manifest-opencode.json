@@ -1,6 +1,6 @@
 {
   "protocol": 1,
-  "version": "d7e9cf55df3c",
+  "version": "21825c063cf9",
   "tools": [
     {
       "name": "minbox_send_message",
@@ -241,7 +241,7 @@
     },
     {
       "name": "minbox_update_task",
-      "description": "Update a task or goal of your project by its task_id (from minbox_create_task or minbox_list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with minbox_send_message), done when finished or dropped. report: a short \"where it stands\" the person reads on the Board. message_ids: earlier messages that are about this task.",
+      "description": "Update a task or goal of your project by its task_id (from minbox_create_task or minbox_list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with minbox_send_message), done when finished or dropped. report: a short \"where it stands\" the person reads on the Board. message_ids: earlier messages that are about this task. title: rename it when the work's scope becomes clear or changes, not on every step.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -353,6 +353,7 @@
             "type": "string"
           },
           "title": {
+            "description": "A new name, when the work's scope has become clear or changed (2 to 8 words, in the person's language). A name the person gave the task is kept.",
             "type": "string"
           },
           "uncheck_steps": {

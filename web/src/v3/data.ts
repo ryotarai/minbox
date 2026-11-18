@@ -33,6 +33,8 @@ export type Task = {
   parent_id: string
   criteria: Step[]
   auto: AutoRun
+  /** Who named it last: 'person' (the agent's renames are then not applied), 'agent', or '' (older). */
+  title_by?: '' | 'person' | 'agent'
 }
 
 export type BoardTask = Task & {

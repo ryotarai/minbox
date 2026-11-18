@@ -22,9 +22,10 @@ import { ConnectionBanner } from '../components/Banners'
 import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, useBoard } from './Board'
 import { TaskView } from './TaskView'
+import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
 import { SearchView } from './Search'
-import { v3, type V3Message } from './data'
+import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTaskTitles, agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
@@ -36,7 +37,8 @@ export function V3App() {
   const app = useApp()
   const { route, isPhone, isTablet, overlay, setOverlay, sessions, settings, layout, setLayout } = app
   const { id: projectId, project } = useSelectedProject()
-  const [board, reloadBoard] = useBoard()
+  const [board, reloadBoard, setBoard] = useBoard()
+  const [renamingTask, setRenamingTask] = useState<BoardTask | null>(null)
   const nav = useNav()
   const [focus, setFocus] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -110,6 +112,20 @@ export function V3App() {
       return
     }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return
+    // E / F2: rename the open task (in place) or the focused Board row (a dialog).
+    if (e.key === 'F2' || ((e.key === 'e' || e.key === 'E') && settings.single_key)) {
+      if (view === 'task') {
+        e.preventDefault()
+        window.dispatchEvent(new Event(RENAME_TASK_EVENT))
+        return
+      }
+      const t = view === 'board' && focus?.startsWith('t:') ? board?.tasks.find((x) => x.id === focus.slice(2)) : undefined
+      if (t) {
+        e.preventDefault()
+        setRenamingTask(t)
+        return
+      }
+    }
     // Settings › single-key shortcuts off: only the arrows and Enter move on the Board.
     if (!settings.single_key && !['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return
     if (gPending.current) {
@@ -257,6 +273,7 @@ export function V3App() {
         setShowQuiet={setShowQuiet}
         hidden={hidden}
         hide={(id) => setHidden((h) => new Set(h).add(id))}
+        onRename={setRenamingTask}
       />
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
@@ -374,6 +391,14 @@ export function V3App() {
       )}
       {overlay?.kind === 'palette' && <V3Palette ctx={paletteCtx} onClose={() => setOverlay(null)} />}
       {renaming && <RenameAgentDialog session={renaming} onClose={() => setRenaming(null)} />}
+      {renamingTask && (
+        <RenameTaskDialog
+          task={renamingTask}
+          onClose={() => setRenamingTask(null)}
+          onShow={(title) => setBoard((b) => (b ? { ...b, tasks: b.tasks.map((x) => (x.id === renamingTask.id ? { ...x, title } : x)) } : b))}
+          onSaved={reloadBoard}
+        />
+      )}
       {overlay && (overlay as { kind: string }).kind === 'v3-new' && <NewMessageDialog agents={agents} initialTo={(overlay as { to?: string }).to} onClose={() => setOverlay(null)} />}
       {overlay && (overlay as { kind: string }).kind === 'v3-help' && <HelpDialog onClose={() => setOverlay(null)} />}
       {route.f && (
@@ -675,6 +700,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['1–9', 'Pick a choice of the focused question'],
     ['⌘↵', 'Send the picked answers (Board) · send the message'],
     ['X', 'Done / reopen the focused task'],
+    ['E · F2', 'Rename the task (the open one, or the focused Board row)'],
     ['Z', 'Undo the last action (done, archive)'],
     ['N', 'Next agent with unread messages'],
     ['R', 'Reply: quote the selected text, or focus the reply box'],
