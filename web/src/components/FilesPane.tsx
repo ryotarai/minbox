@@ -4,7 +4,8 @@ import type { ContextMenuItem as FileTreeContextMenuItem, ContextMenuOpenContext
 import { api, type FileTreeListing, type Session, type TreeFile } from '../api'
 import { useApp } from '../lib/app'
 import { CODE_HIGHLIGHT_MAX_CHARS, CODE_WRAP_LINE_CHARS, langOf } from './AttachmentViewer'
-import { IconBack, IconCheck, IconClose, IconCopy, IconRefresh, IconWrapText } from './icons'
+import { IconBack, IconCheck, IconClose, IconCopy, IconExpand, IconRefresh, IconWrapText } from './icons'
+import { useHotkeys } from '../lib/hotkeys'
 import { insertFileMention } from './Files'
 import { cx, IconButton } from './ui'
 
@@ -275,6 +276,10 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
   const { error } = useApp()
   const [copied, setCopied] = useState(false)
   const [wrapPref, setWrapPref] = useState<boolean | null>(readWrap)
+  // Full screen, as the attachment viewer does it: the viewer covers the window (an in-app overlay,
+  // not the browser's Fullscreen API); Esc or the same button returns to the pane.
+  const [full, setFull] = useState(false)
+  useHotkeys({ escape: () => setFull(false) }, full)
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
   // Copies the text already loaded for the viewer; a brief check says it worked.
@@ -332,7 +337,14 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
     </div>
   )
   return (
-    <section data-testid="file-viewer" data-path={path} aria-label={path} className="flex min-h-0 flex-1 flex-col">
+    // Full screen is fixed over the whole window (one position class, as in the attachment viewer).
+    <section
+      data-testid="file-viewer"
+      data-path={path}
+      data-full={full || undefined}
+      aria-label={path}
+      className={cx('flex min-h-0 flex-1 flex-col', full && 'fixed inset-0 z-40 bg-bg pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]')}
+    >
       <div className={cx('flex shrink-0 items-center gap-1.5 border-b border-line', phone ? 'h-11 px-3' : 'h-9 pl-3.5 pr-1.5')}>
         <span data-testid="file-viewer-path" title={path} className="mono min-w-0 flex-1 truncate text-[12px]">
           <span className="text-subtle">{path.slice(0, slash)}</span>
@@ -374,7 +386,18 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
             {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
           </IconButton>
         )}
-        {!phone && (
+        <IconButton
+          aria-label={full ? 'Exit full screen' : 'Full screen'}
+          title={full ? 'Exit full screen (Esc)' : 'Full screen'}
+          aria-pressed={full}
+          data-testid="file-viewer-fullscreen"
+          size={phone ? 32 : 26}
+          onClick={() => setFull((v) => !v)}
+          className={full ? 'bg-raised text-fg' : undefined}
+        >
+          <IconExpand size={14} />
+        </IconButton>
+        {!phone && !full && (
           <IconButton aria-label="Close file" title="Close file" data-testid="file-viewer-close" size={26} onClick={onClose}>
             <IconClose size={14} />
           </IconButton>
