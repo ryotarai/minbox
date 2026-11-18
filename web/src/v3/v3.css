@@ -328,3 +328,15 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-back-l { display: none; }
   .v-back svg { width: 20px; height: 20px; }
 }
+
+/* Phone: the agent's sheet (Tasks · Terminal · Shell · Files), opened from "Tasks N ›" in the header. */
+.v-sheetbtn { margin-left: auto; display: none; font-size: 12px; padding: 0 10px; height: 28px; align-items: center; gap: 4px; }
+.v-sheetbtn b { font-weight: 600; color: var(--mb-fg); }
+.v-sheetx { border: 0; background: none; color: var(--mb-fg2); display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 36px; margin: -4px 2px 0 -6px; border-radius: 7px; }
+.v-sheetx:hover { background: var(--mb-rowsel); }
+@media (max-width: 699px) {
+  .v-sheetbtn { display: inline-flex; }
+  .v-side[data-sheet] .v-tabs2 button:not(.v-sheetx) { padding: 9px 11px; font-size: 13px; }
+  .v-side[data-sheet] > div:last-child { flex: 1; min-height: 0; overflow: auto; }
+  .v-side[data-sheet] .v-mt { padding-top: 10px; padding-bottom: 10px; }
+}
