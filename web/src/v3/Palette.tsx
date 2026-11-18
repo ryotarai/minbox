@@ -14,7 +14,7 @@ import { ProjectDot } from '../components/ProjectRail'
 import { IconSearch } from '../components/icons'
 import { Kbd, Modal, cx } from '../components/ui'
 import { v3, STATUS_LABEL, type BoardTask } from './data'
-import type { SidePane } from './StreamView'
+import type { PaneKind } from './layout'
 
 type Kind = 'action' | 'agent' | 'task' | 'project'
 type Item = {
@@ -92,8 +92,9 @@ let lastTasks: BoardTask[] = []
 /** What the palette can act on: the open agent and its side pane, and V3App's dialogs. */
 export type PaletteCtx = {
   agent: Session | undefined
-  pane: SidePane
-  setPane: (p: SidePane) => void
+  /** The agent's side panes showing (terminal, shell, files), and show or hide one. */
+  panes: PaneKind[]
+  togglePane: (p: PaneKind) => void
   /** The agent's Tasks pane (desktop and tablet): shown, and show or fold it. */
   tasksPane?: { shown: boolean; show: (show: boolean) => void }
   openNew: (to?: string) => void
@@ -138,7 +139,6 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     act('new-agent', 'New agent', () => ctx.openNewAgent(), { keywords: 'new session create start claude pi opencode folder host' })
     act('board', 'Open Board', () => go({ view: 'main', k: null, s: null, m: null }), { keywords: 'home tasks questions needs you', shortcut: 'g b' })
     act('search', 'Search tasks and messages', () => go({ view: 'search' }), { keywords: 'find', shortcut: '/' })
-    act('columns', 'Open Columns (tasks side by side)', () => go({ view: 'columns', k: null, s: null, m: null }), { keywords: 'columns side by side tweetdeck multi tasks working all', shortcut: 'g c' })
     if (isPhone) act('agents', 'Open Agents', () => go({ view: 'agents' }), { keywords: 'sessions list' })
     act('all-projects', 'All projects', () => selectProject(''), { keywords: 'project scope everything show' })
     act('new-project', 'New project', () => setOverlay({ kind: 'new-project' }), { keywords: 'add folder create' })
@@ -152,12 +152,12 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     act('shortcuts', 'Show keyboard shortcuts', () => ctx.openHelp(), { keywords: 'help keys hotkeys', shortcut: '?' })
     if (cur) {
       const label = agentKindLabel(cur.agent)
-      const pane = (p: SidePane, on: string, off: string, kw: string, shortcut?: string) =>
-        act(p + '-pane', ctx.pane === p ? off : on, () => ctx.setPane(ctx.pane === p ? 'tasks' : p), { keywords: `${kw} ${cur.name}`, shortcut })
+      const pane = (p: PaneKind, on: string, off: string, kw: string, shortcut?: string) =>
+        act(p + '-pane', ctx.panes.includes(p) ? off : on, () => ctx.togglePane(p), { keywords: `${kw} show hide pane toggle ${cur.name}`, shortcut })
       const tp = ctx.tasksPane
       if (tp) act('tasks-pane', tp.shown ? 'Hide tasks pane' : 'Show tasks pane', () => tp.show(!tp.shown), { keywords: `tasks list pane toggle fold ${cur.name}`, shortcut: '⇧T' })
       pane('terminal', `Show ${label} terminal`, `Hide ${label} terminal`, 'go to focus console claude code pane toggle', 'T')
-      if (cur.kind !== 'shell' && cur.status !== 'ended') pane('shell', 'Open shell', 'Hide shell', 'companion terminal shell pane toggle folder cwd', 'Ctrl+`')
+      if (cur.kind !== 'shell' && cur.status !== 'ended') pane('shell', 'Show shell', 'Hide shell', 'open companion terminal shell folder cwd', 'Ctrl+`')
       pane('files', 'Show files', 'Hide files', 'file explorer tree browse folder git status', '⇧F')
       act('rename', 'Rename current agent', () => ctx.rename(cur), { keywords: `name session ${cur.name}` })
       if (cur.kind !== 'shell' && cur.project_id && !cur.is_main)
@@ -180,7 +180,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, ctx.pane, ctx.tasksPane?.shown, ctx.tasksPane?.show, isPhone, linear.available, slack.available, settings.decision_mode, settings.swap_panes, settings.text_size, mod])
+  }, [cur, ctx.panes.join(' '), ctx.togglePane, ctx.tasksPane?.shown, ctx.tasksPane?.show, isPhone, linear.available, slack.available, settings.decision_mode, settings.swap_panes, settings.text_size, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 

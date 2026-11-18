@@ -1,38 +1,45 @@
-// Columns (#v=columns): several tasks side by side, TweetDeck-like. Each column is a task's
-// conversation (TaskView's, with a short header): its messages, scrolled to the newest, and a reply box
-// to the agent last active on it. The tasks list on the left has a checkbox per task and an "All" one
-// (every task not done, also the ones that start later). The choice is kept in this browser. On a
-// phone: one column at a time, with tabs for the checked tasks.
+// Task columns on an agent's page: the tasks checked in its Tasks pane side by side, TweetDeck-like,
+// in place of its stream. Each column is a task's conversation (TaskView's column mode: a short header,
+// its messages scrolled to the newest, a reply box to the agent last active on it). "All" is every open
+// task of the agent (also the ones that start later). The choice is kept per agent in this browser;
+// "Stream" shows the agent's stream again without forgetting it. Tablet: one column at a time, with a
+// tab per checked task. Phone: no columns (the stream; a task is a tap away in the sheet's Tasks).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import type { BoardTask, V3Message } from './data'
-import { BackButton, StatusDot } from './parts'
+import { StatusDot } from './parts'
 import { TaskView } from './TaskView'
 
-// ---- the checked tasks (localStorage, shared by every list that shows checkboxes) ----
+// ---- the checked tasks of each agent (localStorage) ----
 
-/** all: every open task (the ones that come later too); ids: the tasks checked one by one. */
-export type ColumnPick = { all: boolean; ids: string[] }
-const KEY = 'minbox:v3-columns'
+/** all: every open task (the ones that come later too); ids: the tasks checked one by one; stream: the
+ *  stream is shown for now (the checks are kept). */
+export type ColumnPick = { all: boolean; ids: string[]; stream: boolean }
+const PREFIX = 'minbox:v3-columns:'
+const NONE: ColumnPick = { all: false, ids: [], stream: false }
 const subs = new Set<() => void>()
-let cache: ColumnPick | null = null
+const cache = new Map<string, ColumnPick>()
 
-function read(): ColumnPick {
-  if (cache) return cache
+function read(sessionId: string): ColumnPick {
+  const hit = cache.get(sessionId)
+  if (hit) return hit
+  let p = NONE
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<ColumnPick> | null
-    cache = { all: !!v?.all, ids: Array.isArray(v?.ids) ? v!.ids.filter((x) => typeof x === 'string') : [] }
+    const v = JSON.parse(localStorage.getItem(PREFIX + sessionId) ?? 'null') as Partial<ColumnPick> | null
+    if (v) p = { all: !!v.all, ids: Array.isArray(v.ids) ? v.ids.filter((x) => typeof x === 'string') : [], stream: !!v.stream }
   } catch {
-    cache = { all: false, ids: [] }
+    /* off or broken: nothing checked */
   }
-  return cache
+  cache.set(sessionId, p)
+  return p
 }
 
-function write(p: ColumnPick) {
-  cache = p
+function write(sessionId: string, p: ColumnPick) {
+  cache.set(sessionId, p)
   try {
-    localStorage.setItem(KEY, JSON.stringify(p))
+    if (!p.all && !p.ids.length) localStorage.removeItem(PREFIX + sessionId)
+    else localStorage.setItem(PREFIX + sessionId, JSON.stringify(p))
   } catch {
     /* storage full or off: kept for this page */
   }
@@ -41,49 +48,57 @@ function write(p: ColumnPick) {
 
 if (typeof window !== 'undefined')
   window.addEventListener('storage', (e) => {
-    if (e.key !== KEY) return
-    cache = null
+    if (!e.key?.startsWith(PREFIX)) return
+    cache.delete(e.key.slice(PREFIX.length))
     subs.forEach((f) => f())
   })
 
 /** A task in the columns' sense: open = not done. */
 export const isOpenTask = (t: BoardTask) => t.status !== 'done'
 
+const byStart = (a: BoardTask, b: BoardTask) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
+
 /**
- * The checked tasks of `tasks` (in their order) and the checkboxes' actions. "All" is tri-state:
- * on (every open task), partial (some), off.
+ * The agent's checked tasks (of `tasks`, its open and done ones; oldest first, so a column keeps its
+ * place while its task gets busy) and the checkboxes' actions. "All" is tri-state: on (every open
+ * task), some, off. columns: the columns are what the agent's page shows now.
  */
-export function useColumnPick(tasks: BoardTask[]) {
+export function useColumnPick(sessionId: string, tasks: BoardTask[]) {
   const pick = useSyncExternalStore(
     (f) => {
       subs.add(f)
       return () => subs.delete(f)
     },
-    read,
+    () => read(sessionId),
   )
-  const open = tasks.filter(isOpenTask)
+  const ordered = useMemo(() => [...tasks].sort(byStart), [tasks])
+  const open = ordered.filter(isOpenTask)
   const has = (t: BoardTask) => pick.ids.includes(t.id) || (pick.all && isOpenTask(t))
-  const selected = tasks.filter(has)
+  const selected = ordered.filter(has)
   const openChecked = open.filter(has).length
   const allState: 'on' | 'off' | 'some' = open.length === 0 ? (pick.all ? 'on' : 'off') : openChecked === open.length ? 'on' : openChecked === 0 ? 'off' : 'some'
+  const set = (p: Omit<ColumnPick, 'stream'>, stream = false) => write(sessionId, { ...p, stream })
   const toggle = (t: BoardTask) => {
     if (has(t)) {
       // Unchecking one of "All": the others stay checked, one by one.
       const ids = pick.all ? [...new Set([...open.map((x) => x.id), ...pick.ids])] : pick.ids
-      write({ all: false, ids: ids.filter((x) => x !== t.id) })
+      set({ all: false, ids: ids.filter((x) => x !== t.id) }, pick.stream)
     } else {
       const ids = [...pick.ids, t.id]
       // Every open task checked: that is "All" again (the next tasks come in too).
-      const all = open.every((x) => x.id === t.id || ids.includes(x.id) || (pick.all && isOpenTask(x)))
-      write(all ? { all: true, ids: ids.filter((x) => !open.some((o) => o.id === x)) } : { all: pick.all, ids })
+      const all = isOpenTask(t) && open.every((x) => x.id === t.id || ids.includes(x.id) || (pick.all && isOpenTask(x)))
+      set(all ? { all: true, ids: ids.filter((x) => !open.some((o) => o.id === x)) } : { all: pick.all, ids })
     }
   }
-  const toggleAll = () => write(allState === 'on' ? { all: false, ids: [] } : { all: true, ids: pick.ids.filter((x) => !open.some((o) => o.id === x)) })
-  return { selected, has, toggle, toggleAll, allState, open }
+  const toggleAll = () => (allState === 'on' ? set({ all: false, ids: pick.ids.filter((x) => !open.some((o) => o.id === x)) }) : set({ all: true, ids: pick.ids.filter((x) => !open.some((o) => o.id === x)) }))
+  const clear = () => set({ all: false, ids: [] })
+  const showStream = (stream: boolean) => write(sessionId, { ...pick, stream })
+  return { selected, has, toggle, toggleAll, clear, allState, open, stream: pick.stream, showStream, columns: selected.length > 0 && !pick.stream }
 }
+export type ColumnPickState = ReturnType<typeof useColumnPick>
 
 /** A checkbox that shows "some" as the indeterminate state. */
-function TriBox({ state, onChange, label, testid }: { state: 'on' | 'off' | 'some'; onChange: () => void; label: string; testid: string }) {
+export function TriBox({ state, onChange, label, testid }: { state: 'on' | 'off' | 'some'; onChange: () => void; label: string; testid: string }) {
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = state === 'some'
@@ -91,127 +106,59 @@ function TriBox({ state, onChange, label, testid }: { state: 'on' | 'off' | 'som
   return <input ref={ref} type="checkbox" aria-label={label} data-testid={testid} data-state={state} checked={state === 'on'} onChange={onChange} />
 }
 
-/** The tasks list with checkboxes: All, then the open tasks (and any done one still checked). */
-export function ColumnPicker({ tasks, pick }: { tasks: BoardTask[]; pick: ReturnType<typeof useColumnPick> }) {
-  const shown = tasks.filter((t) => isOpenTask(t) || pick.has(t))
+/** The bar over the agent's page while tasks are checked: Stream | Columns, and Clear. */
+export function ColumnsBar({ pick }: { pick: ColumnPickState }) {
+  const n = pick.selected.length
   return (
-    <div className="v-colpick" data-testid="columns-picker">
-      <label className="v-colpick-row v-colpick-all">
-        <TriBox state={pick.allState} onChange={pick.toggleAll} label="All open tasks" testid="columns-all" />
-        <span className="v-colpick-t">All</span>
-        <span className="v-cnt2">
-          {pick.selected.length}/{pick.open.length}
-        </span>
-      </label>
-      {shown.map((t) => (
-        <label key={t.id} className="v-colpick-row" data-testid="columns-pick" data-task={t.id} title={t.summary || t.title}>
-          <input type="checkbox" aria-label={`Show “${t.title}” as a column`} checked={pick.has(t)} onChange={() => pick.toggle(t)} />
-          <StatusDot t={t} />
-          <span className="v-colpick-t">
-            {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
-            {t.title}
-          </span>
-          {t.unread > 0 && <span className="v-badge u">{t.unread}</span>}
-        </label>
-      ))}
-      {shown.length === 0 && <div className="v-empty">No open tasks.</div>}
+    <div className="v-colsbar" data-testid="columns-bar">
+      <div className="v-seg" role="group" aria-label="Show">
+        <button type="button" className={pick.stream ? 'on' : ''} aria-pressed={pick.stream} data-testid="show-stream" title="The agent's whole stream (the checked tasks stay checked)" onClick={() => pick.showStream(true)}>
+          Stream
+        </button>
+        <button type="button" className={pick.stream ? '' : 'on'} aria-pressed={!pick.stream} data-testid="show-columns" title="The checked tasks side by side" onClick={() => pick.showStream(false)}>
+          ▥ Columns <b>{n}</b>
+        </button>
+      </div>
+      <span className="v-cnt2 v-hide-phone">
+        {n} task{n === 1 ? '' : 's'} checked in Tasks
+      </span>
+      <button type="button" className="v-link" data-testid="columns-clear" style={{ marginLeft: 'auto' }} title="Uncheck every task: back to the stream" onClick={pick.clear}>
+        Clear
+      </button>
     </div>
   )
 }
 
-const LIST_KEY = 'minbox:v3-columns-list'
-
-export function ColumnsView({ tasks, onOpenAttachment }: { tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
-  const { isPhone } = useApp()
-  // Oldest first, as they started: a column keeps its place while its task gets busy.
-  const ordered = useMemo(() => [...tasks].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)), [tasks])
-  const pick = useColumnPick(ordered)
+/** The checked tasks as columns: side by side (equal widths, scrolling sideways), or on a tablet one
+ *  at a time with a tab each. */
+export function AgentColumns({ pick, tasks, onOpenAttachment }: { pick: ColumnPickState; tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
+  const { isTablet } = useApp()
   const sel = pick.selected
-  const [listOpen, setListOpen] = useState(() => {
-    try {
-      return localStorage.getItem(LIST_KEY) !== '0'
-    } catch {
-      return true
-    }
-  })
-  const showList = (v: boolean) => {
-    setListOpen(v)
-    try {
-      localStorage.setItem(LIST_KEY, v ? '1' : '0')
-    } catch {
-      /* off */
-    }
-  }
-  // Phone: the column shown (a tab per checked task); the list instead while none is checked.
   const [cur, setCur] = useState<string | null>(null)
-  const [phoneList, setPhoneList] = useState(false)
-  const active = sel.find((t) => t.id === cur) ?? sel[0]
-  const empty = (
-    <div className="v-empty" data-testid="columns-empty">
-      Check tasks {isPhone ? 'in the list' : 'on the left'} to show them side by side, or check All for every open task.
-    </div>
-  )
   const column = (t: BoardTask) => (
     <div key={t.id} className="v-colcell">
       <TaskView id={t.id} highlight={null} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ onRemove: () => pick.toggle(t) }} />
     </div>
   )
-  if (isPhone) {
-    const list = phoneList || sel.length === 0
+  if (isTablet) {
+    const active = sel.find((t) => t.id === cur) ?? sel[0]
     return (
-      <div className="v-col v-columns" data-testid="columns-view">
-        <div className="v-head">
-          <div className="v-r1">
-            <BackButton tasks={tasks} />
-            <h1>Columns</h1>
-            <button type="button" className={'v-btn' + (list ? ' pri' : '')} data-testid="columns-list-toggle" aria-pressed={list} onClick={() => setPhoneList(!phoneList)} disabled={sel.length === 0}>
-              Tasks
+      <div className="v-colsone" data-testid="columns" data-tabs="true">
+        <div className="v-coltabs" role="tablist" data-testid="columns-tabs">
+          {sel.map((t) => (
+            <button type="button" role="tab" key={t.id} aria-selected={t === active} className={'v-coltab' + (t === active ? ' on' : '')} data-testid="columns-tab" data-task={t.id} onClick={() => setCur(t.id)}>
+              <StatusDot t={t} />
+              {t.title}
             </button>
-          </div>
-          {!list && (
-            <div className="v-coltabs" role="tablist" data-testid="columns-tabs">
-              {sel.map((t) => (
-                <button type="button" role="tab" key={t.id} aria-selected={t === active} className={'v-coltab' + (t === active ? ' on' : '')} data-testid="columns-tab" data-task={t.id} onClick={() => setCur(t.id)}>
-                  <StatusDot t={t} />
-                  {t.title}
-                </button>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
-        {list ? (
-          <div className="v-scroll">
-            <ColumnPicker tasks={ordered} pick={pick} />
-            {sel.length === 0 && empty}
-          </div>
-        ) : (
-          active && column(active)
-        )}
+        {active && column(active)}
       </div>
     )
   }
   return (
-    <div className="v-col v-columns" data-testid="columns-view">
-      <div className="v-head">
-        <div className="v-r1">
-          <BackButton tasks={tasks} />
-          <h1>Columns</h1>
-          <button type="button" className="v-btn" data-testid="columns-list-toggle" aria-pressed={listOpen} onClick={() => showList(!listOpen)}>
-            {listOpen ? 'Hide tasks' : 'Tasks…'}
-          </button>
-        </div>
-        <div className="v-r2">
-          {sel.length} of {pick.open.length} open task{pick.open.length === 1 ? '' : 's'} side by side
-          {sel.some((t) => !isOpenTask(t)) ? ` · ${sel.filter((t) => !isOpenTask(t)).length} done` : ''}
-        </div>
-      </div>
-      <div className="v-colsbody">
-        {listOpen && <ColumnPicker tasks={ordered} pick={pick} />}
-        <div className="v-colstrip" data-testid="columns">
-          {sel.map(column)}
-          {sel.length === 0 && empty}
-        </div>
-      </div>
+    <div className="v-colstrip" data-testid="columns">
+      {sel.map(column)}
     </div>
   )
 }
