@@ -685,6 +685,26 @@ func (s *Server) v3Read(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]int64{"marked": n})
 }
 
+// POST /api/v3/unread {message_ids}: "Mark unread from here": the agent's messages count as new again.
+func (s *Server) v3Unread(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		MessageIDs []string `json:"message_ids"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	n, err := s.store.MarkMessagesUnread(r.Context(), body.MessageIDs)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if n > 0 {
+		s.hub.publish(Event{Type: "sessions"})
+		s.publishTasks()
+	}
+	writeJSON(w, 200, map[string]int64{"marked": n})
+}
+
 // GET /api/v3/search?q=&project=: tasks and messages that have q.
 func (s *Server) v3Search(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

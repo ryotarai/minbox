@@ -339,6 +339,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v3/messages/{id}/tasks/{task}", s.v3UnlinkTask)
 	mux.HandleFunc("POST /api/v3/messages/{id}/move", s.v3Move)
 	mux.HandleFunc("POST /api/v3/read", s.v3Read)
+	mux.HandleFunc("POST /api/v3/unread", s.v3Unread)
 	mux.HandleFunc("GET /api/v3/search", s.v3Search)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)

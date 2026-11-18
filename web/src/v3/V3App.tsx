@@ -2,7 +2,9 @@
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
 // Board · Agents · Search. Keys: J/K Space Enter 1–9 X R ⇧N / ? g b g a T Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Attachment, Session } from '../api'
+import { api, type Attachment, type Session } from '../api'
+import { opensBeside } from '../lib/attachments'
+import { useMentions } from '../components/Mentions'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
 import { selectProject, useSelectedProject } from '../lib/projects'
@@ -33,7 +35,8 @@ export function V3App() {
   const [showQuiet, setShowQuiet] = useState(false)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [pane, setPane] = useState<SidePane>('tasks')
-  const [viewer, setViewer] = useState<{ a: Attachment; m: V3Message } | null>(null)
+  // The file open over the conversation (route f: ] / [ in the viewer step through the files).
+  const [viewerSession, setViewerSession] = useState<string | null>(null)
   useEffect(() => setHidden(new Set()), [board])
   const agents = useMemo(() => {
     const live = (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell' && (!projectId || s.project_id === projectId))
@@ -185,7 +188,12 @@ export function V3App() {
   }, [])
 
   const tasks = board?.tasks ?? []
-  const onOpenAttachment = (a: Attachment, m: V3Message) => setViewer({ a, m })
+  const onOpenAttachment = (a: Attachment, m: V3Message) => {
+    setViewerSession(m.session_id)
+    if (a.kind === 'review') app.navigate({ view: 'review', r: a.id }, { push: true })
+    else if (!opensBeside(a)) window.open(api.attachmentDownloadUrl(a.id), '_blank')
+    else app.navigate({ f: a.id }, { push: true })
+  }
   const byId = useSessionsById()
   let main: React.ReactNode
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
@@ -209,7 +217,8 @@ export function V3App() {
         hide={(id) => setHidden((h) => new Set(h).add(id))}
       />
     )
-  const viewerSess = viewer ? byId.get(viewer.m.session_id) : undefined
+  const viewerSess = byId.get(viewerSession ?? route.s ?? '')
+  const closeViewer = () => app.navigate({ f: null }, { push: false })
   return (
     <div className="v-app" data-testid="v3-app" data-view={view}>
       {!isPhone && (
@@ -277,38 +286,22 @@ export function V3App() {
       )}
       {overlay && (overlay as { kind: string }).kind === 'v3-new' && <NewMessageDialog agents={agents} initialTo={(overlay as { to?: string }).to} onClose={() => setOverlay(null)} />}
       {overlay && (overlay as { kind: string }).kind === 'v3-help' && <HelpDialog onClose={() => setOverlay(null)} />}
-      {viewer && (
-        <div className="v-overlay" style={{ padding: 0, alignItems: 'stretch' }} data-testid="attachment-overlay" onClick={() => setViewer(null)}>
+      {route.f && (
+        <div className="v-overlay" style={{ padding: 0, alignItems: 'stretch' }} data-testid="attachment-overlay" onClick={closeViewer}>
           <div style={{ flex: 1, background: 'var(--mb-bg)', display: 'flex', flexDirection: 'column', minWidth: 0 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 6 }}>
-              <button type="button" className="v-btn" data-testid="close-viewer" onClick={() => setViewer(null)}>
+              <button type="button" className="v-btn" data-testid="close-viewer" onClick={closeViewer}>
                 Close · Esc
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
-              <AttachmentViewer attachmentId={viewer.a.id} sessionName={viewerSess?.name ?? ''} sessionCwd={viewerSess?.cwd ?? ''} phone={isPhone} />
+              <AttachmentViewer attachmentId={route.f} sessionName={viewerSess?.name ?? ''} sessionCwd={viewerSess?.cwd ?? ''} phone={isPhone} />
             </div>
           </div>
         </div>
       )}
-      <ViewerEsc open={!!viewer} close={() => setViewer(null)} />
     </div>
   )
-}
-
-function ViewerEsc({ open, close }: { open: boolean; close: () => void }) {
-  useEffect(() => {
-    if (!open) return
-    const on = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        close()
-      }
-    }
-    window.addEventListener('keydown', on, true)
-    return () => window.removeEventListener('keydown', on, true)
-  }, [open, close])
-  return null
 }
 
 function AgentRow({ a, sel, counts }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number } }) {
@@ -393,6 +386,8 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
   const { files, addFiles, addPastedText, remove } = compose
   const io = fileInputHandlers(addFiles, addPastedText)
   const fileInput = useRef<HTMLInputElement>(null)
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const mention = useMentions({ sessionId: to !== 'new' ? to : null, value: body, onChange: setBody, inputRef: bodyRef, agents: false })
   const uploading = files.some((f) => f.state === 'uploading')
   const canSend = (!!body.trim() || files.some((f) => f.state === 'done')) && !uploading && !busy
   const project = projectId || (to !== 'new' ? agents.find((a) => a.id === to)?.project_id : '') || projects?.[0]?.id || ''
@@ -441,16 +436,19 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
           {to === 'new' && <input type="text" aria-label="Agent name" placeholder="name (optional)" value={name} onChange={(e) => setName(e.target.value)} />}
         </div>
         <ComposeFileTiles files={files} onRemove={remove} onPutBack={(f) => (f.pasted ? (setBody((b) => b + f.pasted!.text), remove(f.key)) : undefined)} />
+        <div style={{ position: 'relative' }}>
         <textarea
           autoFocus
+          ref={bodyRef}
+          {...mention.handlers}
           onPaste={io.onPaste}
           onDragOver={io.onDragOver}
           onDrop={io.onDrop}
           data-testid="new-body"
           placeholder="Ask or tell the agent something…"
           value={body}
-          onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
+            if (mention.onKeyDown(e)) return
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault()
               void send()
@@ -461,6 +459,8 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
             }
           }}
         />
+        {mention.popup()}
+        </div>
         <div className="v-foot">
           <button type="button" className="v-attach" data-testid="attach-files" aria-label="Attach files" title="Attach files (or paste / drop them)" onClick={() => fileInput.current?.click()}>
             <IconPaperclip size={16} />

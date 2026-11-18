@@ -152,6 +152,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-msg.me .v-menu { left: auto; right: 0; }
 .v-menu button { border: 0; background: none; text-align: left; padding: 5px 9px; border-radius: 5px; font-size: 12.5px; color: var(--mb-fg2); }
 .v-menu button:hover { background: var(--mb-rowsel); }
+.v-menu hr.v-menusep { border: 0; border-top: 1px solid var(--mb-line2); margin: 4px 2px; }
 .v-ansbar { display: flex; gap: 8px; align-items: center; margin-top: 4px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--mb-wait) 12%, transparent); font-size: 12px; color: var(--mb-fg2); }
 .v-ansbar .v-sp { flex: 1; }
 .v-quote { position: fixed; z-index: 30; display: flex; gap: 6px; align-items: center; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--mb-line2); background: var(--mb-overlay); color: var(--mb-fg); font-size: 12.5px; font-weight: 600; box-shadow: var(--mb-shadow); }
@@ -272,3 +273,37 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 }
 .v-composer .v-tagpop { top: auto; bottom: 100%; margin-bottom: 4px; }
 .v-msg .v-about .v-tagpop { top: 100%; }
+
+/* ---- the conversation (reply box, message actions, new / fold / pill) ---- */
+.v-composer .v-boxwrap { position: relative; display: flex; flex-direction: column; }
+.v-composer.full { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.v-composer.full .v-boxwrap { flex: 1; min-height: 0; }
+.v-composer.full textarea { flex: 1; min-height: 0; }
+.v-col:has(> .v-composer.full) > .v-convwrap { display: none; }
+.v-composer .v-attach.on { color: var(--mb-fg); background: var(--mb-rowsel); }
+.v-composer .v-sketch { padding: 0; }
+.v-composer .v-sketch button { color: inherit; padding: 2px 4px; }
+.v-cmdhint { font-size: 12px; color: var(--mb-subtle); margin: 2px 0 4px; }
+.v-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.v-pchip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--mb-chip); font-size: 12px; color: var(--mb-fg2); }
+.v-pchip button { border: 0; background: none; color: var(--mb-subtle); padding: 0 2px; }
+.v-menuitem { display: flex; width: 100%; height: 44px; align-items: center; gap: 12px; border: 0; background: none; border-radius: 6px; padding: 0 12px; text-align: left; font-size: 14px; color: var(--mb-fg); }
+.v-menuitem:hover { background: var(--mb-rowsel); }
+.v-thumb { border: 0; background: none; color: var(--mb-faint); padding: 0 3px; opacity: 0; display: inline-flex; align-items: center; }
+.v-msg:hover .v-thumb, .v-thumb:focus-visible { opacity: 1; }
+.v-thumb:hover { color: var(--mb-fg); }
+.v-new { align-self: stretch; display: flex; align-items: center; gap: 10px; color: var(--mb-wait); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.v-new::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--mb-wait) 35%, transparent); }
+.v-convbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--mb-subtle); }
+.v-convbar .v-sp { flex: 1; }
+.v-iconbtn { border: 0; background: none; color: var(--mb-subtle); border-radius: 6px; height: 26px; min-width: 26px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
+.v-iconbtn:hover, .v-iconbtn[aria-pressed="true"] { color: var(--mb-fg); background: var(--mb-rowsel); }
+.v-compact { align-self: stretch; max-width: 720px; display: flex; gap: 10px; align-items: center; border: 1px solid var(--mb-line); background: var(--mb-surface); border-radius: 9px; padding: 7px 12px; font-size: 12.5px; text-align: left; color: var(--mb-fg2); }
+.v-compact .v-cm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mb-muted); }
+.v-convwrap { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.v-convpill { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 2; height: 30px; padding: 0 14px; border-radius: 15px; border: 0; background: var(--mb-accent); color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: var(--mb-shadow); white-space: nowrap; }
+.v-delivery { align-self: stretch; max-width: 720px; }
+@media (max-width: 699px) {
+  .v-convwrap { flex: none; }
+  .v-composer textarea { min-height: 24px; font-size: 16px; }
+}
