@@ -163,8 +163,11 @@ type Session struct {
 	// ModSilent: a Claude Code session whose mod has not called for a while (the server's modSilentAfter).
 	ModSilent bool `json:"mod_silent"`
 	// ModConn: the mod's connection state (connected | stale | connecting | none), judged by its heartbeats; ModBeatAt: the last heartbeat. See docs/mod-connection.md.
-	ModConn      string     `json:"mod_conn"`
-	ModBeatAt    *time.Time `json:"mod_beat_at"`
+	ModConn   string     `json:"mod_conn"`
+	ModBeatAt *time.Time `json:"mod_beat_at"`
+	// ModOutdated: the session's integration speaks an older mod protocol (docs/mod-protocol.md); it
+	// keeps working, and a restart of the session loads the current one.
+	ModOutdated  bool       `json:"mod_outdated,omitempty"`
 	LastActivity time.Time  `json:"last_activity"`
 	TopThread    *TopThread `json:"top_thread"`
 }

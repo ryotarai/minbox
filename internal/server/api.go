@@ -677,6 +677,8 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 		ExtVersion string `json:"ext_version"`
 		// SessionFile: the agent's own file for the conversation (Pi); recorded in the log only.
 		SessionFile string `json:"session_file"`
+		// Protocol: the integration's mod protocol (docs/mod-protocol.md); 0 (absent) before protocol 1.
+		Protocol int `json:"protocol"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -697,6 +699,11 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if sess.Status == store.StatusStarting {
 		_ = s.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
 	}
+	s.modProtocolSeen(sess.ID, req.Protocol)
+	if req.Protocol >= 1 {
+		// A new conversation (or a new integration): the next prompt carries the instructions.
+		s.proxyUpdate(sess.ID, func(p *proxyState) { p.fresh = true })
+	}
 	s.hub.publish(Event{Type: "sessions"})
 	extra := ""
 	if st, err := s.settings(ctx); err == nil {
@@ -708,7 +715,8 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if s.sessions.orchestratorPrompt(ctx) && agent.Must(sess.Agent).Caps().Subagents {
 		orch = OrchestratorPrompt
 	}
-	writeJSON(w, 200, map[string]string{"session_id": sess.ID, "name": sess.Name, "agent": agent.Must(sess.Agent).Kind(), "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch})
+	writeJSON(w, 200, map[string]any{"session_id": sess.ID, "name": sess.Name, "agent": agent.Must(sess.Agent).Kind(), "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch,
+		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version})
 }
 
 func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store.Session) {
@@ -989,34 +997,38 @@ func (s *Server) agentPending(w http.ResponseWriter, r *http.Request, sess *stor
 			return
 		}
 		if len(pending) > 0 || wait == 0 {
-			s.withAttachedLines(r, pending)
-			s.linearInject(r.Context(), pending)
-			s.forkInject(r.Context(), sess.ID, pending)
-			s.commandInject(r.Context(), pending)
-			s.v3Inject(r.Context(), pending)
-			s.modPendingServed(sess.ID, pending)
-			writeJSON(w, 200, pending)
+			s.servePending(w, r, sess, pending)
 			return
 		}
 		select {
 		case <-ch:
 		case <-deadline:
-			s.withAttachedLines(r, pending)
-			s.linearInject(r.Context(), pending)
-			s.forkInject(r.Context(), sess.ID, pending)
-			s.commandInject(r.Context(), pending)
-			s.v3Inject(r.Context(), pending)
-			s.modPendingServed(sess.ID, pending)
-			writeJSON(w, 200, pending)
+			s.servePending(w, r, sess, pending)
 			return
 		case <-s.closing:
 			// the server is shutting down: end the poll cleanly, the mod reconnects
-			writeJSON(w, 200, []store.PendingDelivery{})
+			s.servePending(w, r, sess, []store.PendingDelivery{})
 			return
 		case <-r.Context().Done():
 			return
 		}
 	}
+}
+
+// servePending answers a poll: the list (protocol 0), or with ?proto=1 each message with the text to
+// inject (pendingV1).
+func (s *Server) servePending(w http.ResponseWriter, r *http.Request, sess *store.Session, pending []store.PendingDelivery) {
+	s.withAttachedLines(r, pending)
+	s.linearInject(r.Context(), pending)
+	s.forkInject(r.Context(), sess.ID, pending)
+	s.commandInject(r.Context(), pending)
+	s.v3Inject(r.Context(), pending)
+	s.modPendingServed(sess.ID, pending)
+	if p, _ := strconv.Atoi(r.URL.Query().Get("proto")); p >= 1 {
+		writeJSON(w, 200, pendingV1(sess, pending))
+		return
+	}
+	writeJSON(w, 200, pending)
 }
 
 // agentClaim reserves a message for the mod instance before it submits it,
@@ -1062,6 +1074,9 @@ func (s *Server) agentDelivered(w http.ResponseWriter, r *http.Request, sess *st
 		return
 	}
 	s.modDelivery(sess.ID, "delivered", r.PathValue("id"))
+	if th, err := s.store.ThreadOfMessage(r.Context(), r.PathValue("id")); err == nil {
+		s.noteDelivered(sess.ID, th)
+	}
 	s.publishMessageChange(r.Context(), sess.ID, r.PathValue("id"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
