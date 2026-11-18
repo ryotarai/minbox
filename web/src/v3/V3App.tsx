@@ -187,7 +187,7 @@ export function V3App() {
         e.preventDefault()
         return quoteIntoComposer(sel)
       }
-      const ta = document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')
+      const ta = document.querySelector<HTMLTextAreaElement>('.v-main textarea[data-composer]') ?? document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')
       if (ta) {
         e.preventDefault()
         ta.focus()

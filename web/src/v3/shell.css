@@ -69,3 +69,12 @@
    menus, and no I-beam over the text of a clickable row. */
 .v-app button, .v-ag, .v-gh .v-r, .v-row .v-line, .v-st, .v-donelist summary, .v-tagpop .v-opt, .v-mt, .v-res { cursor: default; }
 .v-ag *, .v-row .v-line *, .v-mt *, .v-res * { cursor: default; }
+/* The Tasks pane's message box (while the stream is hidden): pinned to the pane's bottom, compact. */
+.v-tasks-compose { flex: none; position: relative; border-top: 1px solid var(--mb-line); padding-top: 8px; }
+.v-tasks-compose .v-composer { margin: 0 8px 8px; padding: 6px 9px; }
+.v-tasks-compose .v-composer .v-to { margin-bottom: 3px; }
+.v-tasks-compose .v-composer textarea { min-height: 0; font-size: 13px; }
+.v-tasks-compose .v-composer .v-tb { gap: 6px; }
+.v-tasks-compose .v-composer .v-tb .v-btn { padding: 2px 10px; }
+.v-tasks-sent { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0 8px 6px; padding: 5px 10px; border-radius: 7px; background: var(--mb-rowsel); color: var(--mb-fg); font-size: 12px; text-align: center; pointer-events: none; animation: v-tasks-sent 2.6s ease forwards; }
+@keyframes v-tasks-sent { 0% { opacity: 0; transform: translateY(4px); } 10% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }

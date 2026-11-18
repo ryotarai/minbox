@@ -48,6 +48,7 @@ export function Composer({
   annotationKeys = [],
   helpThread,
   helpTask,
+  compact = false,
 }: {
   toId: string
   toOptions: Session[]
@@ -69,6 +70,8 @@ export function Composer({
   helpThread?: string
   /** A task's view: the reply help's questions for the task's latest agent message (kept by the task). */
   helpTask?: string
+  /** A small box (the Tasks pane's): one line growing to a few, no full height. */
+  compact?: boolean
 }) {
   const { isPhone, settings, toast, sessions } = useApp()
   const draft = useReplyDraft(draftKey)
@@ -193,11 +196,11 @@ export function Composer({
       el.style.overflowY = ''
       return
     }
-    const max = isPhone ? 160 : 240
+    const max = compact ? 112 : isPhone ? 160 : 240
     el.style.height = 'auto'
-    el.style.height = `${Math.min(max, Math.max(isPhone ? 0 : 38, el.scrollHeight))}px`
+    el.style.height = `${Math.min(max, Math.max(isPhone || compact ? 0 : 38, el.scrollHeight))}px`
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
-  }, [words, full, isPhone])
+  }, [words, full, isPhone, compact])
 
   const mention = useMentions({
     sessionId: target && toId !== 'new' ? toId : null,
@@ -213,7 +216,7 @@ export function Composer({
   const name = target?.name ?? 'the agent'
 
   return (
-    <div className={'v-composer' + (full ? ' full' : '')} data-testid={testid} onDragOver={io.onDragOver} onDrop={io.onDrop}>
+    <div className={'v-composer' + (full ? ' full' : '') + (compact ? ' compact' : '')} data-testid={testid} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {wantHelp && (
         <ReplyHelpPanel
           help={help}
@@ -282,7 +285,7 @@ export function Composer({
           data-testid="composer-text"
           data-composer
           aria-label="Reply"
-          rows={isPhone ? 1 : 2}
+          rows={isPhone || compact ? 1 : 2}
           value={words}
           placeholder={target?.status === 'ended' ? `${name} has ended — resume it to deliver your reply` : placeholder}
           {...mention.handlers}
@@ -355,7 +358,7 @@ export function Composer({
         <span className="v-attach v-sketch">
           <SketchButton compose={compose} openRef={isPhone ? sketchOpen : undefined} />
         </span>
-        {isPhone ? (
+        {compact ? null : isPhone ? (
           <button type="button" className="v-attach" data-testid="reply-actions" aria-label="Reply actions" aria-haspopup="menu" title="Full height, draw" onClick={(e) => setMenu(e.currentTarget)}>
             <IconPlus size={16} />
           </button>
@@ -366,7 +369,7 @@ export function Composer({
         )}
         <span className="v-sp" />
         {uploading && <span>uploading…</span>}
-        {!uploading && words.trim() && !busy && <span className="v-hide-phone" data-testid="draft-saved">Draft saved</span>}
+        {!uploading && words.trim() && !busy && !compact && <span className="v-hide-phone" data-testid="draft-saved">Draft saved</span>}
         <span className="v-kbd v-hide-phone">⌘↵</span>
         <button type="button" ref={sendRef} className="v-btn pri" data-testid="composer-send" disabled={!canSend} onClick={() => void send()} title={cmd ? 'Run as a command' : 'Send'}>
           {busy ? (cmd ? 'Running…' : 'Sending…') : cmd ? 'Run' : 'Send'}

@@ -28,7 +28,7 @@ import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
 import { AgentTaskList, agentTasks } from './AgentTasks'
-import { AgentColumns, ColumnsBar, useColumnPick } from './Columns'
+import { AgentColumns, useColumnPick } from './Columns'
 import { TaskView } from './TaskView'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 import { Resizer, type PaneKind, type SidePane } from './layout'
@@ -292,7 +292,6 @@ export function StreamView({
             )}
           </div>
         </div>
-        {!isPhone && !detail && pick.selected.length > 0 && <ColumnsBar pick={pick} />}
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">

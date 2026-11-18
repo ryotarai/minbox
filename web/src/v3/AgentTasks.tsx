@@ -2,10 +2,12 @@
 // On a desktop or tablet they are a pane of their own between the agents list and the stream (its
 // width dragged and kept, folded to a strip with ⇧T); on a phone they are the first tab of the agent's
 // sheet ("Tasks N ›"). In the pane each task has a checkbox (and "All" one on top): the checked tasks
-// show side by side in place of the stream (see Columns).
-import { useEffect, useRef } from 'react'
+// show side by side in place of the stream (see Columns). While the stream is not shown (columns, or one
+// task picked by its title), the pane ends with a message box to the agent itself (see PaneComposer).
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
-import { ago, standing, STATUS_LABEL, type BoardTask } from './data'
+import { ago, standing, STATUS_LABEL, v3, type BoardTask } from './data'
+import { Composer, type Outgoing } from './Composer'
 import { Bar, StatusDot, useNav } from './parts'
 import { IconTasks } from '../components/icons'
 import { TriBox, useColumnPick, type ColumnPickState } from './Columns'
@@ -181,8 +183,50 @@ export function TasksPane({
           <div className="v-tasks-body">
             <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
           </div>
+          {/* The stream has its own box (the same draft): this one only while the stream is not shown. */}
+          {(detail || own.columns) && <PaneComposer sessionId={sessionId} tasks={tasks} />}
         </aside>
       )}
+    </div>
+  )
+}
+
+/**
+ * The Tasks pane's message box: to the agent itself (it decides the task, as from its stream), with the
+ * stream composer's draft (the same words and files, whichever box shows), so a message can go to the
+ * agent while its columns or one task fill the page. The stream is hidden then, so a brief "Sent to
+ * <agent> ✓" says it went (it shows in the stream as usual).
+ */
+function PaneComposer({ sessionId, tasks }: { sessionId: string; tasks: BoardTask[] }) {
+  const { sessions, error } = useApp()
+  const [sent, setSent] = useState(0)
+  useEffect(() => {
+    if (!sent) return
+    const t = setTimeout(() => setSent(0), 2600)
+    return () => clearTimeout(t)
+  }, [sent])
+  useEffect(() => setSent(0), [sessionId])
+  const sess = (sessions ?? []).find((s) => s.id === sessionId)
+  if (!sess) return null
+  const send = async (o: Outgoing) => {
+    try {
+      const { to: _to, tasks: tids, ...rest } = o
+      void _to
+      await v3.send(sessionId, { ...rest, task_id: tids[0], uploads: o.uploads.length ? o.uploads : undefined })
+      setSent(Date.now())
+    } catch (e) {
+      error(e)
+      throw e
+    }
+  }
+  return (
+    <div className="v-tasks-compose">
+      {sent > 0 && (
+        <div key={sent} className="v-tasks-sent" role="status" data-testid="tasks-composer-sent">
+          Sent to {sess.name} ✓
+        </div>
+      )}
+      <Composer compact testid="tasks-composer" toId={sessionId} toOptions={[sess]} about={[]} tasks={tasks} draftKey={'v3:agent:' + sessionId} placeholder={`Message ${sess.name}…`} onSend={send} />
     </div>
   )
 }

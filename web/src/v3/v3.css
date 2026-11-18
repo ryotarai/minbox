@@ -348,12 +348,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 }
 
 /* Task columns on an agent's page (the tasks checked in its Tasks pane), each a task's conversation. */
-.v-colsbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 18px; border-bottom: 1px solid var(--mb-line); font-size: 12.5px; }
-.v-seg { display: inline-flex; border: 1px solid var(--mb-line2); border-radius: 7px; overflow: hidden; }
-.v-seg button { border: 0; background: none; padding: 3px 10px; color: var(--mb-fg2); font-size: 12.5px; }
-.v-seg button + button { border-left: 1px solid var(--mb-line2); }
-.v-seg button.on { background: var(--mb-rowsel); color: var(--mb-fg); }
-.v-seg button b { font-weight: 600; }
 .v-colstrip { flex: 1; min-width: 0; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; }
 .v-colsone { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .v-colsone > .v-coltabs { padding: 0 12px 8px; border-bottom: 1px solid var(--mb-line); }
