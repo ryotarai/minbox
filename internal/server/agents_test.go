@@ -76,7 +76,7 @@ func TestPiSessionSpawnsPiWithTheExtension(t *testing.T) {
 	if !strings.Contains(p, "# minbox: subagents") || !strings.Contains(p, "minbox_subagent") || !strings.Contains(p, "write: true") {
 		t.Fatalf("no subagent section in the Pi prompt: %q", p)
 	}
-	if !strings.Contains(p, "Several minbox tasks") || !strings.Contains(p, "its own minbox_subagent task") || !strings.Contains(p, "task_ids") {
+	if !strings.Contains(p, "Several minbox tasks") || !strings.Contains(p, "its own minbox_subagent task") || !strings.Contains(p, "task_id") {
 		t.Fatalf("no multi-thread guidance in the Pi prompt: %q", p)
 	}
 	// Claude's text is exactly what it was: no Pi section.

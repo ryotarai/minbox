@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,18 +16,21 @@ import (
 )
 
 // The v3 agent contract (docs/v3/redesign.md §4.5, §7): the agent talks in its stream, and decides for
-// the person's messages of a turn which task they are about: an existing one (send_message task_ids)
-// or new work (create_task). Every message is about a task: what a turn leaves in none, minbox asks the
-// agent to place (v3place.go). The server applies the decision to the turn's untagged messages of the
-// person, tags the reply, and records the decision on the reply (shown under it).
+// the person's messages of a turn which task they are about: an existing one (send_message task_id)
+// or new work (create_task). Every message belongs to exactly one task: what a turn leaves in none,
+// minbox asks the agent to place (v3place.go). The server puts the reply in its task, the turn's
+// person's messages that are in no task yet with it, and records the decision on the reply (shown
+// under it).
 
 // turnState is what the server remembers of a session's current turn: the person's messages it
-// answers (Key: the newest one's id), the tasks the agent created in it, and whether a reply already
-// carried the turn's decision.
+// answers (Key: the newest one's id), the tasks the agent created in it, the person's messages its
+// first create_task put in that task until a reply says which task they are about (Provisional), and
+// whether a reply already carried the turn's decision.
 type turnState struct {
-	Key     string
-	Created []string
-	Decided bool
+	Key         string
+	Created     []string
+	Provisional []string
+	Decided     bool
 }
 
 type turns struct {
@@ -57,6 +61,24 @@ func (t *turns) end(sessionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.m, sessionID)
+}
+
+// oneTaskError is what send_message answers when it names more than one task.
+const oneTaskError = "a message belongs to exactly one task: pass task_id with the one task this message is about (task_ids, its older name, takes one id). Pick the task it is mainly about; send another message for another task"
+
+// oneTask merges send_message's task_id and its older alias task_ids (one element) into the one task
+// named ("" when none); more than one task is an error (the text tells the agent to pick one).
+func oneTask(taskID string, taskIDs []string) ([]string, string) {
+	out := []string{}
+	for _, id := range append([]string{taskID}, taskIDs...) {
+		if id = strings.TrimSpace(id); id != "" {
+			out = appendNew(out, id)
+		}
+	}
+	if len(out) > 1 {
+		return nil, oneTaskError + " (got " + strings.Join(out, ", ") + ")."
+	}
+	return out, ""
 }
 
 // sameProjectTasks checks task ids: each must be a task of the session's project.
@@ -90,67 +112,83 @@ func (s *Server) untaggedOf(ctx context.Context, ids []string) ([]string, map[st
 	return out, tags
 }
 
-// v3AgentReply runs after an agent message was stored: it tags the message and the turn's person's
-// messages, records the decision, applies status to the named tasks. It returns the tasks the
-// reply is tagged with and the decision ("" when the reply carries none).
+// replyTask decides the one task an agent reply is about (docs/v3/redesign.md §4.5, revision 8):
+//   - the task the reply names (send_message task_id) wins;
+//   - else the turn's context, and only when it points at exactly one task: the single task the
+//     agent created in this turn, else the task of the person's messages the reply answers (when
+//     they are all about one task);
+//   - else none: the reply stays unplaced and minbox asks the agent to place it after the turn.
+//
+// source is how the link is made: LinkAgent when the agent named or created the task, LinkAuto when
+// it is inherited from the person's messages.
+func replyTask(named string, created []string, turnTasks []string) (task, source string) {
+	switch {
+	case named != "":
+		return named, store.LinkAgent
+	case len(created) == 1:
+		return created[0], store.LinkAgent
+	case len(created) == 0 && len(turnTasks) == 1:
+		return turnTasks[0], store.LinkAuto
+	}
+	return "", ""
+}
+
+// v3AgentReply runs after an agent message was stored: it puts the message in its one task (see
+// replyTask), the turn's person's messages that are in no task yet in the same task, records the
+// decision and applies status to the named task. It returns the reply's task (nil when it is in
+// none) and the decision ("" when the reply carries none).
 func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageID string, taskIDs []string, status string) ([]string, string) {
 	cand, _ := s.store.TurnMessages(ctx, sess.ID)
 	st := v3Turns.get(sess.ID, cand)
 	untagged, tags := s.untaggedOf(ctx, cand)
-	inherited := []string{}
-	seen := map[string]bool{}
+	turnTasks := []string{}
 	for _, id := range cand {
 		for _, tg := range tags[id] {
-			if !seen[tg.TaskID] && tg.Status != "" {
-				seen[tg.TaskID] = true
-				inherited = append(inherited, tg.TaskID)
-			}
+			turnTasks = appendNew(turnTasks, tg.TaskID)
 		}
 	}
-	named := append(append([]string{}, taskIDs...), st.Created...)
+	named := ""
+	if len(taskIDs) > 0 {
+		named = taskIDs[0]
+	}
+	task, source := replyTask(named, st.Created, turnTasks)
 	all := []string{}
-	have := map[string]bool{}
-	for _, id := range named {
-		if !have[id] {
-			have[id] = true
-			all = append(all, id)
-			_, _ = s.store.LinkMessages(ctx, id, []string{messageID}, store.LinkAgent)
-			_, _ = s.store.LinkMessages(ctx, id, untagged, store.LinkAgent)
-		}
-	}
-	for _, id := range inherited {
-		if !have[id] {
-			have[id] = true
-			all = append(all, id)
-			_, _ = s.store.LinkMessages(ctx, id, []string{messageID}, store.LinkAuto)
-		}
-	}
-	for _, id := range all {
-		_, _ = s.store.AddTaskAgent(ctx, id, sess.ID, store.RoleInvolved)
-	}
-	// Status (the legacy send_message status) applies to the tasks the agent named.
-	if status != "" {
-		if ts, ok := store.NormalizeTaskStatus(status); ok {
-			for _, id := range named {
-				if t, err := s.store.GetTask(ctx, id); err == nil && t.Status != ts {
-					_, _ = s.store.UpdateTask(ctx, id, sess.ID, store.TaskFields{Status: &ts})
+	if task != "" {
+		all = append(all, task)
+		_, _ = s.store.LinkMessages(ctx, task, []string{messageID}, source)
+		_, _ = s.store.PlaceMessages(ctx, task, untagged, source)
+		// The person's messages the turn's first create_task put in its task go with the reply's
+		// task instead (unless something moved them since).
+		if len(st.Provisional) > 0 && len(st.Created) > 0 && task != st.Created[0] {
+			move := []string{}
+			for _, id := range st.Provisional {
+				if cur, _ := s.store.TaskOfMessage(ctx, id); cur == st.Created[0] {
+					move = append(move, id)
 				}
+			}
+			_, _ = s.store.LinkMessages(ctx, task, move, source)
+		}
+		st.Provisional = nil
+		_, _ = s.store.AddTaskAgent(ctx, task, sess.ID, store.RoleInvolved)
+	}
+	// Status (the legacy send_message status) applies to the task the agent named.
+	if status != "" && named != "" {
+		if ts, ok := store.NormalizeTaskStatus(status); ok {
+			if t, err := s.store.GetTask(ctx, named); err == nil && t.Status != ts {
+				_, _ = s.store.UpdateTask(ctx, named, sess.ID, store.TaskFields{Status: &ts})
 			}
 		}
 	}
 	decision := ""
 	if len(cand) > 0 && !st.Decided {
 		st.Decided = true
-		task := ""
 		switch {
-		case len(st.Created) > 0:
-			decision, task = store.DecisionCreated, st.Created[0]
-		case len(taskIDs) > 0:
-			decision, task = store.DecisionExisting, taskIDs[0]
-		case len(inherited) > 0:
-			decision, task = store.DecisionExisting, inherited[0]
-		default:
+		case task == "":
 			decision = store.DecisionNone
+		case slices.Contains(st.Created, task):
+			decision = store.DecisionCreated
+		default:
+			decision = store.DecisionExisting
 		}
 		_ = s.store.SetDecision(ctx, messageID, decision, task, cand)
 	}
@@ -161,10 +199,14 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 	return all, decision
 }
 
-// v3TagPersonMessage tags the person's new message: the tasks of the view they wrote from, and, for
-// answers, the tasks of the message they answer. A done task they write to is open again.
+// v3TagPersonMessage puts the person's new message in its task: the task of the view they wrote
+// from, else, for answers, the task of the message they answer. A done task they write to is open
+// again.
 func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID string, taskIDs []string, answersFor string) {
 	changed := false
+	if len(taskIDs) > 1 {
+		taskIDs = taskIDs[:1]
+	}
 	for _, id := range taskIDs {
 		t, err := s.store.GetTask(ctx, id)
 		if err != nil {
@@ -187,11 +229,10 @@ func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID st
 		}
 	}
 	if answersFor != "" {
-		tags, _ := s.store.TasksOf(ctx, []string{answersFor})
-		for _, tg := range tags[answersFor] {
-			if added, _ := s.store.LinkMessages(ctx, tg.TaskID, []string{messageID}, store.LinkAuto); len(added) > 0 {
+		if tid, _ := s.store.TaskOfMessage(ctx, answersFor); tid != "" {
+			if added, _ := s.store.PlaceMessages(ctx, tid, []string{messageID}, store.LinkAuto); len(added) > 0 {
 				changed = true
-				_ = s.store.AddTaskEvent(ctx, tg.TaskID, "answer", "You answered", "", messageID)
+				_ = s.store.AddTaskEvent(ctx, tid, "answer", "You answered", "", messageID)
 			}
 		}
 	}
@@ -321,8 +362,9 @@ func cloneSteps(in []store.TaskStep) []store.TaskStep {
 }
 
 // POST /api/agent/tasks {title, kind?, goal_id?, summary?, detail?, status?, steps?, criteria?,
-// autonomous?, message_ids?}: the agent creates a task (or a goal) in its project. It is the task of
-// this turn: the turn's untagged messages of the person, and the agent's replies in the turn, get it.
+// autonomous?, message_ids?}: the agent creates a task (or a goal) in its project; message_ids move
+// to it. The turn's person's messages in no task go in the turn's first new task, and a reply that
+// names no task goes in the turn's only new task (replyTask).
 func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *store.Session) {
 	var b v3TaskBody
 	if !decode(w, r, &b) {
@@ -366,6 +408,11 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 			}
 		}
 	}
+	msgIDs, msg := s.projectMessages(ctx, sess, b.MessageIDs)
+	if msg != "" {
+		httpError(w, 400, msg)
+		return
+	}
 	t, err := s.store.CreateTask(ctx, sess.ProjectID, sess.ID, f)
 	if err != nil {
 		v3TaskError(w, err)
@@ -374,25 +421,30 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 	cand, _ := s.store.TurnMessages(ctx, sess.ID)
 	st := v3Turns.get(sess.ID, cand)
 	st.Created = append(st.Created, t.ID)
-	untagged, _ := s.untaggedOf(ctx, cand)
-	_, _ = s.store.LinkMessages(ctx, t.ID, untagged, store.LinkAgent)
-	if ids, msg := s.projectMessages(ctx, sess, b.MessageIDs); msg != "" {
-		httpError(w, 400, msg)
-		return
-	} else {
-		_, _ = s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, ids), store.LinkAgent)
+	// The turn's person's messages in no task go in the turn's first new task for now: a reply that
+	// names another task takes them along (v3AgentReply).
+	turnMsgs := []string{}
+	if len(st.Created) == 1 {
+		untagged, _ := s.untaggedOf(ctx, cand)
+		turnMsgs, _ = s.store.PlaceMessages(ctx, t.ID, untagged, store.LinkAgent)
+		st.Provisional = turnMsgs
+	}
+	// message_ids move to it (a message belongs to one task).
+	moved := []string{}
+	if len(msgIDs) > 0 {
+		moved, _ = s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, msgIDs), store.LinkAgent)
 	}
 	s.settlePlaceRequests(ctx, sess.ID)
 	if t.Kind == store.KindGoal && b.Autonomous != nil && *b.Autonomous {
 		s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
 	}
 	t, _ = s.store.GetTask(ctx, t.ID)
-	s.modLog(sess.ID, "task-create", "task=%q kind=%q status=%s tagged=%d", t.ID, t.Kind, t.Status, len(untagged))
+	s.modLog(sess.ID, "task-create", "task=%q kind=%q status=%s turn=%d moved=%d", t.ID, t.Kind, t.Status, len(turnMsgs), len(moved))
 	s.publishTasks()
-	res := map[string]any{"task_id": t.ID, "task": t, "tagged_messages": untagged, "messages": untagged, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
+	res := map[string]any{"task_id": t.ID, "task": t, "tagged_messages": turnMsgs, "messages": turnMsgs, "moved_messages": moved, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
 	if len(similarTasks) > 0 {
 		res["similar_tasks"] = similarTasks
-		res["note"] = "Open tasks with a similar title exist. If one of them is the same work, use it (send_message task_ids) and do not create more tasks for it; put parts of a piece of work in its steps."
+		res["note"] = "Open tasks with a similar title exist. If one of them is the same work, use it (send_message task_id) and do not create more tasks for it; put parts of a piece of work in its steps."
 	}
 	writeJSON(w, 200, res)
 }

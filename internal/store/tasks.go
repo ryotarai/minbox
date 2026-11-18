@@ -11,7 +11,8 @@ import (
 )
 
 // v3 (docs/v3/redesign.md): the conversation with an agent is one stream per session, and the work
-// is tasks that tag its messages, many to many. Internally each session has one stream thread
+// is tasks; every message belongs to exactly one task (message_tasks keeps at most one row per
+// message: a unique index since the v3_one_task migration, tasks_onetask.go). Internally each session has one stream thread
 // (threads.kind = 'stream') that new messages go to; its older threads stay as they were and read
 // as segments of the same stream. A task belongs to a project; its messages may come from any
 // session's stream.
@@ -29,7 +30,7 @@ const (
 
 // Where a message's tag came from.
 const (
-	LinkAgent  = "agent"  // the agent named the task (send_message task_ids, create_task, update_task message_ids)
+	LinkAgent  = "agent"  // the agent named the task (send_message task_id, create_task, update_task message_ids)
 	LinkAuto   = "auto"   // a rule: inherited from the messages a reply answers, a reply sent from a task, an answer
 	LinkPerson = "person" // the person added it
 )
@@ -699,27 +700,61 @@ func (s *Store) AddTaskAgent(ctx context.Context, taskID, sessionID, role string
 	return n > 0, err
 }
 
-// TagMessages tags messages with a task; it returns the ids that were not tagged with it before.
-// The sessions that wrote tagged agent messages become involved in the task.
+// LinkMessages puts messages in a task: a message is about exactly one task, so one that was in
+// another task moves (docs/v3/redesign.md §4.5, revision 8). It returns the ids that were not in this
+// task before. The sessions that wrote moved agent messages become involved in the task.
 func (s *Store) LinkMessages(ctx context.Context, taskID string, messageIDs []string, source string) ([]string, error) {
+	return s.linkMessages(ctx, taskID, messageIDs, source, true)
+}
+
+// PlaceMessages puts in a task the messages among ids that are in no task yet (a rule's placement:
+// it never moves a message the agent or the person placed). It returns the ids it placed.
+func (s *Store) PlaceMessages(ctx context.Context, taskID string, messageIDs []string, source string) ([]string, error) {
+	return s.linkMessages(ctx, taskID, messageIDs, source, false)
+}
+
+func (s *Store) linkMessages(ctx context.Context, taskID string, messageIDs []string, source string, move bool) ([]string, error) {
 	added := []string{}
 	if len(messageIDs) == 0 {
 		return added, nil
 	}
+	var ok int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM tasks WHERE id=?`, taskID).Scan(&ok); err != nil || ok == 0 {
+		return added, err
+	}
 	now := ms(s.now())
 	for _, id := range messageIDs {
-		res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO message_tasks(message_id, task_id, source, created_at)
-		  SELECT id, ?, ?, ? FROM messages WHERE id=? AND EXISTS(SELECT 1 FROM tasks WHERE id=?)`, taskID, source, now, id, taskID)
+		cur, err := s.TaskOfMessage(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			added = append(added, id)
-			var sess, author string
-			if err := s.db.QueryRowContext(ctx, `SELECT t.session_id, m.author FROM messages m JOIN threads t ON t.id=m.thread_id WHERE m.id=?`, id).Scan(&sess, &author); err == nil && author == AuthorAgent {
-				if _, err := s.AddTaskAgent(ctx, taskID, sess, RoleInvolved); err != nil {
-					return nil, err
-				}
+		if cur == taskID || (cur != "" && !move) {
+			continue
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM message_tasks WHERE message_id=?`, id); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		res, err := tx.ExecContext(ctx, `INSERT INTO message_tasks(message_id, task_id, source, created_at) SELECT id, ?, ?, ? FROM messages WHERE id=?`, taskID, source, now, id)
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue
+		}
+		added = append(added, id)
+		var sess, author string
+		if err := s.db.QueryRowContext(ctx, `SELECT t.session_id, m.author FROM messages m JOIN threads t ON t.id=m.thread_id WHERE m.id=?`, id).Scan(&sess, &author); err == nil && author == AuthorAgent {
+			if _, err := s.AddTaskAgent(ctx, taskID, sess, RoleInvolved); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -729,7 +764,17 @@ func (s *Store) LinkMessages(ctx context.Context, taskID string, messageIDs []st
 	return added, nil
 }
 
-// UntagMessage takes a task's tag off a message.
+// TaskOfMessage is the task a message is about ("" while it is in none).
+func (s *Store) TaskOfMessage(ctx context.Context, messageID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT task_id FROM message_tasks WHERE message_id=? ORDER BY created_at DESC LIMIT 1`, messageID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+// UnlinkMessage takes a message out of its task (it is unplaced then; the person never does this).
 func (s *Store) UnlinkMessage(ctx context.Context, messageID, taskID string) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM message_tasks WHERE message_id=? AND task_id=?`, messageID, taskID)
 	if err != nil {
@@ -739,7 +784,8 @@ func (s *Store) UnlinkMessage(ctx context.Context, messageID, taskID string) (bo
 	return n > 0, nil
 }
 
-// TagsOf returns the tags of messages, by message id (titles and statuses of their tasks).
+// TasksOf returns the task of each message, by message id (its title and status), as a list of at
+// most one: a message is about exactly one task (none while it is unplaced).
 func (s *Store) TasksOf(ctx context.Context, messageIDs []string) (map[string][]TaskRef, error) {
 	out := map[string][]TaskRef{}
 	for start := 0; start < len(messageIDs); start += 500 {
@@ -959,7 +1005,7 @@ func (s *Store) MessageSession(ctx context.Context, messageID string) (sessionID
 	return sessionID, author, err
 }
 
-// TaskCount is how many messages are tagged with a task.
+// TaskCount is how many messages are in a task.
 func (s *Store) TaskCount(ctx context.Context, taskID string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_tasks WHERE task_id=?`, taskID).Scan(&n)
