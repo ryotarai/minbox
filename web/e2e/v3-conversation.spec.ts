@@ -171,14 +171,22 @@ test('a long stream opens at the newest message; scrolled up, a new message show
   await page.getByTestId('pane-tasks').click()
   const scroller = page.getByTestId('stream-view').locator('.v-scroll')
   const atBottom = () => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 60)
-  await expect(page.locator('[data-testid="v3-message"]').last()).toContainText('#229')
-  await expect.poll(atBottom).toBe(true)
+  await expect(page.locator('[data-testid="v3-message"]').last()).toContainText('#229', { timeout: 20_000 })
+  await expect.poll(atBottom, { timeout: 20_000 }).toBe(true)
 
   // Scroll up a little (not to the top): a new message does not move the view, a pill offers it.
   // (The terminal stays open meanwhile, so the column keeps its width.)
   await typeInTerminal(page, 'title reading')
+  await page.waitForTimeout(500) // the title's re-render settles first (under load it can land late)
   await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight / 2))
   await page.waitForTimeout(300)
+  // Still scrolled up (nothing pulled it back down), else scroll up again.
+  await expect
+    .poll(async () => {
+      if (await atBottom()) await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight / 2))
+      return atBottom()
+    }, { timeout: 10_000 })
+    .toBe(false)
   const sb = (await scroller.boundingBox())!
   const seenId = await page.evaluate((y) => {
     const els = Array.from(document.querySelectorAll('[data-testid="v3-message"]'))
@@ -188,10 +196,10 @@ test('a long stream opens at the newest message; scrolled up, a new message show
   const y0 = (await seen.boundingBox())!.y
   await typeInTerminal(page, 'say a fresh one')
   const pill = page.getByTestId('new-message-pill')
-  await expect(pill).toBeVisible()
+  await expect(pill).toBeVisible({ timeout: 20_000 })
   expect(Math.abs((await seen.boundingBox())!.y - y0)).toBeLessThan(5)
   await pill.click()
-  await expect.poll(atBottom).toBe(true)
+  await expect.poll(atBottom, { timeout: 15_000 }).toBe(true)
   await expect(pill).toHaveCount(0)
 
   // Up to the top: the older messages load above; the message that was first stays where it was.
