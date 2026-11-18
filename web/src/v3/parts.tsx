@@ -3,7 +3,7 @@
 // its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
-import { useApp } from '../lib/app'
+import { backTarget, useApp, type Route } from '../lib/app'
 import { ContextMenu, useContextMenu } from '../components/ContextMenu'
 import { ForkDialog } from '../components/ForkDialog'
 import { Kbd, MenuItem } from '../components/ui'
@@ -12,7 +12,7 @@ import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
 import { CommandMessage } from '../components/CommandMessage'
-import { IconFork, IconMoreV, IconThumb } from '../components/icons'
+import { IconBack, IconFork, IconMoreV, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
 import {
   STATUS_LABEL,
@@ -42,6 +42,54 @@ export function useNav() {
     agents: () => navigate({ view: 'agents' }, { push: true }),
     search: () => navigate({ view: 'search' }, { push: true }),
   }
+}
+
+/** Task titles the Board last listed: ‹ names a task also from Search or Settings. */
+const taskTitles = new Map<string, string>()
+export function rememberTaskTitles(tasks: { id: string; title: string }[]) {
+  for (const t of tasks) taskTitles.set(t.id, t.title)
+}
+
+/** A route's name, for the ‹ back control ("‹ Board", "‹ Fix the gauge", "‹ api"). */
+export function routeLabel(r: Route | null, tasks: { id: string; title: string }[], byId: Map<string, Session>): string {
+  if (!r) return 'Board'
+  switch (r.view) {
+    case 'task':
+      return (r.k && (tasks.find((t) => t.id === r.k)?.title ?? taskTitles.get(r.k))) || 'Task'
+    case 'agent':
+      return (r.s && byId.get(r.s)?.name) || 'Agent'
+    case 'agents':
+      return 'Agents'
+    case 'search':
+      return 'Search'
+    case 'settings':
+      return 'Settings'
+    case 'issues':
+      return 'My issues'
+    case 'slack':
+      return 'Slack'
+    default:
+      return r.s ? (byId.get(r.s)?.name ?? 'Agent') : 'Board'
+  }
+}
+
+/**
+ * ‹ back, at the start of a view's header: to where the person came from in the app (as the
+ * browser's back would), or to the Board when the view was opened directly (a link, a reload).
+ * It names where it leads; Esc does the same on a keyboard.
+ */
+export function BackButton({ tasks = [], fallback }: { tasks?: { id: string; title: string }[]; fallback?: Partial<Route> }) {
+  const { goBack, route } = useApp()
+  const byId = useSessionsById()
+  void route // re-read history.state when the route changes
+  const to = backTarget()
+  const label = fallback && !to ? 'Back' : routeLabel(to, tasks, byId)
+  return (
+    <button type="button" className="v-back" data-testid="back" data-to={to ? to.view : 'board'} aria-label={`Back to ${label}`} title={`Back to ${label} (Esc)`} onClick={() => goBack(fallback)}>
+      <IconBack size={16} />
+      <span className="v-back-l">{label}</span>
+    </button>
+  )
 }
 
 export function useSessionsById(): Map<string, Session> {
