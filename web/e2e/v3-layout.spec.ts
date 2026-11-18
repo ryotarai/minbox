@@ -1,7 +1,7 @@
 // The v3 shell's layout, as main had it (narrow.spec, terminal-toggle.spec, files-pane.spec's ⇧F,
-// v2.spec's resizable edges and swapped panes, projects.spec's phone sheet, the notification ask):
+// v2.spec's resizable edges, projects.spec's phone sheet, the notification ask):
 // the side panes (terminal | shell | files, each shown or hidden on its own, side by side) are kept across
-// agents and reloads, edges drag and keep their widths, Settings › swap panes, the tablet's two panes
+// agents and reloads, edges drag and keep their widths, the tablet's two panes
 // (one side pane at a time), the phone's full-screen terminal and project sheet.
 import type { Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
@@ -141,7 +141,7 @@ test('a narrower window: the Tasks pane folds first, the panes squeeze, then onl
   await expect(page.getByTestId('v3-app')).toHaveAttribute('data-panes', 'terminal shell files')
 })
 
-test('the side pane and sidebar edges drag; the widths are kept; swapped panes put the side panes on the left', async ({ page, minbox }) => {
+test('the side pane and sidebar edges drag; the widths are kept', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'alpha')
   await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
   // A side pane (terminal, shell, files) shows when it is open.
@@ -179,19 +179,6 @@ test('the side pane and sidebar edges drag; the widths are kept; swapped panes p
   await expect(page.getByTestId('v3-app')).toHaveAttribute('data-panes', 'files')
   expect(Math.abs((await box(page, 'side-files')).width - side2.width)).toBeLessThan(2)
 
-  // Settings › swap panes: the side panes on the left of the stream; an edge drags the other way.
-  await api(minbox, 'PUT', '/api/settings', { swap_panes: false })
-  await page.reload()
-  const s2 = await box(page, 'side-files')
-  const v2 = await box(page, 'stream-view')
-  expect(s2.x + s2.width).toBeLessThanOrEqual(v2.x + 1)
-  const rz2 = await box(page, 'side-resizer-files')
-  await page.mouse.move(rz2.x + rz2.width / 2, 400)
-  await page.mouse.down()
-  await page.mouse.move(rz2.x + rz2.width / 2 - 40, 400, { steps: 4 })
-  await page.mouse.up()
-  // (On the left, dragging its edge left narrows it.)
-  expect(Math.abs((await box(page, 'side-files')).width - (s2.width - 40))).toBeLessThan(4)
 })
 
 for (const width of [700, 768, 820, 900, 1024, 1099]) {

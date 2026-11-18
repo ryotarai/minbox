@@ -168,9 +168,6 @@ function General() {
             ))}
           </div>
         </Row>
-        <Row label="Swap terminal and thread" desc="On: the thread is left of the terminal (the default). Off: the terminal is next to the threads list and the thread is on the far right.">
-          <Switch label="Swap terminal and thread" on={settings.swap_panes} onChange={(v) => saveSettings({ swap_panes: v })} />
-        </Row>
       </Group>
       <Group title="When Claude asks you">
         <Row label="Browser notifications" desc="When the tab is in the background and something new waits on you">

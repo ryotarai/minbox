@@ -57,8 +57,7 @@ writing children in their own git worktrees on `minbox-sub/*` branches that the 
 
 Columns, left to right: **projects | threads | thread | terminal** (on a desktop width the terminal is hidden by
 default: the threads are all you need; the **Terminal** button in the thread header shows it and hides it again, and the
-choice is remembered in this browser) (the thread and the terminal
-swap places with **Settings → Swap terminal and thread**). The layout follows the window width:
+choice is remembered in this browser). The layout follows the window width:
 
 | Width | Layout |
 | --- | --- |
@@ -413,7 +412,7 @@ themselves after a network drop or a server restart, and the open thread reloads
 
 ## Settings
 
-Text size and theme (light, dark, match system; the terminal follows it live with a light palette), swapping the terminal and thread columns,
+Text size and theme (light, dark, match system; the terminal follows it live with a light palette),
 browser notifications, **Prompts** (orchestrator prompt, extra instructions for Claude Code, reply
 questions), **Notifications**, **Hosts**, **Devices**, optional parts (Decision mode),
 archived sessions and threads, storage and About.
