@@ -35,7 +35,9 @@ for (const c of cases) {
     const toggle = page.getByTestId('terminal-toggle')
     await expect(toggle).toHaveAttribute('data-agent', c.agent)
     await expect(toggle).toHaveAttribute('aria-label', `Show ${c.label} terminal`)
-    await expect(toggle).toHaveAttribute('title', `Show the ${c.label} terminal`)
+    await expect(toggle).toHaveAttribute('title', `Show the ${c.label} terminal (T)`)
+    // The button is icon-only, like the shell and files buttons next to it.
+    await expect(toggle).toHaveText('')
     // The shell button stays as it is, a different icon.
     const shell = page.getByTestId('shell-toggle')
     await expect(shell).toHaveAttribute('aria-label', 'Open shell')
@@ -44,7 +46,7 @@ for (const c of cases) {
 
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-label', `Hide ${c.label} terminal`)
-    await expect(toggle).toHaveAttribute('title', `Hide the ${c.label} terminal`)
+    await expect(toggle).toHaveAttribute('title', `Hide the ${c.label} terminal (T)`)
   })
 }
 
