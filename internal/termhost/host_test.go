@@ -3,6 +3,7 @@ package termhost
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -415,4 +416,78 @@ func TestThePTYTakesTheSmallestClientAndGrowsBack(t *testing.T) {
 	if got := nextSize(desk); got != `{"type":"size","cols":170,"rows":50}` {
 		t.Fatalf("after the phone left = %s", got)
 	}
+}
+
+// TestAttachedClientGetsAllOutputBeforeExit: what a process prints right before it
+// exits reaches an attached client before the "exited" close, and the replay keeps it.
+// (The exit used to close the clients as soon as the process was reaped, while its
+// last output could still be unread in the PTY, and ptmx.Close then dropped it.)
+func TestAttachedClientGetsAllOutputBeforeExit(t *testing.T) {
+	h := New()
+	sock := startHost(t, h)
+	c := NewClient(sock, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Waits for a line of input, then prints a burst and exits at once.
+	script := `read line; yes "line $line" | head -n 1000; echo END-OF-OUTPUT; exit 0`
+	live := 0
+	for i := 0; i < 5; i++ {
+		id := "b" + strconv.Itoa(i)
+		if _, err := c.Spawn(ctx, SpawnRequest{ID: id, Argv: []string{"/bin/sh", "-c", script}, Cwd: "/", Env: []string{"PATH=/bin:/usr/bin"}}); err != nil {
+			t.Fatal(err)
+		}
+		conn, err := c.Attach(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.Write(ctx, websocket.MessageBinary, []byte("go\r")); err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		var reason string
+		for {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				var ce websocket.CloseError
+				if !errors.As(err, &ce) || ce.Code != websocket.StatusNormalClosure {
+					t.Fatalf("%s: read: %v", id, err)
+				}
+				reason = ce.Reason
+				break
+			}
+			if typ == websocket.MessageBinary {
+				out.Write(data)
+			}
+		}
+		conn.CloseNow()
+		switch reason {
+		case "exited":
+			live++
+			if !strings.Contains(out.String(), "END-OF-OUTPUT") {
+				tail := out.String()
+				if len(tail) > 200 {
+					tail = tail[len(tail)-200:]
+				}
+				t.Fatalf("%s: closed before the last output (%d bytes, ends %q)", id, out.Len(), tail)
+			}
+		case "behind":
+			// This client fell 256 frames behind (a slow machine, -race) and was
+			// dropped by design; the replay below still has to hold everything.
+			<-h.get(id).done
+		default:
+			t.Fatalf("%s: close reason %q", id, reason)
+		}
+
+		replay, err := c.Attach(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, data, err := replay.Read(ctx)
+		replay.CloseNow()
+		if err != nil || !strings.Contains(string(data), "END-OF-OUTPUT") {
+			t.Fatalf("%s: replay lacks the last output (%d bytes, %v)", id, len(data), err)
+		}
+	}
+	t.Logf("%d of 5 clients kept up to the exit", live)
 }

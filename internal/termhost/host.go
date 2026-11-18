@@ -142,6 +142,10 @@ type frame struct {
 // scrollbackLimit is how many bytes of output a terminal keeps for replay (tests shorten it).
 var scrollbackLimit = 2 << 20
 
+// drainWait is how long, after the process exits, the host waits for the rest of its
+// output in the PTY before it closes the terminal.
+var drainWait = time.Second
+
 // repaintWait is how long the host waits, after a repaint attach, for the new view's size
 // (which may resize the PTY, and a resize repaints by itself); repaintGap is how long the
 // PTY stays one row shorter, long enough for an app that debounces resizes to see it.
@@ -162,11 +166,13 @@ type terminal struct {
 	resizes    uint64 // PTY size changes so far
 	nudging    bool   // a repaint nudge is under way
 	subs       map[chan frame]struct{}
-	wants      map[chan frame]want // the size each attached client fits
+	wants      map[chan frame]want     // the size each attached client fits
+	behind     map[chan frame]struct{} // subscribers dropped for falling behind
 	leaseTimer *time.Timer
 	running    bool
 	exitCode   int
 	done       chan struct{}
+	pumped     chan struct{} // closed when pump has read the PTY to its end
 	cols, rows uint16
 	baseCols   uint16 // the size the PTY started with: it returns to it when no client wants a size
 	baseRows   uint16
@@ -270,8 +276,7 @@ func (t *terminal) resizeLocked(cols, rows uint16) {
 		select {
 		case ch <- f:
 		default:
-			delete(t.subs, ch)
-			close(ch)
+			t.dropLocked(ch)
 		}
 	}
 }
@@ -340,9 +345,25 @@ func (t *terminal) repaint(since uint64) bool {
 	return true
 }
 
+// dropLocked ends a subscriber that fell behind (its channel is full).
+func (t *terminal) dropLocked(ch chan frame) {
+	delete(t.subs, ch)
+	close(ch)
+	t.behind[ch] = struct{}{}
+}
+
+// dropped tells whether ch was closed for falling behind, not for the exit.
+func (t *terminal) dropped(ch chan frame) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.behind[ch]
+	return ok
+}
+
 func (t *terminal) unsubscribe(ch chan frame) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	delete(t.behind, ch)
 	if _, ok := t.subs[ch]; ok {
 		delete(t.subs, ch)
 		close(ch)
@@ -354,6 +375,7 @@ func (t *terminal) unsubscribe(ch chan frame) {
 }
 
 func (t *terminal) pump() {
+	defer close(t.pumped)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := t.ptmx.Read(buf)
@@ -376,8 +398,7 @@ func (t *terminal) pump() {
 				select {
 				case ch <- frame{data: chunk}:
 				default: // slow reader: drop it; it will reattach and replay
-					delete(t.subs, ch)
-					close(ch)
+					t.dropLocked(ch)
 				}
 			}
 			t.mu.Unlock()
@@ -480,7 +501,7 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame]want{}, running: true, done: make(chan struct{}), modes: newModes(), cols: cols, rows: rows, baseCols: cols, baseRows: rows}
+	t := &terminal{id: req.ID, cmd: cmd, ptmx: ptmx, subs: map[chan frame]struct{}{}, wants: map[chan frame]want{}, behind: map[chan frame]struct{}{}, running: true, done: make(chan struct{}), pumped: make(chan struct{}), modes: newModes(), cols: cols, rows: rows, baseCols: cols, baseRows: rows}
 	h.mu.Lock()
 	h.terminals[req.ID] = t
 	h.mu.Unlock()
@@ -496,6 +517,15 @@ func (h *Host) Spawn(req SpawnRequest) (TerminalInfo, error) {
 			} else {
 				code = -1
 			}
+		}
+		// The process is gone, but what it printed last may still be unread in the
+		// PTY: let pump read it to the end (EOF once no process holds the PTY open)
+		// and pass it on, before the attached clients are closed with "exited" and
+		// before ptmx.Close drops it. A process left in the background that keeps the
+		// PTY open bounds the wait.
+		select {
+		case <-t.pumped:
+		case <-time.After(drainWait):
 		}
 		t.mu.Lock()
 		t.running = false
@@ -860,7 +890,13 @@ func (h *Host) attach(w http.ResponseWriter, r *http.Request) {
 			return
 		case chunk, ok := <-ch:
 			if !ok {
-				conn.Close(websocket.StatusNormalClosure, "exited")
+				// Closed on exit (after all the output), or dropped for falling
+				// behind: say which.
+				reason := "exited"
+				if t.dropped(ch) {
+					reason = "behind"
+				}
+				conn.Close(websocket.StatusNormalClosure, reason)
 				return
 			}
 			typ := websocket.MessageBinary
