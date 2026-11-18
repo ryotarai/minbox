@@ -69,12 +69,12 @@ test('stop ends the agent; Resume in its header starts it again; archive (with U
   await expect(page.getByRole('dialog')).toContainText('stopper')
 })
 
-test('rename from the menu, by double-clicking the row, and from the palette; set another main agent; the row menu', async ({ page, minbox }) => {
+test('rename from the menu, by double-clicking the row, and from the palette; no agent is "main"; the row menu', async ({ page, minbox }) => {
   const one = await startAgent(minbox, 'one')
   const two = await startAgent(minbox, 'two')
   await page.goto(minbox.url + `/#v=agent&s=${two.id}`)
-  await expect(row(page, 'one')).toContainText('main')
-  await expect(row(page, 'two')).not.toContainText('main ·')
+  await expect(row(page, 'one')).not.toContainText('main')
+  await expect(row(page, 'two')).not.toContainText('main')
 
   await page.getByTestId('agent-menu').click()
   await page.getByTestId('menu-rename').click()
@@ -83,11 +83,12 @@ test('rename from the menu, by double-clicking the row, and from the palette; se
   await expect(page.getByTestId('agent-name')).toContainText('second')
   await expect(row(page, 'second')).toHaveCount(1)
 
-  // Set as main: the main marker moves.
+  // The menu has no "Set as main" any more.
   await page.getByTestId('agent-menu').click()
-  await page.getByTestId('menu-set-main').click()
-  await expect(row(page, 'second')).toContainText('main')
-  await expect.poll(async () => (await api(minbox, 'GET', '/api/sessions')).find((s: any) => s.id === two.id).is_main).toBe(true)
+  await expect(page.getByTestId('menu-rename')).toBeVisible()
+  await expect(page.getByTestId('menu-set-main')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  expect((await api(minbox, 'GET', '/api/sessions')).find((s: any) => s.id === two.id)).not.toHaveProperty('is_main')
 
   // Double-click the row.
   await row(page, 'one').dblclick()

@@ -61,7 +61,7 @@ type OwnedTask = Pick<BoardTask, 'agents' | 'project_id' | 'title'> & { last_age
 /**
  * The agent whose page shows a task (#v=agent&s=<it>&k=<task>): the agent it is assigned to, else the
  * one last active on it, else any agent involved, a live one before an archived one. A task no agent
- * has touched yet: the main agent of its project (a message from its card hands it over). null: no
+ * has touched yet: its project's most recently active live agent (a message from its card hands it over). null: no
  * agent at all (the Board shows it instead).
  */
 export function taskOwner(t: OwnedTask, sessions: Session[]): string | null {
@@ -69,8 +69,11 @@ export function taskOwner(t: OwnedTask, sessions: Session[]): string | null {
   const ids = [...t.agents.filter((a) => a.role === 'assigned').map((a) => a.session_id), t.last_agent ?? '', ...t.agents.map((a) => a.session_id)].filter((id) => byId.has(id))
   const live = ids.find((id) => !byId.get(id)!.archived_at)
   if (live ?? ids[0]) return live ?? ids[0]!
-  const main = sessions.find((s) => s.is_main && !s.archived_at && s.kind !== 'shell' && (!t.project_id || s.project_id === t.project_id))
-  return main?.id ?? null
+  const at = (s: Session) => new Date(s.last_activity ?? s.updated_at).getTime() || 0
+  const recent = sessions
+    .filter((s) => !s.archived_at && s.kind !== 'shell' && s.status !== 'ended' && (!t.project_id || s.project_id === t.project_id))
+    .sort((a, b) => at(b) - at(a))[0]
+  return recent?.id ?? null
 }
 
 /** A route's name, for the ‹ back control ("‹ Board", "‹ Fix the gauge", "‹ api"). */
@@ -127,12 +130,11 @@ export function agentName(byId: Map<string, Session>, id: string | undefined): s
 
 /**
  * How to tell same-named agents apart: "" for a name that is unique among the live agents, else what
- * differs (main, its title, or when it started).
+ * differs (when it started).
  */
 export function agentHint(all: Session[], a: Session): string {
   const same = all.filter((x) => x.name === a.name && !x.archived_at && x.kind !== 'shell')
   if (same.length < 2) return ''
-  if (a.is_main) return 'main'
   const d = new Date(a.created_at ?? '')
   return isNaN(d.getTime()) ? a.id.slice(-4) : 'since ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

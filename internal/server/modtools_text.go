@@ -286,9 +286,6 @@ func sessionLine(s any) string {
 		head += " (" + squash(jstr(t)) + ")"
 	}
 	state := jtext(jget(s, "agent")) + " " + jtext(jget(s, "status"))
-	if truthy(jget(s, "is_main")) {
-		state += " main"
-	}
 	if truthy(jget(s, "archived")) {
 		state += " archived"
 	}

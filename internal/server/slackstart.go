@@ -96,7 +96,9 @@ type slackThreadReq struct {
 	Instruction string     `json:"instruction"`
 }
 
-// resolveThreadTarget checks the session (or project) a new thread starts in.
+// resolveThreadTarget checks the session (or project) a new thread starts in. Kind "auto" (a
+// project, no agent chosen) returns the project like "new_session"; startThreadTarget then lets the
+// helper pick one of its live agents, or starts a new one.
 func (s *Server) resolveThreadTarget(ctx context.Context, t forkTarget) (sess *store.Session, proj *store.Project, agentKind, projectName string, warnings []string, err error) {
 	warnings = []string{}
 	switch t.Kind {
@@ -120,13 +122,16 @@ func (s *Server) resolveThreadTarget(ctx context.Context, t forkTarget) (sess *s
 		if p, perr := s.store.GetProject(ctx, sess.ProjectID); perr == nil {
 			projectName = p.Name
 		}
-		if !sess.IsMain {
-			warnings = append(warnings, "That session's agent shares one conversation across its threads: the new thread queues behind its current work.")
+		if sess.Status == store.StatusWorking {
+			warnings = append(warnings, busyAgentWarning)
 		}
-	case "new_session":
+	case "new_session", "auto":
 		proj, err = s.store.GetProject(ctx, t.ProjectID)
 		if err != nil {
 			return nil, nil, "", "", nil, fe(400, "pick a project for the new session")
+		}
+		if t.Kind == "auto" {
+			warnings = append(warnings, autoAgentNote)
 		}
 		ak := strings.TrimSpace(t.Agent)
 		if ak == "" {
@@ -141,6 +146,30 @@ func (s *Server) resolveThreadTarget(ctx context.Context, t forkTarget) (sess *s
 		return nil, nil, "", "", nil, fe(400, "unknown target kind %q", t.Kind)
 	}
 	return sess, proj, agentKind, projectName, warnings, nil
+}
+
+const (
+	busyAgentWarning = "That agent is working: its one conversation takes the new thread after its current work."
+	autoAgentNote    = "minbox picks the agent when you start: one of the project's running agents whose work fits (the thread then waits for its current work), else a new agent."
+)
+
+// startThreadTarget is the session a planned thread goes to: the chosen one; for "new_session" a new
+// agent; for "auto" the helper's pick among the project's live agents (else a new agent). work is
+// what the helper reads (untrusted).
+func (s *Server) startThreadTarget(ctx context.Context, t forkTarget, sess *store.Session, proj *store.Project, agentKind, work, what string) (*store.Session, error) {
+	var err error
+	switch {
+	case sess != nil:
+	case t.Kind == "auto":
+		sess, _, err = s.agentFor(ctx, proj.ID, agentKind, strings.TrimSpace(t.Name), work, what)
+	default:
+		sess, err = s.sessions.CreateAgent(ctx, "", agentKind, strings.TrimSpace(t.Name), "", "", proj.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	sess.HostName = s.hostNames(ctx)[sess.HostID]
+	return sess, nil
 }
 
 func (s *Server) planSlackThread(ctx context.Context, a *slackUserAuth, ch, ts string, req slackThreadReq) (*slackPlan, error) {
@@ -233,14 +262,10 @@ func (s *Server) slackThreadStart(w http.ResponseWriter, r *http.Request) {
 		s.slackPlanErr(w, err)
 		return
 	}
-	sess := p.sess
-	if sess == nil {
-		sess, err = s.sessions.CreateAgent(ctx, "", p.agentKind, strings.TrimSpace(req.Target.Name), "", "", p.project.ID)
-		if err != nil {
-			httpError(w, 400, err.Error())
-			return
-		}
-		sess.HostName = s.hostNames(ctx)[sess.HostID]
+	sess, err := s.startThreadTarget(ctx, req.Target, p.sess, p.project, p.agentKind, p.subject+"\n\n"+p.body+"\n\n"+p.handoff, "slack (personal)")
+	if err != nil {
+		httpError(w, 400, err.Error())
+		return
 	}
 	key := threadKey(p.td.Channel, p.td.ThreadTS)
 	th, _, err := s.store.CreateThreadWith(ctx, sess.ID, p.subject, store.NewMessage{Author: store.AuthorUser, Body: p.body, Words: p.body},

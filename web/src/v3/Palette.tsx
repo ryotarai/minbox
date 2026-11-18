@@ -105,7 +105,7 @@ export type PaletteCtx = {
 }
 
 export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteCtx }) {
-  const { projects, reloadProjects, reloadSessions, sessions, navigate, setOverlay, settings, saveSettings, isPhone, error, toast } = useApp()
+  const { projects, sessions, navigate, setOverlay, settings, saveSettings, isPhone, error, toast } = useApp()
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [tasks, setTasks] = useState<BoardTask[]>(lastTasks)
@@ -161,10 +161,6 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
       if (cur.kind !== 'shell' && cur.status !== 'ended') pane('shell', 'Show shell', 'Hide shell', 'open companion terminal shell folder cwd', 'Ctrl+`')
       pane('files', 'Show files', 'Hide files', 'file explorer tree browse folder git status', '⇧F')
       act('rename', 'Rename current agent', () => ctx.rename(cur), { keywords: `name session ${cur.name}` })
-      if (cur.kind !== 'shell' && cur.project_id && !cur.is_main)
-        act('set-main', "Set current agent as project's main agent", () => void api.setMainSession(cur.project_id!, cur.id).then(() => (reloadProjects(), reloadSessions())).catch(error), {
-          keywords: `main default session target project ${cur.name}`,
-        })
       if (cur.status === 'ended') act('resume', 'Resume current agent', () => void api.restartSession(cur.id).catch(error), { keywords: `start restart session ${cur.name}` })
       else {
         act('restart', 'Restart current agent', () => void api.restartSession(cur.id).catch(error), { keywords: `resume reload session ${cur.name}` })
@@ -195,7 +191,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
           title: s.name,
           detail: (projectName(s.project_id) ? `${projectName(s.project_id)} · ` : '') + homeRelative(s.cwd) + (s.host_name ? ` · ${s.host_name}` : ''),
           projectName: projectName(s.project_id),
-          keywords: [s.title, s.kind === 'shell' ? 'shell' : agentKindLabel(s.agent), s.is_main ? 'main' : ''].filter(Boolean).join(' '),
+          keywords: [s.title, s.kind === 'shell' ? 'shell' : agentKindLabel(s.agent)].filter(Boolean).join(' '),
           unread: s.unread > 0,
           run: () => {
             remember({ k: 'agent', id: s.id })

@@ -229,9 +229,8 @@ export function StreamView({
               <span>{sess.name}</span>
               {hint && <small className="v-hint">· {hint}</small>}
             </h2>
-            <span className="v-hide-phone v-kind" style={{ color: 'var(--mb-subtle)', fontSize: 12 }} title={[agentKindLabel(sess.agent), sess.is_main ? 'main' : '', sess.host_name].filter(Boolean).join(' · ')}>
+            <span className="v-hide-phone v-kind" style={{ color: 'var(--mb-subtle)', fontSize: 12 }} title={[agentKindLabel(sess.agent), sess.host_name].filter(Boolean).join(' · ')}>
               {agentKindLabel(sess.agent)}
-              {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
             </span>
             <AgentActions session={sess} />

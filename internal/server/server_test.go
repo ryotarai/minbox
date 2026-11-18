@@ -15,6 +15,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
 )
@@ -92,6 +93,8 @@ func newEnv(t *testing.T) *env {
 	srv := New(cfg, st, fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}})
 	host := newFakeHost()
 	srv.sessions.setHost(host)
+	// Never a real model in tests: the agent pick falls back unless a test answers for the helper.
+	srv.agentPickRun = func(context.Context, string) ([]byte, error) { return nil, agent.ErrNoneInstalled }
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	e := &env{t: t, srv: srv, st: st, host: host, ts: ts, dir: dir}

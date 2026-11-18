@@ -79,8 +79,10 @@ type Server struct {
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
 	pickRun func(ctx context.Context, prompt string) ([]byte, error)
-	web     fs.FS
-	handler http.Handler
+	// agentPickRun runs the agent-picking model (agentpick.go; replaced in tests).
+	agentPickRun func(ctx context.Context, prompt string) ([]byte, error)
+	web          fs.FS
+	handler      http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}
@@ -174,6 +176,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.suggest = newSuggester(s.runSuggest)
 	s.denied = newDeniedStore()
 	s.pickRun = s.runPick
+	s.agentPickRun = s.runAgentPick
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
 	if err != nil {
 		log.Printf("server key: %v (using a key for this run only)", err)
@@ -448,7 +451,7 @@ func storeError(w http.ResponseWriter, err error) {
 		httpError(w, 404, "not found")
 		return
 	}
-	if errors.Is(err, store.ErrProjectBusy) || errors.Is(err, store.ErrProjectExists) || errors.Is(err, store.ErrSessionIsMain) {
+	if errors.Is(err, store.ErrProjectBusy) || errors.Is(err, store.ErrProjectExists) {
 		httpError(w, 409, err.Error())
 		return
 	}

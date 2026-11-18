@@ -610,7 +610,7 @@ func issueHandoff(d *issueDetail) string {
 }
 
 type issueThreadReq struct {
-	Target      forkTarget `json:"target"` // "session" (session_id) | "new_session" (project_id, agent, name)
+	Target      forkTarget `json:"target"` // "session" (session_id) | "new_session" (project_id, agent, name) | "auto" (project_id: the helper picks a live agent, else a new one)
 	Subject     string     `json:"subject"`
 	Instruction string     `json:"instruction"`
 }
@@ -636,48 +636,11 @@ func (s *Server) planIssueThread(ctx context.Context, ident string, req issueThr
 		return nil, &wrapErr{msg: fmt.Sprintf("could not read issue %s: %s", ident, l.errText(err)), err: err}
 	}
 	p := &issuePlan{d: d, warnings: []string{}}
-	t := req.Target
-	switch t.Kind {
-	case "", "session":
-		if t.SessionID == "" {
-			return nil, fe(400, "pick a session, or a project for a new one")
-		}
-		sess, err := s.store.GetSession(ctx, t.SessionID)
-		if err != nil {
-			return nil, fe(400, "no such session")
-		}
-		switch {
-		case sess.Kind != store.KindClaude:
-			return nil, fe(400, "that session cannot take threads")
-		case sess.ArchivedAt != nil:
-			return nil, fe(400, "that session is archived; unarchive it or pick another")
-		case sess.Status == store.StatusEnded:
-			return nil, fe(400, "that session has ended; restart it or start a new session")
-		}
-		p.sess, p.agentKind = sess, sess.Agent
-		if proj, err := s.store.GetProject(ctx, sess.ProjectID); err == nil {
-			p.projectName = proj.Name
-		}
-		if !sess.IsMain {
-			p.warnings = append(p.warnings, "That session's agent shares one conversation across its threads: the new thread queues behind its current work.")
-		}
-	case "new_session":
-		proj, err := s.store.GetProject(ctx, t.ProjectID)
-		if err != nil {
-			return nil, fe(400, "pick a project for the new session")
-		}
-		ak := strings.TrimSpace(t.Agent)
-		if ak == "" {
-			ak = proj.DefaultAgent
-		}
-		ak, err = s.sessions.resolveAgent(ctx, ak, proj.HostID)
-		if err != nil {
-			return nil, fe(400, "%v", err)
-		}
-		p.project, p.agentKind, p.projectName = proj, ak, proj.Name
-	default:
-		return nil, fe(400, "unknown target kind %q", t.Kind)
+	sess, proj, ak, pname, warns, err := s.resolveThreadTarget(ctx, req.Target)
+	if err != nil {
+		return nil, err
 	}
+	p.sess, p.project, p.agentKind, p.projectName, p.warnings = sess, proj, ak, pname, warns
 	p.handoff = issueHandoff(d)
 	p.subject = cleanTitle(req.Subject)
 	if p.subject == "" {
@@ -749,14 +712,10 @@ func (s *Server) linearIssueStartThread(w http.ResponseWriter, r *http.Request) 
 		s.issuePlanErr(w, err)
 		return
 	}
-	sess := p.sess
-	if sess == nil {
-		sess, err = s.sessions.CreateAgent(ctx, "", p.agentKind, strings.TrimSpace(req.Target.Name), "", "", p.project.ID)
-		if err != nil {
-			httpError(w, 400, err.Error())
-			return
-		}
-		sess.HostName = s.hostNames(ctx)[sess.HostID]
+	sess, err := s.startThreadTarget(ctx, req.Target, p.sess, p.project, p.agentKind, p.subject+"\n\n"+p.body+"\n\n"+p.handoff, "linear")
+	if err != nil {
+		httpError(w, 400, err.Error())
+		return
 	}
 	th, _, err := s.store.CreateThreadWith(ctx, sess.ID, p.subject, store.NewMessage{Author: store.AuthorUser, Body: p.body, Words: p.body},
 		func(tx *sql.Tx, th *store.Thread, m *store.Message) error {

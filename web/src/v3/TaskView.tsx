@@ -71,7 +71,7 @@ export function TaskView({
       </div>
     )
   const t = d.task
-  const toId = to ?? t.last_agent ?? live.find((s) => s.is_main && s.project_id === t.project_id)?.id ?? live[0]?.id ?? ''
+  const toId = to ?? t.last_agent ?? live.find((s) => s.project_id === t.project_id)?.id ?? live[0]?.id ?? ''
   const opts = [...t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s && !s.archived_at), ...live.filter((s) => !t.agents.some((a) => a.session_id === s.id) && (!t.project_id || s.project_id === t.project_id))]
   if (toId && !opts.some((s) => s.id === toId) && byId.get(toId)) opts.unshift(byId.get(toId)!)
   const showCtx = (m: V3Message, prev: V3Message | undefined) => {

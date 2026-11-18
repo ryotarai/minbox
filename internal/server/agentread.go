@@ -52,22 +52,21 @@ func queryFlag(r *http.Request, key string) bool {
 // ---- projects ----
 
 type agentProject struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Dir           string     `json:"dir"`
-	HostID        string     `json:"host_id"`
-	HostName      string     `json:"host_name,omitempty"`
-	DefaultAgent  string     `json:"default_agent"`
-	MainSessionID string     `json:"main_session_id"`
-	Pinned        bool       `json:"pinned"`
-	Archived      bool       `json:"archived"`
-	SessionCount  int        `json:"session_count"`
-	LiveSessions  int        `json:"live_sessions"`
-	ThreadCount   int        `json:"thread_count"`
-	NeedAction    int        `json:"need_action"` // threads waiting on the person
-	Unread        int        `json:"unread"`      // unread agent messages
-	LastActivity  time.Time  `json:"last_activity"`
-	Sessions      []agentSes `json:"sessions,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Dir          string     `json:"dir"`
+	HostID       string     `json:"host_id"`
+	HostName     string     `json:"host_name,omitempty"`
+	DefaultAgent string     `json:"default_agent"`
+	Pinned       bool       `json:"pinned"`
+	Archived     bool       `json:"archived"`
+	SessionCount int        `json:"session_count"`
+	LiveSessions int        `json:"live_sessions"`
+	ThreadCount  int        `json:"thread_count"`
+	NeedAction   int        `json:"need_action"` // threads waiting on the person
+	Unread       int        `json:"unread"`      // unread agent messages
+	LastActivity time.Time  `json:"last_activity"`
+	Sessions     []agentSes `json:"sessions,omitempty"`
 }
 
 type agentSes struct {
@@ -81,7 +80,6 @@ type agentSes struct {
 	ProjectID    string    `json:"project_id"`
 	HostID       string    `json:"host_id"`
 	HostName     string    `json:"host_name,omitempty"`
-	IsMain       bool      `json:"is_main"`
 	Archived     bool      `json:"archived"`
 	Unread       int       `json:"unread"`
 	Waiting      int       `json:"waiting"`
@@ -91,7 +89,7 @@ type agentSes struct {
 
 func agentSessionOf(sess store.Session, names map[string]string, self string) agentSes {
 	return agentSes{ID: sess.ID, Name: sess.Name, Title: sess.Title, Cwd: sess.Cwd, Status: sess.Status, Agent: sess.Agent, Kind: sess.Kind,
-		ProjectID: sess.ProjectID, HostID: sess.HostID, HostName: names[sess.HostID], IsMain: sess.IsMain, Archived: sess.ArchivedAt != nil,
+		ProjectID: sess.ProjectID, HostID: sess.HostID, HostName: names[sess.HostID], Archived: sess.ArchivedAt != nil,
 		Unread: sess.Unread, Waiting: sess.Waiting, LastActivity: sess.LastActivity, Self: sess.ID == self}
 }
 
@@ -123,7 +121,7 @@ func (s *Server) projectCounts(r *http.Request) (map[string]*projectCounts, erro
 
 func agentProjectOf(p store.Project, names map[string]string, counts map[string]*projectCounts) agentProject {
 	out := agentProject{ID: p.ID, Name: p.Name, Dir: p.Dir, HostID: p.HostID, HostName: names[p.HostID], DefaultAgent: p.DefaultAgent,
-		MainSessionID: p.MainSessionID, Pinned: p.PinnedAt != nil, Archived: p.ArchivedAt != nil, SessionCount: p.SessionCount,
+		Pinned: p.PinnedAt != nil, Archived: p.ArchivedAt != nil, SessionCount: p.SessionCount,
 		LiveSessions: p.LiveSessions, LastActivity: p.LastActivity}
 	if c := counts[p.ID]; c != nil {
 		out.ThreadCount, out.NeedAction, out.Unread = c.threads, c.needAction, c.unread

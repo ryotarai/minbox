@@ -145,9 +145,9 @@ work and the selection survives a reload. Left: your issues; right: the selected
   like the issue's Linear project, its team or team key (a unique exact match, else a unique partial one); else your only project; else, when that is
   ambiguous, the same helper as the Slack project pick (Claude Haiku by default or Pi), with the issue (identifier, title, team, Linear project, labels, the start of the
   description) and the projects (name, folder, recent thread titles) between untrusted delimiters, and only an id of an existing project accepted. When nothing
-  decides, your last used project stays. The **session defaults to the project's main session** (marked "Main session"; a project without a usable one defaults to
-  *New session*); other live sessions of the project and *New session* (agent picker when both agents are installed, optional name) are in the same list, and
-  changing the project resets the session to that project's main session. You may add a request and change the title; the right side previews exactly what the
+  decides, your last used project stays. The **session defaults to *Let minbox choose***: when you start, the helper picks one of the project's live agents whose
+  recent work fits the issue, else a new agent starts (without a helper: the most recently active live agent). The project's live sessions and *New session* (agent
+  picker when both agents are installed, optional name) are in the same list, and changing the project resets the session to *Let minbox choose*. You may add a request and change the title; the right side previews exactly what the
   agent gets first. **Create and open** creates the thread, **links it to the issue at once** (as linking from the thread does: the comments that exist are the baseline, a
   progress comment follows, the In Progress rule applies when work starts) and opens it.
 - **The handoff** (`linear_issue_handoff`) is composed once at creation and stored (`thread_handoffs`): like a fork's, it is put in front of that thread's first
