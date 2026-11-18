@@ -85,14 +85,14 @@ With several installed the New session dialog lets you pick; with one it just us
 
 ### From a release (macOS, Linux; arm64, amd64)
 
-Pick a version on the [Releases](https://github.com/<owner>/<repo>/releases) page, then:
+Pick a version on the [Releases](https://github.com/ryotarai/minbox/releases) page, then:
 
 ```sh
 version=v0.1.0   # the release to install
 os=$(uname -s | tr '[:upper:]' '[:lower:]')                              # darwin or linux
 arch=$(uname -m); case "$arch" in x86_64) arch=amd64;; aarch64) arch=arm64;; esac
 name=minbox_${version#v}_${os}_${arch}
-base=https://github.com/<owner>/<repo>/releases/download/$version
+base=https://github.com/ryotarai/minbox/releases/download/$version
 curl -fL -O "$base/$name.tar.gz" -O "$base/checksums.txt"
 grep " $name.tar.gz\$" checksums.txt | shasum -a 256 -c   # or: sha256sum -c
 tar xzf "$name.tar.gz"
