@@ -6,7 +6,7 @@ import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { ago, hhmm, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
@@ -99,6 +99,7 @@ export function TaskView({
     ...pending.filter((p) => !d.messages.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)).map((m) => ({ at: m.created_at, m })),
     ...d.events.filter(shownEvent).map((e) => ({ at: e.at, e })),
   ].sort((a, b) => (a.at < b.at ? -1 : 1))
+  const nearQ = answersNearQuestions(items.flatMap((it) => ('m' in it ? [it.m] : [])))
   const lastBy: Record<string, V3Message> = {}
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
   const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
@@ -321,7 +322,7 @@ export function TaskView({
                       New
                     </div>
                   )}
-                  <MessageView m={m} tasks={tasks} inTask={t.id} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
+                  <MessageView m={m} tasks={tasks} inTask={t.id} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
                   {m === lastUser && byId.get(m.session_id) && (
                     <div className="v-delivery">
                       <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} />

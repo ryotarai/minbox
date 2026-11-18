@@ -100,6 +100,15 @@ select.v-chip { padding: 1px 4px; }
 .v-bar i { flex: 1; border-radius: 2px; background: var(--v-track); }
 .v-bar i.ok { background: var(--mb-ok); } .v-bar i.doing { background: var(--mb-work); } .v-bar i.blk { background: var(--mb-danger); } .v-bar i.wt { background: var(--mb-wait); } .v-bar i.goal { background: var(--mb-purple); }
 .v-cnt2 { color: var(--mb-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* the person's answers, readable on their own (the message with the questions is not shown above) */
+.v-ans { display: flex; flex-direction: column; gap: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.v-ans-to { align-self: flex-start; display: inline-flex; gap: 4px; max-width: 100%; border: 0; background: none; padding: 0; color: var(--mb-subtle); font-size: 11.5px; text-align: left; cursor: pointer; }
+.v-ans-to .v-ans-lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.v-ans-to:hover .v-ans-lbl { text-decoration: underline; text-underline-offset: 2px; }
+.v-ans-q { border-left: 2px solid var(--mb-line2); padding-left: 8px; }
+.v-ans-p { color: var(--mb-subtle); font-size: 12px; }
+.v-ans-a { color: var(--mb-fg); font-weight: 500; }
+.v-ans-n { color: var(--mb-fg2); white-space: pre-wrap; }
 .v-pill { font-size: 10.5px; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
 .v-pill.run { color: var(--mb-purple); } .v-pill.pause { color: var(--mb-wait); }
 .v-sec { font-size: 11px; letter-spacing: .08em; font-weight: 600; color: var(--mb-subtle); margin: 12px 0 7px; display: flex; gap: 8px; align-items: center; }

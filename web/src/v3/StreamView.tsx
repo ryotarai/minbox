@@ -10,7 +10,7 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { ago, short, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, msgTask, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -73,6 +73,7 @@ export function StreamView({
   const msgs = [...older, ...(s?.messages ?? [])]
   const arrived = (p: V3Message) => msgs.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)
   const shown = [...msgs, ...pending.filter((p) => !arrived(p))]
+  const nearQ = answersNearQuestions(foldAll ? [] : shown)
   useMarkRead(s?.messages)
   const firstNew = useFirstNew(id, s?.messages)
   const keep = useKeepPosition(scroller)
@@ -339,7 +340,7 @@ export function StreamView({
                   const repeat = !!mt && mt.task_id === run
                   if (!note) run = mt?.task_id ?? ''
                   if (foldAll && i < shown.length - 1) out.push(<CompactRow key={m.id} m={m} name={sess.name} onClick={() => setFoldAll(false)} />)
-                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} repeat={repeat} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
+                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} repeat={repeat} showAgent={false} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
                   if (m === lastUser && !m.pending)
                     out.push(
                       <div key={'dl' + m.id} className="v-delivery">

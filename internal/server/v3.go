@@ -34,6 +34,19 @@ type V3Message struct {
 	Segment   *Segment        `json:"segment,omitempty"`
 	// Open: the questions of this (agent) message still waiting on the person.
 	Open int `json:"open"`
+	// AnswersTo (the person's answers): the agent message they answer and the questions answered,
+	// so the answer reads on its own where that message is not shown (another task, not loaded).
+	AnswersTo *AnswersTo `json:"answers_to,omitempty"`
+}
+
+// AnswersTo is the agent message a person's answers are to.
+type AnswersTo struct {
+	MessageID string `json:"message_id"`
+	// TaskID: the task that message is in ("" when it is in none).
+	TaskID string `json:"task_id,omitempty"`
+	// Line: the start of that message's prose.
+	Line      string              `json:"line,omitempty"`
+	Questions []question.Question `json:"questions"`
 }
 
 // Segment is the older thread a message belongs to.
@@ -147,10 +160,34 @@ func (s *Server) loadView(ctx context.Context, ths []store.Thread) (*v3View, err
 		if th.Kind == store.ThreadStream || th.Section == store.SectionStopped || th.Section == store.SectionHolding || th.Section == store.SectionWaiting {
 			vm.Open = openOf(&m)
 		}
+		if m.Author == store.AuthorUser && m.AnswersFor != "" && len(m.Answers) > 0 {
+			if qi, ok := v.byID[m.AnswersFor]; ok {
+				vm.AnswersTo = answersTo(&v.msgs[qi], m.Answers)
+			}
+		}
 		v.byID[m.ID] = len(v.msgs)
 		v.msgs = append(v.msgs, vm)
 	}
 	return v, nil
+}
+
+// answersTo names the agent message q that answers are to, with the questions they answer (prompts
+// only: no choices or context), in q's order.
+func answersTo(q *V3Message, answers []question.Answer) *AnswersTo {
+	keys := map[string]bool{}
+	for _, a := range answers {
+		keys[a.Key] = true
+	}
+	out := &AnswersTo{MessageID: q.ID, Line: lastLine(q.Body), Questions: []question.Question{}}
+	if len(q.Tasks) > 0 {
+		out.TaskID = q.Tasks[0].TaskID
+	}
+	for _, x := range q.Questions {
+		if keys[x.Key] {
+			out.Questions = append(out.Questions, question.Question{Key: x.Key, Kind: x.Kind, Prompt: x.Prompt, Group: x.Group})
+		}
+	}
+	return out
 }
 
 func flattenThreads(ths []store.Thread) ([]store.Message, map[string]*store.Thread, error) {
