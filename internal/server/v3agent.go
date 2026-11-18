@@ -196,8 +196,8 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 }
 
 // v3TagPersonMessage puts the person's new message in its task: the task of the view they wrote
-// from, else, for answers, the task of the message they answer. A done task they write to is open
-// again.
+// from, else, for answers, the task of the message they answer. A done task they write to stays
+// done: the agent reopens it (update_task status working) when the message asks for more work.
 func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID string, taskIDs []string, answersFor string) {
 	changed := false
 	if len(taskIDs) > 1 {
@@ -217,11 +217,6 @@ func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID st
 				name = sess.Name
 			}
 			_ = s.store.AddTaskEvent(ctx, id, "handoff", "Handed to "+name+" by you", sessionID, messageID)
-		}
-		if t.Status == store.TaskDone {
-			w := store.TaskWorking
-			_, _ = s.store.UpdateTask(ctx, id, sessionID, store.TaskFields{Status: &w})
-			_ = s.store.AddTaskEvent(ctx, id, "status", "Reopened by your message", "", messageID)
 		}
 	}
 	if answersFor != "" {

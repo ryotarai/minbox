@@ -25,7 +25,7 @@ const DOT: Record<TaskStatus, string> = { working: 'var(--mb-work)', needs_you: 
 
 /** The events shown before each message (by id), and the ones after the last. An event in the same
  *  millisecond as a message goes before an agent's message (it changed the task, then said so) and
- *  after the person's (a message about a done task reopens it). */
+ *  after the person's (a change the person made with it). */
 export function groupTaskEvents(messages: { id: string; created_at: string; author: string }[], events: StreamTaskEvent[]) {
   const before = new Map<string, StreamTaskEvent[]>()
   const tail: StreamTaskEvent[] = []

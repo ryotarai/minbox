@@ -323,6 +323,11 @@ func tasksLine(p wakeMsg) string {
 	return "Task: " + t.ID + " \"" + squash(t.Title) + "\"" + st
 }
 
+// doneTaskLine: the person wrote about a done task, which stays done unless the agent reopens it.
+func doneTaskLine(updateTool string) string {
+	return "The task is done: reopen it with " + updateTool + " status working only if their message asks for more work (a remark or a quick question leaves it done)."
+}
+
 // wakeText is the turn text of one of the person's messages.
 func wakeText(p wakeMsg, sendTool, readTool string) string {
 	if p.Stream {
@@ -339,6 +344,9 @@ func wakeText(p wakeMsg, sendTool, readTool string) string {
 		lines := []string{"minbox: a message from the person (message " + p.ID + ")" + dot}
 		if tl != "" {
 			lines = append(lines, tl+" (they wrote it about this task; reply with its task_id).")
+			if p.Tasks[0].Status == "done" {
+				lines = append(lines, doneTaskLine(strings.TrimSuffix(sendTool, toolSend)+"update_task"))
+			}
 		} else {
 			lines = append(lines, streamLine)
 		}

@@ -213,6 +213,12 @@ def turn(p, body):
         named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
         say("One decision first.\n\n:::question\nWhich region should it deploy to?\n- [ ] Tokyo\n- [ ] Oregon\nRecommended: Tokyo\n:::", named[:1])
         return
+    if p.get("tasks") and "REOPEN" in body:
+        # More work on a done task: the agent reopens it (a message alone leaves it done).
+        t0 = p["tasks"][0]
+        api("PATCH", "/api/agent/tasks/" + t0["task_id"], {"status": "working"})
+        say(f"Reopened “{t0['title']}”.", [t0["task_id"]])
+        return
     if p.get("tasks"):
         t0 = p["tasks"][0]
         say(f"Noted for “{t0['title']}”.")
