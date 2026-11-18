@@ -2,7 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chooseFolder, expect, expectTerminal, showTerminal, test, typeInTerminal } from './fixtures'
+import { chooseFolder, expect, expectTerminal, runOnTerminal, showTerminal, test, typeInTerminal } from './fixtures'
 
 // A second machine's host (here: another `minbox host --listen` on this one),
 // added through the wizard, paired with `minbox pair accept`, then used.
@@ -36,7 +36,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await expect(page.getByTestId('host-row').filter({ hasText: 'devbox' })).toContainText('Waiting for accept')
     // On "the other machine".
     expect(execFileSync(BIN, ['pair', 'list', '--data-dir', dir]).toString()).toContain(code)
-    execFileSync(BIN, ['pair', 'accept', code, '--data-dir', dir])
+    runOnTerminal(['pair', 'accept', code, '--data-dir', dir], 'y\n')
 
     await expect(page.getByTestId('host-added')).toContainText('Added devbox', { timeout: 15_000 })
     const row = page.getByTestId('host-row').filter({ hasText: 'devbox' })
@@ -116,7 +116,7 @@ test('Pi and OpenCode sessions on a remote host: per-host detection, the host’
     await expect.poll(hostUp, { timeout: 10_000 }).toBe(200)
     // Paired through the API (the wizard has its own test), accepted "there".
     const added = await (await fetch(minbox.url + '/api/hosts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'devbox', url: `http://127.0.0.1:${port}`, method: 'direct' }) })).json()
-    execFileSync(BIN, ['pair', 'accept', added.code, '--data-dir', dir])
+    runOnTerminal(['pair', 'accept', added.code, '--data-dir', dir], 'y\n')
     const hostId = added.host.id as string
 
     await page.goto(minbox.url + '/#v=settings&ss=hosts')

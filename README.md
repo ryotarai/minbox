@@ -80,6 +80,16 @@ make build                 # builds web/dist and embeds it in bin/minbox
 ./bin/minbox start         # runs in the background and opens http://127.0.0.1:4848
 ```
 
+The first time, the browser asks to pair (every browser pairs once, one on this machine too):
+press **Pair this browser**, then run the command it shows in a terminal on this machine:
+
+```sh
+./bin/minbox pair accept 482-913   # shows the browser and its key, asks Accept it? [y/N]
+```
+
+The page goes on by itself. Upgrading from a version that trusted any browser on 127.0.0.1:
+your browser shows that screen once; do the same.
+
 Click **+ New** and pick a directory (it becomes a project). minbox starts `claude` there with
 its mod loaded. When Claude needs something from you, its thread is marked **need action**, moves
 up the list and shows the question.
@@ -334,10 +344,20 @@ message, and its agent hears of forks into other sessions with your next message
 minbox start --tailscale            # https://<this machine>.<tailnet>.ts.net
 ```
 
-The first time a browser on another machine opens minbox, it shows a pairing code. Accept it
-in one of these places:
-- in a browser on this machine (**Settings → Devices**);
-- with `minbox pair accept <code>`.
+The first time a browser opens minbox (on another machine or on this one), it shows a pairing
+code and its key's fingerprint. Accept it in one of these places:
+- in a browser already paired (**Settings → Devices**);
+- with `minbox pair accept <code>` in a terminal on the server's machine.
+
+**Settings → Devices** lists the paired browsers; **Revoke** sends one back to its pairing screen.
+
+Why this machine's browser pairs too: any process here can reach 127.0.0.1, coding agents with a
+shell among them. A paired browser's key (kept in the browser, never sent) is what tells your
+browser from them; the agents' own API uses a per-session token. `minbox pair accept` asks on an
+interactive terminal only (an agent's shell tool has none) and the mods refuse a shell command
+that runs it. A process running as your user can still read and write minbox's data folder
+(`~/.minbox`), so this keeps an agent from acting as you by accident or through a prompt
+injection; it is not a wall against code that sets out to defeat it.
 
 The browser keeps a device key, and after pairing it signs in by itself. On a phone, minbox
 opens as the thread list; a thread opens full screen, with a Thread | Terminal switch. The

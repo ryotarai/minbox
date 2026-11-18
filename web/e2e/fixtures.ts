@@ -1,6 +1,7 @@
-import { test as base, expect, type Page } from '@playwright/test'
+import { test as base, expect, type BrowserContext, type Page } from '@playwright/test'
 import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { createHash, generateKeyPairSync, sign as signWith, randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { FakeLinear } from './fake-linear'
@@ -11,11 +12,103 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '../..')
-const BIN = join(ROOT, 'bin/minbox')
+export const BIN = join(ROOT, 'bin/minbox')
 const FAKE = join(__dirname, 'fake-claude.py')
 const FAKE_SUGGEST = join(__dirname, 'fake-suggest.py')
 const FAKE_PI = join(__dirname, 'fake-pi.py')
 const FAKE_OPENCODE = join(__dirname, 'fake-opencode.py')
+
+/**
+ * Every browser must be a paired device, one on loopback too (see internal/server/devices.go). The
+ * tests' browser is one: a P-256 key made here, written into each test server's devices.json before
+ * it starts (what `minbox pair accept` would do), and put into the browser's IndexedDB as the app
+ * keeps its own key (lib/device.ts: the noble form, the secret as bytes), so the app signs in by
+ * itself. Node's own calls to a test server carry a cookie signed in with the same key.
+ */
+const TEST_KEY = (() => {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const spki = publicKey.export({ type: 'spki', format: 'der' })
+  const d = privateKey.export({ format: 'jwk' }).d!
+  return {
+    privateKey,
+    publicKey: spki.toString('base64'),
+    fingerprint: 'SHA256:' + createHash('sha256').update(spki).digest('base64').replace(/=+$/, ''),
+    secret: [...Buffer.from(d, 'base64url')],
+  }
+})()
+export const TEST_DEVICE_NAME = 'e2e browser'
+
+/** Registers the tests' browser key as a paired device in a data directory. */
+export function pairTestDevice(dataDir: string) {
+  const file = join(dataDir, 'devices.json')
+  const list: { fingerprint: string }[] = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8') || '[]') : []
+  if (list.some((d) => d.fingerprint === TEST_KEY.fingerprint)) return
+  const now = new Date().toISOString()
+  list.push({ id: 'dev_' + randomBytes(10).toString('hex'), name: TEST_DEVICE_NAME, public_key: TEST_KEY.publicKey, fingerprint: TEST_KEY.fingerprint, created_at: now, last_seen: now } as never)
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(file, JSON.stringify(list, null, 2), { mode: 0o600 })
+}
+
+/** Signs in with the tests' key from Node (challenge, signature) and answers the cookie. */
+async function signInFromNode(url: string): Promise<string> {
+  const post = (path: string, body: unknown) => realFetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const { challenge } = (await (await post('/api/devices/auth/challenge', { fingerprint: TEST_KEY.fingerprint })).json()) as { challenge: string }
+  const signature = signWith('sha256', Buffer.from(challenge, 'base64'), { key: TEST_KEY.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64')
+  const res = await post('/api/devices/auth', { fingerprint: TEST_KEY.fingerprint, challenge, signature })
+  const cookie = /minbox_device=[^;]+/.exec(res.headers.get('set-cookie') ?? '')?.[0]
+  if (!res.ok || !cookie) throw new Error(`e2e: the test browser could not sign in (${res.status})`)
+  return cookie
+}
+
+/**
+ * Node's fetch to a running test server carries its cookie (the specs call the API directly), unless
+ * the call names a Cookie of its own. Other URLs (another IP of this machine, fakes) go out as given.
+ */
+const realFetch = globalThis.fetch
+const cookies = new Map<string, string>() // origin -> cookie
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  let origin = ''
+  try {
+    origin = new URL(u).origin
+  } catch {
+    /* relative: not ours */
+  }
+  const cookie = cookies.get(origin)
+  if (!cookie) return realFetch(input, init)
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+  if (!headers.has('cookie')) headers.set('cookie', cookie)
+  return realFetch(input, { ...init, headers })
+}) as typeof fetch
+
+/** The app's IndexedDB key store gets the tests' key before any page script runs. */
+function seedKey(k: { publicKey: string; fingerprint: string; secret: number[] }) {
+  const req = indexedDB.open('minbox', 1)
+  req.onupgradeneeded = () => req.result.createObjectStore('keys')
+  req.onsuccess = () => {
+    const db = req.result
+    const tx = db.transaction('keys', 'readwrite')
+    tx.objectStore('keys').put({ secret: new Uint8Array(k.secret), publicKey: k.publicKey, fingerprint: k.fingerprint }, 'device')
+    tx.oncomplete = () => db.close()
+  }
+}
+
+/** Makes a browser context this machine's paired browser (the default `context` already is). */
+export async function trustBrowser(context: BrowserContext) {
+  await context.addInitScript(seedKey, { publicKey: TEST_KEY.publicKey, fingerprint: TEST_KEY.fingerprint, secret: TEST_KEY.secret })
+}
+
+/**
+ * Runs `minbox <args>` on a pseudo-terminal, answering `answer` (what the person types): the way to
+ * drive `minbox pair accept`, which asks only on an interactive terminal.
+ */
+export function runOnTerminal(args: string[], answer: string): string {
+  // script(1) wants a pipe on its stdin (macOS refuses Node's socket), so a shell pipes the answer in.
+  const quoted = [BIN, ...args].map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')
+  const run = process.platform === 'darwin' ? `script -q /dev/null ${quoted}` : `script -qec "${quoted.replace(/"/g, '\\"')}" /dev/null`
+  // The answer comes once the command is up, and the pipe stays open while it reads (at EOF script sends ^D).
+  return execFileSync('sh', ['-c', `(sleep 0.3; printf '%s' "$0"; sleep 1) | ${run}`, answer]).toString()
+}
 
 // Concurrent suites (other worktrees, other runs) must not share a server: ask the OS for a free
 // port per instance. MINBOX_E2E_PORT, if set, is the first port to use (then counts up).
@@ -82,6 +175,13 @@ export class Minbox {
   /** A fake Slack for the personal (user token) integration; the server is pointed at it with MINBOX_SLACK_API_URL. */
   slackUser = new FakeSlackUser()
   log = ''
+  /** Pair the tests' browser before the server starts (off: a first run, nothing paired). */
+  pairBrowser = true
+  /**
+   * The test's browser: it gets the cookie each start signs in, so its first page load is already
+   * signed in (as a returning browser's is). Without it the app signs in by itself with the key.
+   */
+  browserContext: BrowserContext | null = null
   constructor(
     public dataDir: string,
     public port: number,
@@ -118,6 +218,7 @@ export class Minbox {
     // The person's own Claude Code config must never be written by a test (see playwright.config.ts).
     const cfg = env.CLAUDE_CONFIG_DIR ? resolve(env.CLAUDE_CONFIG_DIR) : ''
     if (!cfg || cfg === resolve(homedir(), '.claude') || cfg === resolve(homedir())) throw new Error(`e2e: CLAUDE_CONFIG_DIR must be a temporary folder, not ${cfg || 'unset'}`)
+    if (this.pairBrowser) pairTestDevice(this.dataDir)
     this.proc = spawn(BIN, ['start', '--foreground', '--addr', `127.0.0.1:${this.port}`, '--data-dir', this.dataDir, '--no-open', '--claude', this.claude, '--pi', this.pi, '--opencode', this.opencode], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env,
@@ -126,8 +227,16 @@ export class Minbox {
     this.proc.stderr!.on('data', (d) => (this.log += d))
     for (let i = 0; i < 500; i++) {
       try {
-        const r = await fetch(this.url + '/api/sessions')
-        if (r.ok) return
+        const r = await realFetch(this.url + '/api/devices/me')
+        if (r.ok) {
+          if (this.pairBrowser) {
+            const cookie = await signInFromNode(this.url)
+            cookies.set(new URL(this.url).origin, cookie)
+            const [name, value] = cookie.split('=')
+            await this.browserContext?.addCookies([{ name, value, url: this.url, httpOnly: true, sameSite: 'Strict' }])
+          }
+          return
+        }
       } catch {
         /* not up yet */
       }
@@ -141,6 +250,7 @@ export class Minbox {
     if (!this.proc) return
     const p = this.proc
     this.proc = null
+    cookies.delete(new URL(this.url).origin)
     const done = new Promise((r) => p.once('exit', r))
     p.kill('SIGTERM')
     await done
@@ -192,73 +302,86 @@ export class Minbox {
 }
 
 export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox }>({
+  // The test's own browser is this machine's paired browser (contexts made with browser.newContext() are not).
+  context: async ({ context }, use) => {
+    await trustBrowser(context)
+    await use(context)
+  },
   // All three agents configured: the fake claude, the fake pi and the fake opencode (2.x).
-  allAgentsMinbox: async ({}, use, testInfo) => {
+  allAgentsMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`, undefined, {}, `python3 ${FAKE_OPENCODE}`)
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // A minbox where OpenCode is installed too (the fake opencode, 2.x), next to the fake claude.
-  ocMinbox: async ({}, use, testInfo) => {
+  ocMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), undefined, undefined, {}, `python3 ${FAKE_OPENCODE}`)
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // Only OpenCode: no claude (a command that does not exist), no pi.
-  ocOnlyMinbox: async ({}, use, testInfo) => {
+  ocOnlyMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), undefined, 'minbox-e2e-no-such-claude', {}, `python3 ${FAKE_OPENCODE}`)
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // OpenCode 1.x installed (the fake says 1.0.150): listed as unsupported, never offered.
-  ocV1Minbox: async ({}, use, testInfo) => {
+  ocV1Minbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), undefined, undefined, { FAKE_OPENCODE_VERSION: '1.0.150' }, `python3 ${FAKE_OPENCODE}`)
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // A minbox that calls a mod stale after 4 s without a heartbeat (45 s by default), and a fake claude that beats every second.
-  connMinbox: async ({}, use, testInfo) => {
+  connMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), undefined, undefined, { MINBOX_MOD_SILENT_S: '4', FAKE_HEARTBEAT_S: '1' })
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // A minbox on a machine with only Pi: there is no `claude` at all.
-  piOnlyMinbox: async ({}, use, testInfo) => {
+  piOnlyMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`, 'minbox-e2e-no-such-claude')
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
   // A minbox where Pi is installed too (the fake pi), so both agents are offered.
-  piMinbox: async ({}, use, testInfo) => {
+  piMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`)
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
     await m.cleanup()
   },
-  minbox: async ({}, use, testInfo) => {
+  minbox: async ({ context }, use, testInfo) => {
     // A short path: the host's Unix socket lives in the data directory.
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort())
+    m.browserContext = context
     await m.start()
     await use(m)
     if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)

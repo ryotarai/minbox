@@ -156,7 +156,7 @@ export type Project = {
 
 export type Device= { id: string; name: string; fingerprint: string; created_at: string; last_seen: string | null; current: boolean }
 export type PairRequest = { id: string; code: string; name: string; fingerprint: string; created_at: string; ip?: string; tailscale_login?: string }
-export type DeviceMe = { trusted: boolean; via: 'loopback' | 'device' | null; device?: Device }
+export type DeviceMe = { trusted: boolean; via: 'device' | null; device?: Device }
 
 export type Host = {
   id: string
