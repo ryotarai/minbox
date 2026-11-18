@@ -152,6 +152,20 @@ export function TaskBadge({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
   )
 }
 
+/** "<agent> is working…" under the stream while the agent is busy: a pulsing blue dot, a shimmer
+ *  sweeping across the words and an ellipsis whose dots bounce in turn (all static with reduced motion). */
+export function WorkingLine({ name }: { name: string }) {
+  return (
+    <div className="v-typing" data-testid="working-line">
+      <span className="v-dot d-work v-live" aria-hidden />
+      <span>
+        <span className="v-typing-t">{name} is working</span>
+        <span className="v-ell" aria-hidden><i>.</i><i>.</i><i>.</i></span>
+      </span>
+    </div>
+  )
+}
+
 export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'> & { needs_you?: boolean; open_questions?: number }; live?: boolean }) {
   const c = t.needs_you || (t.open_questions ?? 0) > 0 || t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : t.kind === 'goal' ? 'd-goal' : 'd-work'
   // A working task's blue dot pulses like a working agent's dot (v-live), wherever it is shown.

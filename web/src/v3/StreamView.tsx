@@ -12,7 +12,7 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { short, useLive, useMarkRead, v3, type BoardTask, type Stream, type V3Message } from './data'
-import { BackButton, MessageView, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById } from './parts'
+import { BackButton, MessageView, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -408,7 +408,7 @@ export function StreamView({
                 })}
               {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)}
               {!showArtifacts && taskEv.tail.map((ev) => <StreamTaskEventLine key={'te' + ev.id} ev={ev} />)}
-              {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
+              {sess.status === 'working' && <WorkingLine name={sess.name} />}
             </div>
           </div>
         </div>
