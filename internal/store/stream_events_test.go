@@ -48,8 +48,8 @@ func TestSessionTaskEvents(t *testing.T) {
 			t.Errorf("event %d title = %q", i, e.Title)
 		}
 	}
-	if all[4].NewTitle != "Fix the gauge" {
-		t.Errorf("rename = %q", all[4].NewTitle)
+	if all[4].OldTitle != "Fix gauge" || all[4].NewTitle != "Fix the gauge" {
+		t.Errorf("rename = %q → %q", all[4].OldTitle, all[4].NewTitle)
 	}
 	// Windows meet: (nil, cut] and (cut, nil] split the events.
 	a, _ := s.SessionTaskEvents(ctx, sess.ID, nil, &cut)

@@ -15,6 +15,7 @@ export type StreamTaskEvent = {
   status?: TaskStatus
   reopened?: boolean
   by_you?: boolean
+  old_title?: string
   new_title?: string
 }
 
@@ -63,7 +64,7 @@ export function StreamTaskEventLine({ ev }: { ev: StreamTaskEvent }) {
   } else if (ev.kind === 'title') {
     body = (
       <>
-        <span>Renamed to</span> {title} {who}
+        <span>Renamed{ev.old_title ? <> “{short(ev.old_title, 50)}” →</> : ' to'}</span> {title} {who}
       </>
     )
   } else {
