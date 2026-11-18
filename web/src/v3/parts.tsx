@@ -746,21 +746,63 @@ function AnswerContent({ m, name, inTask, baseDir, onOpen }: { m: V3Message; nam
   )
 }
 
+/** Ignores questions of m (keys) as moot, with an "Ignored · Undo" toast. Nothing goes to the agent. */
+export function ignoreQuestions(m: V3Message, keys: string[], app: { toast: ReturnType<typeof useApp>['toast']; error: (e: unknown) => void }, done?: () => void): Promise<void> {
+  return v3
+    .ignore(m.id, keys)
+    .then(() => {
+      done?.()
+      app.toast(keys.length > 1 ? `Ignored ${keys.length} questions` : 'Ignored', { action: 'Undo', undo: true, onAction: () => void v3.unignore(m.id, keys).then(() => done?.()).catch(app.error) })
+    })
+    .catch(app.error)
+}
+
 function QuestionBlock({ m, q, index, total }: { m: V3Message; q: Question; index: number; total: number }) {
+  const app = useApp()
   const { drafts, set } = useAnswerDrafts(m.id)
   const sentA = m.answer_state?.[q.key] && !answerIsEmpty(m.answer_state[q.key]) ? m.answer_state[q.key] : undefined
   const closed = m.closed?.[q.key] && !['moved_on', 'replaced'].includes(m.closed[q.key]!) ? m.closed[q.key]! : null
   return (
     <div data-testid="question" data-open={!sentA && !closed ? 'true' : 'false'}>
-      <QuestionCard index={index} total={total} q={q} sent={sentA} draft={drafts[q.key]} onDraft={set} closed={closed} />
+      <QuestionCard
+        index={index}
+        total={total}
+        q={q}
+        sent={sentA}
+        draft={drafts[q.key]}
+        onDraft={set}
+        closed={closed}
+        onIgnore={() => void ignoreQuestions(m, [q.key], app)}
+        onUnignore={() => void v3.unignore(m.id, [q.key]).catch(app.error)}
+      />
     </div>
   )
 }
 
 export function ActionBlock({ m, items }: { m: V3Message; items: Question[] }) {
+  const app = useApp()
   const { drafts, set } = useAnswerDrafts(m.id)
   const answers = Object.fromEntries(items.map((q) => [q.key, m.answer_state?.[q.key]]))
-  return <ActionItems items={items} answers={answers} drafts={drafts} onDraft={set} readOnly={items.every((q) => !!m.answer_state?.[q.key])} />
+  const open = items.filter((q) => !m.answer_state?.[q.key] && m.closed?.[q.key] !== 'ignored').map((q) => q.key)
+  const ignored = items.filter((q) => !m.answer_state?.[q.key] && m.closed?.[q.key] === 'ignored').map((q) => q.key)
+  return (
+    <div>
+      <ActionItems items={items} answers={answers} drafts={drafts} onDraft={set} readOnly={open.length === 0} />
+      {open.length > 0 && (
+        <button type="button" className="v-link" data-testid="ignore-actions" title="No longer relevant: stop waiting on them (the agent is not told)" onClick={() => void ignoreQuestions(m, open, app)}>
+          Ignore
+        </button>
+      )}
+      {open.length === 0 && ignored.length > 0 && (
+        <div className="v-cnt2" data-testid="actions-ignored">
+          Ignored ·{' '}
+          <button type="button" className="v-link" data-testid="unignore-actions" onClick={() => void v3.unignore(m.id, ignored).catch(app.error)}>
+            Reopen
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function statusLabel(t: Task | BoardTask): string {
