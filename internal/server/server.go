@@ -334,6 +334,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/topics/{id}", s.patchTopic)
 	mux.HandleFunc("GET /api/v3/board", s.v3Board)
 	mux.HandleFunc("GET /api/v3/tasks/{id}", s.v3Task)
+	mux.HandleFunc("GET /api/v3/tasks/{id}/suggestions", s.v3TaskSuggestions)
 	mux.HandleFunc("PATCH /api/v3/tasks/{id}", s.v3PatchTask)
 	mux.HandleFunc("POST /api/v3/tasks", s.v3CreateTask)
 	mux.HandleFunc("POST /api/v3/tasks/{id}/auto", s.v3Auto)

@@ -281,6 +281,69 @@ func TestSuggestionsEndpoint(t *testing.T) {
 	}
 }
 
+// v3: a stream's help skips minbox's own requests to the agent (place, continue); a task's view asks
+// for its task's latest agent message.
+func TestSuggestionsV3StreamAndTask(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	var prompts []string
+	var mu sync.Mutex
+	e.srv.suggest = newSuggester(func(ctx context.Context, prompt string) (replyHelp, error) {
+		mu.Lock()
+		prompts = append(prompts, prompt)
+		mu.Unlock()
+		return help("Yes", "No"), nil
+	})
+	lastPrompt := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(prompts) == 0 {
+			return ""
+		}
+		return prompts[len(prompts)-1]
+	}
+	_, tk, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Fix the login page"}, bearer(sess))
+	task := tk["task_id"].(string)
+	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Login fixed.", "task_id": task}, bearer(sess))
+	stream := obj["thread_id"].(string)
+	get := func(path string) map[string]any {
+		t.Helper()
+		code, o, _ := e.do("GET", path, nil, nil)
+		if code != 200 {
+			t.Fatalf("%s: code %d", path, code)
+		}
+		return o
+	}
+	if o := get("/api/v3/tasks/" + task + "/suggestions"); len(o["questions"].([]any)) != 1 {
+		t.Fatalf("task: %v", o)
+	}
+	if p := lastPrompt(); !strings.Contains(p, "Subject: Fix the login page") || !strings.Contains(p, "Login fixed.") {
+		t.Fatalf("task prompt: %q", p)
+	}
+	// minbox asks the agent to place messages: the agent's message is still the one to reply to.
+	if _, err := e.st.AddMessage(context.Background(), stream, store.NewMessage{Author: store.AuthorUser, Body: "Put these in tasks", Words: "Asked s to put 1 message(s) in tasks.", Kind: store.KindPlace}); err != nil {
+		t.Fatal(err)
+	}
+	if o := get("/api/threads/" + stream + "/suggestions"); o["reason"] != nil || len(o["questions"].([]any)) != 1 {
+		t.Fatalf("stream after a place request: %v", o)
+	}
+	if p := lastPrompt(); strings.Contains(p, "Put these in tasks") || !strings.Contains(p, "Login fixed.") {
+		t.Fatalf("stream prompt: %q", p)
+	}
+	// The person replies about the task: nothing to help with there.
+	e.do("POST", "/api/v3/sessions/"+sess.ID+"/messages", map[string]any{"words": "thanks", "task_id": task}, nil)
+	if o := get("/api/v3/tasks/" + task + "/suggestions"); o["reason"] != "not_needed" {
+		t.Fatalf("task after the reply: %v", o)
+	}
+	e.do("PUT", "/api/settings", map[string]any{"reply_suggestions": false}, nil)
+	if o := get("/api/v3/tasks/" + task + "/suggestions"); o["reason"] != "disabled" {
+		t.Fatalf("disabled: %v", o)
+	}
+	if code, _, _ := e.do("GET", "/api/v3/tasks/nope/suggestions", nil, nil); code != 404 {
+		t.Fatalf("unknown task: %d", code)
+	}
+}
+
 func TestSuggestArgv(t *testing.T) {
 	e := newEnv(t)
 	e.srv.cfg.ClaudeCommand = []string{"/opt/claude", "--model", "opus"}
