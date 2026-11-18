@@ -2,11 +2,12 @@ import { Component, useEffect, useState, type ReactNode } from 'react'
 import { api, type About, type AgentKind, type Session, type Storage, type Thread } from '../api'
 import { agentsSummary, installedAgents, useAgents } from '../lib/agents'
 import { hostAgentReasons } from './Hosts'
-import { useApp } from '../lib/app'
+import { leaveTarget, useApp } from '../lib/app'
 import { notificationPermission, notify, requestNotifications, dingDong } from '../lib/alerts'
 import { bytes, homeRelative, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { IconBack } from './icons'
+import { routeLabel, useSessionsById } from '../v3/parts'
 import { Button, Segmented, Switch, cx } from './ui'
 import { HostsSection } from './Hosts'
 import { DevicesSection } from './Devices'
@@ -27,12 +28,17 @@ const NAV: { id: string; label: string }[] = [
 ]
 
 export function SettingsPage() {
-  const { route, navigate, sessions, isPhone, hosts } = useApp()
+  const { route, navigate, goBack, sessions, isPhone, hosts } = useApp()
+  const byId = useSessionsById()
+  // ‹ and Esc leave Settings (past its sections) to where it was opened from, else the Board.
+  const leave = () => goBack(undefined, { leave: true })
+  const backTo = leaveTarget()
+  const backLabel = routeLabel(backTo, [], byId)
   const [about, setAbout] = useState<About | null>(null)
   useEffect(() => {
     api.about().then(setAbout).catch(() => {})
   }, [])
-  useHotkeys({ escape: () => navigate({ view: 'main' }) })
+  useHotkeys({ escape: leave })
   const archivedCount = (sessions ?? []).filter((s) => s.archived_at).length
   const section = route.ss
   const meta: Record<string, string> = { hosts: hosts.length ? String(hosts.length) : '', capabilities: 'Tasks · Decision mode', archived: archivedCount ? String(archivedCount) : '' }
@@ -42,10 +48,12 @@ export function SettingsPage() {
         <button
           type="button"
           data-testid="settings-back"
-          onClick={() => navigate({ view: 'main' })}
+          aria-label={`Back to ${backLabel}`}
+          title={`Back to ${backLabel} (Esc)`}
+          onClick={leave}
           className={cx('flex h-[34px] shrink-0 items-center gap-1.5 border-0 bg-transparent px-2.5 text-left text-[13px] text-fg2 hover:text-fg', !isPhone && 'mb-2.5')}
         >
-          <IconBack size={14} /> Inbox
+          <IconBack size={isPhone ? 18 : 14} /> <span className="max-w-[160px] truncate">{backLabel}</span>
         </button>
         {NAV.map((n) => (
           <button

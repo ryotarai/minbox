@@ -33,7 +33,7 @@ function useIssuesScreen() {
 }
 
 function IssuesDesktop({ tablet }: { tablet: boolean }) {
-  const { layout } = useApp()
+  const { layout, goBack } = useApp()
   const c = useIssuesScreen()
   const narrow = tablet || (layout.projectsRail ?? window.innerWidth < 1400)
   return (
@@ -42,7 +42,7 @@ function IssuesDesktop({ tablet }: { tablet: boolean }) {
         <ProjectRail narrow={narrow} />
       </div>
       <div style={{ width: tablet ? 300 : 380 }} className="shrink-0 border-r border-line">
-        <IssueList state={c.state} selected={c.selected} onSelect={c.select} onNew={() => c.setCreating(true)} />
+        <IssueList state={c.state} selected={c.selected} onSelect={c.select} onNew={() => c.setCreating(true)} onBack={() => goBack(undefined, { leave: true })} />
       </div>
       <div className="min-w-0 flex-1">
         {c.selected ? (
@@ -59,7 +59,7 @@ function IssuesDesktop({ tablet }: { tablet: boolean }) {
 }
 
 function PhoneIssues() {
-  const { navigate } = useApp()
+  const { goBack } = useApp()
   const c = useIssuesScreen()
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" data-testid="issues-screen" data-screen={c.selected ? 'detail' : 'list'}>
@@ -69,11 +69,11 @@ function PhoneIssues() {
           ident={c.selected}
           phone
           preview={c.state.issues?.find((i) => i.identifier === c.selected)}
-          onBack={() => navigate({ issue: null }, { push: false })}
+          onBack={() => goBack({ issue: null })}
           onRefreshList={c.state.refresh}
         />
       ) : (
-        <IssueList state={c.state} selected={null} phone onSelect={c.select} onNew={() => c.setCreating(true)} onBack={() => navigate({ view: 'main' }, { push: false })} />
+        <IssueList state={c.state} selected={null} phone onSelect={c.select} onNew={() => c.setCreating(true)} onBack={() => goBack(undefined, { leave: true })} />
       )}
       {c.creating && <LinearCreateDialog onClose={() => c.setCreating(false)} onCreated={c.created} />}
     </div>
@@ -211,9 +211,9 @@ function IssueList({
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="My issues" data-testid="issues-list">
       <header className={cx('flex shrink-0 items-center gap-1.5 border-b border-line px-3', phone ? 'h-14' : 'h-12')}>
-        {phone && (
-          <IconButton size={44} aria-label="Back to threads" data-testid="issues-back" onClick={onBack} className="-ml-2 text-fg2">
-            <IconBack size={20} />
+        {onBack && (
+          <IconButton size={phone ? 44 : 32} aria-label="Back" title="Back (Esc)" data-testid="issues-back" onClick={onBack} className="-ml-2 text-fg2">
+            <IconBack size={phone ? 20 : 16} />
           </IconButton>
         )}
         <IconLinear size={15} className="shrink-0 text-fg2" />

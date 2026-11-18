@@ -68,8 +68,8 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
   const sender = detail?.author === 'user' ? 'you' : 'Claude Code'
   const idx = siblings.findIndex((a) => a.id === attachmentId)
 
-  // On a phone the viewer was pushed as a history entry: closing goes back through it (no stacked entries).
-  const close = () => (phone && history.state?.viewer ? history.back() : navigate({ f: null }, { push: false }))
+  // A viewer pushed as a history entry: closing goes back through it (no stacked entries).
+  const close = () => (history.state?.viewer ? history.back() : navigate({ f: null }, { push: false }))
   const step = (d: 1 | -1) => {
     if (siblings.length < 2) return
     const next = siblings[(idx + d + siblings.length) % siblings.length]

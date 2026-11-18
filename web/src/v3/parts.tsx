@@ -3,7 +3,7 @@
 // its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
-import { useApp } from '../lib/app'
+import { backTarget, useApp, type Route } from '../lib/app'
 import { ContextMenu, useContextMenu } from '../components/ContextMenu'
 import { ForkDialog } from '../components/ForkDialog'
 import { Kbd, MenuItem } from '../components/ui'
@@ -12,7 +12,7 @@ import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
 import { CommandMessage } from '../components/CommandMessage'
-import { IconFork, IconMoreV, IconThumb } from '../components/icons'
+import { IconBack, IconFork, IconMoreV, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
 import {
   STATUS_LABEL,
@@ -36,12 +36,60 @@ import {
 export function useNav() {
   const { navigate } = useApp()
   return {
-    board: () => navigate({ view: 'main', k: null, s: null, m: null }, { push: true }),
-    task: (id: string, m?: string) => navigate({ view: 'task', k: id, m: m ?? null }, { push: true }),
-    agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null }, { push: true }),
-    agents: () => navigate({ view: 'agents' }, { push: true }),
-    search: () => navigate({ view: 'search' }, { push: true }),
+    board: () => navigate({ view: 'main', k: null, s: null, m: null, tab: 'inbox' }, { push: true }),
+    task: (id: string, m?: string) => navigate({ view: 'task', k: id, m: m ?? null, tab: 'inbox' }, { push: true }),
+    agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null, tab: 'inbox' }, { push: true }),
+    agents: () => navigate({ view: 'agents', tab: 'inbox' }, { push: true }),
+    search: () => navigate({ view: 'search', tab: 'inbox' }, { push: true }),
   }
+}
+
+/** Task titles the Board last listed: ‹ names a task also from Search or Settings. */
+const taskTitles = new Map<string, string>()
+export function rememberTaskTitles(tasks: { id: string; title: string }[]) {
+  for (const t of tasks) taskTitles.set(t.id, t.title)
+}
+
+/** A route's name, for the ‹ back control ("‹ Board", "‹ Fix the gauge", "‹ api"). */
+export function routeLabel(r: Route | null, tasks: { id: string; title: string }[], byId: Map<string, Session>): string {
+  if (!r) return 'Board'
+  switch (r.view) {
+    case 'task':
+      return (r.k && (tasks.find((t) => t.id === r.k)?.title ?? taskTitles.get(r.k))) || 'Task'
+    case 'agent':
+      return (r.s && byId.get(r.s)?.name) || 'Agent'
+    case 'agents':
+      return 'Agents'
+    case 'search':
+      return 'Search'
+    case 'settings':
+      return 'Settings'
+    case 'issues':
+      return 'My issues'
+    case 'slack':
+      return 'Slack'
+    default:
+      return r.s ? (byId.get(r.s)?.name ?? 'Agent') : 'Board'
+  }
+}
+
+/**
+ * ‹ back, at the start of a view's header: to where the person came from in the app (as the
+ * browser's back would), or to the Board when the view was opened directly (a link, a reload).
+ * It names where it leads; Esc does the same on a keyboard.
+ */
+export function BackButton({ tasks = [], fallback }: { tasks?: { id: string; title: string }[]; fallback?: Partial<Route> }) {
+  const { goBack, route } = useApp()
+  const byId = useSessionsById()
+  void route // re-read history.state when the route changes
+  const to = backTarget()
+  const label = fallback && !to ? 'Back' : routeLabel(to, tasks, byId)
+  return (
+    <button type="button" className="v-back" data-testid="back" data-to={to ? to.view : 'board'} aria-label={`Back to ${label}`} title={`Back to ${label} (Esc)`} onClick={() => goBack(fallback)}>
+      <IconBack size={16} />
+      <span className="v-back-l">{label}</span>
+    </button>
+  )
 }
 
 export function useSessionsById(): Map<string, Session> {
@@ -497,16 +545,6 @@ export function MessageView({
     setAbout((ts) => ts.filter((t) => t.task_id !== tid))
     v3.unlink(m.id, tid).then(onChanged).catch(error)
   }
-  const notAbout = async () => {
-    setMenu(false)
-    setAbout([])
-    try {
-      for (const t of m.tasks) await v3.unlink(m.id, t.task_id)
-      onChanged()
-    } catch (e) {
-      error(e)
-    }
-  }
   const choose = async (r: PickResult) => {
     const mode = pick?.mode
     setPick(null)
@@ -517,14 +555,17 @@ export function MessageView({
         const res = await v3.move(m.id, { from, ...('task_id' in r ? { to: r.task_id } : { title: r.title }) })
         if (res.removed_task) toast(`Removed the mistaken task “${res.removed_task}”`)
       } else {
-        if (mode === 'move') for (const t of m.tasks) await v3.unlink(m.id, t.task_id)
+        // A message is always about a task: put it in the new one first, then take it out of the others.
+        let to: string
         if ('task_id' in r) {
           const t = taskOf(r.task_id)
           if (t) setAbout((ts) => [...(mode === 'move' ? [] : ts), { task_id: t.id, title: t.title, status: t.status, source: 'person' }])
           await v3.link(m.id, r.task_id)
+          to = r.task_id
         } else {
-          await v3.createTask({ title: r.title, session_id: m.session_id, message_ids: [m.id] })
+          to = (await v3.createTask({ title: r.title, session_id: m.session_id, message_ids: [m.id] })).id
         }
+        if (mode === 'move') for (const t of m.tasks) if (t.task_id !== to) await v3.unlink(m.id, t.task_id)
       }
       onChanged()
     } catch (e) {
@@ -532,6 +573,16 @@ export function MessageView({
     }
   }
   if (m.kind === 'command') return <CommandMessage m={m} />
+  if (m.kind === ('place' as string)) {
+    const n = m.turn_of?.length ?? 0
+    return (
+      <div className="v-msg cont" data-testid="v3-message" data-kind="place" data-message-id={m.id}>
+        <div className="v-bd">
+          ↻ Asked {name} to put {n} message{n === 1 ? '' : 's'} in tasks ({hhmm(m.created_at)})
+        </div>
+      </div>
+    )
+  }
   if (m.kind === ('continue' as string)) {
     return (
       <div className="v-msg cont" data-testid="v3-message" data-kind="continue" data-message-id={m.id}>
@@ -625,6 +676,11 @@ export function MessageView({
       {!m.pending && (
         <div className="v-about" data-testid="about">
           {shown.length > 0 && <span className="v-k">in</span>}
+          {about.length === 0 && (
+            <span className="v-k" data-testid="unplaced">
+              waiting for {name} to place it in a task
+            </span>
+          )}
           {shown.map((t) => (
             <TaskChip key={t.task_id} task={t} goal={taskOf(t.task_id)?.kind === 'goal'} />
           ))}
@@ -663,12 +719,7 @@ export function MessageView({
                     Also about another task…
                   </button>
                 )}
-                {about.length > 0 && (
-                  <button type="button" role="menuitem" data-testid="menu-none" onClick={() => void notAbout()}>
-                    Not about a task
-                  </button>
-                )}
-                {about.length > 0 && inTask && about.some((t) => t.task_id === inTask) && (
+                {about.length > 1 && inTask && about.some((t) => t.task_id === inTask) && (
                   <button type="button" role="menuitem" data-testid="menu-out" onClick={() => (setMenu(false), unlink(inTask))}>
                     Take out of this task
                   </button>

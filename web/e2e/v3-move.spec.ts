@@ -1,10 +1,11 @@
 // UC7 (move a message to the right task): under a reply the agent filed under a mistaken new task,
 // ⋯ → Move to another task… moves the reply and the person's message together, and the mistaken task
-// goes; "Put in a task…" on a reply about no task; "Not about a task" takes it out.
+// goes; "Put in a task…" on a reply the agent has not placed yet. A message is always about a task:
+// there is no "Not about a task".
 import { test, expect } from './fixtures'
 import { agentReply, board, say, shot, startAgent, taskNamed } from './v3'
 
-test('move both messages to the right task and remove the mistaken one; put in a task; not about a task', async ({ page, minbox }) => {
+test('move both messages to the right task and remove the mistaken one; put in a task; never about no task', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -33,10 +34,11 @@ test('move both messages to the right task and remove the mistaken one; put in a
   expect(t.id).toBe(gauge.id)
   expect(t.message_count).toBe(4)
 
-  // Put in a task… on a reply about no task: it and the person's message.
-  await say(minbox, a, 'is the staging server up?')
+  // Put in a task… on a reply the agent has not placed yet: it and the person's message.
+  await say(minbox, a, 'IGNORE is the staging server up?')
   const chat = await agentReply(minbox, a, /Sure — noted/)
   const none = stream.locator(`[data-testid="v3-message"][data-message-id="${chat.id}"]`)
+  await expect(none.getByTestId('unplaced')).toContainText('waiting for api to place it')
   await none.hover()
   await none.getByTestId('msg-menu').click()
   await page.getByTestId('menu-move').click()
@@ -44,10 +46,12 @@ test('move both messages to the right task and remove the mistaken one; put in a
   await page.keyboard.press('Enter')
   await expect.poll(async () => (await board(minbox)).tasks[0].message_count).toBe(6)
 
-  // Not about a task: that message only.
+  await expect(none.getByTestId('unplaced')).toHaveCount(0)
+
+  // No "Not about a task": a message only moves to another task.
   const last = stream.locator('[data-testid="v3-message"][data-author="user"]').last()
   await last.hover()
   await last.getByTestId('msg-menu').click()
-  await page.getByTestId('menu-none').click()
-  await expect.poll(async () => (await board(minbox)).tasks[0].message_count).toBe(5)
+  await expect(page.getByTestId('menu-move')).toHaveText('Move to another task…')
+  await expect(page.getByTestId('menu-none')).toHaveCount(0)
 })

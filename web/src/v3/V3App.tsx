@@ -25,7 +25,7 @@ import { TaskView } from './TaskView'
 import { StreamView } from './StreamView'
 import { SearchView } from './Search'
 import { v3, type V3Message } from './data'
-import { agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
+import { BackButton, rememberTaskTitles, agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconPaperclip } from '../components/icons'
@@ -85,9 +85,10 @@ export function V3App() {
       if (typing) return
       // A file open (its viewer's Esc leaves full screen, then closes it), or a menu that took the key.
       if (route.f || e.defaultPrevented || document.querySelector('[data-testid="attachment-viewer"]')) return
+      // Back to where the person came from (as the header's ‹ does), else the Board.
       if (view !== 'board') {
         e.preventDefault()
-        nav.board()
+        app.goBack()
       }
       return
     }
@@ -228,6 +229,7 @@ export function V3App() {
   }, [])
 
   const tasks = board?.tasks ?? []
+  rememberTaskTitles(tasks)
   const onOpenAttachment = (a: Attachment, m: V3Message) => {
     setViewerSession(m.session_id)
     if (a.kind === 'review') app.navigate({ view: 'review', r: a.id }, { push: true })
@@ -237,7 +239,7 @@ export function V3App() {
   const byId = useSessionsById()
   let main: React.ReactNode
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
-  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} onOpenAttachment={onOpenAttachment} />
+  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
   else
@@ -258,12 +260,15 @@ export function V3App() {
       />
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
-  const closeViewer = () => app.navigate({ f: null }, { push: false })
+  // A viewer pushed on top of the view goes back (no duplicate entry of the view stays behind).
+  const closeViewer = () => (history.state?.viewer ? history.back() : app.navigate({ f: null }, { push: false }))
   const zoom = useZoom()
   const winW = useWindowWidth() / zoom
   // Tablet: two panes. On a task or an agent the sidebar folds away (the rail's ☰ shows it again).
   const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
-  const wide = view === 'agent' && pane !== 'tasks'
+  // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
+  const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
+  const wide = view === 'agent' && (pane !== 'tasks' || sheet)
   const hasSide = !isPhone && (view === 'agent' || view === 'task')
   const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
   const style = {
@@ -490,6 +495,7 @@ function AgentsList({ agents, shells, counts, onNew, onNewAgent, onRename }: { a
     <div className="v-col" data-testid="agents-view">
       <div className="v-head">
         <div className="v-r1">
+          <BackButton />
           <h1>Agents</h1>
           <button type="button" className="v-btn" data-testid="open-palette" aria-label="Quick actions" onClick={() => setOverlay({ kind: 'palette' })}>
             ⌘
@@ -676,7 +682,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['Ctrl+`', 'Shell of the agent'],
     ['⇧F', 'Files of the agent'],
     ['⇧D', 'Decision mode (when on in Settings)'],
-    ['Esc', 'Close / back to the Board'],
+    ['Esc', 'Close / back (where you came from, else the Board)'],
   ]
   return (
     <div className="v-overlay" onMouseDown={onClose} data-testid="help-dialog">
