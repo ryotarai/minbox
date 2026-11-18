@@ -40,13 +40,13 @@ test('triage on the Board: question cards first, rows expand in place, 1–9 ans
   // The answer is tagged with the question's task and reached the agent.
   await expect.poll(async () => (await board(minbox)).questions.length).toBe(0)
 
-  // J then Space expands the task row: checklist, last report, timeline.
+  // J then Space expands the task row: checklist and last report (no timeline).
   await page.keyboard.press('j')
   await page.keyboard.press(' ')
   const exp = page.getByTestId('task-expanded')
   await expect(exp).toBeVisible()
   await expect(exp.getByTestId('step')).toHaveCount(4)
-  await expect(exp.getByTestId('timeline')).toContainText('You:')
+  await expect(exp.getByTestId('timeline')).toHaveCount(0)
   await shot(page, 'uc5-expanded', 'light')
 
   // X marks it done; it leaves WORKING for DONE.
