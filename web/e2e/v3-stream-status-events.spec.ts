@@ -57,7 +57,7 @@ test('agent stream: task status changes as lines between the messages, live, ope
   await expect(reopened).toContainText(/Fix the gauge reading reopened/)
   await expect(reopened).not.toContainText('by you')
   await expect(stream.getByTestId('v3-message')).toHaveCount(8)
-  expect((await order(stream)).slice(9)).toEqual(['user:REOPEN the gauge', 'ev:status:working', 'agent:Reopened “Fix'])
+  expect((await order(stream)).slice(9)).toEqual(['user:REOPEN the gauge', 'ev:status:working', 'agent:Reopened “Fix th'])
 
   // A step tick is no line.
   const t = await api(minbox, 'GET', `/api/v3/tasks/${gauge.id}`)
