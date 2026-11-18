@@ -266,6 +266,10 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-free { max-width: none; }
   .v-dots { opacity: 1; }
   .v-row .v-sub .v-bar { width: 60px; }
+  /* Action items on a phone: the text gets the width, Done / Can't do it go under it. */
+  [data-testid="action-item"] { flex-wrap: wrap; }
+  [data-testid="action-item"] > span.flex-1 { flex-basis: calc(100% - 30px); }
+  [data-testid="action-item"] > span:last-child { margin-left: 26px; }
   .v-msg { max-width: 100%; }
   .v-composer { margin: 0 10px 10px; position: sticky; bottom: 8px; z-index: 5; box-shadow: var(--mb-shadow); }
   .v-conv { padding: 12px 12px; }
