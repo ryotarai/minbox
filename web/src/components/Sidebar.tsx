@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { SECTION_ORDER, api, type Section, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
@@ -69,6 +69,7 @@ export function SessionMenu({
   onClose,
   onRename,
   at,
+  top,
 }: {
   s: Session
   anchor: HTMLElement | null
@@ -76,6 +77,8 @@ export function SessionMenu({
   onRename: () => void
   /** Open as a context menu at this point instead of under `anchor`. */
   at?: MenuAt | null
+  /** Shown above the items (the stream header's menu puts the agent's kind, folder and start there). */
+  top?: ReactNode
 }) {
   const { error, toast, setOverlay, reloadSessions, reloadProjects } = useApp()
   const act = (fn: () => Promise<unknown>) => () => {
@@ -86,6 +89,7 @@ export function SessionMenu({
   }
   return (
     <Popover anchor={anchor} at={at} open={!!anchor || !!at} onClose={onClose} testid={at ? 'session-context-menu' : undefined}>
+      {top}
       <MenuItem
         testid="menu-rename"
         onClick={() => {
