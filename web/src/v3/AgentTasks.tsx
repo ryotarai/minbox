@@ -1,11 +1,14 @@
 // An agent's tasks: its open ones (each with where it stands) and the ones done this week, folded.
 // On a desktop or tablet they are a pane of their own between the agents list and the stream (its
 // width dragged and kept, folded to a strip with ⇧T); on a phone they are the first tab of the agent's
-// sheet ("Tasks N ›").
+// sheet ("Tasks N ›"). In the pane each task has a checkbox (and "All" one on top): the checked tasks
+// show side by side in place of the stream (see Columns).
 import { useEffect, useRef } from 'react'
+import { useApp } from '../lib/app'
 import { ago, standing, STATUS_LABEL, type BoardTask } from './data'
 import { Bar, StatusDot, useNav } from './parts'
 import { IconTasks } from '../components/icons'
+import { TriBox, useColumnPick, type ColumnPickState } from './Columns'
 
 /** The tasks an agent works on: open first, then done. */
 export function agentTasks(tasks: BoardTask[], sessionId: string) {
@@ -13,21 +16,36 @@ export function agentTasks(tasks: BoardTask[], sessionId: string) {
   return { open: mine.filter((t) => t.status !== 'done'), done: mine.filter((t) => t.status === 'done') }
 }
 
-/** The list itself (OPEN TASKS, then DONE THIS WEEK folded). onOpen runs before the task opens. */
-export function AgentTaskList({ tasks, sessionId, onOpen }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void }) {
+/** The list itself (OPEN TASKS, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
+ *  checkbox per task (shown as a column on the agent's page). onSelect: a task opens there (in the
+ *  agent's page, selected: the one shown) instead of the task view. */
+export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null }) {
   const nav = useNav()
   const { open, done } = agentTasks(tasks, sessionId)
   const go = (id: string) => {
     onOpen?.()
-    nav.task(id)
+    if (onSelect) onSelect(id)
+    else nav.task(id)
   }
+  const sel = (t: BoardTask) => (selected === t.id ? { 'aria-current': true as const, className: 'v-mt sel' } : { className: 'v-mt' })
+  // With checkboxes: the box beside the row (the row still opens the task).
+  const row = (t: BoardTask, el: React.ReactElement) =>
+    pick ? (
+      <div key={t.id} className="v-mt-row">
+        <input type="checkbox" className="v-mt-check" data-testid="agent-task-check" data-task={t.id} aria-label={`Show “${t.title}” as a column`} title="Show it as a column beside the others" checked={pick.has(t)} onChange={() => pick.toggle(t)} />
+        {el}
+      </div>
+    ) : (
+      el
+    )
   return (
     <div className="v-agtasks" data-testid="agent-tasks">
       <div className="v-sec">
+        {pick && open.length > 0 && <TriBox state={pick.allState} onChange={pick.toggleAll} label="All open tasks as columns" testid="agent-tasks-all" />}
         OPEN TASKS <span className="v-x">{open.length}</span>
       </div>
-      {open.map((t) => (
-        <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
+      {open.map((t) => row(t,
+        <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
           <div className="v-a">
             <StatusDot t={t} />
             {t.kind === 'goal' ? '◎ ' : ''}
@@ -41,7 +59,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen }: { tasks: BoardTask[]
               {t.open_questions ? ' · ? ' + t.open_questions : ''} · {ago(t.last_activity)}
             </span>
           </div>
-        </button>
+        </button>,
       ))}
       {!open.length && <div className="v-cnt2">No open tasks. Ask for something; the agent makes a task when it is new work.</div>}
       {done.length > 0 && (
@@ -49,14 +67,14 @@ export function AgentTaskList({ tasks, sessionId, onOpen }: { tasks: BoardTask[]
           <summary className="v-sec">
             DONE THIS WEEK <span className="v-x">{done.length}</span>
           </summary>
-          {done.map((t) => (
-            <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
+          {done.map((t) => row(t,
+            <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
               <div className="v-a">
                 <StatusDot t={t} />
                 {t.title}
               </div>
               <TaskSubtitle t={t} />
-            </button>
+            </button>,
           ))}
         </details>
       )}
@@ -83,7 +101,19 @@ export function TasksPane({
   overlay: boolean
   onToggle: (show: boolean) => void
 }) {
-  const { open } = agentTasks(tasks, sessionId)
+  const { open, done } = agentTasks(tasks, sessionId)
+  const own = useColumnPick(sessionId, [...open, ...done])
+  const checked = own.selected.length
+  // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
+  // goes back to the stream); a checkbox shows the checked ones as columns (leaving the one task).
+  const { route, navigate } = useApp()
+  const detail = route.view === 'agent' ? route.k : null
+  const select = (id: string) => navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
+  const leave = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+    f(...a)
+    if (detail) navigate({ k: null }, { push: false })
+  }
+  const pick = { ...own, toggle: leave(own.toggle), toggleAll: leave(own.toggleAll), clear: leave(own.clear) }
   const ref = useRef<HTMLDivElement>(null)
   const floating = overlay && shown
   useEffect(() => {
@@ -110,13 +140,18 @@ export function TasksPane({
       className="v-tasks-strip"
       data-testid="tasks-pane-toggle"
       aria-expanded={shown}
-      aria-label={`${shown ? 'Hide' : 'Show'} tasks (${open.length} open)`}
+      aria-label={`${shown ? 'Hide' : 'Show'} tasks (${open.length} open${checked ? `, ${checked} checked` : ''})`}
       title={`${shown ? 'Hide' : 'Show'} the agent's tasks (⇧T)`}
       onClick={() => onToggle(!shown)}
     >
       <IconTasks size={14} />
       <span className="v-tasks-strip-l">Tasks</span>
       <b>{open.length}</b>
+      {checked > 0 && (
+        <span className="v-tasks-strip-checked" data-testid="tasks-strip-checked" title={`${checked} checked: shown as columns`}>
+          ☑{checked}
+        </span>
+      )}
     </button>
   )
   return (
@@ -126,6 +161,11 @@ export function TasksPane({
         <aside className="v-tasks" aria-label="Tasks of the agent">
           <div className="v-tasks-h">
             TASKS
+            {checked > 0 && (
+              <button type="button" className="v-link v-tasks-clear" data-testid="tasks-clear" title="Uncheck every task: back to the stream" onClick={pick.clear}>
+                {checked} checked · Clear
+              </button>
+            )}
             <button
               type="button"
               className="v-iconbtn"
@@ -139,7 +179,7 @@ export function TasksPane({
             </button>
           </div>
           <div className="v-tasks-body">
-            <AgentTaskList tasks={tasks} sessionId={sessionId} onOpen={overlay ? () => onToggle(false) : undefined} />
+            <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
           </div>
         </aside>
       )}

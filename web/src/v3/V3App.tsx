@@ -1,6 +1,6 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
-// Board · Agents · Search. Columns: several tasks side by side. Keys: ⌘K J/K Enter X N Z R ⇧N ⇧F / ? g b g a g c T Ctrl+` Esc.
+// Board · Agents · Search. Keys: ⌘K J/K Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
@@ -26,7 +26,6 @@ import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
 import { TasksPane } from './AgentTasks'
 import { SearchView } from './Search'
-import { ColumnsView } from './Columns'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTaskTitles, agentHint, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
@@ -60,11 +59,16 @@ export function V3App() {
   }, [sessions, projectId])
   // Plain login shells an older build left (they can no longer be made): listed apart, they open on their terminal.
   const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
-  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : route.view === 'columns' ? 'columns' : 'board'
+  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const side = useSidePanes(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
   useEffect(() => setTasksOver(false), [view, route.s])
+  // The Columns page is gone (the agent's Tasks pane checks tasks into columns now): an old #v=columns
+  // link lands on the Board.
+  useEffect(() => {
+    if (/(^#|&)v=columns(&|$)/.test(location.hash)) app.navigate({ view: 'main', k: null, s: null, m: null }, { push: false })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The agent's Tasks pane (desktop and tablet; a plain shell has none). Beside the stream, shown or
   // folded to a strip as the person left it (kept in the layout); with no room for it (a tablet, or a
   // narrow window with side panes open) a strip that unfolds over the stream.
@@ -143,7 +147,6 @@ export function V3App() {
       gPending.current = false
       if (e.key === 'b') nav.board()
       if (e.key === 'a' && agents[0]) nav.agent(agents[0].id)
-      if (e.key === 'c') nav.columns()
       return
     }
     if (e.key === 'g') {
@@ -263,7 +266,6 @@ export function V3App() {
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
-  else if (view === 'columns') main = <ColumnsView tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
   else
     main = (
@@ -343,12 +345,6 @@ export function V3App() {
           <button type="button" className={'v-sb-item' + (view === 'board' ? ' sel' : '')} data-testid="nav-board" onClick={nav.board}>
             ▤ Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
           </button>
-          <button type="button" className={'v-sb-item' + (view === 'columns' ? ' sel' : '')} data-testid="nav-columns" title="Tasks side by side" onClick={nav.columns}>
-            ▥ Columns{' '}
-            <span className="v-cnt">
-              <span className="v-kbd">g c</span>
-            </span>
-          </button>
           <button type="button" className={'v-sb-item' + (view === 'search' ? ' sel' : '')} data-testid="nav-search" onClick={nav.search}>
             ⌕ Search{' '}
             <span className="v-cnt">
@@ -386,7 +382,7 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' || view === 'columns' ? ' conv' : '')}>
+      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' ? ' conv' : '')}>
         {main}
         {hasSide && <Resizer testid="side-resizer" measure={() => sideEl()?.offsetWidth ?? 300} onDrag={dragSide} />}
       </main>
@@ -717,7 +713,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     [mod + 'K', 'Quick actions: go to a task, an agent or a project, or run an action (> actions · @ agents · # tasks · ! projects)'],
     ['⇧N', 'New message (to the main agent by default)'],
     ['/', 'Search'],
-    ['g b · g a · g c', 'Board · first agent · Columns (tasks side by side)'],
+    ['g b · g a', 'Board · first agent'],
     ['J / K', 'Move on the Board'],
     ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],
     ['⌘↵', 'Send the message (with any answers picked in the task or stream)'],
@@ -727,7 +723,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['N', 'Next agent with unread messages'],
     ['R', 'Reply: quote the selected text, or focus the reply box'],
     ['T', 'Terminal of the agent (show / hide; it stands beside the shell and the files)'],
-    ['⇧T', 'Tasks pane of the agent (show / fold)'],
+    ['⇧T', 'Tasks pane of the agent (show / fold); check tasks there to see them side by side'],
     ['Ctrl+`', 'Shell of the agent (show / hide)'],
     ['⇧F', 'Files of the agent (show / hide)'],
     ['⇧D', 'Decision mode (when on in Settings)'],
