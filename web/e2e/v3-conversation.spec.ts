@@ -181,8 +181,11 @@ test('a long stream opens at the newest message; scrolled up, a new message show
   // Read already (unread ones would open at the first of them, under a New divider).
   const all = (await stream(minbox, a)).messages.map((m: any) => m.id)
   await api(minbox, 'POST', '/api/v3/read', { message_ids: all })
+  // The terminal closed first, then a fresh load: the stream opens at its final width.
+  await page.getByTestId('side-close').click()
   await open(page, minbox, a)
-  await page.getByTestId('pane-tasks').click()
+  await page.reload()
+  await expect(page.getByTestId('composer-text')).toBeVisible()
   const scroller = page.getByTestId('stream-view').locator('.v-scroll')
   const atBottom = () => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 60)
   await expect(page.locator('[data-testid="v3-message"]').last()).toContainText('#229', { timeout: 20_000 })
@@ -235,11 +238,11 @@ test('fold all, the artifacts grid, O and ] [ open the files; a code comment goe
   await open(page, minbox, a)
   await typeInTerminal(page, 'kinds')
   await expectTerminal(page, /sent kinds in thr_\w+ 8/)
-  await page.getByTestId('pane-tasks').click()
+  await page.getByTestId('side-close').click()
   await expect(page.getByTestId('attachment-card').first()).toBeVisible()
   // Fold all: one line per message but the last.
   await typeInTerminal(page, 'say and one more')
-  await page.getByTestId('pane-tasks').click()
+  await page.getByTestId('side-close').click()
   await expect(page.locator('[data-testid="v3-message"]')).toHaveCount(2)
   await page.getByTestId('fold-all').click()
   await expect(page.getByTestId('v3-message-folded')).toHaveCount(1)
