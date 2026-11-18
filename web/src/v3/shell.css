@@ -31,6 +31,14 @@
   .v-main.wide > .v-col { display: none; }
   .v-main.wide > .v-side.wide { flex: 1; min-height: 0; border-top: 0; }
   .v-main.wide > .v-side.wide > div:last-child { min-height: 0 !important; }
+  /* A conversation (an agent's stream, a task) on a phone scrolls inside its own list, as on the
+     desktop, so it can open at its newest message and follow it; the reply box sits under it. */
+  .v-main.conv { overflow: hidden; }
+  .v-main.conv > .v-col { flex: 1; min-height: 0; }
+  .v-main.conv .v-convwrap { flex: 1; min-height: 0; }
+  .v-main.conv .v-scroll { overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .v-main.conv .v-composer { position: relative; bottom: auto; flex: none; }
+  .v-main.conv > .v-col > .v-side { max-height: 40vh; overflow: auto; flex: none; }
 }
 
 /* The arrow everywhere, as in main (a native app's cursor): no pointing hand on rows, buttons and
