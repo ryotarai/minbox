@@ -60,7 +60,7 @@ var slackAppType = Type{
 		{Key: "allowed_users", Label: "Allowed Slack user IDs", Kind: "text", Placeholder: "U0123ABCD, U0456EFGH",
 			Hint: "Only messages from these members are taken (comma separated). Empty: the user ID in Channel. Required when receiving is on.", validate: validUserIDs},
 		{Key: "pick_project", Label: "Let Claude Haiku pick the project", Kind: "bool", Default: true,
-			Hint: "A DM that starts a new thread (without a #project prefix) is sent to Claude Haiku together with your project names, and the thread goes to the project it picks. When Haiku is unsure it asks you in the Slack thread which project (up to 3 times) instead of guessing. At most 10 calls a minute; the DM text and your answers are sent to Claude. Only matters when receiving is on."},
+			Hint: "A DM that starts a new thread (without a #project prefix) is sent to Claude Haiku together with your project names, and the thread goes to the project it picks, to the agent there whose work fits (picked the same way; else a new agent starts). When Haiku is unsure it asks you in the Slack thread which project (up to 3 times) instead of guessing. At most 10 calls a minute; the DM text and your answers are sent to Claude. Only matters when receiving is on."},
 		{Key: "default_project", Label: "Fallback project (when Claude cannot tell)", Kind: "text", Placeholder: "my-project",
 			Hint: "A project name used when Claude Haiku is off or fails, or is still unsure after 3 questions in Slack. Start a DM with #other-project to choose a project yourself (no Claude call). Empty and no project found: the DM is ignored; only replies in notification threads are received."},
 		{Key: "poll_interval", Label: "Poll interval", Kind: "select", Default: "60", Options: []Option{

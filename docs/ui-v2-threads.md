@@ -154,7 +154,7 @@ shows the empty state below. Opening marks the thread read, as any open does.
 **No thread selected** (`t` null): the thread pane shows a quiet empty hint (icon and `Pick a thread to read it
 here.`, no session list); the terminal still shows `route.s`. With no
 session selected on load we pick the most urgent session. Opening a terminal without a thread: the session chip in the phone thread header,
-the session filter popover, Cmd+K > a session, the project's main session.
+the session filter popover, Cmd+K > a session.
 
 ## 3. Composer (bottom of the threads pane)
 
