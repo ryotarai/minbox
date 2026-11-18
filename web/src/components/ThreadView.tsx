@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api, type Annotation, type Answer, type Attachment, type ForkChild, type Message, type Question, type Session, type Thread } from '../api'
 import { ALL_THREADS, useApp } from '../lib/app'
 import { clearReplyDraft, updateReplyDraft, useReplyDraft } from '../lib/drafts'
-import { hm, minutesSince, plural, shortTime, span } from '../lib/format'
+import { hm, plural, shortTime, span } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { agentKindLabel } from '../lib/agents'
 import { proseOf, splitQuestions } from '../lib/markdown'
@@ -1100,7 +1100,6 @@ function UserMessage({
       <div className="flex items-center gap-2">
         <span className="text-[13.5px] font-semibold">You</span>
         <span className="text-[12.5px] text-subtle">{hm(m.created_at)}</span>
-        {m.urgent && <span className="text-[11px] font-semibold text-danger">Send now</span>}
         <span className="flex-1" />
         <MessageForkControls onFork={onFork} phone={phone} />
       </div>
@@ -1303,18 +1302,24 @@ function summarize(a: Answer): string {
   return parts.join(', ') || (a.note ? `Note: ${a.note}` : '')
 }
 
-const AUTO_SEND_MIN = 5
-/** A queued message waiting this long (idle session, or a silent mod) shows a warning and Send now. */
+/** A queued message waiting this long (an agent that does not take it, or a silent mod) shows a warning. */
 const QUEUED_WARN_MS = 20_000
 
 function queuedWarnMs(): number {
   return (window as unknown as { __minboxTimings?: { queuedWarnMs?: number } }).__minboxTimings?.queuedWarnMs ?? QUEUED_WARN_MS
 }
 
+/**
+ * The delivery line under the person's latest message. Every message of the person goes to the agent at
+ * once, into a running turn too (the server marks it urgent, docs/mod-connection.md), so there is no
+ * "Queued until the turn ends" and no Send now: a message waits only while the agent is starting, has
+ * stopped (Resume), or its integration does not answer (Restart).
+ */
 export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Session; /** Where a cancelled message's words go back (default: its thread's draft). */ draftKey?: string }) {
   const { error } = useApp()
   const d = m.delivery ?? 'queued'
   const v = DELIVERY[d]
+  const agent = agentKindLabel(session.agent)
   // Re-render while queued, so the waiting text and the warning appear on time.
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -1324,35 +1329,23 @@ export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Se
   }, [d])
   let text: string
   let restart = false
-  let now = false
   let resume = false
   let cancel = false
-  if (d === 'delivered') text = `Delivered to Claude Code, ${hm(m.delivered_at ?? m.created_at)}`
-  else if (d === 'sending') text = 'Sending to Claude Code…'
+  if (d === 'delivered') text = `Delivered to ${agent}, ${hm(m.delivered_at ?? m.created_at)}`
+  else if (d === 'sending') text = `Sending to ${agent}…`
   else if (d === 'undelivered') {
     text = 'Not delivered. That session stopped. Resume to deliver.'
     resume = true
   } else {
-    const waited = minutesSince(m.created_at)
     const waitedMs = Date.now() - new Date(m.created_at).getTime()
     const silent = !!session.mod_silent || session.mod_conn === 'stale' // no call, or no heartbeat, for a while
-    const stuck = waitedMs >= queuedWarnMs() && (session.status !== 'working' || silent)
-    if (stuck && silent) {
-      text = m.urgent ? 'Send now pressed · Claude Code is not answering; it goes in when it does.' : 'Claude Code is not picking this up. Its connection to minbox is silent.'
-      now = !m.urgent
+    const stuck = waitedMs >= queuedWarnMs()
+    if (session.status === 'starting') text = `Waiting for ${agent} to start…`
+    else if (stuck && silent) {
+      text = `${agent} is not picking this up. Its connection to minbox is silent.`
       restart = true
-    } else if (stuck && session.status !== 'working') {
-      text = m.urgent ? 'Send now pressed · goes in on the next check.' : 'Claude Code is not picking this up yet.'
-      now = !m.urgent
-    } else if (session.status === 'working' && m.urgent) text = 'Send now pressed · goes into the running turn.'
-    else if (session.status === 'working' && waited >= 2) {
-      text = `Undelivered ${waited} min · goes in by itself in ${Math.max(1, AUTO_SEND_MIN - waited)} min`
-      now = true
-    } else if (session.status === 'working') {
-      text = 'Queued · Claude Code is working; it gets this when its turn ends.'
-      now = true
-    }
-    else text = waitedMs >= 5000 ? 'Waiting for Claude Code…' : 'Queued · goes in when Claude Code is idle.'
+    } else if (stuck) text = `${agent} is not picking this up yet.`
+    else text = waitedMs >= 5000 ? `Waiting for ${agent}…` : `Sending to ${agent}…`
     cancel = true
   }
   // Cancelling deletes the message; its words go back into the reply draft so nothing typed is lost.
@@ -1368,11 +1361,6 @@ export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Se
     <div data-testid="delivery-line" data-delivery={d} className="-mt-1 flex min-h-[30px] items-center justify-end gap-2.5 text-[12.5px] text-fg2">
       <span className={cx('w-[18px] text-center', v.color)}>{v.icon}</span>
       <span className="text-right">{text}</span>
-      {now && (
-        <button type="button" data-testid="send-now" onClick={() => api.sendNow(m.id).catch(error)} className="h-7 rounded-[6px] border border-danger bg-transparent px-2.5 text-[12px] text-danger">
-          Send now
-        </button>
-      )}
       {restart && (
         <button
           type="button"
