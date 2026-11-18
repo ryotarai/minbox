@@ -1,5 +1,5 @@
-// The person's answers read on their own: next to the message with the questions they are a short "↳"
-// line (that message's cards show them); moved to another task (or anywhere that message is not shown
+// The person's answers read on their own: next to the message with the questions each is the question
+// (muted, short) over a "↳" line with the answer; moved to another task (or anywhere that message is not shown
 // just above) they show each question's prompt with the choice and the note, and "↳" reveals the question.
 import { test, expect } from './fixtures'
 import { agentReply, api, say, startAgent, taskNamed } from './v3'
@@ -14,16 +14,35 @@ async function ask(minbox: any) {
   return { a, t, q, key: q.questions[0].key as string }
 }
 
-test('an answer next to its question is a short line, as before', async ({ page, minbox }) => {
+test('an answer next to its question shows the question over "↳ answer"', async ({ page, minbox }) => {
   const { a, t, q, key } = await ask(minbox)
   const ans = await api(minbox, 'POST', `/api/v3/sessions/${a.id}/messages`, { words: '', answers_for: q.id, answers: [{ key, selected: ['Oregon'] }] })
   await agentReply(minbox, a, /carrying on/)
   for (const url of [`${minbox.url}/#v=task&k=${t.id}`, `${minbox.url}/#v=agent&s=${a.id}`]) {
     await page.goto(url)
     const msg = page.locator(`[data-testid="v3-message"][data-message-id="${ans.id}"]`)
-    await expect(msg.getByTestId('sent-answers')).toHaveText('↳ Oregon')
+    const item = msg.getByTestId('sent-answers').getByTestId('sent-answer')
+    await expect(item).toHaveCount(1)
+    await expect(item.getByTestId('answer-prompt')).toHaveText('Which region should it deploy to?')
+    await expect(item.getByTestId('answer-prompt')).toHaveAttribute('title', 'Which region should it deploy to?')
+    await expect(item.locator('.v-sans-a')).toHaveText('↳ Oregon')
     await expect(msg.getByTestId('answer-content')).toHaveCount(0)
   }
+})
+
+test('answering in the stream: the sent bubble shows the question with the answer', async ({ page, minbox }) => {
+  const { a, q } = await ask(minbox)
+  await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
+  const qm = page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)
+  await qm.getByTestId('question').getByText('Tokyo', { exact: true }).click()
+  await qm.getByTestId('send-answers').click()
+  await expect(qm.getByTestId('question')).toHaveAttribute('data-open', 'false')
+  const item = page.locator('[data-testid="v3-message"]').getByTestId('sent-answer')
+  await expect(item.getByTestId('answer-prompt')).toHaveText('Which region should it deploy to?')
+  await expect(item.locator('.v-sans-a')).toHaveText('↳ Tokyo')
+  // A click opens the whole question (it is cut at two lines otherwise).
+  await item.getByTestId('answer-prompt').click()
+  await expect(item.getByTestId('answer-prompt')).toHaveAttribute('aria-expanded', 'true')
 })
 
 test('an answer moved to another task shows the question, the choice and the note; ↳ reveals the question', async ({ page, minbox }) => {

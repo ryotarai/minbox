@@ -696,13 +696,7 @@ export function MessageView({
           return <QuestionBlock key={q.key} m={m} q={q} index={nonAction.indexOf(q)} total={nonAction.length} />
         })}
         {(m.answers?.length ?? 0) > 0 && !questionNear && <AnswerContent m={m} name={name} inTask={inTask} baseDir={sess?.cwd ?? ''} onOpen={(a) => onOpenAttachment(a, m)} />}
-        {(m.answers?.length ?? 0) > 0 && questionNear && (
-          <div className="v-cnt2" data-testid="sent-answers">
-            {(m.answers ?? []).map((a) => (
-              <div key={a.key}>↳ {answerText(a)}</div>
-            ))}
-          </div>
-        )}
+        {(m.answers?.length ?? 0) > 0 && questionNear && <SentAnswers m={m} />}
         {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={(a) => onOpenAttachment(a, m)} openId={null} newestId={null} />}
         {!me && questions.length > 0 && <AnswerBar m={m} onSent={onChanged} testid="send-answers" />}
       </div>
@@ -724,6 +718,50 @@ export function answersNearQuestions(list: V3Message[], window = 4): Set<string>
     }
   })
   return out
+}
+
+/** A question's prompt above its answer: muted, two lines at most; the full text on hover, and a click
+ *  (or Enter) opens it all. */
+function AnswerPrompt({ text, className }: { text: string; className: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div
+      className={className + (open ? ' open' : '')}
+      data-testid="answer-prompt"
+      title={open ? undefined : text}
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={() => setOpen((o) => !o)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setOpen((o) => !o)
+        }
+      }}
+    >
+      {text}
+    </div>
+  )
+}
+
+/** The person's answers next to the message with the questions: each question (muted, short) over "↳"
+ *  and the answer, so the bubble reads on its own (the answer alone when the question is unknown here). */
+function SentAnswers({ m }: { m: V3Message }) {
+  const qs = new Map((m.answers_to?.questions ?? []).map((q) => [q.key, q]))
+  return (
+    <div className="v-sans" data-testid="sent-answers">
+      {(m.answers ?? []).map((a) => {
+        const q = qs.get(a.key)
+        return (
+          <div key={a.key} className="v-sans-i" data-testid="sent-answer">
+            {q?.prompt && <AnswerPrompt className="v-sans-p" text={q.prompt} />}
+            <div className="v-sans-a">↳ {answerText(a)}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /**
@@ -754,7 +792,7 @@ function AnswerContent({ m, name, inTask, baseDir, onOpen }: { m: V3Message; nam
         const note = a.note?.trim()
         return (
           <div key={a.key} className="v-ans-q" data-testid="answer-item">
-            {q && <div className="v-ans-p">{short(q.prompt, 140)}</div>}
+            {q && <AnswerPrompt className="v-ans-p" text={q.prompt} />}
             {choice && <div className="v-ans-a">{choice}</div>}
             {note && <div className="v-ans-n">Note: {note}</div>}
           </div>
