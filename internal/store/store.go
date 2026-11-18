@@ -40,7 +40,7 @@ const (
 
 // Delivery states of the person's messages.
 const (
-	DeliveryQueued      = "queued"      // waiting for Claude to be idle
+	DeliveryQueued      = "queued"      // waiting for the agent to take it (it is starting, or its integration did not poll yet)
 	DeliverySending     = "sending"     // claimed by the mod, being submitted
 	DeliveryDelivered   = "delivered"   // Claude has it
 	DeliveryUndelivered = "undelivered" // the session ended before it was delivered
@@ -110,8 +110,17 @@ const (
 	ClosedArchived   = "archived"
 )
 
-// UrgentAfter: a reply queued this long is delivered even into a busy session.
+// UrgentAfter: a message queued this long is delivered even into a busy session (for minbox's own
+// requests, which are not urgent by kind; see urgentKind).
 const UrgentAfter = 5 * time.Minute
+
+// urgentKind tells whether a message of this kind goes into a busy agent's running turn at once (as
+// Send now did): the person's own messages (replies, answers, new threads, hand-offs, notes, a
+// command's follow-up) do. minbox's own requests (KindPlace, the goal's "continue") wait for the
+// turn to end, so they never cut into the work they are about.
+func urgentKind(kind string) bool {
+	return kind == "" || kind == KindMessage || kind == KindNote
+}
 
 // ClaimTimeout: a claim older than this, made by another mod instance, is stale.
 const ClaimTimeout = 60 * time.Second
@@ -1508,8 +1517,8 @@ func (s *Store) PendingForSession(ctx context.Context, sessionID, owner string) 
 			return nil, err
 		}
 		p := PendingDelivery{Message: *m, Subject: v.subject}
-		// Urgent: delivered even while Claude is busy (Send now, or queued long).
-		p.Urgent = m.Urgent || s.now().Sub(m.CreatedAt) >= UrgentAfter
+		// Urgent: delivered even while the agent is busy (the person's own message, Send now, or queued long).
+		p.Urgent = m.Urgent || urgentKind(m.Kind) || s.now().Sub(m.CreatedAt) >= UrgentAfter
 		prev, err := scanMessage(s.db.QueryRowContext(ctx, `SELECT `+messageCols+` FROM messages
 		  WHERE thread_id=? AND author='agent' AND (created_at<? OR (created_at=? AND rowid<(SELECT rowid FROM messages WHERE id=?)))
 		  ORDER BY created_at DESC, rowid DESC LIMIT 1`, m.ThreadID, ms(m.CreatedAt), ms(m.CreatedAt), m.ID))

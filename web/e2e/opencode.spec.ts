@@ -3,7 +3,7 @@ import { createSession, expect, expectTerminal, terminalText, test, typeInTermin
 // OpenCode 2.x as the third coding agent (docs/opencode.md), driven by the fake opencode
 // (e2e/fake-opencode.py, no model, no real OpenCode): the dialog offers it, minbox creates the
 // OpenCode session before the TUI starts and passes the plugin in OPENCODE_CONFIG_CONTENT, and status,
-// messages, replies, Send now and the heartbeat flow through the same inbox as for the other agents.
+// messages, replies (into a running turn too) and the heartbeat flow through the same inbox as for the other agents.
 
 test('the dialog offers OpenCode; its session gets the plugin, a created session and OpenCode tool names', async ({ page, ocMinbox }) => {
   await page.goto(ocMinbox.url)
@@ -29,7 +29,7 @@ test('the dialog offers OpenCode; its session gets the plugin, a created session
   expect(sessions[0].claude_session_id).toMatch(/^ses_[0-9A-Za-z]{26}$/)
 })
 
-test('an OpenCode session reports status, its messages and replies flow, Send now steers, and the heartbeat shows', async ({ page, ocMinbox }) => {
+test('an OpenCode session reports status, its messages and replies flow, a reply steers a running turn, and the heartbeat shows', async ({ page, ocMinbox }) => {
   await page.goto(ocMinbox.url)
   await createSession(page, ocMinbox.dataDir, 'oc-flow', 'opencode')
   await expectTerminal(page, 'ready>')
@@ -46,16 +46,13 @@ test('an OpenCode session reports status, its messages and replies flow, Send no
   await typeInTerminal(page, 'title Choose the database')
   await expect(page.getByTestId('agent-row').filter({ hasText: 'oc-flow' })).toContainText('Choose the database')
 
-  // Working: a plain reply waits; Send now makes it urgent and it goes into the running turn.
+  // Working: the person's reply goes into the running turn at once (steered), no Send now needed.
   await typeInTerminal(page, 'work')
   await expect.poll(async () => (await (await fetch(ocMinbox.url + '/api/sessions')).json())[0].status).toBe('working')
   const [s] = await (await fetch(ocMinbox.url + '/api/sessions')).json()
   const threads = await (await fetch(ocMinbox.url + `/api/sessions/${s.id}/threads`)).json()
   const r = await fetch(ocMinbox.url + `/api/threads/${threads[0].id}/reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ words: 'Also add an index' }) })
-  const msg = await r.json()
-  await page.waitForTimeout(1500)
-  expect(await terminalText(page)).not.toContain('Also add an index')
-  expect((await fetch(ocMinbox.url + `/api/messages/${msg.id}/send-now`, { method: 'POST' })).status).toBe(200)
+  expect(r.ok).toBe(true)
   await expectTerminal(page, /Also add an index \(steered\)/)
   await typeInTerminal(page, 'idle')
   await expect.poll(async () => (await (await fetch(ocMinbox.url + '/api/sessions')).json())[0].status).toBe('idle')
