@@ -1,0 +1,34 @@
+/* minbox v3's app shell: dragged widths, the side pane's edge, swapped panes, the tablet's two panes,
+   the phone's full-screen terminal, project groups in the agent list. */
+.v-sidebar { width: var(--v-sb-w, 236px); }
+.v-side { width: var(--v-side-w, 300px); max-width: calc(100% - 320px); }
+.v-side.wide { width: var(--v-wide-w, min(46vw, 760px)); }
+
+/* The column edges. The side pane's edge sits between the stream (or task) and its side pane. */
+.v-rz { flex: none; width: 9px; margin: 0 -4px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; }
+.v-rz::after { content: ''; position: absolute; inset: 0 4px; }
+.v-rz:hover::after { background: var(--mb-linestrong, var(--mb-line2)); }
+@media (pointer: coarse) { .v-rz { width: 21px; margin: 0 -10px; } }
+.v-main { position: relative; }
+.v-main > .v-col { order: 0; }
+.v-main > .v-rz { order: 1; }
+.v-main > .v-side { order: 2; }
+/* Settings › swap panes: the side pane (terminal, shell, files) on the left of the stream. */
+.v-main.swapped { flex-direction: row-reverse; }
+.v-main.swapped > .v-side { border-left: 0; border-right: 1px solid var(--mb-line); }
+
+/* The agents list: a project's agents under its name (all projects), plain shells last. */
+.v-ag-proj { display: flex; align-items: center; gap: 6px; padding: 8px 14px 2px; font-size: 11px; font-weight: 600; color: var(--mb-subtle); letter-spacing: .02em; }
+.v-proj-dot { width: 7px; height: 7px; border-radius: 2px; background: hsl(var(--h) 55% 55%); flex: none; }
+
+/* Tablet: the rail's ☰ brings the folded sidebar back. */
+.v-railbtn { border: 0; background: none; color: var(--mb-fg2); height: 40px; font-size: 17px; flex: none; }
+.v-railbtn:hover { background: var(--mb-rowsel); }
+
+@media (max-width: 699px) {
+  .v-side, .v-side.wide { width: auto; max-width: none; }
+  /* The terminal, shell or files take the whole screen (main's phone terminal view); × goes back. */
+  .v-main.wide > .v-col { display: none; }
+  .v-main.wide > .v-side.wide { flex: 1; min-height: 0; border-top: 0; }
+  .v-main.wide > .v-side.wide > div:last-child { min-height: 0 !important; }
+}
