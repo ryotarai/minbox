@@ -269,6 +269,9 @@ test('tile icons never overlap the file name (long name, a narrow reply box)', a
   await page.setViewportSize({ width: 760, height: 900 })
   await page.goto(minbox.url)
   await openStream(page, minbox, 'sk5')
+  // The files beside the stream leave the reply box narrow.
+  await page.getByTestId('files-toggle').click()
+  await expect(page.getByTestId('agent-side')).toBeVisible()
   const b64 = await page.evaluate(() => {
     const c = document.createElement('canvas')
     c.width = 40
