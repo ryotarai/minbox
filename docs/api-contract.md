@@ -87,7 +87,7 @@ Message adds:
 kind: "message" | "note"          // note: a person's note (re-ask, 👍); not a reply
 attachments: Attachment[]         // meta only
 annotations: Annotation[]         // on the person's messages
-urgent: bool                      // Send now
+urgent: bool                      // Send now (kept for old pages; the person's messages are urgent by kind, see below)
 closed: { [question_key]: "moved_on"|"replaced"|"marked_read"|"archived" }  // agent messages: open questions closed unanswered (no longer counted as open; "moved_on" and "replaced" ones still take answers, which reach Claude headed with a note naming the earlier message)
 ```
 
@@ -363,7 +363,7 @@ POST  /api/threads/{id}/reply               body adds annotations, urgent, forwa
                                               restart the ended session after storing). A reply unsnoozes.
                                               A `words` that starts with `!` (no leading space) runs as a command, see
                                               "Thread commands"; `\!` sends the text without the backslash.
-POST  /api/messages/{id}/send-now           urgent=true
+POST  /api/messages/{id}/send-now           urgent=true (no button calls it any more: the person's messages are urgent anyway)
 POST  /api/messages/{id}/cancel             deletes the person's message while it is still queued (not delivered, not
                                               being delivered) so it is never delivered → {ok, thread_id, thread_deleted}
                                               (a thread left empty is deleted too). 409 when delivered already / not
@@ -392,8 +392,8 @@ SSE event types: `sessions`, `threads`, `thread`, `topics`, `settings`.
 - `send_message` adds `attachments: string[]` (file paths, relative to the session cwd
   allowed; at most 10, 5 MB each), `review: {title, summary, sections:[{title, summary, files: string[]}]}`
   and `name` (thread name for a new thread). The server snapshots files and diffs at send time.
-- Pending items add `urgent: bool` (Send now, or queued longer than 5 minutes). The mod
-  delivers an urgent item even while Claude is busy.
+- Pending items add `urgent: bool`: every message of the person (kind `message` or `note`), Send now, or one queued longer than 5 minutes; minbox's own requests (kind `place`, a goal's `continue`) are not. The mod
+  delivers an urgent item even while the agent is busy (into its running turn).
 - Delivery format (the mod's turn text, `wakeText`): per delivered message a header
   `minbox inbox: <subject> (thread_id: <id>)`, a line saying reply or new thread, the answer-in-thread
   hint, the body, and a last line `(Thread <id>. Earlier messages in this thread: call <read_thread tool> with this thread_id.)`.

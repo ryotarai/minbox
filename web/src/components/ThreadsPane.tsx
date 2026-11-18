@@ -581,13 +581,8 @@ function QuickCompose({ phone, full, onToggleFull, onSent }: { phone?: boolean; 
       setSending(false)
     }
   }
-  const hint = !target
-    ? ''
-    : target.status === 'ended'
-      ? 'Session ended: Claude gets this after Resume'
-      : target.status === 'working'
-        ? 'Working: Claude gets this when its turn ends'
-        : ''
+  // A working agent gets the message at once, in its running turn: no hint for it.
+  const hint = target?.status === 'ended' ? 'Session ended: Claude gets this after Resume' : ''
   return (
     <div className={cx('border-t border-line p-2.5', full ? 'flex min-h-0 flex-1 flex-col' : 'shrink-0')} data-testid="quick-compose" data-full={full} data-target={target?.id}>
       <button
