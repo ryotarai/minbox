@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, uploadMarkup, type Annotation, type Attachment, type AttachmentDetail } from '../api'
 import { useApp } from '../lib/app'
 import { kindLabel, sizeLine, steppable, typeOf, videoTime, viewsAsCode } from '../lib/attachments'
@@ -22,7 +22,50 @@ export const CODE_HIGHLIGHT_MAX_CHARS = 100_000
 export const CODE_WRAP_LINE_CHARS = 1000
 const FOLD_PANEL_BELOW = 780
 
-export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone }: { attachmentId: string; sessionName: string; sessionCwd: string; phone?: boolean }) {
+type ViewerProps = { attachmentId: string; sessionName: string; sessionCwd: string; phone?: boolean }
+
+// A crash anywhere in the viewer stays in the viewer (an inline message with a way out) instead of
+// unmounting the whole app; the file's own view has a boundary of its own so the header still works.
+export function AttachmentViewer(props: ViewerProps) {
+  const { navigate } = useApp()
+  return (
+    <ViewerBoundary key={props.attachmentId} label="The file viewer failed." onClose={() => (history.state?.viewer ? history.back() : navigate({ f: null }, { push: false }))}>
+      <AttachmentViewerInner {...props} />
+    </ViewerBoundary>
+  )
+}
+
+class ViewerBoundary extends Component<{ children: ReactNode; label: string; onClose?: () => void }, { err: Error | null }> {
+  state = { err: null as Error | null }
+  static getDerivedStateFromError(err: Error) {
+    return { err }
+  }
+  componentDidCatch(err: Error) {
+    console.error('attachment viewer crashed', err)
+  }
+  render() {
+    const { err } = this.state
+    if (!err) return this.props.children
+    return (
+      <div data-testid="viewer-crash" role="alert" className="m-4 flex flex-col items-start gap-2 rounded-xl border border-line bg-surface px-4 py-4 text-[13.5px]">
+        <strong className="text-danger">{this.props.label}</strong>
+        <span className="mono break-words text-[12px] text-muted">{String(err.message || err)}</span>
+        <span className="flex gap-2">
+          <Button size="sm" onClick={() => this.setState({ err: null })}>
+            Try again
+          </Button>
+          {this.props.onClose && (
+            <Button size="sm" onClick={this.props.onClose} data-testid="viewer-crash-close">
+              Close
+            </Button>
+          )}
+        </span>
+      </div>
+    )
+  }
+}
+
+function AttachmentViewerInner({ attachmentId, sessionName, sessionCwd, phone }: ViewerProps) {
   const { navigate, error, route } = useApp()
   const [detail, setDetail] = useState<AttachmentDetail | null>(null)
   const [version, setVersion] = useState<Version>('current')
@@ -175,6 +218,7 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
         {detail && <VersionLine d={detail} version={version} sender={sender} onVersion={setVersion} />}
 
         <div ref={bodyRef} className={cx('relative min-h-0 flex-1 overflow-auto', phone ? 'px-3 py-3 [touch-action:pan-x_pan-y_pinch-zoom]' : 'px-7 py-[18px]')} data-testid="attachment-body">
+          <ViewerBoundary key={`${attachmentId}:${version}`} label="This file failed to show.">
           {!detail || !t ? (
             <div className="text-[13px] text-subtle">Loading…</div>
           ) : t === 'pdf' || t === 'file' ? (
@@ -192,6 +236,7 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
           ) : (
             <DocView d={detail} version={version} quotes={annotations.map((a) => a.quote ?? '')} bodyRef={bodyRef} onComment={(p) => setPending(p)} sessionCwd={sessionCwd} />
           )}
+          </ViewerBoundary>
 
           {pending && <CommentBox phone={phone} pending={pending} onCancel={() => setPending(null)} onSave={savePending} />}
         </div>
@@ -664,6 +709,7 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const cur = useRef<Stroke | null>(null)
+  const curPointer = useRef<number | null>(null)
   const src = api.attachmentRawUrl(d.id, version)
   const wide = d.width && d.height ? d.width / d.height >= 4 : false
 
@@ -675,7 +721,7 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
     c.height = img.clientHeight
     const g = c.getContext('2d')!
     const sx = img.clientWidth / (img.naturalWidth || 1)
-    for (const s of [...strokes, ...(cur.current ? [cur.current] : [])]) drawStroke(g, s, sx, 2.5)
+    for (const s of [...strokes, ...(cur.current ? [cur.current] : [])]) if (s?.pts) drawStroke(g, s, sx, 2.5)
   }
   useEffect(redraw)
 
@@ -707,6 +753,17 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
     const img = imgRef.current!
     const s = img.naturalWidth / r.width
     return [(e.clientX - r.left) * s, (e.clientY - r.top) * s]
+  }
+  // Ends the stroke in progress. The stroke is taken out of the ref first and the state updater
+  // closes over that value: React may run the updater later, after the ref is reset (reading the
+  // ref inside it once added a null stroke and crashed the redraw).
+  const endStroke = (e: React.PointerEvent, keep: boolean) => {
+    const s = cur.current
+    if (!s || e.pointerId !== curPointer.current) return
+    cur.current = null
+    curPointer.current = null
+    if (keep && s.pts.length > 1) setStrokes((list) => [...list, s])
+    else redraw()
   }
   return (
     <div className="flex flex-col gap-2.5">
@@ -764,23 +821,30 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
         />
         <canvas
           ref={canvasRef}
-          className={cx('absolute inset-0', markup ? 'cursor-crosshair' : 'pointer-events-none')}
+          className={cx('absolute inset-0', markup ? 'cursor-crosshair touch-none' : 'pointer-events-none')}
           onPointerDown={(e) => {
-            if (!markup) return
-            ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+            // One stroke at a time: a second finger while one draws is ignored.
+            if (!markup || cur.current || (e.pointerType === 'mouse' && e.button !== 0)) return
+            e.preventDefault()
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId)
+            } catch {
+              // the pointer is already gone (or synthetic): draw without capture
+            }
+            curPointer.current = e.pointerId
             cur.current = { tool, pts: [pos(e)] }
           }}
           onPointerMove={(e) => {
-            if (!cur.current) return
+            const s = cur.current
+            if (!s || e.pointerId !== curPointer.current) return
             const p = pos(e)
-            if (cur.current.tool === 'pen') cur.current.pts.push(p)
-            else cur.current.pts[1] = p
+            if (s.tool === 'pen') s.pts.push(p)
+            else s.pts[1] = p
             redraw()
           }}
-          onPointerUp={() => {
-            if (cur.current && cur.current.pts.length > 1) setStrokes((s) => [...s, cur.current!])
-            cur.current = null
-          }}
+          onPointerUp={(e) => endStroke(e, true)}
+          onPointerCancel={(e) => endStroke(e, false)}
+          onLostPointerCapture={(e) => endStroke(e, true)}
         />
       </div>
     </div>
