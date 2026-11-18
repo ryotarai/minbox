@@ -191,9 +191,9 @@ export function StreamView({
           <div className="v-r1">
             <BackButton tasks={tasks} />
             <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
-            <h2 data-testid="agent-name">
-              {sess.name}
-              {hint && <small className="v-hint"> · {hint}</small>}
+            <h2 data-testid="agent-name" className="v-tline">
+              <span>{sess.name}</span>
+              {hint && <small className="v-hint">· {hint}</small>}
             </h2>
             <span className="v-hide-phone v-kind" style={{ color: 'var(--mb-subtle)', fontSize: 12 }} title={[agentKindLabel(sess.agent), sess.is_main ? 'main' : '', sess.host_name].filter(Boolean).join(' · ')}>
               {agentKindLabel(sess.agent)}
