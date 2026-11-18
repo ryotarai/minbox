@@ -4,6 +4,7 @@
 // sheet ("Tasks N ›"). In the pane each task has a checkbox (and "All" one on top): the checked tasks
 // show side by side in place of the stream (see Columns).
 import { useEffect, useRef } from 'react'
+import { useApp } from '../lib/app'
 import { ago, standing, STATUS_LABEL, type BoardTask } from './data'
 import { Bar, StatusDot, useNav } from './parts'
 import { IconTasks } from '../components/icons'
@@ -16,14 +17,17 @@ export function agentTasks(tasks: BoardTask[], sessionId: string) {
 }
 
 /** The list itself (OPEN TASKS, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
- *  checkbox per task (shown as a column on the agent's page). */
-export function AgentTaskList({ tasks, sessionId, onOpen, pick }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState }) {
+ *  checkbox per task (shown as a column on the agent's page). onSelect: a task opens there (in the
+ *  agent's page, selected: the one shown) instead of the task view. */
+export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null }) {
   const nav = useNav()
   const { open, done } = agentTasks(tasks, sessionId)
   const go = (id: string) => {
     onOpen?.()
-    nav.task(id)
+    if (onSelect) onSelect(id)
+    else nav.task(id)
   }
+  const sel = (t: BoardTask) => (selected === t.id ? { 'aria-current': true as const, className: 'v-mt sel' } : { className: 'v-mt' })
   // With checkboxes: the box beside the row (the row still opens the task).
   const row = (t: BoardTask, el: React.ReactElement) =>
     pick ? (
@@ -41,7 +45,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick }: { tasks: Board
         OPEN TASKS <span className="v-x">{open.length}</span>
       </div>
       {open.map((t) => row(t,
-        <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
+        <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
           <div className="v-a">
             <StatusDot t={t} />
             {t.kind === 'goal' ? '◎ ' : ''}
@@ -64,7 +68,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick }: { tasks: Board
             DONE THIS WEEK <span className="v-x">{done.length}</span>
           </summary>
           {done.map((t) => row(t,
-            <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
+            <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
               <div className="v-a">
                 <StatusDot t={t} />
                 {t.title}
@@ -98,8 +102,18 @@ export function TasksPane({
   onToggle: (show: boolean) => void
 }) {
   const { open, done } = agentTasks(tasks, sessionId)
-  const pick = useColumnPick(sessionId, [...open, ...done])
-  const checked = pick.selected.length
+  const own = useColumnPick(sessionId, [...open, ...done])
+  const checked = own.selected.length
+  // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
+  // goes back to the stream); a checkbox shows the checked ones as columns (leaving the one task).
+  const { route, navigate } = useApp()
+  const detail = route.view === 'agent' ? route.k : null
+  const select = (id: string) => navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
+  const leave = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+    f(...a)
+    if (detail) navigate({ k: null }, { push: false })
+  }
+  const pick = { ...own, toggle: leave(own.toggle), toggleAll: leave(own.toggleAll), clear: leave(own.clear) }
   const ref = useRef<HTMLDivElement>(null)
   const floating = overlay && shown
   useEffect(() => {
@@ -165,7 +179,7 @@ export function TasksPane({
             </button>
           </div>
           <div className="v-tasks-body">
-            <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onOpen={overlay ? () => onToggle(false) : undefined} />
+            <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
           </div>
         </aside>
       )}

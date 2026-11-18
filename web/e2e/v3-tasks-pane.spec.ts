@@ -1,7 +1,7 @@
 // The agent's Tasks pane sits between the agents list and the stream: [rail] | [agents] | [tasks] |
 // [stream] | [terminal, shell, files when one is open]. Its width drags and is kept; it folds to a strip
-// (its « button, the strip, ⇧T, the palette) and stays folded across reloads. A task opens the task
-// view; back returns to the agent. On a tablet it is a strip that unfolds over the stream.
+// (its « button, the strip, ⇧T, the palette) and stays folded across reloads. A task opens in the
+// agent's page (the pane stays); back returns to the stream. On a tablet it is a strip that unfolds over the stream.
 import type { Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
@@ -99,10 +99,10 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
   await expect(page.getByTestId('help-dialog')).toContainText('Tasks pane of the agent')
   await page.keyboard.press('Escape')
 
-  // A task opens the task view (no Tasks pane there); back returns to the agent.
+  // A task opens in the agent's page (the Tasks pane stays); back returns to the stream.
   await pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`).click()
-  await expect(page.getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
-  await expect(page.getByTestId('tasks-pane')).toHaveCount(0)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+  await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
   await page.goBack()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
   await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
@@ -132,7 +132,8 @@ test('tablet 900px: the Tasks pane is a strip that unfolds over the stream; a ta
 
   await page.getByTestId('tasks-pane-toggle').click()
   await pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`).click()
-  await expect(page.getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+  await expect(pane).toHaveAttribute('data-shown', 'false')
   await page.goBack()
   await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'false')
 })

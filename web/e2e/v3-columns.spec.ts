@@ -117,6 +117,84 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
   await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t2.id)
 })
 
+test('a task title shows that task in the agent page, the Tasks pane kept and the task selected; routed, back to the stream; checkboxes switch to columns', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  await say(minbox, a, 'please fix the gauge reading')
+  const t1 = await taskNamed(minbox, /Fix the gauge reading/)
+  await agentReply(minbox, a, /created a task/)
+  const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto(minbox.url)
+  await page.locator(`[data-testid="agents"] [data-session="${a.id}"], [data-testid="agents"] button:has-text("api")`).first().click()
+  await expect(conv(page)).toBeVisible()
+  const row = (id: string) => page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${id}"]`)
+  const detail = page.getByTestId('agent-task-detail')
+
+  // A title: that task (header, messages, reply box) in the page; the pane and the agents list stay.
+  await row(t1.id).click()
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${t1.id}`))
+  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(detail.getByTestId('v3-message').filter({ hasText: 'please fix the gauge reading' })).toBeVisible()
+  await expect(detail.getByTestId('task-composer')).toBeVisible()
+  await expect(conv(page)).toHaveCount(0)
+  await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
+  await expect(page.getByTestId('sidebar')).toBeVisible()
+  await expect(row(t1.id)).toHaveAttribute('aria-current', 'true')
+  await expect(row(t2.id)).not.toHaveAttribute('aria-current', 'true')
+  await snap(page, 'detail-desktop')
+
+  // A reply from it: to the agent, about the task.
+  await detail.getByTestId('composer-text').fill('check the second gauge too')
+  await detail.getByTestId('composer-send').click()
+  await expect
+    .poll(async () => {
+      const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
+      const m = s.messages.find((x: any) => x.author === 'user' && x.words === 'check the second gauge too')
+      return m ? m.tasks.map((x: any) => x.task_id) : null
+    })
+    .toEqual([t1.id])
+
+  // Another title replaces it; a reload keeps it; ‹ goes back to the stream.
+  await row(t2.id).click()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(row(t2.id)).toHaveAttribute('aria-current', 'true')
+  await page.reload()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(page.getByTestId('back')).toHaveAccessibleName(/Back to api/)
+  await page.getByTestId('back').click()
+  await expect(conv(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/k=/)
+  // Forward: the task again.
+  await page.goForward()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  // ✕ also goes back to the stream.
+  await page.getByTestId('task-detail-close').click()
+  await expect(conv(page)).toBeVisible()
+
+  // A checkbox: the columns, leaving the one task; a title from there shows that one, ✕ back to the columns.
+  await row(t1.id).click()
+  await expect(detail).toBeVisible()
+  await check(page, t2.id).check()
+  await expect(detail).toHaveCount(0)
+  await expect(page).not.toHaveURL(/k=/)
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+  await expect(col(page, t2.id)).toBeVisible()
+  await row(t1.id).click()
+  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await page.getByTestId('task-detail-close').click()
+  await expect(col(page, t2.id)).toBeVisible()
+
+  // The Board (and Search, deep links) still open the full task view.
+  await page.getByTestId('nav-board').click()
+  await page.goto(minbox.url + `/#v=task&k=${t1.id}`)
+  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t1.id)
+  // From the task view, an agent opens on its stream (the task's k does not carry over).
+  await page.getByTestId('task-view').getByTestId('task-agent').first().click()
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  await expect(detail).toHaveCount(0)
+})
+
 test('many checked tasks scroll sideways at a minimum width; a new open task joins All', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   for (const t of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) await api(minbox, 'POST', '/api/v3/tasks', { title: 'Task ' + t, session_id: a.id })
