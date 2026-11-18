@@ -1,9 +1,10 @@
 // UC3 (give a new request without thinking where it goes): ⇧N writes to the main agent by default
-// (or to a new agent); the agent decides existing task / new task / no task, and says so under its reply.
+// (or to a new agent); the agent decides existing task / new task, and says so under its reply. Every
+// message is about a task: chit-chat gets a small task of its own, done at once.
 import { test, expect } from './fixtures'
 import { agentReply, api, board, shot, startAgent } from './v3'
 
-test('⇧N to the main agent: new work becomes a task, a follow-up is about it, chit-chat is about no task', async ({ page, minbox }) => {
+test('⇧N to the main agent: new work becomes a task, a follow-up is about it, chit-chat is a small done task', async ({ page, minbox }) => {
   const main = await startAgent(minbox, 'api')
   await page.goto(minbox.url)
   await expect(page.getByTestId('board')).toBeVisible()
@@ -34,17 +35,19 @@ test('⇧N to the main agent: new work becomes a task, a follow-up is about it, 
   await expect(follow.getByTestId('task-link')).toHaveAttribute('title', 'Add a dark mode toggle to settings', { timeout: 15_000 })
   await expect(follow.getByTestId('decision')).toHaveCount(0)
 
-  // Chit-chat: no task, and no note nagging about it.
+  // Chit-chat: a small task of its own, done at once (off the open lists).
   await page.getByTestId('composer-text').fill('is the staging server up?')
   await page.keyboard.press('ControlOrMeta+Enter')
   const chat = stream.locator('[data-testid="v3-message"][data-author="agent"]').nth(2)
   await expect(chat).toContainText('Sure', { timeout: 15_000 })
-  await expect(chat.getByTestId('task-link')).toHaveCount(0)
-  await expect(stream.getByTestId('decision')).toHaveCount(1)
+  await expect(chat.getByTestId('task-link')).toHaveAttribute('title', 'Is the staging server up')
+  await expect(stream.getByTestId('unplaced')).toHaveCount(0)
   await shot(page, 'uc3-decisions', 'light')
   const b = await board(minbox)
-  expect(b.tasks.map((t: any) => t.title)).toEqual(['Add a dark mode toggle to settings'])
-  expect(b.tasks[0].message_count).toBe(4)
+  const dark = b.tasks.find((t: any) => t.title === 'Add a dark mode toggle to settings')
+  expect(dark.status).toBe('working')
+  expect(dark.message_count).toBe(4)
+  expect(b.tasks.find((t: any) => t.title === 'Is the staging server up').status).toBe('done')
 })
 
 test('⇧N to a new agent starts a session and its stream gets the message', async ({ page, minbox }) => {

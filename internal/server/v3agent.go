@@ -15,9 +15,10 @@ import (
 )
 
 // The v3 agent contract (docs/v3/redesign.md §4.5, §7): the agent talks in its stream, and decides for
-// the person's messages of a turn whether they are about an existing task (send_message task_ids), new
-// work (create_task) or nothing. The server applies that decision to the turn's untagged messages of
-// the person, tags the reply, and records the decision on the reply (shown under it).
+// the person's messages of a turn which task they are about: an existing one (send_message task_ids)
+// or new work (create_task). Every message is about a task: what a turn leaves in none, minbox asks the
+// agent to place (v3place.go). The server applies the decision to the turn's untagged messages of the
+// person, tags the reply, and records the decision on the reply (shown under it).
 
 // turnState is what the server remembers of a session's current turn: the person's messages it
 // answers (Key: the newest one's id), the tasks the agent created in it, and whether a reply already
@@ -153,6 +154,7 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 		}
 		_ = s.store.SetDecision(ctx, messageID, decision, task, cand)
 	}
+	s.settlePlaceRequests(ctx, sess.ID)
 	if len(all) > 0 || decision != "" {
 		s.publishTasks()
 	}
@@ -378,8 +380,9 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 		httpError(w, 400, msg)
 		return
 	} else {
-		_, _ = s.store.LinkMessages(ctx, t.ID, ids, store.LinkAgent)
+		_, _ = s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, ids), store.LinkAgent)
 	}
+	s.settlePlaceRequests(ctx, sess.ID)
 	if t.Kind == store.KindGoal && b.Autonomous != nil && *b.Autonomous {
 		s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
 	}
@@ -442,9 +445,10 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 		v3TaskError(w, err)
 		return
 	}
-	if added, _ := s.store.LinkMessages(ctx, t.ID, ids, store.LinkAgent); len(added) > 0 {
+	if added, _ := s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, ids), store.LinkAgent); len(added) > 0 {
 		_ = s.store.AddTaskEvent(ctx, t.ID, "link", strconv.Itoa(len(added))+" earlier message(s) added by "+sess.Name, sess.ID, "")
 	}
+	s.settlePlaceRequests(ctx, sess.ID)
 	_, _ = s.store.AddTaskAgent(ctx, t.ID, sess.ID, store.RoleInvolved)
 	if t.Kind == store.KindGoal {
 		allMet := len(t.Criteria) > 0

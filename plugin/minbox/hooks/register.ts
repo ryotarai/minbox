@@ -423,7 +423,7 @@ async function tick($: any): Promise<void> {
     for (const p of claimed) inflight.add(p.id)
     try {
       await $.prompt.submit({ text: wakeText(claimed, sendToolName, readToolName) })
-      deliveredThreads = [...new Set(claimed.map((p) => p.thread_id))]
+      deliveredThreads = [...new Set(claimed.filter((p) => p.kind !== 'place').map((p) => p.thread_id))]
       lastDeliveryAt = new Date().toISOString()
       note($, 'delivered', `submitted ${claimed.length} message(s): ${claimed.map((p) => p.id).join(',')}`)
     } catch (err) {
