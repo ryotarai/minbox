@@ -1305,6 +1305,9 @@ function summarize(a: Answer): string {
 /** A queued message waiting this long (an agent that does not take it, or a silent mod) shows a warning. */
 const QUEUED_WARN_MS = 20_000
 
+/** v3: a queued message shows no line under it this long (its header says sending); then Waiting… and Cancel. */
+const COMPACT_QUIET_MS = 3_000
+
 function queuedWarnMs(): number {
   return (window as unknown as { __minboxTimings?: { queuedWarnMs?: number } }).__minboxTimings?.queuedWarnMs ?? QUEUED_WARN_MS
 }
@@ -1315,7 +1318,23 @@ function queuedWarnMs(): number {
  * "Queued until the turn ends" and no Send now: a message waits only while the agent is starting, has
  * stopped (Resume), or its integration does not answer (Restart).
  */
-export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Session; /** Where a cancelled message's words go back (default: its thread's draft). */ draftKey?: string }) {
+export function DeliveryLine({
+  m,
+  session,
+  draftKey,
+  compact,
+}: {
+  m: Message
+  session: Session
+  /** Where a cancelled message's words go back (default: its thread's draft). */
+  draftKey?: string
+  /**
+   * v3: the bubble's header already says sending / ✓ delivered, so this line shows only what needs more
+   * words or an action (waiting, not picking it up, not delivered; Cancel, Restart, Resume), small and
+   * right-aligned under the bubble; otherwise nothing.
+   */
+  compact?: boolean
+}) {
   const { error } = useApp()
   const d = m.delivery ?? 'queued'
   const v = DELIVERY[d]
@@ -1345,7 +1364,7 @@ export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Se
       text = `${agent} is not picking this up. Its connection to minbox is silent.`
       restart = true
     } else if (stuck) text = `${agent} is not picking this up yet.`
-    else text = waitedMs >= 5000 ? `Waiting for ${agent}…` : `Sending to ${agent}…`
+    else text = waitedMs >= 5000 || compact ? `Waiting for ${agent}…` : `Sending to ${agent}…`
     cancel = true
   }
   // Cancelling deletes the message; its words go back into the reply draft so nothing typed is lost.
@@ -1357,6 +1376,39 @@ export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Se
         if (words) updateReplyDraft(draftKey ?? m.thread_id, (d) => ({ ...d, words: d.words.trim() ? `${words}\n\n${d.words}` : words }))
       })
       .catch(error)
+  if (compact) {
+    // On its way (sending, or queued for a moment) or delivered: the bubble's header says so.
+    const quiet = d === 'queued' && session.status !== 'starting' && Date.now() - new Date(m.created_at).getTime() < COMPACT_QUIET_MS
+    if (d === 'delivered' || d === 'sending' || quiet) return null
+    const btn = 'h-6 rounded-[6px] border bg-transparent px-2 text-[11.5px]'
+    return (
+      <div data-testid="delivery-line" data-delivery={d} className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-[12px]">
+        <span className={d === 'undelivered' || restart ? 'text-danger' : 'text-muted'}>{text}</span>
+        {restart && (
+          <button
+            type="button"
+            data-testid="restart-session"
+            onClick={() => {
+              if (window.confirm(`Restart ${session.name}? A running turn is interrupted; the conversation is resumed.`)) api.restartSession(session.id).catch(error)
+            }}
+            className={cx(btn, 'border-line text-fg2')}
+          >
+            Restart session
+          </button>
+        )}
+        {cancel && (
+          <button type="button" data-testid="cancel-message" onClick={cancelIt} className={cx(btn, 'border-line text-fg2')}>
+            Cancel
+          </button>
+        )}
+        {resume && (
+          <button type="button" data-testid="resume-deliver" onClick={() => api.restartSession(session.id).catch(error)} className={cx(btn, 'border-danger font-semibold text-danger')}>
+            Resume session to deliver
+          </button>
+        )}
+      </div>
+    )
+  }
   return (
     <div data-testid="delivery-line" data-delivery={d} className="-mt-1 flex min-h-[30px] items-center justify-end gap-2.5 text-[12.5px] text-fg2">
       <span className={cx('w-[18px] text-center', v.color)}>{v.icon}</span>

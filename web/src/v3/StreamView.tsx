@@ -339,11 +339,11 @@ export function StreamView({
                   const repeat = !!mt && mt.task_id === run
                   if (!note) run = mt?.task_id ?? ''
                   if (foldAll && i < shown.length - 1) out.push(<CompactRow key={m.id} m={m} name={sess.name} onClick={() => setFoldAll(false)} />)
-                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} repeat={repeat} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
+                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} repeat={repeat} latest={m === lastUser} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
                   if (m === lastUser && !m.pending)
                     out.push(
                       <div key={'dl' + m.id} className="v-delivery">
-                        <DeliveryLine m={m} session={sess} draftKey={draftKey} />
+                        <DeliveryLine m={m} session={sess} draftKey={draftKey} compact />
                       </div>,
                     )
                   for (const f of (thread?.forks ?? []).filter((f) => f.from_message_id === m.id)) out.push(<ForkMarker key={'f' + f.thread_id} f={f} />)
