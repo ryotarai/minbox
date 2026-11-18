@@ -15,8 +15,8 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-/** v3: main is the Board; task, agent (a stream), agents (the phone's list) and search. */
-export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search'
+/** v3: main is the Board; task, agent (a stream), agents (the phone's list), search and columns (tasks side by side). */
+export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search' | 'columns'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -50,7 +50,7 @@ function readRoute(hash = location.hash): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search', 'columns'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : p.get('tab') === 'tasks' ? 'tasks' : 'inbox',
     ss: p.get('ss') || 'general',

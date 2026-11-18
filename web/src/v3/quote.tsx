@@ -6,18 +6,27 @@ import { selectedQuote } from '../components/ThreadView'
 
 const QUOTE_EVENT = 'minbox:v3-quote'
 
-/** Puts text into the reply box as a quote (the Composer on screen takes it). */
+/**
+ * Puts text into the reply box as a quote (the Composer on screen takes it). With several
+ * conversations on screen (the columns view), the one the selection is in (its [data-quote-scope])
+ * takes it.
+ */
 export function quoteIntoComposer(text: string) {
   if (!text.trim()) return
-  window.getSelection()?.removeAllRanges()
-  window.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: text }))
+  const sel = window.getSelection()
+  const at = sel?.anchorNode ?? null
+  const scope = (at && (at.nodeType === 1 ? (at as Element) : at.parentElement)?.closest('[data-quote-scope]')) || null
+  sel?.removeAllRanges()
+  window.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: { text, scope } }))
 }
 
 /** The Composer's side: appends a quote block to its text and focuses the box after it. */
 export function useQuoteTarget(setText: (f: (t: string) => string) => void, box: RefObject<HTMLTextAreaElement | null>) {
   useEffect(() => {
     const on = (e: Event) => {
-      const text = String((e as CustomEvent).detail ?? '')
+      const { text, scope } = (e as CustomEvent<{ text: string; scope: Element | null }>).detail
+      if (scope && box.current && !scope.contains(box.current)) return
+      if (!scope && box.current?.closest('[data-quote-scope]') && document.querySelectorAll('[data-quote-scope]').length > 1) return
       const block = text.split('\n').map((l) => (l.trim() ? `> ${l}` : '>')).join('\n')
       setText((t) => (t.trim() ? `${t.replace(/\s+$/, '')}\n\n${block}\n\n` : `${block}\n\n`))
       requestAnimationFrame(() => {
@@ -33,9 +42,11 @@ export function useQuoteTarget(setText: (f: (t: string) => string) => void, box:
   }, [setText, box])
 }
 
-/** The text selected in the conversation on screen ('' when none), for R. */
+/** The text selected in the conversation on screen ('' when none), for R (the columns view: the column it is in). */
 export function selectedInConversation(): string {
-  const box = document.querySelector<HTMLElement>('[data-quote-box]')
+  const at = window.getSelection()?.anchorNode
+  const el = at ? (at.nodeType === 1 ? (at as Element) : at.parentElement) : null
+  const box = el?.closest<HTMLElement>('[data-quote-box]') ?? document.querySelector<HTMLElement>('[data-quote-box]')
   return selectedQuote(box, true)
 }
 

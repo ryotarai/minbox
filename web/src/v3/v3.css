@@ -323,3 +323,32 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-side[data-sheet] > div:last-child { flex: 1; min-height: 0; overflow: auto; }
   .v-side[data-sheet] .v-mt { padding-top: 10px; padding-bottom: 10px; }
 }
+
+/* Columns (#v=columns): the checked tasks side by side, each a task's conversation. */
+.v-colsbody { flex: 1; min-height: 0; display: flex; }
+.v-colpick { width: 230px; flex: none; overflow: auto; border-right: 1px solid var(--mb-line); background: var(--mb-surface); padding: 6px 0; }
+.v-colpick-row { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; min-width: 0; }
+.v-colpick-row:hover { background: var(--mb-rowsel); }
+.v-colpick-row input { flex: none; margin: 0; accent-color: var(--mb-accent); }
+.v-colpick-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mb-fg); }
+.v-colpick-all { border-bottom: 1px solid var(--mb-line); padding-bottom: 7px; margin-bottom: 4px; font-weight: 600; }
+.v-colstrip { flex: 1; min-width: 0; display: flex; overflow-x: auto; overflow-y: hidden; }
+.v-colcell { flex: 1 1 0; min-width: 320px; display: flex; min-height: 0; border-right: 1px solid var(--mb-line); }
+.v-colcell:last-child { border-right: 0; }
+.v-column .v-head { padding: 9px 12px 8px; }
+.v-column .v-head h2 { font-size: 14px; }
+.v-column .v-head .v-r2 { margin-top: 5px; flex-wrap: nowrap; overflow: hidden; }
+.v-column .v-conv { padding: 10px 12px; }
+.v-column .v-composer { margin: 0 10px 10px; }
+.v-coltitle { border: 0; background: none; padding: 0; color: inherit; font-weight: inherit; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.v-coltitle:hover { text-decoration: underline; }
+.v-colx { padding: 1px 7px; }
+.v-colsub { margin-top: 4px; font-size: 12px; color: var(--mb-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-coltabs { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
+.v-coltab { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; border: 1px solid var(--mb-line2); border-radius: 14px; padding: 3px 10px; background: var(--mb-bg); color: var(--mb-fg2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-coltab.on { background: var(--mb-rowsel); color: var(--mb-fg); border-color: var(--mb-accent); }
+@media (max-width: 699px) {
+  .v-columns > .v-colcell { flex: 1; min-width: 0; border-right: 0; }
+  .v-columns .v-colpick { width: auto; border-right: 0; }
+  .v-colpick-row { padding: 10px 14px; }
+}
