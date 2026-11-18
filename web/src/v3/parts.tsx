@@ -154,7 +154,8 @@ export function TaskBadge({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
 
 export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'> & { needs_you?: boolean; open_questions?: number }; live?: boolean }) {
   const c = t.needs_you || (t.open_questions ?? 0) > 0 || t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : t.kind === 'goal' ? 'd-goal' : 'd-work'
-  return <span className={`v-dot ${c}${live ? ' v-live' : ''}`} data-status={t.status} />
+  // A working task's blue dot pulses like a working agent's dot (v-live), wherever it is shown.
+  return <span className={`v-dot ${c}${live || c === 'd-work' ? ' v-live' : ''}`} data-status={t.status} />
 }
 
 export function Bar({ t }: { t: BoardTask | Task }) {

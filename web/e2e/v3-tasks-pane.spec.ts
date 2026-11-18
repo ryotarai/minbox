@@ -31,6 +31,11 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
   await expect(pane).toHaveAttribute('data-shown', 'true')
   await expect(pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`)).toBeVisible()
   await expect(pane.getByTestId('task-standing')).toBeVisible()
+  // A working task's blue dot pulses like a working agent's dot.
+  const dot = pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"] .v-dot`)
+  await expect(dot).toHaveAttribute('data-status', 'working')
+  await expect(dot).toHaveClass(/\bv-live\b/)
+  expect(await dot.evaluate((e) => getComputedStyle(e).animationName)).toBe('v-pulse')
   // No side pane until the terminal, shell or files open; no tab strip (each pane shows on its own).
   await expect(page.locator('[data-side-pane]')).toHaveCount(0)
 
