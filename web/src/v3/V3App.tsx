@@ -109,12 +109,18 @@ export function V3App() {
   useEffect(() => {
     document.title = needs > 0 ? `(${needs}) minbox` : 'minbox'
   }, [needs])
-  // The agent of a route in another project: follow it.
+  // The agent of a route in another project: follow it, once when the route opens it. Not again when
+  // the person picks another project (the rail, the palette) with the agent still open: that would
+  // snap the selection back to the agent's project.
+  const followed = useRef<string | null>(null)
   useEffect(() => {
-    if (view !== 'agent' || !route.s) return
+    if (view !== 'agent' || !route.s) return void (followed.current = null)
+    if (followed.current === route.s) return
     const s = sessions?.find((x) => x.id === route.s)
-    if (s && projectId && s.project_id && s.project_id !== projectId) selectProject(s.project_id)
-  }, [view, route.s, sessions, projectId])
+    if (!s || app.projects === null) return
+    followed.current = route.s
+    if (projectId && s.project_id && s.project_id !== projectId) selectProject(s.project_id)
+  }, [view, route.s, sessions, app.projects, projectId])
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
   // The ＋ on a project's header in the agent list: the New agent dialog in that project.
