@@ -31,9 +31,10 @@ test('a task set to needs you without a question: a row that says what it needs,
   await expect(row.getByTestId('task-expanded').getByTestId('facts')).toContainText('Needs you')
   await expect(row.getByTestId('task-expanded').getByTestId('timeline')).toHaveCount(0)
 
-  // The task view's events name what changed.
+  // The task view no longer shows status lines in the conversation (only hand-offs and auto runs), so none is subjectless.
   await page.goto(minbox.url + `/#v=task&k=${gauge.id}`)
+  await expect(page.getByTestId('task-title')).toBeVisible()
   const evs = page.getByTestId('event')
-  await expect(evs.filter({ hasText: 'Status → needs you' })).toHaveCount(1)
+  await expect(evs.filter({ hasText: 'needs you' })).toHaveCount(0)
   for (const t of await evs.allTextContents()) expect(t.replace(/^\d\d:\d\d/, '').trim()).not.toMatch(/^→/)
 })
