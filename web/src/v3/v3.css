@@ -409,14 +409,17 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-taskcard { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: flex-start; }
 .v-taskcard-main { flex: 1 1 300px; min-width: 0; }
 .v-column .v-taskcard .v-r2 { flex-wrap: wrap; }
-.v-taskcheck { flex: 0 1 340px; min-width: 220px; }
-.v-taskcheck-bar { display: flex; gap: 8px; align-items: center; min-height: 24px; margin-bottom: 4px; color: var(--mb-subtle); font-size: 12px; }
-.v-taskcheck-bar .v-bar { width: auto; flex: 1; }
+.v-taskcheck { position: relative; flex: 0 1 340px; min-width: 220px; }
 .v-taskcheck-list { font-size: 12.5px; }
 .v-taskcheck-list.folded { max-height: 118px; overflow: auto; overscroll-behavior: contain; }
 .v-taskcheck-more { font-size: 12px; margin-top: 2px; border: 0; background: none; padding: 0; }
 @media (max-width: 699px) { .v-taskcheck { flex-basis: 100%; } }
-/* Phone: the progress row folds and unfolds the steps. */
-.v-taskcheck-toggle { width: 100%; border: 0; background: none; padding: 0; text-align: left; }
+/* Phone: folded, the checklist is one row (the progress bar and a chevron) that a tap unfolds; open, a
+   small chevron at the list's top right folds it. */
+.v-taskcheck-toggle { display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; background: none; padding: 0; color: var(--mb-subtle); cursor: pointer; }
+.v-taskcheck-toggle.row { width: 100%; min-height: 24px; }
+.v-taskcheck-toggle.row .v-bar { width: auto; flex: 1; }
+.v-taskcheck-toggle:not(.row) { position: absolute; top: 0; right: 0; width: 24px; height: 24px; }
+.v-taskcheck-toggle:not(.row) ~ .v-taskcheck-list { padding-right: 24px; }
 .v-taskcheck-chev { flex: none; color: var(--mb-subtle); transition: transform .15s; }
 .v-taskcheck-toggle[aria-expanded='false'] .v-taskcheck-chev { transform: rotate(-90deg); }
