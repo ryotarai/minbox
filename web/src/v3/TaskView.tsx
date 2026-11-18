@@ -15,7 +15,7 @@ import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } 
 import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
 import { DeliveryLine } from '../components/ThreadView'
-import { IconClose, IconGoal } from '../components/icons'
+import { IconChevronDown, IconClose, IconGoal } from '../components/icons'
 
 export function TaskView({
   id,
@@ -265,16 +265,45 @@ export function TaskView({
 /** Up to this many steps show before "Show all" (the rest scroll in the box until then). */
 const FOLDED_STEPS = 5
 
+/** Phone: a checklist longer than this starts folded to its progress bar (until the person chooses). */
+const PHONE_OPEN_STEPS = 3
+const FOLD_KEY = 'minbox:v3-checklist-folded'
+
+/** The person's last choice on a phone (every task): true folded, false open, null none yet. */
+function readFold(): boolean | null {
+  try {
+    const v = localStorage.getItem(FOLD_KEY)
+    return v === '1' ? true : v === '0' ? false : null
+  } catch {
+    return null
+  }
+}
+function writeFold(folded: boolean) {
+  try {
+    localStorage.setItem(FOLD_KEY, folded ? '1' : '0')
+  } catch {
+    /* off: kept for this page only */
+  }
+}
+
 /**
  * The task card's checklist: its progress (a bar of segments and "n/m") and its steps (a goal: its
  * "done when" criteria), each ticked by a click. A long list stays a short box (scrolled to the current
- * step) until "Show all".
+ * step) until "Show all". On a phone (the checklist under the summary) the progress row folds and
+ * unfolds the steps, the choice kept for every task; with no choice yet a short list (up to
+ * PHONE_OPEN_STEPS) shows open, a longer one folded, so the conversation keeps the screen.
  */
 function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
-  const { error } = useApp()
+  const { error, isPhone } = useApp()
   const goal = t.kind === 'goal'
   const n = goal ? t.criteria.length : leaves(t.steps).length
   const [all, setAll] = useState(false)
+  const [choice, setChoice] = useState(readFold)
+  const folded = isPhone && (choice ?? n > PHONE_OPEN_STEPS)
+  const fold = (v: boolean) => {
+    writeFold(v)
+    setChoice(v)
+  }
   const box = useRef<HTMLDivElement>(null)
   const long = n > FOLDED_STEPS
   useLayoutEffect(() => {
@@ -282,14 +311,29 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
     if (!el || all || !long) return
     const cur = el.querySelector<HTMLElement>('.v-st.doing')
     if (cur) el.scrollTop = Math.max(0, cur.offsetTop - el.offsetTop - 24)
-  }, [t.id, all, long])
+  }, [t.id, all, long, folded])
   if (!n) return null
   return (
     <div className="v-taskcheck" data-testid="task-checklist" role="group" aria-label={goal ? 'Done when' : 'Checklist'}>
       {/* No heading: the progress is the first row, level with the task's title. */}
-      <div className="v-taskcheck-bar" data-testid="task-checklist-progress">
-        <Bar t={t} />
-      </div>
+      {isPhone ? (
+        <button
+          type="button"
+          className="v-taskcheck-bar v-taskcheck-toggle"
+          data-testid="task-checklist-progress"
+          aria-expanded={!folded}
+          aria-label={`${folded ? 'Show' : 'Hide'} the ${goal ? 'criteria' : 'steps'}`}
+          onClick={() => fold(!folded)}
+        >
+          <Bar t={t} />
+          <IconChevronDown size={14} className="v-taskcheck-chev" aria-hidden />
+        </button>
+      ) : (
+        <div className="v-taskcheck-bar" data-testid="task-checklist-progress">
+          <Bar t={t} />
+        </div>
+      )}
+      {!folded && (
       <div ref={box} className={'v-taskcheck-list' + (long && !all ? ' folded' : '')} data-testid="task-checklist-list">
         <Steps
           t={t}
@@ -297,7 +341,8 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
           onToggle={(path) => v3.patchTask(t.id, goal ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
         />
       </div>
-      {long && (
+      )}
+      {long && !folded && (
         <button type="button" className="v-link v-taskcheck-more" data-testid="task-checklist-more" onClick={() => setAll(!all)}>
           {all ? 'Show less' : `Show all ${n}`}
         </button>

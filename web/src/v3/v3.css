@@ -398,3 +398,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-taskcheck-list.folded { max-height: 118px; overflow: auto; overscroll-behavior: contain; }
 .v-taskcheck-more { font-size: 12px; margin-top: 2px; border: 0; background: none; padding: 0; }
 @media (max-width: 699px) { .v-taskcheck { flex-basis: 100%; } }
+/* Phone: the progress row folds and unfolds the steps. */
+.v-taskcheck-toggle { width: 100%; border: 0; background: none; padding: 0; text-align: left; }
+.v-taskcheck-chev { flex: none; color: var(--mb-subtle); transition: transform .15s; }
+.v-taskcheck-toggle[aria-expanded='false'] .v-taskcheck-chev { transform: rotate(-90deg); }
