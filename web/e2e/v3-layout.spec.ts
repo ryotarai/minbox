@@ -111,17 +111,22 @@ for (const width of [700, 900, 1099]) {
   })
 }
 
-test('from 1100px three columns: the sidebar stays beside an agent', async ({ page, minbox }) => {
+test('from 1100px three columns: the sidebar stays beside an agent; resizing across the bands keeps the agent and the draft', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'alpha')
   await page.setViewportSize({ width: 1100, height: 800 })
   await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
   await expect(page.getByTestId('v3-app')).toHaveAttribute('data-layout', 'desktop')
   await expect(page.getByTestId('sidebar')).toBeVisible()
-  // A resize across the bands keeps the agent.
+  // A resize across the bands keeps the agent and the draft in its box.
+  await page.getByTestId('composer-text').fill('half-written reply')
   await page.setViewportSize({ width: 800, height: 800 })
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  await expect(page.getByTestId('composer-text')).toHaveValue('half-written reply')
   await page.setViewportSize({ width: 390, height: 800 })
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  await expect(page.getByTestId('composer-text')).toHaveValue('half-written reply')
+  await page.setViewportSize({ width: 1400, height: 800 })
+  await expect(page.getByTestId('composer-text')).toHaveValue('half-written reply')
 })
 
 test('the notification ask in the sidebar: Allow asks the browser once; × dismisses it for good', async ({ page, minbox }) => {
