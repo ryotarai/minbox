@@ -1,16 +1,17 @@
 // An agent's stream: "what is this agent doing?" One conversation, oldest to newest; each message
 // shows its task as a badge in its box (dimmed when the one before is in the same task), with the
-// agent's decision beside it; its tasks, terminal, shell and files beside it.
+// agent's decision beside it; its terminal, shell and files beside it (its tasks have a pane of their
+// own before it, see TasksPane; on a phone they are the first tab of the agent's sheet).
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
-import { IconAgentKind, IconBack, IconShell } from '../components/icons'
+import { IconAgentKind, IconBack, IconFiles, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
-import { ago, short, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById } from './parts'
+import { short, useLive, useMarkRead, v3, type BoardTask, type Stream, type V3Message } from './data'
+import { BackButton, MessageView, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -25,8 +26,11 @@ import { LinearLinkButton } from '../components/LinearLink'
 import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
+import { AgentTaskList, agentTasks } from './AgentTasks'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 
+/** The agent's side pane: its terminal, shell or files. 'tasks' is none of them on a desktop or tablet (the
+ *  tasks have a pane of their own, see TasksPane); on a phone it is the sheet's Tasks tab. */
 export type SidePane = 'tasks' | 'terminal' | 'shell' | 'files'
 
 export function StreamView({
@@ -122,9 +126,7 @@ export function StreamView({
         <div className="v-empty">This agent is gone. Pick another one on the left.</div>
       </div>
     )
-  const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
-  const openTasks = mine.filter((t) => t.status !== 'done')
-  const doneTasks = mine.filter((t) => t.status === 'done')
+  const openTasks = agentTasks(tasks, id).open
   // What it is on now: the open task of its newest message that is about one.
   const nowOn = [...msgs].reverse().flatMap((m) => m.tasks).map((r) => openTasks.find((t) => t.id === r.task_id)).find((t) => !!t)
   const hint = agentHint(sessions ?? [], sess)
@@ -229,6 +231,18 @@ export function StreamView({
                 <IconShell size={13} />
               </button>
             )}
+            <button
+              type="button"
+              className={'v-btn v-hide-phone' + (pane === 'files' ? ' pri' : '')}
+              data-testid="files-toggle"
+              aria-pressed={pane === 'files'}
+              aria-label={pane === 'files' ? 'Hide files' : 'Show files'}
+              title={pane === 'files' ? 'Hide the files (⇧F)' : "Files: the agent's folder as a tree (⇧F)"}
+              style={{ display: 'inline-flex', alignItems: 'center' }}
+              onClick={() => setPane(pane === 'files' ? 'tasks' : 'files')}
+            >
+              <IconFiles size={13} />
+            </button>
           </div>
           <div className="v-r2">
             <span data-testid="agent-state">{sess.status === 'working' ? 'in a turn' : sess.status === 'ended' ? 'ended' : sess.status === 'starting' ? 'starting' : 'idle'}</span>
@@ -370,57 +384,28 @@ export function StreamView({
         />
         <QuoteBubble box={scroller} />
       </div>
-      {(!isPhone || terminalish || sheet) && (
-        <aside className={'v-side' + (terminalish || sheet ? ' wide' : '')} data-testid="agent-side" data-sheet={sheet || undefined}>
+      {(terminalish || sheet) && (
+        <aside className="v-side wide" data-testid="agent-side" data-sheet={sheet || undefined}>
           <div className="v-tabs2">
             {sheet && (
               <button type="button" className="v-sheetx" data-testid="agent-sheet-close" aria-label={`Back to ${sess.name}`} title="Back to the stream" onClick={() => (setPane('tasks'), goBack({ tab: 'inbox' }))}>
                 <IconBack size={18} />
               </button>
             )}
-            {(['tasks', 'terminal', 'shell', 'files'] as const).map((p) => (
-              <button type="button" key={p} className={pane === p ? 'on' : ''} data-testid={'pane-' + p} onClick={() => (setPane(p), isPhone && p === 'tasks' && !sheet ? navigate({ tab: 'tasks' }, { push: true }) : undefined)} disabled={(p === 'shell' || p === 'terminal') && sess.kind === 'shell' && p === 'shell'}>
+            {(isPhone ? (['tasks', 'terminal', 'shell', 'files'] as const) : (['terminal', 'shell', 'files'] as const)).map((p) => (
+              <button type="button" key={p} className={pane === p ? 'on' : ''} data-testid={'pane-' + p} onClick={() => (setPane(p), isPhone && p === 'tasks' && !sheet ? navigate({ tab: 'tasks' }, { push: true }) : undefined)} disabled={p === 'shell' && sess.kind === 'shell'}>
                 {p === 'tasks' ? 'Tasks' : p === 'terminal' ? 'Terminal' : p === 'shell' ? 'Shell' : 'Files'}
               </button>
             ))}
+            {!isPhone && (
+              <button type="button" className="v-tabs2-x" data-testid="side-close" aria-label="Close the side pane" title="Close the side pane" onClick={() => setPane('tasks')}>
+                ×
+              </button>
+            )}
           </div>
-          {pane === 'tasks' && (
-            <div style={{ padding: '0 16px 16px', overflow: 'auto' }} data-testid="agent-tasks">
-              <div className="v-sec">
-                OPEN TASKS <span className="v-x">{openTasks.length}</span>
-              </div>
-              {openTasks.map((t) => (
-                <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => nav.task(t.id)}>
-                  <div className="v-a">
-                    <StatusDot t={t} />
-                    {t.kind === 'goal' ? '◎ ' : ''}
-                    {t.title}
-                  </div>
-                  <TaskSubtitle t={t} />
-                  <div className="v-b">
-                    <Bar t={t} />
-                    <span className="v-cnt2">
-                      {STATUS_LABEL[t.status]}
-                      {t.open_questions ? ' · ? ' + t.open_questions : ''} · {ago(t.last_activity)}
-                    </span>
-                  </div>
-                </button>
-              ))}
-              {!openTasks.length && <div className="v-cnt2">No open tasks. Ask for something; the agent makes a task when it is new work.</div>}
-              {doneTasks.length > 0 && (
-                <details className="v-donelist">
-                  <summary className="v-sec">DONE THIS WEEK <span className="v-x">{doneTasks.length}</span></summary>
-                  {doneTasks.map((t) => (
-                    <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => nav.task(t.id)}>
-                      <div className="v-a">
-                        <StatusDot t={t} />
-                        {t.title}
-                      </div>
-                      <TaskSubtitle t={t} />
-                    </button>
-                  ))}
-                </details>
-              )}
+          {pane === 'tasks' && sheet && (
+            <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
+              <AgentTaskList tasks={tasks} sessionId={id} />
             </div>
           )}
           {pane === 'terminal' && (
@@ -441,17 +426,5 @@ export function StreamView({
         </aside>
       )}
     </>
-  )
-}
-
-/** A task's subtitle in the agent's Tasks list: where it stands, in a line or two (see standing). */
-function TaskSubtitle({ t }: { t: BoardTask }) {
-  const st = standing(t)
-  if (!st) return null
-  return (
-    <div className="v-mt-sub" data-testid="task-standing" data-from={st.from} title={st.text}>
-      {st.from === 'step' ? 'now: ' : ''}
-      {st.text}
-    </div>
   )
 }

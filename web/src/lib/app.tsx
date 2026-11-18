@@ -170,6 +170,9 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   v3SidebarW?: number
   v3SideW?: number
   v3WideW?: number
+  /** v3: the agent's Tasks pane (between the agents list and the stream): its dragged width, and folded to a strip. */
+  v3TasksW?: number
+  v3TasksHidden?: boolean
 }
 /** The project rail is closed (56 px tiles, no names): one preference for every screen (v3, My issues, Slack) and width
  *  but the phone, kept in minbox:layout across reloads. Closed unless the person opened it. */

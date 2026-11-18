@@ -27,15 +27,20 @@ test('the terminal pane stays open across agents and a reload; ⇧F shows the fi
   await expect(page.getByTestId('pane-files')).toHaveClass(/on/)
   await expect(page.getByTestId('v3-app')).toHaveAttribute('data-pane', 'files')
   await page.keyboard.press('Shift+F')
-  await expect(page.getByTestId('pane-tasks')).toHaveClass(/on/)
+  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  await expect(page.getByTestId('v3-app')).toHaveAttribute('data-pane', 'tasks')
   await page.reload()
-  await expect(page.getByTestId('pane-tasks')).toHaveClass(/on/)
+  await expect(page.getByTestId('stream-view')).toBeVisible()
+  await expect(page.getByTestId('agent-side')).toHaveCount(0)
   void b
 })
 
 test('the side pane and sidebar edges drag; the widths are kept; swapped panes put the side pane on the left', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'alpha')
   await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+  // The side pane (terminal, shell, files) shows when one is open.
+  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  await page.keyboard.press('Shift+F')
   const side0 = await box(page, 'agent-side')
   const rz = await box(page, 'side-resizer')
   await page.mouse.move(rz.x + rz.width / 2, rz.y + 200)
@@ -54,15 +59,16 @@ test('the side pane and sidebar edges drag; the widths are kept; swapped panes p
   await page.mouse.up()
   const sb1 = await box(page, 'sidebar')
   expect(Math.abs(sb1.width - (sb0.width + 50))).toBeLessThan(4)
+  // (A wider sidebar can leave the side pane less room: what is kept is what shows now.)
+  const side2 = await box(page, 'agent-side')
 
   await page.reload()
-  expect(Math.abs((await box(page, 'agent-side')).width - side1.width)).toBeLessThan(2)
+  expect(Math.abs((await box(page, 'agent-side')).width - side2.width)).toBeLessThan(2)
   expect(Math.abs((await box(page, 'sidebar')).width - sb1.width)).toBeLessThan(2)
 
-  // The terminal (a wide pane) keeps a width of its own.
+  // The terminal shows in the same pane, at the same width.
   await page.getByTestId('terminal-toggle').click()
-  const wide = await box(page, 'agent-side')
-  expect(wide.width).toBeGreaterThan(side1.width)
+  expect(Math.abs((await box(page, 'agent-side')).width - side2.width)).toBeLessThan(2)
 
   // Settings › swap panes: the side pane on the left of the stream; its edge drags the other way.
   await api(minbox, 'PUT', '/api/settings', { swap_panes: false })
@@ -73,9 +79,10 @@ test('the side pane and sidebar edges drag; the widths are kept; swapped panes p
   const rz2 = await box(page, 'side-resizer')
   await page.mouse.move(rz2.x + rz2.width / 2, 400)
   await page.mouse.down()
-  await page.mouse.move(rz2.x + rz2.width / 2 + 40, 400, { steps: 4 })
+  await page.mouse.move(rz2.x + rz2.width / 2 - 40, 400, { steps: 4 })
   await page.mouse.up()
-  expect(Math.abs((await box(page, 'agent-side')).width - (s2.width + 40))).toBeLessThan(4)
+  // (On the left, dragging its edge left narrows it.)
+  expect(Math.abs((await box(page, 'agent-side')).width - (s2.width - 40))).toBeLessThan(4)
 })
 
 for (const width of [700, 900, 1099]) {

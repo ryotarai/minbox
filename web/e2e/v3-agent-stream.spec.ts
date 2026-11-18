@@ -17,8 +17,9 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   const stream = page.getByTestId('stream-view')
   await expect(stream.getByTestId('agent-name')).toHaveText('api')
   await expect(stream.getByTestId('v3-message')).toHaveCount(4)
-  // The agent's tasks are beside the stream.
-  await expect(page.getByTestId('agent-side')).toContainText('Fix the gauge reading')
+  // The agent's tasks are in their pane, between the agents list and the stream.
+  await expect(page.getByTestId('tasks-pane')).toContainText('Fix the gauge reading')
+  await expect(page.getByTestId('agent-side')).toHaveCount(0)
   await shot(page, 'uc6-stream', 'dark')
 
   // The header says what it is on now (one task), not a wall of every task.
@@ -55,8 +56,9 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await expect(page.getByTestId('terminal')).toBeVisible()
   await expect(page.getByTestId('pane-terminal')).toHaveClass(/on/)
   await shot(page, 'uc6-terminal', 'light')
-  await page.getByTestId('pane-tasks').click()
+  await page.getByTestId('side-close').click()
   await expect(page.getByTestId('terminal')).toHaveCount(0)
+  await expect(page.getByTestId('agent-side')).toHaveCount(0)
 
   // A task link opens its task.
   await stream.locator('[data-testid="task-link"][title="Staging health"] button').first().click()

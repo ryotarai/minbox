@@ -140,7 +140,7 @@ test('the Files pane: its @ button and the row menu put the path into the reply 
   await openThread(page, minbox)
   const reply = page.getByTestId('composer-text')
   await reply.fill('look at')
-  await page.getByTestId('pane-files').click()
+  await page.getByTestId('files-toggle').click()
   const row = (p: string) => page.getByTestId('files-tree').locator(`[data-item-path="${p}"]`)
   await row('src/').click()
   await row('src/main.go').click()

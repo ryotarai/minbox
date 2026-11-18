@@ -94,6 +94,8 @@ export type PaletteCtx = {
   agent: Session | undefined
   pane: SidePane
   setPane: (p: SidePane) => void
+  /** The agent's Tasks pane (desktop and tablet): shown, and show or fold it. */
+  tasksPane?: { shown: boolean; show: (show: boolean) => void }
   openNew: (to?: string) => void
   openNewAgent: () => void
   openHelp: () => void
@@ -152,6 +154,8 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
       const label = agentKindLabel(cur.agent)
       const pane = (p: SidePane, on: string, off: string, kw: string, shortcut?: string) =>
         act(p + '-pane', ctx.pane === p ? off : on, () => ctx.setPane(ctx.pane === p ? 'tasks' : p), { keywords: `${kw} ${cur.name}`, shortcut })
+      const tp = ctx.tasksPane
+      if (tp) act('tasks-pane', tp.shown ? 'Hide tasks pane' : 'Show tasks pane', () => tp.show(!tp.shown), { keywords: `tasks list pane toggle fold ${cur.name}`, shortcut: '⇧T' })
       pane('terminal', `Show ${label} terminal`, `Hide ${label} terminal`, 'go to focus console claude code pane toggle', 'T')
       if (cur.kind !== 'shell' && cur.status !== 'ended') pane('shell', 'Open shell', 'Hide shell', 'companion terminal shell pane toggle folder cwd', 'Ctrl+`')
       pane('files', 'Show files', 'Hide files', 'file explorer tree browse folder git status', '⇧F')
@@ -176,7 +180,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, ctx.pane, isPhone, linear.available, slack.available, settings.decision_mode, settings.swap_panes, settings.text_size, mod])
+  }, [cur, ctx.pane, ctx.tasksPane?.shown, ctx.tasksPane?.show, isPhone, linear.available, slack.available, settings.decision_mode, settings.swap_panes, settings.text_size, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 
