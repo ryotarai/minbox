@@ -340,7 +340,7 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '')}>
+      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' ? ' conv' : '')}>
         {main}
         {hasSide && <Resizer testid="side-resizer" measure={() => sideEl()?.offsetWidth ?? 300} onDrag={dragSide} />}
       </main>
