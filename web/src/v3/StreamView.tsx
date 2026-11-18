@@ -25,6 +25,7 @@ import { LinearLinkButton } from '../components/LinearLink'
 import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
+import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 
 export type SidePane = 'tasks' | 'terminal' | 'shell' | 'files'
 
@@ -54,6 +55,7 @@ export function StreamView({
   const [thread] = useThread(s?.stream_thread_id || null)
   const [older, setOlder] = useState<V3Message[]>([])
   const [olderMore, setOlderMore] = useState(true)
+  const [olderEv, setOlderEv] = useState<StreamTaskEvent[]>([])
   const [pending, setPending] = useState<V3Message[]>([])
   const [foldAll, setFoldAll] = useState(false)
   const [showArtifacts, setShowArtifacts] = useState(false)
@@ -62,6 +64,7 @@ export function StreamView({
   const loadingOlder = useRef(false)
   useEffect(() => {
     setOlder([])
+    setOlderEv([])
     setOlderMore(true)
     setPending([])
     setFoldAll(false)
@@ -152,6 +155,7 @@ export function StreamView({
         keep.before()
         setOlderMore(r.has_more)
         setOlder((o) => [...r.messages, ...o])
+        setOlderEv((e) => [...(r.task_events ?? []), ...e])
       })
       .catch(error)
       .finally(() => (loadingOlder.current = false))
@@ -174,6 +178,8 @@ export function StreamView({
   const openQs = (s?.messages ?? []).reduce((n, m) => n + m.open, 0)
   // The Linear issue's comments and changes between the messages (by time).
   const linearEv = groupLinearEvents(shown, thread?.linear_events)
+  // The tasks' status changes (and creations, renames) between the messages (by time).
+  const taskEv = groupTaskEvents(shown, [...olderEv, ...(s?.task_events ?? [])])
   let day = ''
   let seg = ''
   let topic = '' // the task of the current run of messages, named once above it
@@ -297,6 +303,7 @@ export function StreamView({
                   const d = new Date(m.created_at).toDateString()
                   const out = []
                   for (const ev of linearEv.before.get(m.id) ?? []) out.push(<LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)
+                  for (const ev of taskEv.before.get(m.id) ?? []) out.push(<StreamTaskEventLine key={'t' + ev.id} ev={ev} />)
                   if (d !== day) {
                     day = d
                     topic = ''
@@ -343,6 +350,7 @@ export function StreamView({
                   return <Fragment key={m.id}>{out}</Fragment>
                 })}
               {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)}
+              {!showArtifacts && taskEv.tail.map((ev) => <StreamTaskEventLine key={'t' + ev.id} ev={ev} />)}
               {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
             </div>
           </div>
