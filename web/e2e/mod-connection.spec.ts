@@ -46,21 +46,4 @@ test('the badge shows connected, goes stale without heartbeats with the gap, and
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('minbox mod connection, session')
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('phone: the badge shows in the thread header and turns stale', async ({ page, connMinbox: minbox }) => {
-  await page.goto(minbox.url)
-  await createSession(page, minbox.dataDir, 'pocketbeat')
-  await expectTerminal(page, 'ready>')
-  await typeInTerminal(page, 'ask')
-  await expectTerminal(page, 'sent question')
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(minbox.url + '/#')
-  await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
-  const badge = page.getByTestId('phone-session-name').getByTestId('mod-conn')
-  await expect(badge).toHaveAttribute('data-state', 'connected')
-  await page.evaluate(() => void 0)
-  // Stop the heartbeat from the outside: the terminal is not on screen, so ask the server for a stale view by waiting out a muted mod.
-  const sessions = (await (await fetch(minbox.url + '/api/sessions')).json()) as { id: string }[]
-  expect(sessions.length).toBe(1)
-  await expect(badge).toBeVisible()
-})
+// The badge in v3's agent header, on a desktop and a phone: v3-agents.spec.ts.
