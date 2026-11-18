@@ -74,10 +74,10 @@ test('> shows only actions; New agent opens the dialog; # @ ! filter tasks, agen
   await page.getByTestId('palette-input').fill('>new agent')
   await expect(items(page).first()).toHaveAttribute('data-id', 'new-agent')
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'New agent' })).toBeVisible()
   await expect(page.getByTestId('new-session-start')).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog', { name: 'New session' })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: 'New agent' })).toHaveCount(0)
 
   await openPalette(page)
   await page.getByTestId('palette-input').fill('>new message')

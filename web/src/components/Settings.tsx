@@ -211,8 +211,8 @@ function Prompts() {
   return (
     <Group title="Extra instructions for Claude Code">
       <p className="m-0 text-[13px] leading-[1.6] text-muted">
-        Every session's first prompt carries a short note about the inbox. What you write here is added to it, e.g. “Ask your questions in Japanese”, “Attach a guided review before opening a PR”.
-        It reaches sessions started (or resumed) after you save.
+        Every agent's first prompt carries a short note about the inbox. What you write here is added to it, e.g. “Ask your questions in Japanese”, “Attach a guided review before opening a PR”.
+        It reaches agents started (or resumed) after you save.
       </p>
       <textarea
         data-testid="prompt-extra"
@@ -239,7 +239,7 @@ function Prompts() {
       </div>
       <Row
         label="Orchestrator prompt: ask the main agent to run a subagent per thread and use git worktrees for subagent changes"
-        desc="Applies to sessions started or resumed after the change"
+        desc="Applies to agents started or resumed after the change"
       >
         <Switch label="Orchestrator prompt" on={settings.orchestrator_prompt} onChange={(v) => saveSettings({ orchestrator_prompt: v })} />
       </Row>
@@ -259,7 +259,7 @@ function Capabilities() {
     <>
       <AgentsGroup />
       <Group title="Optional parts of minbox">
-      <Row label="Decision mode (Experimental)" desc="Every waiting question across sessions, one at a time. Pick with 1–9; answers are sent per thread.">
+      <Row label="Decision mode (Experimental)" desc="Every waiting question across agents, one at a time. Pick with 1–9; answers are sent per thread.">
         <Switch label="Decision mode" on={settings.decision_mode} onChange={(v) => saveSettings({ decision_mode: v })} />
       </Row>
       </Group>
@@ -297,10 +297,10 @@ function AgentsGroup() {
         </Row>
       ))}
       {info && installed.length === 0 && (
-        <p className="m-0 text-[13px] leading-[1.6] text-muted">No coding agent is installed, so sessions cannot start. Install Claude Code, Pi or OpenCode 2; any one alone is enough.</p>
+        <p className="m-0 text-[13px] leading-[1.6] text-muted">No coding agent is installed, so agents cannot start. Install Claude Code, Pi or OpenCode 2; any one alone is enough.</p>
       )}
       {installed.length > 1 && (
-        <Row label="Default agent" desc="For a new session when neither the dialog nor the project says. Projects can set their own.">
+        <Row label="Default agent" desc="For a new agent when neither the dialog nor the project says. Projects can set their own.">
           <select
             data-testid="default-agent"
             value={settings.default_agent}
@@ -318,7 +318,7 @@ function AgentsGroup() {
       )}
       <Row
         label="Trust folders Claude starts in"
-        desc="Before a Claude Code session starts, marks its folder trusted in Claude Code's config on the machine it runs on (~/.claude.json, or $CLAUDE_CONFIG_DIR), so it does not stop at the “Do you trust this folder?” dialog. Off: Claude Code asks as usual."
+        desc="Before a Claude Code agent starts, marks its folder trusted in Claude Code's config on the machine it runs on (~/.claude.json, or $CLAUDE_CONFIG_DIR), so it does not stop at the “Do you trust this folder?” dialog. Off: Claude Code asks as usual."
       >
         <Switch label="Trust folders Claude starts in" on={settings.claude_trust_folders} onChange={(v) => saveSettings({ claude_trust_folders: v })} />
       </Row>
@@ -336,7 +336,7 @@ function AgentsGroup() {
       )}
       {info?.agents.some((a) => a.kind === 'opencode' && a.installed && a.supported !== false) && (
         <p data-testid="opencode-note" className="m-0 text-[12.5px] leading-[1.6] text-subtle">
-          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each session gets a private OpenCode server (--standalone). On another host it needs OpenCode 2 on that machine. It runs the reply questions only when neither Claude Code nor Pi is installed.
+          OpenCode 2 runs with --auto: everything is approved unless your OpenCode configuration denies it, and it uses your OpenCode login, models and sessions. Each agent gets a private OpenCode server (--standalone). On another host it needs OpenCode 2 on that machine. It runs the reply questions only when neither Claude Code nor Pi is installed.
         </p>
       )}
     </Group>
@@ -360,8 +360,8 @@ function Archived() {
   }, [sessions, threadsVersion, error])
   return (
     <>
-      <Group title={`Sessions (${archived.length})`}>
-        {archived.length === 0 && <span className="text-[13px] text-subtle">No archived sessions.</span>}
+      <Group title={`Agents (${archived.length})`}>
+        {archived.length === 0 && <span className="text-[13px] text-subtle">No archived agents.</span>}
         {archived.map((s: Session) => (
           <Row key={s.id} label={s.name} desc={`${homeRelative(s.cwd)} · archived ${shortTime(s.archived_at!)}`}>
             <Button size="sm" onClick={() => api.unarchiveSession(s.id).then(reloadSessions).catch(error)}>

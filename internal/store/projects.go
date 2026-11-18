@@ -15,7 +15,7 @@ import (
 var (
 	// ErrProjectBusy: the change would orphan or hide sessions (archive a project with live
 	// sessions, delete one with any, move one that has sessions).
-	ErrProjectBusy = errors.New("project has sessions")
+	ErrProjectBusy = errors.New("project has agents")
 	// ErrProjectExists: there already is a project for this host and folder.
 	ErrProjectExists = errors.New("a project for this folder already exists")
 )
@@ -423,7 +423,7 @@ func (s *Store) SetProjectArchived(ctx context.Context, id string, archived bool
 			return err
 		}
 		if live > 0 {
-			return fmt.Errorf("%w: stop or archive its %d live session(s) first", ErrProjectBusy, live)
+			return fmt.Errorf("%w: stop or archive its %d live agent(s) first", ErrProjectBusy, live)
 		}
 		at := ms(s.now())
 		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET archived_at=? WHERE project_id=? AND archived_at IS NULL`, at, id); err != nil {

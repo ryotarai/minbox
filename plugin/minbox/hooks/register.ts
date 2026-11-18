@@ -117,7 +117,7 @@ function trackConnection($: any, label: string, res: ApiResult): void {
       note($, 'auth', `${label}: HTTP ${res.status} (the session token is not accepted)`)
       if (!authWarned) {
         authWarned = true
-        $.ui.toast('minbox: the server does not accept this session (unknown token); replies will not arrive. Restart the session from minbox.')
+        $.ui.toast('minbox: the server does not accept this agent (unknown token); replies will not arrive. Restart the agent from minbox.')
       }
     }
     if (failStreak > 0 || offline) {

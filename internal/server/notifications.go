@@ -201,7 +201,7 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 	st, _ := s.settings(r.Context())
 	pub, _ := st["public_url"].(string)
 	n := notify.Notification{
-		Project: "Sample project", Session: "Sample session", Title: "Test notification", From: "Claude",
+		Project: "Sample project", Session: "Sample agent", Title: "Test notification", From: "Claude",
 		Body: "This is a **test** from minbox. Messages look like this: [a link](https://example.com), `code`, and lists.\n\n- first\n- second",
 	}
 	if pub = strings.TrimSpace(pub); pub != "" {

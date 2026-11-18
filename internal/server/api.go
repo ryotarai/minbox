@@ -505,7 +505,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 		// Where should this reply go: a new thread in another session.
 		target, err := s.store.GetSession(ctx, req.ForwardTo)
 		if err != nil {
-			httpError(w, 404, "no session "+req.ForwardTo)
+			httpError(w, 404, "no agent "+req.ForwardTo)
 			return
 		}
 		nt, msg, err := s.store.CreateThread(ctx, target.ID, th.Subject, store.NewMessage{Author: store.AuthorUser, Body: body, Words: words, Urgent: req.Urgent, Annotations: annotations})
@@ -546,7 +546,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 	if req.Resume {
 		if sess, err := s.store.GetSession(ctx, th.SessionID); err == nil && sess.Status == store.StatusEnded {
 			if err := s.sessions.Restart(ctx, sess.ID); err != nil {
-				httpError(w, 500, "the reply is saved, but the session did not resume: "+err.Error())
+				httpError(w, 500, "the reply is saved, but the agent did not resume: "+err.Error())
 				return
 			}
 		}

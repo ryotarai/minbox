@@ -71,9 +71,9 @@ Only a person who can install the app needs to do this; no redirect server, OAut
 ### Start minbox thread
 
 Like *My issues → Start thread*: the project is picked for you (a minbox thread already started from this Slack
-thread; a project named like the channel; your only project; else the helper agent from the thread), the session
+thread; a project named like the channel; your only project; else the helper agent from the thread), the agent
 defaults to **Let minbox choose** (the helper picks one of the project's agents whose work fits, else a new agent starts; other
-sessions and a new session are selectable), and you may add an
+agents and a new agent are selectable), and you may add an
 instruction. The preview on the right is exactly what the agent receives first. The server composes the handoff once,
 stores it with the new thread (`thread_handoffs`, kind `slack_thread`) and puts it in front of the thread's first
 message once, at delivery. It looks like:

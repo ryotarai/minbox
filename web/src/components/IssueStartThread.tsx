@@ -87,7 +87,7 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
   useEffect(() => {
     const n = ++seqNo.current
     if (!projectId && (newSession || autoPick)) {
-      setPreviewErr('Pick a project for the new session.')
+      setPreviewErr('Pick a project for the new agent.')
       return
     }
     const t = setTimeout(() => {
@@ -177,7 +177,7 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
             </select>
           </label>
           <label className={label}>
-            Session
+            Agent
             <select
               data-testid="issue-thread-session"
               value={sessionPick}
@@ -190,10 +190,10 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
               <option value="auto">Let minbox choose (an agent whose work fits, else a new one)</option>
               {choices.map((s) => (
                 <option key={s.id} value={s.id}>
-                  Session · {s.name} · {agentLabel(agentsInfo, s.agent)}
+                  Agent · {s.name} · {agentLabel(agentsInfo, s.agent)}
                 </option>
               ))}
-              <option value="new">New session{project ? ` in ${project.name}` : ''}</option>
+              <option value="new">New agent{project ? ` in ${project.name}` : ''}</option>
             </select>
           </label>
           {newSession && installed.length > 1 && (
@@ -218,7 +218,7 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
           {newSession && (
             <label className={label}>
               <span>
-                Session name <span className="text-subtle">(optional)</span>
+                Agent name <span className="text-subtle">(optional)</span>
               </span>
               <input data-testid="issue-thread-session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} className={cx(field, 'h-[38px] text-[13.5px]')} />
             </label>

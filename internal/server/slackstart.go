@@ -104,19 +104,19 @@ func (s *Server) resolveThreadTarget(ctx context.Context, t forkTarget) (sess *s
 	switch t.Kind {
 	case "", "session":
 		if t.SessionID == "" {
-			return nil, nil, "", "", nil, fe(400, "pick a session, or a project for a new one")
+			return nil, nil, "", "", nil, fe(400, "pick an agent, or a project for a new one")
 		}
 		sess, err = s.store.GetSession(ctx, t.SessionID)
 		if err != nil {
-			return nil, nil, "", "", nil, fe(400, "no such session")
+			return nil, nil, "", "", nil, fe(400, "no such agent")
 		}
 		switch {
 		case sess.Kind != store.KindClaude:
-			return nil, nil, "", "", nil, fe(400, "that session cannot take threads")
+			return nil, nil, "", "", nil, fe(400, "that agent cannot take threads")
 		case sess.ArchivedAt != nil:
-			return nil, nil, "", "", nil, fe(400, "that session is archived; unarchive it or pick another")
+			return nil, nil, "", "", nil, fe(400, "that agent is archived; unarchive it or pick another")
 		case sess.Status == store.StatusEnded:
-			return nil, nil, "", "", nil, fe(400, "that session has ended; restart it or start a new session")
+			return nil, nil, "", "", nil, fe(400, "that agent has ended; restart it or start a new agent")
 		}
 		agentKind = sess.Agent
 		if p, perr := s.store.GetProject(ctx, sess.ProjectID); perr == nil {
@@ -128,7 +128,7 @@ func (s *Server) resolveThreadTarget(ctx context.Context, t forkTarget) (sess *s
 	case "new_session", "auto":
 		proj, err = s.store.GetProject(ctx, t.ProjectID)
 		if err != nil {
-			return nil, nil, "", "", nil, fe(400, "pick a project for the new session")
+			return nil, nil, "", "", nil, fe(400, "pick a project for the new agent")
 		}
 		if t.Kind == "auto" {
 			warnings = append(warnings, autoAgentNote)

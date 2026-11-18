@@ -57,7 +57,7 @@ test('a session whose mod speaks an older protocol says so next to the badge', a
   await expect(badge).toHaveAttribute('data-outdated', 'true')
   await expect(badge).toHaveAttribute('title', /old mod — restart to update/)
   await badge.click()
-  await expect(page.getByTestId('mod-outdated')).toContainText('old mod — restart to update. This session runs an older minbox mod (protocol 0; the server speaks 1).')
+  await expect(page.getByTestId('mod-outdated')).toContainText('old mod — restart to update. This agent runs an older minbox mod (protocol 0; the server speaks 1).')
   const sessions = (await (await fetch(minbox.url + '/api/sessions')).json()) as { mod_outdated?: boolean }[]
   expect(sessions[0]!.mod_outdated).toBe(true)
   const info = await (await fetch(`${minbox.url}/api/sessions/${(sessions[0] as any).id}/connection`)).json()

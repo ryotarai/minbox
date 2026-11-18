@@ -52,7 +52,7 @@ test('restart the local host from Settings: the session resumes in a new host, a
   await expect(page.getByTestId('host-restart-resume')).toBeChecked()
   await page.getByTestId('host-restart-confirm').click()
 
-  await expect(page.getByText(/Restarted the terminal host \(pid \d+\) · 1 session resumes/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Restarted the terminal host \(pid \d+\) · 1 agent resumes/)).toBeVisible({ timeout: 30_000 })
   const after = await localHost(minbox.url)
   expect(after.status).toBe('online')
   expect(after.pid).toBeGreaterThan(0)
@@ -111,7 +111,7 @@ test('restart the local host without resuming: its sessions end', async ({ page,
   await page.getByTestId('host-restart').click()
   await page.getByTestId('host-restart-resume').uncheck()
   await page.getByTestId('host-restart-confirm').click()
-  await expect(page.getByText(/Restarted the terminal host .*1 session ended/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Restarted the terminal host .*1 agent ended/)).toBeVisible({ timeout: 30_000 })
   expect((await localHost(minbox.url)).pid).not.toBe(before.pid)
   expect((await session(minbox.url, 'goner'))?.status).toBe('ended')
 })

@@ -91,7 +91,7 @@ func restartRun(args []string, d restartDeps, in io.Reader, out io.Writer) error
 	// Parse with the start flags themselves, so --data-dir is read wherever it
 	// stands among them (and an unknown flag stops here, before anything stops).
 	f := newServeFlags("restart")
-	withHost := f.fs.Bool("host", false, "also stop the local terminal host (every session's claude ends and is resumed)")
+	withHost := f.fs.Bool("host", false, "also stop the local terminal host (every agent ends and is resumed)")
 	yes := f.fs.Bool("yes", false, "with --host: do not ask for confirmation")
 	f.fs.BoolVar(yes, "y", false, "short for --yes")
 	_ = f.fs.Parse(args)
@@ -124,16 +124,16 @@ func restartRun(args []string, d restartDeps, in io.Reader, out io.Writer) error
 	if *withHost {
 		if n, running := d.hostSessions(dataDir); running && !*yes {
 			if !d.stdinIsTTY() {
-				return &exitError{2, "minbox restart --host would end the sessions' claude; stdin is not a terminal, so it cannot ask. Pass --yes (or -y) to go ahead."}
+				return &exitError{2, "minbox restart --host would end the running agents; stdin is not a terminal, so it cannot ask. Pass --yes (or -y) to go ahead."}
 			}
-			what := "an unknown number of sessions'"
+			what := "an unknown number of agents"
 			switch {
 			case n == 1:
-				what = "1 session's"
+				what = "1 agent"
 			case n >= 0:
-				what = fmt.Sprintf("%d sessions'", n)
+				what = fmt.Sprintf("%d agents", n)
 			}
-			fmt.Fprintf(out, "Restart the terminal host too? %s claude will stop and resume (running turns are interrupted). [y/N] ", what)
+			fmt.Fprintf(out, "Restart the terminal host too? %s will stop and resume (running turns are interrupted). [y/N] ", what)
 			line, _ := bufio.NewReader(in).ReadString('\n')
 			if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
 				fmt.Fprintln(out, "cancelled; nothing was stopped")
@@ -166,7 +166,7 @@ func restartRun(args []string, d restartDeps, in io.Reader, out io.Writer) error
 		return err
 	}
 	if *withHost {
-		fmt.Fprintln(out, "the new server started a fresh terminal host; open sessions resume automatically (claude --resume)")
+		fmt.Fprintln(out, "the new server started a fresh terminal host; open agents resume automatically (claude --resume)")
 	}
 	return nil
 }
@@ -183,7 +183,7 @@ func stopCmd(args []string) error {
 		fmt.Println("minbox is not running")
 		return nil
 	}
-	fmt.Printf("stopped minbox (pid %d); sessions keep running in the terminal host (minbox host stop ends them)\n", pid)
+	fmt.Printf("stopped minbox (pid %d); agents keep running in the terminal host (minbox host stop ends them)\n", pid)
 	return nil
 }
 
