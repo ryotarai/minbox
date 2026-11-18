@@ -16,6 +16,7 @@ import { IconBack, IconFork, IconMoreV, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
 import {
   STATUS_LABEL,
+  answerChoice,
   answerText,
   currentStep,
   hhmm,
@@ -424,8 +425,12 @@ export function MessageView({
   inTask,
   repeat,
   onUnread,
+  questionNear,
 }: {
   m: V3Message
+  /** The person's answers: the message with the questions shows just above (its cards show the answers),
+   *  so the answers are a short line here. Otherwise they show with their questions' prompts. */
+  questionNear?: boolean
   tasks: Task[]
   /** Shown in this task's view: every message there is about it, so it shows no badge for it. */
   inTask?: string
@@ -658,7 +663,8 @@ export function MessageView({
           if (!q) return null
           return <QuestionBlock key={q.key} m={m} q={q} index={nonAction.indexOf(q)} total={nonAction.length} />
         })}
-        {(m.answers?.length ?? 0) > 0 && (
+        {(m.answers?.length ?? 0) > 0 && !questionNear && <AnswerContent m={m} name={name} inTask={inTask} baseDir={sess?.cwd ?? ''} onOpen={(a) => onOpenAttachment(a, m)} />}
+        {(m.answers?.length ?? 0) > 0 && questionNear && (
           <div className="v-cnt2" data-testid="sent-answers">
             {(m.answers ?? []).map((a) => (
               <div key={a.key}>↳ {answerText(a)}</div>
@@ -668,6 +674,60 @@ export function MessageView({
         {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={(a) => onOpenAttachment(a, m)} openId={null} newestId={null} />}
         {!me && questions.length > 0 && <AnswerBar m={m} onSent={onChanged} testid="send-answers" />}
       </div>
+    </div>
+  )
+}
+
+/** The ids of the answer messages in list whose question message shows within the `window` messages
+ *  before them: those answers read under its cards, as a short line. */
+export function answersNearQuestions(list: V3Message[], window = 4): Set<string> {
+  const out = new Set<string>()
+  list.forEach((m, i) => {
+    if (m.author !== 'user' || !m.answers_for || !m.answers?.length) return
+    for (let j = i - 1; j >= Math.max(0, i - window); j--) {
+      if (list[j]!.id === m.answers_for) {
+        out.add(m.id)
+        return
+      }
+    }
+  })
+  return out
+}
+
+/**
+ * The person's answers where the message with the questions is not shown just above (another task, not
+ * loaded, far up): each question's prompt (short) with the choice, Other or text, and the note; "↳"
+ * names the message and reveals it (in its task, else in the agent's stream).
+ */
+function AnswerContent({ m, name, inTask, baseDir, onOpen }: { m: V3Message; name: string; inTask?: string; baseDir: string; onOpen: (a: Attachment) => void }) {
+  const nav = useNav()
+  const to = m.answers_to
+  if (!to) {
+    // The message answered is unknown here: the answers as the agent read them.
+    return <MessageBody text={m.body} message={m} baseDir={baseDir} onOpen={onOpen} author="you" className="text-[13.5px]" />
+  }
+  const qs = new Map(to.questions.map((q) => [q.key, q]))
+  const reveal = () => {
+    if (inTask !== undefined && to.task_id) nav.task(to.task_id, to.message_id)
+    else nav.agent(m.session_id, to.message_id)
+  }
+  return (
+    <div className="v-ans" data-testid="answer-content">
+      <button type="button" className="v-ans-to" data-testid="answer-to" title="Show the question" onClick={reveal}>
+        <span aria-hidden>↳</span> <span className="v-ans-lbl">Answer to {name}{to.line ? ': “' + short(to.line, 80) + '”' : ''}</span>
+      </button>
+      {(m.answers ?? []).map((a) => {
+        const q = qs.get(a.key)
+        const choice = answerChoice(a)
+        const note = a.note?.trim()
+        return (
+          <div key={a.key} className="v-ans-q" data-testid="answer-item">
+            {q && <div className="v-ans-p">{short(q.prompt, 140)}</div>}
+            {choice && <div className="v-ans-a">{choice}</div>}
+            {note && <div className="v-ans-n">Note: {note}</div>}
+          </div>
+        )
+      })}
     </div>
   )
 }

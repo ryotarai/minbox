@@ -1,7 +1,7 @@
 // minbox v3 data: the Board, a task's view, an agent's stream (docs/v3/api.md), and the hooks that
 // keep them live (the server's tasks / thread events arrive as window "minbox:v3" events).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { call, type Answer, type Message, type ReplyRequest } from '../api'
+import { call, type Answer, type Message, type Question, type ReplyRequest } from '../api'
 import type { StreamTaskEvent } from './StreamEvents'
 
 export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
@@ -64,7 +64,11 @@ export type V3Message = Message & {
   gap?: number
   /** Optimistic: shown before the server has it. */
   pending?: boolean
+  /** The person's answers: the agent message they answer (its task, its start) and the questions answered. */
+  answers_to?: AnswersTo
 }
+
+export type AnswersTo = { message_id: string; task_id?: string; line?: string; questions: Question[] }
 
 export type TaskEvent = { id: string; task_id: string; at: string; kind: string; text: string; session_id?: string; message_id?: string }
 
@@ -159,9 +163,16 @@ export function useMarkRead(messages: V3Message[] | undefined, active = true) {
   }, [messages, active])
 }
 
-export function answerText(a: Answer): string {
+/** The answer's choice, Other text or free text ("Skipped"), without its note. */
+export function answerChoice(a: Answer): string {
   if (a.skipped) return 'Skipped'
   return [...(a.selected ?? []), a.other, a.text].filter((x) => x && String(x).trim()).join(', ')
+}
+
+/** The answer on one line: its choice and its note (an answer may be a note alone). */
+export function answerText(a: Answer): string {
+  const note = a.note?.trim() ?? ''
+  return [answerChoice(a), note && 'Note: ' + note].filter(Boolean).join(' — ')
 }
 
 /** Leaf steps (a parent with sub-steps counts by them). */
