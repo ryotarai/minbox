@@ -48,14 +48,13 @@
 /* The agents list: a project's agents under its name (all projects), plain shells last. */
 .v-ag-proj { display: flex; align-items: center; gap: 6px; padding: 8px 14px 2px; font-size: 11px; font-weight: 600; color: var(--mb-subtle); letter-spacing: .02em; }
 .v-proj-dot { width: 7px; height: 7px; border-radius: 2px; background: hsl(var(--h) 55% 55%); flex: none; }
-/* A project header's ＋ (a new agent in it): on hover or focus with a mouse, always on touch. */
+/* A project header's ＋ (a new agent in it): always shown, muted at rest, stronger on hover or focus. */
 .v-ag-proj-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v-proj-new { margin-left: auto; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; border-radius: 5px; background: none; color: var(--mb-subtle); cursor: pointer; padding: 0; opacity: 0; }
-.v-proj-new:hover { background: var(--mb-rowsel); color: var(--mb-fg); }
-.v-proj-new:focus-visible { opacity: 1; outline: 2px solid var(--mb-accent, currentColor); outline-offset: 1px; }
-.v-ag-proj:hover .v-proj-new, .v-sb-h:hover .v-proj-new, .v-proj-new:focus { opacity: 1; }
+.v-proj-new { margin-left: auto; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; border-radius: 5px; background: none; color: var(--mb-subtle); cursor: pointer; padding: 0; }
+.v-proj-new:hover, .v-proj-new:focus-visible { background: var(--mb-rowsel); color: var(--mb-fg); }
+.v-proj-new:focus-visible { outline: 2px solid var(--mb-accent, currentColor); outline-offset: 1px; }
 .v-sb-h .v-proj-new { margin-left: 0; }
-@media (hover: none), (pointer: coarse) { .v-proj-new { opacity: 1; width: 32px; height: 32px; margin-top: -6px; margin-bottom: -6px; } }
+@media (hover: none), (pointer: coarse) { .v-proj-new { width: 32px; height: 32px; margin-top: -6px; margin-bottom: -6px; } }
 .v-help-note { margin: 10px 0 0; font-size: 12px; color: var(--mb-subtle); }
 
 /* Tablet: the rail's ☰ brings the folded sidebar back. */
