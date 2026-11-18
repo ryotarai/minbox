@@ -57,9 +57,9 @@ test('a task view opens at its newest message', async ({ page, minbox }) => {
   await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/tasks/${t.id}`)).messages.length, { timeout: 30_000 }).toBeGreaterThan(20)
   const d = await api(minbox, 'GET', `/api/v3/tasks/${t.id}`)
   await api(minbox, 'POST', '/api/v3/read', { message_ids: d.messages.map((m: any) => m.id) })
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
-  const scroller = page.getByTestId('task-view').locator('.v-scroll')
-  await expect(page.getByTestId('task-view').locator('[data-testid="v3-message"]').first()).toBeVisible()
+  await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`)
+  const scroller = page.getByTestId('agent-task-detail').locator('.v-scroll')
+  await expect(page.getByTestId('agent-task-detail').locator('[data-testid="v3-message"]').first()).toBeVisible()
   await expect.poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 200 && el.scrollHeight - el.scrollTop - el.clientHeight < 60)).toBe(true)
 })
 

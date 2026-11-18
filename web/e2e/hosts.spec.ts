@@ -71,7 +71,7 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await page.getByTestId('host-remove-confirm').click()
     await expect(page.getByTestId('host-row')).toHaveCount(1)
     await page.goto(minbox.url + `/#v=agent&s=${remote.id}`)
-    await expect(page.getByTestId('agent-state')).toHaveText('ended')
+    await expect(page.getByTestId('agent-state')).toHaveAttribute('data-state', 'ended')
   } finally {
     host?.kill('SIGTERM')
     host = null

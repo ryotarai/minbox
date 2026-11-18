@@ -68,8 +68,8 @@ async function agentReplies(m: Minbox, a: Agent, n: number) {
     .toBeGreaterThanOrEqual(n)
 }
 
-const scroller = (page: Page, view: 'stream-view' | 'task-view') => page.getByTestId(view).locator('.v-scroll').first()
-const gapToBottom = (page: Page, view: 'stream-view' | 'task-view') =>
+const scroller = (page: Page, view: 'stream-view' | 'agent-task-detail') => page.getByTestId(view).locator('.v-scroll').first()
+const gapToBottom = (page: Page, view: 'stream-view' | 'agent-task-detail') =>
   scroller(page, view).evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
 
 /** Images arrive late (as on a phone network), so the content grows after the first layout. */
@@ -142,16 +142,16 @@ test('phone: a task opens at its newest message from the Board, with late images
   await slowImages(page)
   await page.goto(minbox.url)
   await page.locator(`[data-testid="task-row"][data-task="${t.id}"] .v-line`).tap()
-  await expect(page.getByTestId('task-view')).toBeVisible()
+  await expect(page.getByTestId('agent-task-detail')).toBeVisible()
   await page.waitForTimeout(1800)
-  expect(await gapToBottom(page, 'task-view')).toBeLessThan(4)
-  await expect(page.getByTestId('task-view').getByTestId('v3-message').last()).toBeInViewport()
+  expect(await gapToBottom(page, 'agent-task-detail')).toBeLessThan(4)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('v3-message').last()).toBeInViewport()
   await expect(page.getByTestId('task-composer').getByTestId('composer-text')).toBeInViewport()
 
   // A deep link lands the same way.
   await page.goto('about:blank')
   await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
-  await expect(page.getByTestId('task-view')).toBeVisible()
+  await expect(page.getByTestId('agent-task-detail')).toBeVisible()
   await page.waitForTimeout(1800)
-  expect(await gapToBottom(page, 'task-view')).toBeLessThan(4)
+  expect(await gapToBottom(page, 'agent-task-detail')).toBeLessThan(4)
 })

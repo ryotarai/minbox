@@ -338,7 +338,7 @@ test('task view: a pick and words go together to the agent, about the task; its 
   await agentReply(minbox, a, /created a task/)
   await say(minbox, a, 'ASK about the gauge deploy')
   const q = await agentReply(minbox, a, /One decision first/)
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`)
   const msg = page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)
   await msg.getByTestId('question').getByText('Tokyo', { exact: true }).click()
   const tbox = page.getByTestId('task-composer').getByTestId('composer-text')

@@ -28,7 +28,7 @@ test('a task set to needs you without a question: a row that says what it needs,
 
   // A click on the row opens the task (nothing unfolds on the Board).
   await row.locator('.v-line').click()
-  await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${gauge.id}`))
   await expect(page.getByTestId('task-title')).toBeVisible()
   await expect(page.getByTestId('task-expanded')).toHaveCount(0)
 
