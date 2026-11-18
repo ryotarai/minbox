@@ -21,7 +21,7 @@ is *about* one or more tasks (or none).
 ## UC1. Morning triage: what needs me
 - **Entry**: open minbox (desktop or phone). Lands on the Board.
 - **Shown first**: NEEDS YOU, as question cards (`you: <question>`, the task it is about, agent, age, the choices as buttons; a task's question shows once, on its card, not again as a task row), then tasks set to *needs you* without a question, then GOALS, WORKING (active in the last 3 days, with agent state, PR / links, age), IDLE (collapsed: open but quiet for more than 3 days), BLOCKED (only when there is one), DONE (collapsed, last 48 h).
-- **Actions**: `J/K` walk the cards, `1–9` answers a single-choice question in place, `Space` expands a task row (checklist, last report, timeline), `Enter` opens it.
+- **Actions**: `J/K` walk the cards, `1–9` answers a single-choice question in place, `Space` expands a task row (checklist, last report), `Enter` opens it.
 - **Must not be required**: opening an agent or task to see what is asked; choosing a project's thread; reading every report.
 - Spec: `v3-triage.spec.ts`.
 
@@ -48,7 +48,7 @@ is *about* one or more tasks (or none).
 - Spec: `v3-follow-up.spec.ts`.
 
 ## UC5. Check progress of one task across agents
-- **Entry**: Board row, `Space` to expand inline (checklist with the current step, last report, timeline) or `Enter` for the full task view.
+- **Entry**: Board row, `Space` to expand inline (checklist with the current step, last report) or `Enter` for the full task view.
 - **Shown first**: segmented progress bar `n/m`, the step now in progress, who is involved.
 - **Actions**: none beyond expand / open. "Show context" between the task's messages shows the other messages around them in that agent's stream.
 - **Must not be required**: reading every agent's stream.
@@ -78,7 +78,7 @@ is *about* one or more tasks (or none).
 ## UC9. An agent hands work to another session
 - **Entry**: the task view's *to* selector → another agent or **New agent**.
 - **Shown first**: the composer addressed to that agent, still about the task.
-- **Actions**: type, `⌘↵`. The new agent joins the task's agents; its replies about it are about the task; the task's timeline shows the hand-off.
+- **Actions**: type, `⌘↵`. The new agent joins the task's agents; its replies about it are about the task; the task's conversation shows the hand-off as a line between messages.
 - **Must not be required**: forking a thread; copying context by hand (the task id delivered with the message carries it).
 - Spec: `v3-follow-up.spec.ts` (switch recipient).
 

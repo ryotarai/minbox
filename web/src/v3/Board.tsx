@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { ago, currentStep, short, v3, type Board, type BoardTask, type V3Message } from './data'
-import { ActionBlock, AnswerBar, Bar, MessageBodyClamp, QuickAnswer, StatusDot, Steps, TaskChip, Timeline, agentName, openQuestions, toggled, useNav, useSessionsById } from './parts'
+import { ActionBlock, AnswerBar, Bar, MessageBodyClamp, QuickAnswer, StatusDot, Steps, TaskChip, agentName, openQuestions, toggled, useNav, useSessionsById } from './parts'
 
 export type BoardFocus = { key: string | null }
 
@@ -337,7 +337,7 @@ export function GoalRun({ t, reload }: { t: BoardTask; reload: () => void }) {
   )
 }
 
-/** A row expanded in place: checklist (or criteria), last report, timeline. */
+/** A row expanded in place: checklist (or criteria) and last report. */
 function Expanded({ t, reload }: { t: BoardTask; reload: () => void }) {
   const { error } = useApp()
   const byId = useSessionsById()
@@ -381,10 +381,6 @@ function Expanded({ t, reload }: { t: BoardTask; reload: () => void }) {
             </button>
           )}
         </div>
-      </div>
-      <div>
-        <div className="v-sec">TIMELINE</div>
-        {detail ? <Timeline events={detail.events} messages={detail.messages} n={8} byId={byId} /> : <div className="v-cnt2">…</div>}
       </div>
     </div>
   )
