@@ -193,8 +193,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
           unread: s.unread > 0,
           run: () => {
             remember({ k: 'agent', id: s.id })
-            if (s.kind === 'shell') navigate({ view: 'agent', s: s.id, m: null, tab: 'terminal' }, { push: true })
-            else navigate({ view: 'agent', s: s.id, m: null }, { push: true })
+            navigate({ view: 'agent', s: s.id, m: null, tab: s.kind === 'shell' ? 'terminal' : 'inbox' }, { push: true })
           },
         })),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -443,7 +443,6 @@ function AgentGroups({ agents, shells, sel, counts, grouped, onRename }: { agent
 
 function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number }; onRename: (s: Session) => void }) {
   const { sessions, navigate } = useApp()
-  const nav = useNav()
   const hint = agentHint(sessions ?? [], a)
   const u = counts?.unread ?? 0
   const waits = (counts?.open_questions ?? 0) > 0
@@ -460,7 +459,7 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
         data-kind={a.kind}
         title={shell ? 'A plain shell: opens on its terminal' : 'Double-click to rename · right-click for actions'}
         {...menu.props}
-        onClick={() => (shell ? navigate({ view: 'agent', s: a.id, m: null, tab: 'terminal' }, { push: true }) : nav.agent(a.id))}
+        onClick={() => navigate({ view: 'agent', s: a.id, m: null, tab: shell ? 'terminal' : 'inbox' }, { push: true })}
         onDoubleClick={() => onRename(a)}
       >
         <span className={'v-dot ' + (a.status === 'working' ? 'd-work v-live' : waits ? 'd-wait' : a.status === 'ended' ? 'd-done' : 'd-idle')} />

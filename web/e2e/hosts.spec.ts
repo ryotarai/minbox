@@ -10,8 +10,7 @@ import { chooseFolder, expect, expectTerminal, showTerminal, test, typeInTermina
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const BIN = join(ROOT, 'bin/minbox')
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('add a host: Direct, find it, pair with a code accepted there, then run a session on it', async ({ page, minbox }) => {
+test('add a host: Direct, find it, pair with a code accepted there, then run a session on it', async ({ page, minbox }) => {
   const dir = mkdtempSync('/tmp/mbh-')
   const port = 4950 + Math.floor(Math.random() * 40)
   let host: ChildProcess | null = spawn(BIN, ['host', '--listen', `127.0.0.1:${port}`, '--data-dir', dir], { stdio: 'ignore' })
@@ -55,13 +54,15 @@ test.skip('add a host: Direct, find it, pair with a code accepted there, then ru
     await expect(page.getByTestId('host-tag').first()).toHaveText('devbox')
     await expectTerminal(page, 'ready>')
 
-    // The mod's calls go through the host's relay.
+    // The mod's calls go through the host's relay: its question waits on the Board, a message from its stream reaches it.
     await typeInTerminal(page, 'ask')
     await expectTerminal(page, /sent question in thr_/)
-    await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
-    await page.getByTestId('question-card').first().getByTestId('accept-recommended').click()
-    await page.getByTestId('reply-send').click()
-    await expectTerminal(page, '<<< inbox [Pick a database]')
+    await expect(page.getByTestId('board-badge')).toHaveText('1')
+    await page.getByTestId('composer-text').fill('SQLite it is')
+    await page.getByTestId('composer-send').click()
+    await expectTerminal(page, '<<< inbox')
+    await expectTerminal(page, 'SQLite it is')
+    const remote = ((await (await fetch(minbox.url + '/api/sessions')).json()) as any[]).find((s) => s.name === 'remote')
 
     // Removing the host ends its session and forgets this server there.
     await page.goto(minbox.url + '/#v=settings&ss=hosts')
@@ -69,8 +70,8 @@ test.skip('add a host: Direct, find it, pair with a code accepted there, then ru
     await page.getByTestId('host-remove').click()
     await page.getByTestId('host-remove-confirm').click()
     await expect(page.getByTestId('host-row')).toHaveCount(1)
-    await page.getByTestId('settings-back').click()
-    await expect(page.getByTestId('session-ended')).toBeVisible()
+    await page.goto(minbox.url + `/#v=agent&s=${remote.id}`)
+    await expect(page.getByTestId('agent-state')).toHaveText('ended')
   } finally {
     host?.kill('SIGTERM')
     host = null
@@ -89,8 +90,7 @@ test.skip('add a host: Direct, find it, pair with a code accepted there, then ru
 // Pi and OpenCode on another machine's host (docs/agents.md, "Remote hosts"): the host finds what is
 // installed there (Node's version for Pi, `opencode --version`), New session offers per host what that
 // host can run, and the sessions get the host's own copies of the extension and the plugin.
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('Pi and OpenCode sessions on a remote host: per-host detection, the host’s own extension and plugin', async ({ page, allAgentsMinbox: minbox }) => {
+test('Pi and OpenCode sessions on a remote host: per-host detection, the host’s own extension and plugin', async ({ page, allAgentsMinbox: minbox }) => {
   const dir = mkdtempSync('/tmp/mbh-')
   const port = 4950 + Math.floor(Math.random() * 40)
   // "That machine" first has a Node too old for Pi.
@@ -106,10 +106,11 @@ test.skip('Pi and OpenCode sessions on a remote host: per-host detection, the ho
   const startHost = (extra: Record<string, string>) => spawn(BIN, ['host', '--listen', `127.0.0.1:${port}`, '--data-dir', dir], { stdio: 'ignore', env: hostEnv(extra) })
   const hostUp = () => fetch(`http://127.0.0.1:${port}/version`).then((r) => r.status).catch(() => 0)
   let host: ChildProcess | null = startHost({ PATH: `${oldNode}:${process.env.PATH}` })
-  // With no sessions the dialog opens by itself: press New only while it is not there.
+  // New agent: the full dialog (kind, folder, host).
   const openNew = async () => {
     const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-    for (let i = 0; i < 30 && !(await form.isVisible()); i++) await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
+    await page.getByTestId('sidebar-new-agent').click()
+    await expect(form).toBeVisible()
   }
   try {
     await expect.poll(hostUp, { timeout: 10_000 }).toBe(200)
@@ -168,10 +169,9 @@ test.skip('Pi and OpenCode sessions on a remote host: per-host detection, the ho
     await expectTerminal(page, 'paths n=2 under-root=yes')
     await typeInTerminal(page, 'ask')
     await expectTerminal(page, /sent question in thr_/)
-    await page.getByTestId('thread-row').filter({ hasText: 'Pick a database' }).click()
-    await page.getByTestId('question-card').first().getByTestId('accept-recommended').click()
-    await page.getByTestId('reply-send').click()
-    await expectTerminal(page, '<<< inbox [Pick a database]')
+    await page.getByTestId('composer-text').fill('SQLite it is')
+    await page.getByTestId('composer-send').click()
+    await expectTerminal(page, '<<< inbox')
 
     // An OpenCode session in the same project: created on devbox before its start, the host's plugin
     // merged into the host's own OPENCODE_CONFIG_CONTENT.

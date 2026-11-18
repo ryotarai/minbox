@@ -19,8 +19,7 @@ function lanAddress(): string | null {
   return null
 }
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('serve --listen: a browser on another address pairs over http, accepted on this machine', async ({ browser }) => {
+test('serve --listen: a browser on another address pairs over http, accepted on this machine', async ({ browser }) => {
   const ip = lanAddress()
   test.skip(!ip, 'no LAN address on this machine')
   const dir = mkdtempSync('/tmp/mbl-')
@@ -48,7 +47,7 @@ test.skip('serve --listen: a browser on another address pairs over http, accepte
 
     // The remote browser signs the challenge with its fallback key and gets in.
     await expect(remote.getByTestId('pair-screen')).toBeHidden({ timeout: 15_000 })
-    await expect(remote.getByTestId('threads-pane')).toBeVisible()
+    await expect(remote.getByTestId('v3-app')).toBeVisible()
     await other.close()
   } finally {
     proc?.kill('SIGTERM')
