@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type IssueComment, type IssueDetailResult, type IssueSummary } from '../api'
-import { useApp } from '../lib/app'
+import { railWidth, useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
 import { groupIssues, isClosed, matchesIssue, useMyIssues, type IssuesState } from '../lib/issues'
 import { renderMarkdown } from '../lib/markdown'
@@ -35,11 +35,10 @@ function useIssuesScreen() {
 function IssuesDesktop({ tablet }: { tablet: boolean }) {
   const { layout, goBack } = useApp()
   const c = useIssuesScreen()
-  const narrow = tablet || (layout.projectsRail ?? window.innerWidth < 1400)
-  return (
+    return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="issues-screen">
-      <div style={{ width: narrow ? 56 : 176 }} className="shrink-0 border-r border-line">
-        <ProjectRail narrow={narrow} />
+      <div style={{ width: railWidth(layout) }} className="shrink-0 border-r border-line" data-testid="rail-column">
+        <ProjectRail />
       </div>
       <div style={{ width: tablet ? 300 : 380 }} className="shrink-0 border-r border-line">
         <IssueList state={c.state} selected={c.selected} onSelect={c.select} onNew={() => c.setCreating(true)} onBack={() => goBack(undefined, { leave: true })} />
