@@ -456,7 +456,7 @@ export function MessageView({
       .catch(error)
   }
   const copy = () => void navigator.clipboard?.writeText(me ? textOf(m) : proseOf(m.body)).then(() => toast('Copied'))
-  const reply = () => document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')?.focus()
+  const reply = () => (document.querySelector<HTMLTextAreaElement>('.v-main textarea[data-composer]') ?? document.querySelector<HTMLTextAreaElement>('textarea[data-composer]'))?.focus()
   const thumbs = () => {
     let cancelled = false
     toast('👍 Looks good · sending in 5 s', { action: 'Undo', undo: true, ms: 5000, onAction: () => (cancelled = true) })

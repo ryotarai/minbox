@@ -1,8 +1,9 @@
 // Task columns on an agent's page (the standalone Columns page is gone): each task in the agent's Tasks
 // pane has a checkbox, with a tri-state "All" (every open task of the agent, new ones too) on top. Checked
 // tasks show side by side in place of the stream, each with its messages and a reply box to its agent;
-// "Stream" shows the stream again (the checks stay), "Clear" unchecks them all. Kept per agent across a
-// reload. A tablet shows one column at a time with tabs; a phone keeps the stream.
+// no bar over them: the Tasks pane's "N checked · Clear" unchecks them all (the stream again). Kept per
+// agent across a reload. While the stream is hidden (columns, one task), the Tasks pane has a message box
+// to the agent itself. A tablet shows one column at a time with tabs; a phone keeps the stream.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -31,9 +32,9 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
 
-  // Nothing checked: the stream, no bar.
+  // Nothing checked: the stream (its own box; none in the Tasks pane).
   await expect(conv(page)).toBeVisible()
-  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await expect(page.getByTestId('tasks-composer')).toHaveCount(0)
   await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'off')
 
   // One: All turns partial, the stream gives way to its column.
@@ -43,6 +44,10 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
   await expect(conv(page)).toHaveCount(0)
   await expect(col(page, t1.id).getByTestId('column-title')).toHaveText('Fix the gauge reading')
   await expect(col(page, t1.id).getByTestId('v3-message').filter({ hasText: 'please fix the gauge reading' })).toBeVisible()
+  // No bar over the columns: the Tasks pane counts them, with Clear; its message box shows.
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await expect(page.getByTestId('tasks-clear')).toHaveText('1 checked · Clear')
+  await expect(page.getByTestId('tasks-composer')).toBeVisible()
 
   // All: both, side by side, equal widths.
   await page.getByTestId('agent-tasks-all').check()
@@ -85,28 +90,19 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
   // Another agent has its own choice (none).
   await page.goto(minbox.url + `/#v=agent&s=${b.id}`)
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', b.id)
-  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
   await expect(page.getByTestId('task-column')).toHaveCount(0)
   await page.goBack()
   await expect(page.getByTestId('task-column')).toHaveCount(1)
 
-  // Stream: the stream again, the checks kept; Columns brings them back.
-  await page.getByTestId('show-stream').click()
-  await expect(conv(page)).toBeVisible()
-  await expect(page.getByTestId('task-column')).toHaveCount(0)
-  await expect(check(page, t1.id)).toBeChecked()
-  await page.getByTestId('show-columns').click()
-  await expect(col(page, t1.id)).toBeVisible()
-
-  // ✕ on a column unchecks it; the last one gone, the stream.
+  // ✕ on a column unchecks it; the last one gone, the stream (and the pane's box goes).
   await col(page, t1.id).getByTestId('column-remove').click()
   await expect(conv(page)).toBeVisible()
-  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await expect(page.getByTestId('tasks-composer')).toHaveCount(0)
 
-  // Clear unchecks them all.
+  // Clear (in the Tasks pane) unchecks them all.
   await page.getByTestId('agent-tasks-all').check()
   await expect(page.getByTestId('task-column')).toHaveCount(2)
-  await page.getByTestId('columns-clear').click()
+  await page.getByTestId('tasks-clear').click()
   await expect(page.getByTestId('task-column')).toHaveCount(0)
   await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'off')
   await expect(conv(page)).toBeVisible()
@@ -193,6 +189,68 @@ test('a task title shows that task in the agent page, the Tasks pane kept and th
   await page.getByTestId('task-view').getByTestId('task-agent').first().click()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
   await expect(detail).toHaveCount(0)
+})
+
+test('the Tasks pane message box: to the agent itself while columns or one task fill the page, the stream draft shared, shown in the stream', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  const t1 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Fix the gauge reading', session_id: a.id })
+  const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+  await expect(conv(page)).toBeVisible()
+  const box = page.getByTestId('tasks-composer')
+  await expect(box).toHaveCount(0)
+  const inStream = async (words: string) => {
+    const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
+    return s.messages.some((x: any) => x.author === 'user' && x.words === words)
+  }
+
+  // Columns: the box sits at the pane's bottom; a message goes to the agent (no task picked), ✓ briefly.
+  await page.getByTestId('agent-tasks-all').check()
+  await expect(page.getByTestId('task-column')).toHaveCount(2)
+  await expect(box).toBeVisible()
+  await expect(box.getByTestId('composer-to')).toHaveCount(0)
+  await expect(box).toContainText('api')
+  const pane = (await page.locator('.v-tasks').boundingBox())!
+  const bb = (await box.boundingBox())!
+  expect(bb.y + bb.height).toBeGreaterThan(pane.y + pane.height - 20)
+  expect(bb.height).toBeLessThan(140)
+  await box.getByTestId('composer-text').fill('what is left on the deploy?')
+  await snap(page, 'tasks-composer-columns')
+  await box.getByTestId('composer-text').press('ControlOrMeta+Enter')
+  await expect(page.getByTestId('tasks-composer-sent')).toHaveText('Sent to api ✓')
+  await snap(page, 'tasks-composer-sent')
+  await expect.poll(() => inStream('what is left on the deploy?')).toBe(true)
+  await expect(box.getByTestId('composer-text')).toHaveValue('')
+  await expect(page.getByTestId('tasks-composer-sent')).toHaveCount(0, { timeout: 6000 })
+
+  // One task (its title): the box stays, beside the task's own reply box.
+  await page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${t1.id}"]`).click()
+  await expect(page.getByTestId('agent-task-detail')).toBeVisible()
+  await expect(box).toBeVisible()
+  await box.getByTestId('composer-text').fill('and the release notes')
+  await box.getByTestId('composer-send').click()
+  await expect(page.getByTestId('tasks-composer-sent')).toBeVisible()
+  await expect.poll(() => inStream('and the release notes')).toBe(true)
+
+  // The draft is the stream's: words left in the pane's box are in the stream's box once it shows.
+  await box.getByTestId('composer-text').fill('half a thought')
+  await page.getByTestId('task-detail-close').click()
+  await expect(page.getByTestId('task-column')).toHaveCount(2)
+  await page.getByTestId('tasks-clear').click()
+  await expect(conv(page)).toBeVisible()
+  await expect(box).toHaveCount(0)
+  await expect(page.getByTestId('stream-view').getByTestId('composer-text')).toHaveValue('half a thought')
+  // Both messages are in the stream.
+  await expect(page.getByTestId('stream-view').locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'what is left on the deploy?' })).toBeVisible()
+  await expect(page.getByTestId('stream-view').locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'and the release notes' })).toBeVisible()
+  void t2
+
+  // Folded, the strip has no box.
+  await page.getByTestId('agent-tasks-all').check()
+  await page.getByTestId('tasks-pane-toggle').first().click()
+  await expect(page.getByTestId('tasks-strip-checked')).toBeVisible()
+  await expect(box).toHaveCount(0)
 })
 
 test('many checked tasks scroll sideways at a minimum width; a new open task joins All', async ({ page, minbox }) => {

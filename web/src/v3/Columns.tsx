@@ -2,7 +2,8 @@
 // in place of its stream. Each column is a task's conversation (TaskView's column mode: a short header,
 // its messages scrolled to the newest, a reply box to the agent last active on it). "All" is every open
 // task of the agent (also the ones that start later). The choice is kept per agent in this browser;
-// "Stream" shows the agent's stream again without forgetting it. Tablet: one column at a time, with a
+// unchecking them all (the Tasks pane's "N checked · Clear") shows the stream again; meanwhile the
+// pane's own message box still writes to the agent. Tablet: one column at a time, with a
 // tab per checked task. Phone: no columns (the stream; a task is a tap away in the sheet's Tasks).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Attachment } from '../api'
@@ -13,11 +14,10 @@ import { TaskView } from './TaskView'
 
 // ---- the checked tasks of each agent (localStorage) ----
 
-/** all: every open task (the ones that come later too); ids: the tasks checked one by one; stream: the
- *  stream is shown for now (the checks are kept). */
-export type ColumnPick = { all: boolean; ids: string[]; stream: boolean }
+/** all: every open task (the ones that come later too); ids: the tasks checked one by one. */
+export type ColumnPick = { all: boolean; ids: string[] }
 const PREFIX = 'minbox:v3-columns:'
-const NONE: ColumnPick = { all: false, ids: [], stream: false }
+const NONE: ColumnPick = { all: false, ids: [] }
 const subs = new Set<() => void>()
 const cache = new Map<string, ColumnPick>()
 
@@ -27,7 +27,7 @@ function read(sessionId: string): ColumnPick {
   let p = NONE
   try {
     const v = JSON.parse(localStorage.getItem(PREFIX + sessionId) ?? 'null') as Partial<ColumnPick> | null
-    if (v) p = { all: !!v.all, ids: Array.isArray(v.ids) ? v.ids.filter((x) => typeof x === 'string') : [], stream: !!v.stream }
+    if (v) p = { all: !!v.all, ids: Array.isArray(v.ids) ? v.ids.filter((x) => typeof x === 'string') : [] }
   } catch {
     /* off or broken: nothing checked */
   }
@@ -77,12 +77,12 @@ export function useColumnPick(sessionId: string, tasks: BoardTask[]) {
   const selected = ordered.filter(has)
   const openChecked = open.filter(has).length
   const allState: 'on' | 'off' | 'some' = open.length === 0 ? (pick.all ? 'on' : 'off') : openChecked === open.length ? 'on' : openChecked === 0 ? 'off' : 'some'
-  const set = (p: Omit<ColumnPick, 'stream'>, stream = false) => write(sessionId, { ...p, stream })
+  const set = (p: ColumnPick) => write(sessionId, p)
   const toggle = (t: BoardTask) => {
     if (has(t)) {
       // Unchecking one of "All": the others stay checked, one by one.
       const ids = pick.all ? [...new Set([...open.map((x) => x.id), ...pick.ids])] : pick.ids
-      set({ all: false, ids: ids.filter((x) => x !== t.id) }, pick.stream)
+      set({ all: false, ids: ids.filter((x) => x !== t.id) })
     } else {
       const ids = [...pick.ids, t.id]
       // Every open task checked: that is "All" again (the next tasks come in too).
@@ -92,8 +92,7 @@ export function useColumnPick(sessionId: string, tasks: BoardTask[]) {
   }
   const toggleAll = () => (allState === 'on' ? set({ all: false, ids: pick.ids.filter((x) => !open.some((o) => o.id === x)) }) : set({ all: true, ids: pick.ids.filter((x) => !open.some((o) => o.id === x)) }))
   const clear = () => set({ all: false, ids: [] })
-  const showStream = (stream: boolean) => write(sessionId, { ...pick, stream })
-  return { selected, has, toggle, toggleAll, clear, allState, open, stream: pick.stream, showStream, columns: selected.length > 0 && !pick.stream }
+  return { selected, has, toggle, toggleAll, clear, allState, open, columns: selected.length > 0 }
 }
 export type ColumnPickState = ReturnType<typeof useColumnPick>
 
@@ -104,29 +103,6 @@ export function TriBox({ state, onChange, label, testid }: { state: 'on' | 'off'
     if (ref.current) ref.current.indeterminate = state === 'some'
   }, [state])
   return <input ref={ref} type="checkbox" aria-label={label} data-testid={testid} data-state={state} checked={state === 'on'} onChange={onChange} />
-}
-
-/** The bar over the agent's page while tasks are checked: Stream | Columns, and Clear. */
-export function ColumnsBar({ pick }: { pick: ColumnPickState }) {
-  const n = pick.selected.length
-  return (
-    <div className="v-colsbar" data-testid="columns-bar">
-      <div className="v-seg" role="group" aria-label="Show">
-        <button type="button" className={pick.stream ? 'on' : ''} aria-pressed={pick.stream} data-testid="show-stream" title="The agent's whole stream (the checked tasks stay checked)" onClick={() => pick.showStream(true)}>
-          Stream
-        </button>
-        <button type="button" className={pick.stream ? '' : 'on'} aria-pressed={!pick.stream} data-testid="show-columns" title="The checked tasks side by side" onClick={() => pick.showStream(false)}>
-          ▥ Columns <b>{n}</b>
-        </button>
-      </div>
-      <span className="v-cnt2 v-hide-phone">
-        {n} task{n === 1 ? '' : 's'} checked in Tasks
-      </span>
-      <button type="button" className="v-link" data-testid="columns-clear" style={{ marginLeft: 'auto' }} title="Uncheck every task: back to the stream" onClick={pick.clear}>
-        Clear
-      </button>
-    </div>
-  )
 }
 
 /** The checked tasks as columns: side by side (equal widths, scrolling sideways), or on a tablet one
