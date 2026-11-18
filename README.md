@@ -141,7 +141,7 @@ binary; the sessions resume (or, if you untick that, end).
 
   | Tool | What it does |
   | --- | --- |
-  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review to a thread. `thread_title` (required, about 30 characters or fewer as a guide) names what the thread is about now, `status` (`working` / `need_action` / `blocked` / `finished`) its status. |
+  | `send_message` | Send a message, `:::question` blocks, attachments or a guided review, about one task (`task_id`). It has no `status`: one is refused; a task's status is set with `update_task`. |
   | `read_thread` | Read any thread by id, also another session's: the newest 30 messages (`limit` up to 100), older ones with `before`, long text cut with a marker. Without an id: list this session's threads |
   | `set_session_title` | Set the title of the session |
   | `open_url` | Open a page in your browser, wherever you are. `open URL` or `gh … --web` in Bash would open it on the host, so the mod refuses those. |

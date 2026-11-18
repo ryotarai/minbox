@@ -426,12 +426,15 @@ export function MessageView({
   repeat,
   onUnread,
   questionNear,
+  latest,
 }: {
   m: V3Message
   /** The person's answers: the message with the questions shows just above (its cards show the answers),
    *  so the answers are a short line here. Otherwise they show with their questions' prompts. */
   questionNear?: boolean
   tasks: Task[]
+  /** The person's latest message here: once delivered, its header says ✓ delivered (older ones say nothing). */
+  latest?: boolean
   /** Shown in this task's view: every message there is about it, so it shows no badge for it. */
   inTask?: string
   /** The message before it is in the same task: its badge is dimmed (a run reads as one). */
@@ -626,7 +629,18 @@ export function MessageView({
         )}
         <span>{hhmm(m.created_at)}</span>
         {m.pending && <span>sending…</span>}
-        {me && m.delivery && m.delivery !== 'delivered' && !m.pending && <span data-testid="delivery">{m.delivery === 'queued' ? 'queued' : m.delivery}</span>}
+        {/* Where the message is: sending → ✓ delivered. Longer states (waiting, not delivered) and their actions
+            show in the delivery line under the bubble. */}
+        {me && m.delivery && !m.pending && (m.delivery !== 'delivered' || latest) && (
+          <span
+            data-testid="delivery"
+            data-delivery={m.delivery}
+            className={'v-dlv ' + m.delivery}
+            title={m.delivery === 'delivered' ? `Delivered to ${name}, ${hhmm(m.delivered_at ?? m.created_at)}` : undefined}
+          >
+            {m.delivery === 'delivered' ? '✓ delivered' : m.delivery === 'undelivered' ? 'not delivered' : 'sending'}
+          </span>
+        )}
         {!me && !m.pending && (
           <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
             <IconThumb size={13} />
