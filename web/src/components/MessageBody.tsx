@@ -139,7 +139,10 @@ function MarkdownPart({
         a.classList.add('mb-inert-link')
       }
     }
-  }, [html, files, inline, message.id, baseDir])
+    // Keyed by what the files are, not the arrays: a re-render (a reload of the same message) must not
+    // rewrite the body, which would drop a selection in it (the Reply bubble's).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html, files.map((a) => a.id + a.name).join('|'), inline.map((a) => a.id + (a.ref ?? '')).join('|'), message.id, baseDir])
   return (
     <div
       ref={ref}

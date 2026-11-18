@@ -1,18 +1,19 @@
 // The pieces the v3 views share: task links, status dots, progress bars, checklists, the timeline,
 // the task picker, a message with the tasks it is about (and the agent's decision when it made one),
-// its questions, the composer (with attachments).
+// its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { Answer, Attachment, Question, Session } from '../api'
+import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
 import { useApp } from '../lib/app'
-import { renderMarkdown, splitQuestions } from '../lib/markdown'
+import { ContextMenu, useContextMenu } from '../components/ContextMenu'
+import { ForkDialog } from '../components/ForkDialog'
+import { Kbd, MenuItem } from '../components/ui'
+import { proseOf, renderMarkdown, splitQuestions } from '../lib/markdown'
 import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
 import { CommandMessage } from '../components/CommandMessage'
-import { IconMoreV, IconPaperclip } from '../components/icons'
+import { IconFork, IconMoreV, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
-import { useQuoteTarget } from './quote'
-import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import {
   STATUS_LABEL,
   answerText,
@@ -244,6 +245,7 @@ export function TaskPicker({ tasks, exclude, head, onPick, onClose }: { tasks: T
 const ANS_KEY = 'minbox:v3:answers:'
 const ansCache = new Map<string, Record<string, Answer>>()
 const ansListeners = new Set<() => void>()
+let ansVersion = 0
 function loadAnswers(id: string): Record<string, Answer> {
   let v = ansCache.get(id)
   if (!v) {
@@ -264,6 +266,7 @@ function saveAnswers(id: string, v: Record<string, Answer>) {
   } catch {
     /* private mode: kept in memory */
   }
+  ansVersion++
   for (const l of ansListeners) l()
 }
 
@@ -286,6 +289,30 @@ export function useAnswerDrafts(messageId: string) {
     },
     clear: () => saveAnswers(messageId, {}),
   }
+}
+
+/** Re-renders when any message's drafted answers change. */
+export function useAnswersVersion(): number {
+  return useSyncExternalStore(
+    (l) => {
+      ansListeners.add(l)
+      return () => ansListeners.delete(l)
+    },
+    () => ansVersion,
+  )
+}
+
+/** The drafted (not yet sent) answers to a message's questions that still take one. */
+export function draftedAnswers(m: V3Message): Answer[] {
+  const d = loadAnswers(m.id)
+  return openQuestions(m)
+    .map((q) => d[q.key])
+    .filter((a): a is Answer => !!a && !answerIsEmpty(a))
+}
+
+/** Drops a message's drafted answers (once sent). */
+export function clearAnswers(id: string) {
+  saveAnswers(id, {})
 }
 
 /** The questions of a message still waiting for an answer. */
@@ -409,6 +436,7 @@ export function MessageView({
   onOpenAttachment,
   onChanged,
   inTask,
+  onUnread,
 }: {
   m: V3Message
   tasks: Task[]
@@ -421,8 +449,27 @@ export function MessageView({
   showAgent?: boolean
   onOpenAttachment: (a: Attachment, m: V3Message) => void
   onChanged: () => void
+  /** Mark unread from here: this message and the agent's later ones count as new again. */
+  onUnread?: (m: V3Message) => void
 }) {
   const { error, toast } = useApp()
+  const ctxMenu = useContextMenu({ longPress: false })
+  const [fork, setFork] = useState<{ thread: Thread; seq: number } | null>(null)
+  const startFork = () => {
+    api
+      .thread(m.thread_id)
+      .then((th) => setFork({ thread: th, seq: (th.messages ?? []).findIndex((x) => x.id === m.id) + 1 }))
+      .catch(error)
+  }
+  const copy = () => void navigator.clipboard?.writeText(me ? textOf(m) : proseOf(m.body)).then(() => toast('Copied'))
+  const reply = () => document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')?.focus()
+  const thumbs = () => {
+    let cancelled = false
+    toast('👍 Looks good · sending in 5 s', { action: 'Undo', undo: true, ms: 5000, onAction: () => (cancelled = true) })
+    setTimeout(() => {
+      if (!cancelled) v3.send(m.session_id, { words: '👍 Looks good' }).catch(error)
+    }, 5000)
+  }
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(m.session_id)
@@ -510,7 +557,26 @@ export function MessageView({
       data-testid="v3-message"
       data-author={me ? 'user' : 'agent'}
       data-message-id={m.id}
+      data-thread-id={m.thread_id}
+      {...ctxMenu.props}
     >
+      <ContextMenu at={ctxMenu.at} onClose={ctxMenu.close} testid="message-context-menu" className="w-[250px]">
+        <MenuItem testid="message-reply" hint={<Kbd>R</Kbd>} onClick={() => (ctxMenu.close(), reply())}>
+          Reply
+        </MenuItem>
+        <MenuItem testid="message-copy" disabled={!(me ? textOf(m) : m.body).trim()} onClick={() => (ctxMenu.close(), copy())}>
+          Copy text
+        </MenuItem>
+        <MenuItem testid="message-fork-ctx" onClick={() => (ctxMenu.close(), startFork())}>
+          <IconFork size={14} /> Start new thread from here
+        </MenuItem>
+        {!me && onUnread && (
+          <MenuItem testid="message-unread-ctx" onClick={() => (ctxMenu.close(), onUnread(m))}>
+            Mark unread from here
+          </MenuItem>
+        )}
+      </ContextMenu>
+      {fork && <ForkDialog thread={fork.thread} message={m} seq={fork.seq} onClose={() => setFork(null)} />}
       <div className="v-w">
         {me ? (
           <>
@@ -527,6 +593,11 @@ export function MessageView({
           </button>
         )}
         <span>{hhmm(m.created_at)}</span>
+        {!me && !m.pending && (
+          <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
+            <IconThumb size={13} />
+          </button>
+        )}
         {m.pending && <span>sending…</span>}
         {me && m.delivery && m.delivery !== 'delivered' && !m.pending && <span data-testid="delivery">{m.delivery === 'queued' ? 'queued' : m.delivery}</span>}
       </div>
@@ -568,7 +639,22 @@ export function MessageView({
               <IconMoreV size={14} />
             </button>
             {menu && (
-              <div className="v-menu" role="menu">
+ <div className="v-menu" role="menu">
+                <button type="button" role="menuitem" data-testid="message-reply-item" onClick={() => (setMenu(false), reply())}>
+                  Reply
+                </button>
+                <button type="button" role="menuitem" data-testid="message-copy-item" onClick={() => (setMenu(false), copy())}>
+                  Copy text
+                </button>
+                <button type="button" role="menuitem" data-testid="message-fork-item" onClick={() => (setMenu(false), startFork())}>
+                  Start new thread from here
+                </button>
+                {!me && onUnread && (
+                  <button type="button" role="menuitem" data-testid="message-unread" onClick={() => (setMenu(false), onUnread(m))}>
+                    Mark unread from here
+                  </button>
+                )}
+                <hr className="v-menusep" />
                 <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
                   {about.length ? 'Move to another task…' : 'Put in a task…'}
                 </button>
@@ -620,177 +706,6 @@ export function ActionBlock({ m, items }: { m: V3Message; items: Question[] }) {
   const { drafts, set } = useAnswerDrafts(m.id)
   const answers = Object.fromEntries(items.map((q) => [q.key, m.answer_state?.[q.key]]))
   return <ActionItems items={items} answers={answers} drafts={drafts} onDraft={set} readOnly={items.every((q) => !!m.answer_state?.[q.key])} />
-}
-
-// ---- composer ----
-
-/** What the composer sends: the words, the recipient, more tasks it is about, the uploaded files. */
-export type Outgoing = { words: string; to: string; tasks: string[]; uploads: string[] }
-
-export function Composer({
-  toId,
-  toOptions,
-  onTo,
-  about,
-  placeholder,
-  onSend,
-  draftKey,
-  testid = 'composer',
-  tasks,
-}: {
-  toId: string
-  toOptions: Session[]
-  onTo?: (id: string) => void
-  /** The tasks the message is about from where it is written (a task's view): always. */
-  about: { task_id: string; title: string }[]
-  placeholder: string
-  onSend: (o: Outgoing) => Promise<void>
-  /** Where the attached files are kept until sent (per stream / task). */
-  draftKey: string
-  testid?: string
-  /** The tasks the person can say the message is about (# at the start, or the task button). */
-  tasks?: Task[]
-}) {
-  const { isPhone } = useApp()
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [extra, setExtra] = useState<{ task_id: string; title: string }[]>([])
-  const [picking, setPicking] = useState(false)
-  const compose = useComposeFiles(draftKey)
-  const { files, addFiles, addPastedText, remove } = compose
-  const fileInput = useRef<HTMLInputElement>(null)
-  const box = useRef<HTMLTextAreaElement>(null)
-  useQuoteTarget(setText, box)
-  const io = fileInputHandlers(addFiles, addPastedText)
-  const uploading = files.some((f) => f.state === 'uploading')
-  const ready = files.some((f) => f.state === 'done')
-  const canSend = (!!text.trim() || ready) && !uploading && !busy
-  const send = async () => {
-    const w = text.trim()
-    if (!canSend) return
-    setBusy(true)
-    setText('')
-    const ex = extra
-    setExtra([])
-    const ups = uploadIds(draftKey)
-    try {
-      await onSend({ words: w, to: toId, tasks: ex.map((t) => t.task_id), uploads: ups })
-      clearFiles(draftKey)
-    } catch {
-      setText(w)
-      setExtra(ex)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const all = [...about, ...extra]
-  const putBack = (f: (typeof files)[number]) => {
-    if (!f.pasted) return
-    const at = Math.min(f.pasted.at, text.length)
-    setText((t) => t.slice(0, at) + f.pasted!.text + t.slice(at))
-    remove(f.key)
-  }
-  return (
-    <div className="v-composer" data-testid={testid} onDragOver={io.onDragOver} onDrop={io.onDrop}>
-      <div className="v-to">
-        to{' '}
-        {onTo ? (
-          <select className="v-chip" aria-label="To" data-testid="composer-to" value={toId} onChange={(e) => onTo(e.target.value)}>
-            {toOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-                {agentHint(toOptions, a) ? ` (${agentHint(toOptions, a)})` : ''}
-                {a.status === 'working' ? ' · working' : ''}
-              </option>
-            ))}
-            <option value="new">New agent…</option>
-          </select>
-        ) : (
-          <span className="v-chip">{toOptions.find((a) => a.id === toId)?.name ?? 'agent'}</span>
-        )}
-        {all.length > 0 && (
-          <>
-            <span>about</span>
-            {about.map((t) => (
-              <TaskChip key={t.task_id} task={t} />
-            ))}
-            {extra.map((t) => (
-              <TaskChip key={t.task_id} task={t} onRemove={() => setExtra((x) => x.filter((y) => y.task_id !== t.task_id))} />
-            ))}
-          </>
-        )}
-        {tasks && (
-          <span style={{ position: 'relative' }}>
-            <button type="button" className="v-addtask" data-testid="composer-task" title="Say which task this is about (#)" onClick={() => setPicking(true)}>
-              {all.length ? '＋' : '＋ about a task'}
-            </button>
-            {picking && (
-              <TaskPicker
-                tasks={tasks}
-                exclude={all.map((t) => t.task_id)}
-                onClose={() => setPicking(false)}
-                onPick={(r) => {
-                  setPicking(false)
-                  if ('task_id' in r) {
-                    const t = tasks.find((x) => x.id === r.task_id)
-                    if (t) setExtra((x) => [...x, { task_id: t.id, title: t.title }])
-                  }
-                }}
-              />
-            )}
-          </span>
-        )}
-      </div>
-      <ComposeFileTiles files={files} onRemove={remove} onPutBack={putBack} />
-      <textarea
-        ref={box}
-        data-testid="composer-text"
-        data-composer
-        rows={2}
-        value={text}
-        placeholder={placeholder}
-        onPaste={io.onPaste}
-        onChange={(e) => {
-          // # in an empty box picks a task the message is about.
-          if (tasks && text === '' && e.target.value === '#') {
-            setPicking(true)
-            return
-          }
-          setText(e.target.value)
-        }}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            e.preventDefault()
-            void send()
-          }
-          if (e.key === 'Escape') (e.target as HTMLElement).blur()
-        }}
-      />
-      <div className="v-tb">
-        <button type="button" className="v-attach" data-testid="attach-files" aria-label={isPhone ? 'Add a photo or file' : 'Attach files'} title="Attach files (or paste / drop them)" onClick={() => fileInput.current?.click()}>
-          <IconPaperclip size={16} />
-          {isPhone ? <span>Photo / file</span> : null}
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          hidden
-          data-testid="attach-input"
-          onChange={(e) => {
-            addFiles(Array.from(e.target.files ?? []))
-            e.target.value = ''
-          }}
-        />
-        <span className="v-sp" />
-        {uploading && <span>uploading…</span>}
-        <span className="v-kbd v-hide-phone">⌘↵</span>
-        <button type="button" className="v-btn pri" data-testid="composer-send" disabled={!canSend} onClick={() => void send()}>
-          Send
-        </button>
-      </div>
-    </div>
-  )
 }
 
 export function statusLabel(t: Task | BoardTask): string {

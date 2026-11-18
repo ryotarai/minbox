@@ -187,4 +187,11 @@ func TestTasksTagsAndTurn(t *testing.T) {
 	if n, _ := s.MarkMessagesRead(ctx, []string{q.ID, u1.ID}); n != 1 {
 		t.Fatalf("read = %d", n)
 	}
+	// Mark unread from here: only agent messages, only read ones.
+	if n, _ := s.MarkMessagesUnread(ctx, []string{q.ID, u1.ID}); n != 1 {
+		t.Fatalf("unread = %d", n)
+	}
+	if n, _ := s.MarkMessagesUnread(ctx, []string{q.ID}); n != 0 {
+		t.Fatalf("unread again = %d", n)
+	}
 }

@@ -38,6 +38,7 @@ and `usecases.md` for what the screens do with them.
 | DELETE | `/api/v3/messages/{id}/tasks/{task}` | The message is not about that task. |
 | POST | `/api/v3/messages/{id}/move` | `{from?, to? | title}`: "Move to task…" under an agent reply — moves the reply and its `turn_of` messages from task `from` (or from no task) to `to`, or to a new task named `title`; a task created in that turn left with no messages is deleted (`removed_task`). |
 | POST | `/api/v3/read` | `{message_ids}` → `{marked}`. |
+| POST | `/api/v3/unread` | `{message_ids}` → `{marked}`: "Mark unread from here" (agent messages count as new again). |
 | GET | `/api/v3/search?q=&project=` | `{tasks, messages: [{id, session_id, thread_id, author, text, created_at, tasks}]}`. |
 
 SSE: `tasks` (any task, message–task link or read change) besides the older `thread`, `threads`, `sessions`.

@@ -883,7 +883,7 @@ function ThreadName({ thread }: { thread: Thread }) {
   ) : null
 }
 
-function ThreadNotices({ thread, target }: { thread: Thread; target: Message | null }) {
+export function ThreadNotices({ thread, target }: { thread: Thread; target: Message | null }) {
   const { error } = useApp()
   const notices: React.ReactNode[] = []
   if (thread.archived_at) {
@@ -1222,7 +1222,7 @@ function MessageForkControls({ onFork, phone }: { onFork: () => void; phone?: bo
 }
 
 /** Under the message a thread was started from: derived from the link, not a message of the thread. */
-function ForkMarker({ f }: { f: ForkChild }) {
+export function ForkMarker({ f }: { f: ForkChild }) {
   const { navigate } = useApp()
   const label = f.status === 'working' ? 'working' : f.status === 'need_action' ? 'needs you' : 'finished'
   return (
@@ -1249,7 +1249,7 @@ function ForkMarker({ f }: { f: ForkChild }) {
 }
 
 /** The header of a forked thread: where it came from. */
-function ForkBreadcrumb({ from }: { from: NonNullable<Thread['forked_from']> }) {
+export function ForkBreadcrumb({ from }: { from: NonNullable<Thread['forked_from']> }) {
   const { navigate } = useApp()
   return (
     <div data-testid="fork-breadcrumb" className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-[8px] border border-line2 bg-raised px-2.5 py-1.5 text-[12px] text-muted">
@@ -1278,7 +1278,7 @@ function ForkBreadcrumb({ from }: { from: NonNullable<Thread['forked_from']> }) 
 }
 
 /** What the agent was given: collapsed by default, the same text the preview showed. */
-function HandoffCard({ from }: { from: NonNullable<Thread['forked_from']> }) {
+export function HandoffCard({ from }: { from: NonNullable<Thread['forked_from']> }) {
   return (
     <details data-testid="handoff-card" className="rounded-[10px] border border-line2 bg-surface px-3 py-2 text-[12.5px] text-muted">
       <summary className="cursor-pointer select-none font-semibold text-fg2">
@@ -1311,7 +1311,7 @@ function queuedWarnMs(): number {
   return (window as unknown as { __minboxTimings?: { queuedWarnMs?: number } }).__minboxTimings?.queuedWarnMs ?? QUEUED_WARN_MS
 }
 
-export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
+export function DeliveryLine({ m, session, draftKey }: { m: Message; session: Session; /** Where a cancelled message's words go back (default: its thread's draft). */ draftKey?: string }) {
   const { error } = useApp()
   const d = m.delivery ?? 'queued'
   const v = DELIVERY[d]
@@ -1361,7 +1361,7 @@ export function DeliveryLine({ m, session }: { m: Message; session: Session }) {
       .cancelMessage(m.id)
       .then(() => {
         const words = (m.words ?? '').trim()
-        if (words) updateReplyDraft(m.thread_id, (d) => ({ ...d, words: d.words.trim() ? `${words}\n\n${d.words}` : words }))
+        if (words) updateReplyDraft(draftKey ?? m.thread_id, (d) => ({ ...d, words: d.words.trim() ? `${words}\n\n${d.words}` : words }))
       })
       .catch(error)
   return (

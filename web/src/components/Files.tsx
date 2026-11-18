@@ -32,7 +32,7 @@ export function insertFileMention(threadId: string, path: string) {
   const mention = mentionOf(path)
   updateReplyDraft(threadId, (d) => ({ ...d, words: d.words && !/\s$/.test(d.words) ? `${d.words} ${mention} ` : `${d.words}${mention} ` }))
   requestAnimationFrame(() => {
-    const el = document.querySelector<HTMLTextAreaElement>(`[data-testid="thread-view"][data-thread-id="${CSS.escape(threadId)}"] [data-testid="reply-box"]`) ?? document.querySelector<HTMLTextAreaElement>('[data-testid="reply-box"]')
+    const el = document.querySelector<HTMLTextAreaElement>(`[data-testid="thread-view"][data-thread-id="${CSS.escape(threadId)}"] [data-testid="reply-box"]`) ?? document.querySelector<HTMLTextAreaElement>('[data-testid="reply-box"], textarea[data-composer]')
     if (!el) return
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)

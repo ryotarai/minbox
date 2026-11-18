@@ -1,16 +1,19 @@
 // A task (or goal): "where is this work?" Its tagged messages from every agent's stream in time order
 // with the events between them; "show context" opens the untagged messages around them. The reply
 // goes to the agent most recently active on it (switchable) and carries the task's tag.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { ago, hhmm, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { Bar, Composer, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById, type Outgoing } from './parts'
+import { Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById } from './parts'
+import { Composer, type Outgoing } from './Composer'
+import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
+import { DeliveryLine } from '../components/ThreadView'
 
 export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: string; highlight: string | null; tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
-  const { error, sessions, isPhone } = useApp()
+  const { error, sessions, isPhone, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
   const [d, reload] = useLive<TaskDetail>(id, () => v3.task(id))
@@ -25,6 +28,21 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
     setPending([])
   }, [id])
   useMarkRead(d?.messages)
+  const msgs = d?.messages ?? []
+  const firstNew = useFirstNew(id, d?.messages)
+  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight)
+  const landed = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (!d || landed.current === id || highlight) return
+    landed.current = id
+    const box = scroller.current
+    const el = box?.querySelector('[data-new-divider]')
+    if (el && box) {
+      el.scrollIntoView({ block: 'start' })
+      follow.atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 60
+    }
+  })
+  useConversationKeys(scroller, msgs, onOpenAttachment)
   const live = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell'), [sessions])
   if (!d) return <div className="v-col"><div className="v-empty">Loading…</div></div>
   const t = d.task
@@ -55,6 +73,14 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
   const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
   const lastReport = t.report || lastAgentMsg?.body || ''
+  const markUnread = (m: V3Message) =>
+    markUnreadFrom(d.messages, m)
+      .then(() => {
+        toast('Marked unread')
+        nav.board()
+      })
+      .catch(error)
+  const lastUser = [...d.messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
   const send = async (o: Outgoing) => {
     const words = o.words
     const toSel = o.to
@@ -63,8 +89,12 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
     try {
       const ids = [t.id, ...o.tasks]
       const uploads = o.uploads.length ? o.uploads : undefined
-      if (toSel === 'new') await v3.newMessage({ to: 'new', project_id: t.project_id, words, task_ids: ids, uploads })
-      else await v3.send(toSel, { words, task_ids: ids, uploads })
+      const { to: _to, tasks: _tasks, ...rest } = o
+      void _to
+      void _tasks
+      follow.atBottom.current = true
+      if (toSel === 'new') await v3.newMessage({ ...rest, to: 'new', project_id: t.project_id, words, task_ids: ids, uploads })
+      else await v3.send(toSel, { ...rest, words, task_ids: ids, uploads })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -194,7 +224,9 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           </div>
         </div>
         {isPhone && sideOpen && side}
-        <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box>
+        <div className="v-convwrap">
+        <NewPill n={follow.unseen} onClick={follow.toBottom} />
+        <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>
           <div className="v-conv">
             {items.length === 0 && <div className="v-empty">No messages about this task yet. Write to an agent below: your message is about this task.</div>}
             {items.map((it) => {
@@ -221,7 +253,17 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
                     </button>
                   )}
                   {Array.isArray(c) && c.map((x) => <MessageView key={x.id} m={x} tasks={tasks} ctx onOpenAttachment={onOpenAttachment} onChanged={reload} />)}
-                  <MessageView m={m} tasks={tasks} inTask={t.id} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} />
+                  {m.id === firstNew && (
+                    <div className="v-new" data-new-divider data-testid="new-divider">
+                      New
+                    </div>
+                  )}
+                  <MessageView m={m} tasks={tasks} inTask={t.id} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
+                  {m === lastUser && byId.get(m.session_id) && (
+                    <div className="v-delivery">
+                      <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -231,6 +273,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
               </div>
             ))}
           </div>
+        </div>
         </div>
         <Composer
           testid="task-composer"
@@ -242,6 +285,8 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           placeholder={toId === 'new' ? 'A new agent starts with this task…' : `Message ${agentName(byId, toId)} about this ${t.kind === 'goal' ? 'goal' : 'task'}…`}
           onSend={send}
           tasks={tasks}
+          messages={d.messages}
+          annotationKeys={[...new Set(d.messages.map((m) => m.thread_id))]}
         />
       </div>
       <QuoteBubble box={scroller} />

@@ -850,6 +850,22 @@ func (s *Store) MarkMessagesRead(ctx context.Context, ids []string) (int64, erro
 	return res.RowsAffected()
 }
 
+// MarkMessagesUnread is "Mark unread from here": the agent messages count as not seen again.
+func (s *Store) MarkMessagesUnread(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE messages SET read_at=NULL WHERE author='agent' AND read_at IS NOT NULL AND id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // SetDecision records the agent's decision on its reply.
 func (s *Store) SetDecision(ctx context.Context, messageID, decision, taskID string, turnOf []string) error {
 	if turnOf == nil {

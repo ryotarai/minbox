@@ -10,8 +10,19 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { Bar, Composer, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById, type Outgoing } from './parts'
+import { Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
+import { Composer, type Outgoing } from './Composer'
+import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
+import { api } from '../api'
+import { getReplyDraft } from '../lib/drafts'
+import { threadArtifacts } from '../lib/attachments'
+import { DeliveryLine, ForkMarker, ThreadNotices, useThread } from '../components/ThreadView'
+import { ThreadMoreMenu } from '../components/ThreadMenu'
+import { LinearBar } from '../components/LinearBar'
+import { LinearLinkButton } from '../components/LinearLink'
+import { ArtifactsGrid } from '../components/AttachmentTiles'
+import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 
 export type SidePane = 'tasks' | 'terminal' | 'shell' | 'files'
 
@@ -30,30 +41,50 @@ export function StreamView({
   setPane: (p: SidePane) => void
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
-  const { error, isPhone, sessions } = useApp()
+  const { error, isPhone, sessions, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
   const [s, reload] = useLive<Stream>(id, () => v3.stream(id))
+  const [thread] = useThread(s?.stream_thread_id || null)
   const [older, setOlder] = useState<V3Message[]>([])
+  const [olderMore, setOlderMore] = useState(true)
   const [pending, setPending] = useState<V3Message[]>([])
+  const [foldAll, setFoldAll] = useState(false)
+  const [showArtifacts, setShowArtifacts] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const atBottom = useRef(true)
+  const loadingOlder = useRef(false)
   useEffect(() => {
     setOlder([])
+    setOlderMore(true)
     setPending([])
-    atBottom.current = true
+    setFoldAll(false)
+    setShowArtifacts(false)
   }, [id])
   const msgs = [...older, ...(s?.messages ?? [])]
   const arrived = (p: V3Message) => msgs.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)
   const shown = [...msgs, ...pending.filter((p) => !arrived(p))]
   useMarkRead(s?.messages)
-  // Keep the end in view while new messages arrive (unless the person scrolled up); a highlighted message wins.
+  const firstNew = useFirstNew(id, s?.messages)
+  const keep = useKeepPosition(scroller)
+  const follow = useFollow(scroller, id, s ? shown : [], !!highlight || keep.pending())
+  // Opening at the first message not yet read ("New"), else at the end.
+  const landed = useRef<string | null>(null)
   useLayoutEffect(() => {
-    const el = scroller.current
-    if (!el || highlight) return
-    if (atBottom.current) el.scrollTop = el.scrollHeight
-  }, [shown.length, highlight])
+    if (!s || landed.current === id || highlight) return
+    landed.current = id
+    const box = scroller.current
+    const el = box?.querySelector('[data-new-divider]')
+    if (el && box) {
+      el.scrollIntoView({ block: 'start' })
+      follow.atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 60
+    }
+  })
+  // Older messages arrive above: what the person reads stays where it is.
+  useLayoutEffect(() => keep.after(), [older.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const files = threadArtifacts(msgs)
+  useConversationKeys(scroller, msgs, onOpenAttachment)
   if (!sess) return <div className="v-col"><div className="v-empty">This agent is gone. Pick another one on the left.</div></div>
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
@@ -61,12 +92,15 @@ export function StreamView({
   // What it is on now: the open task of its newest message that is about one.
   const nowOn = [...msgs].reverse().flatMap((m) => m.tasks).map((r) => openTasks.find((t) => t.id === r.task_id)).find((t) => !!t)
   const hint = agentHint(sessions ?? [], sess)
+  const draftKey = s?.stream_thread_id || 'v3:agent:' + id
   const send = async (o: Outgoing) => {
     const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: o.words, words: o.words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: id, tasks: [], open: 0, pending: true }
-    setPending((p) => [...p, tmp])
-    atBottom.current = true
+    if (!o.forward_to && o.words) setPending((p) => [...p, tmp])
+    follow.atBottom.current = true
     try {
-      await v3.send(id, { words: o.words, task_ids: o.tasks.length ? o.tasks : undefined, uploads: o.uploads.length ? o.uploads : undefined })
+      const { to: _to, tasks: tids, ...rest } = o
+      void _to
+      await v3.send(id, { ...rest, task_ids: tids.length ? tids : undefined, uploads: o.uploads.length ? o.uploads : undefined })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -74,13 +108,36 @@ export function StreamView({
       throw e
     }
   }
+  const hasMore = older.length ? olderMore : !!s?.has_more
   const loadOlder = () => {
     const first = msgs[0]
-    if (!first) return
+    if (!first || loadingOlder.current) return
+    loadingOlder.current = true
     v3.stream(id, { before: first.id })
-      .then((r) => setOlder((o) => [...r.messages, ...o]))
+      .then((r) => {
+        keep.before()
+        setOlderMore(r.has_more)
+        setOlder((o) => [...r.messages, ...o])
+      })
+      .catch(error)
+      .finally(() => (loadingOlder.current = false))
+  }
+  const markUnread = (m: V3Message) =>
+    markUnreadFrom(msgs, m)
+      .then(() => {
+        toast('Marked unread')
+        nav.board()
+      })
+      .catch(error)
+  const archive = () => {
+    if (!thread) return
+    api
+      .archiveThread(thread.id)
+      .then(() => toast('Archived this conversation', { action: 'Undo', undo: true, onAction: () => api.unarchiveThread(thread.id).catch(error) }))
       .catch(error)
   }
+  const lastUser = [...msgs].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
+  const openQs = (s?.messages ?? []).reduce((n, m) => n + m.open, 0)
   let day = ''
   let seg = ''
   const terminalish = pane !== 'tasks'
@@ -138,54 +195,116 @@ export function StreamView({
             {openTasks.length > 1 && <span className="v-hide-phone">· {openTasks.length} open tasks</span>}
           </div>
         </div>
-        <div
-          className="v-scroll"
-          ref={scroller}
-          data-quote-box
-          data-scroll={'agent-' + id}
-          onScroll={(e) => {
-            const el = e.currentTarget
-            atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
-          }}
-        >
-          <div className="v-conv">
-            {s?.has_more && older.length === 0 && (
-              <button type="button" className="v-gap" onClick={loadOlder}>
-                <span>
-                  <b>show earlier messages</b>
-                </span>
-              </button>
-            )}
-            {s && msgs.length === 0 && <div className="v-empty">No messages yet. Say something below: the agent decides whether it is a task.</div>}
-            {shown.map((m) => {
-              const d = new Date(m.created_at).toDateString()
-              const out = []
-              if (d !== day) {
-                day = d
-                out.push(
-                  <div key={'d' + m.id} className="v-divider">
-                    {d === new Date().toDateString() ? 'Today' : new Date(m.created_at).toLocaleDateString()}
-                  </div>,
-                )
-              }
-              const sg = m.segment?.id ?? ''
-              if (sg !== seg) {
-                seg = sg
-                if (m.segment) {
-                  out.push(
-                    <div key={'s' + m.id} className="v-divider" data-testid="segment-divider">
-                      — {short((m.segment.subject || 'earlier conversation').split('\n')[0]!, 70)} —
-                    </div>,
-                  )
-                }
-              }
-              out.push(<MessageView key={m.id} m={m} tasks={tasks} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} />)
-              return out
-            })}
-            {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
+        <div className="v-convwrap">
+          <NewPill n={follow.unseen} onClick={follow.toBottom} />
+          <div
+            className="v-scroll"
+            ref={scroller}
+            data-quote-box
+            data-scroll={'agent-' + id}
+            onScroll={(e) => {
+              follow.onScroll()
+              if (e.currentTarget.scrollTop < 80 && hasMore && s) loadOlder()
+            }}
+          >
+            <div className="v-conv">
+              <div className="v-convbar" data-testid="conv-bar">
+                {thread && <LinearLinkButton thread={thread} />}
+                <span className="v-sp" />
+                {files.length > 0 && (
+                  <button type="button" className="v-iconbtn" data-testid="artifacts-button" aria-pressed={showArtifacts} aria-label={`Artifacts, ${files.length}`} title={showArtifacts ? 'Back to the conversation' : `Artifacts (${files.length}): every file of this conversation`} onClick={() => setShowArtifacts(!showArtifacts)}>
+                    <IconGrid size={14} /> {files.length}
+                  </button>
+                )}
+                <button type="button" className="v-iconbtn" data-testid="fold-all" aria-pressed={foldAll} aria-label={foldAll ? 'Unfold all' : 'Fold all'} title={foldAll ? 'Unfold all' : 'Fold all'} onClick={() => setFoldAll(!foldAll)}>
+                  {foldAll ? <IconUnfold size={14} /> : <IconFold size={14} />}
+                </button>
+                {thread && (
+                  <button type="button" className="v-iconbtn" data-testid="thread-more" aria-label="Conversation actions" title="Snooze, pin, mark, archive…" onClick={(e) => setMoreAnchor(e.currentTarget)}>
+                    <IconMore size={14} />
+                  </button>
+                )}
+              </div>
+              {thread && <LinearBar thread={thread} phone={isPhone} />}
+              {thread && <ThreadNotices thread={thread} target={null} />}
+              {thread && <ThreadMoreMenu thread={thread} anchor={moreAnchor} onClose={() => setMoreAnchor(null)} onArchive={archive} onBack={nav.board} openQuestions={openQs} onShell={sess.kind !== 'shell' && sess.status !== 'ended' ? () => setPane('shell') : undefined} />}
+              {showArtifacts && (
+                <ArtifactsGrid
+                  messages={msgs}
+                  annotations={getReplyDraft(draftKey).annotations}
+                  sessionName={sess.name}
+                  onOpen={(a) => {
+                    setShowArtifacts(false)
+                    const m = msgs.find((x) => (x.attachments ?? []).some((y) => y.id === a.id))
+                    if (m) onOpenAttachment(a, m)
+                  }}
+                />
+              )}
+              {!showArtifacts && hasMore && (
+                <button type="button" className="v-gap" data-testid="earlier" onClick={loadOlder}>
+                  <span>
+                    <b>show earlier messages</b>
+                  </span>
+                </button>
+              )}
+              {s && msgs.length === 0 && <div className="v-empty">No messages yet. Say something below: the agent decides whether it is a task.</div>}
+              {!showArtifacts &&
+                shown.map((m, i) => {
+                  const d = new Date(m.created_at).toDateString()
+                  const out = []
+                  if (d !== day) {
+                    day = d
+                    out.push(
+                      <div key={'d' + m.id} className="v-divider">
+                        {d === new Date().toDateString() ? 'Today' : new Date(m.created_at).toLocaleDateString()}
+                      </div>,
+                    )
+                  }
+                  const sg = m.segment?.id ?? ''
+                  if (sg !== seg) {
+                    seg = sg
+                    if (m.segment) {
+                      out.push(
+                        <div key={'s' + m.id} className="v-divider" data-testid="segment-divider">
+                          — {short((m.segment.subject || 'earlier conversation').split('\n')[0]!, 70)} —
+                        </div>,
+                      )
+                    }
+                  }
+                  if (m.id === firstNew && !foldAll) {
+                    out.push(
+                      <div key={'n' + m.id} className="v-new" data-new-divider data-testid="new-divider">
+                        New
+                      </div>,
+                    )
+                  }
+                  if (foldAll && i < shown.length - 1) out.push(<CompactRow key={m.id} m={m} name={sess.name} onClick={() => setFoldAll(false)} />)
+                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
+                  if (m === lastUser && !m.pending)
+                    out.push(
+                      <div key={'dl' + m.id} className="v-delivery">
+                        <DeliveryLine m={m} session={sess} draftKey={draftKey} />
+                      </div>,
+                    )
+                  for (const f of (thread?.forks ?? []).filter((f) => f.from_message_id === m.id)) out.push(<ForkMarker key={'f' + f.thread_id} f={f} />)
+                  return out
+                })}
+              {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
+            </div>
           </div>
         </div>
-        <Composer toId={id} toOptions={[sess]} about={[]} tasks={tasks} draftKey={'v3:agent:' + id} placeholder={`Message ${sess.name}…`} onSend={send} />
+        <Composer
+          toId={id}
+          toOptions={[sess]}
+          about={[]}
+          tasks={tasks}
+          draftKey={draftKey}
+          placeholder={`Message ${sess.name}… (R)`}
+          onSend={send}
+          messages={msgs}
+          annotationKeys={[...new Set(msgs.map((m) => m.thread_id))]}
+          helpThread={s?.stream_thread_id || undefined}
+        />
         <QuoteBubble box={scroller} />
       </div>
       {(!isPhone || terminalish) && (

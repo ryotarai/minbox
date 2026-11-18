@@ -215,7 +215,7 @@ export function DraftsList({ onClose }: { onClose: () => void }) {
   const replies = replyDraftThreads()
   const [threads, setThreads] = useState<Record<string, Thread>>({})
   useEffect(() => {
-    for (const id of replies) api.thread(id).then((t) => setThreads((m) => ({ ...m, [id]: t }))).catch(() => {})
+    for (const id of replies) if (!id.startsWith('v3:')) api.thread(id).then((t) => setThreads((m) => ({ ...m, [id]: t }))).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replies.join(',')])
   return (
@@ -232,11 +232,15 @@ export function DraftsList({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => {
               onClose()
-              if (t) navigate({ s: t.session_id, t: id, view: 'main', tab: 'inbox' })
+              // v3: a task's reply box, else the agent's stream (whose thread the draft is kept by).
+              if (id.startsWith('v3:task:')) navigate({ view: 'task', k: id.slice(8), m: null }, { push: true })
+              else if (id.startsWith('v3:agent:')) navigate({ view: 'agent', s: id.slice(9), m: null }, { push: true })
+              else if (t) navigate({ view: 'agent', s: t.session_id, t: null, m: null }, { push: true })
             }}
+            data-testid="draft-row"
             className="flex flex-col gap-0.5 rounded-lg border border-line2 bg-raised px-3 py-2 text-left hover:border-linestrong"
           >
-            <span className="text-[13px] font-semibold">Reply · {t?.subject ?? id}</span>
+            <span className="text-[13px] font-semibold">Reply · {id.startsWith('v3:task:') ? 'a task' : s?.name ?? t?.subject ?? id}</span>
             <span className="truncate text-[12px] text-muted">
               {s?.name ?? ''} · {d.words || `${Object.values(d.picks).reduce((n, m) => n + Object.keys(m).length, 0)} picks`} · {shortTime(new Date(d.updated).toISOString())}
             </span>
