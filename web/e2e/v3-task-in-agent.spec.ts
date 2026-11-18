@@ -14,6 +14,7 @@ async function shot(page: Page, name: string) {
   const dir = process.env.CARD_SHOTS
   if (!dir) return
   mkdirSync(dir, { recursive: true })
+  await page.waitForTimeout(300) // transitions (the checklist's chevron) settle
   await page.screenshot({ path: join(dir, name + '.png') })
 }
 
@@ -83,6 +84,8 @@ test("the task card: its checklist with progress n/m beside the title (below it 
   const t2 = (await card.getByTestId('task-title').boundingBox())!
   const l2 = (await check.boundingBox())!
   expect(l2.y).toBeGreaterThan(t2.y + t2.height - 1)
+  await check.getByTestId('task-checklist-progress').click() // four steps start folded on a phone
+  await expect(check.getByTestId('step')).toHaveCount(4)
   await shot(page, 'card-phone')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 })
@@ -123,4 +126,49 @@ test('a task no agent has touched opens in its project main agent; with no agent
   await expect(page.getByTestId('v3-app')).toHaveAttribute('data-view', 'board')
   expect(new URL(page.url()).hash).toBe('')
   await expect(page.locator(`[data-key="t:${orphan.id}"]`)).toHaveClass(/\bfocus\b/)
+})
+
+test.describe('phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('the checklist folds to its progress bar (a tap on it), the choice kept for every task across reloads; a short list starts open, a long one folded', async ({ page, minbox }) => {
+    const a = await startAgent(minbox, 'api')
+    const mk = async (title: string, n: number) => {
+      const t = await api(minbox, 'POST', '/api/v3/tasks', { title, session_id: a.id })
+      await api(minbox, 'PATCH', `/api/v3/tasks/${t.id}`, { steps: Array.from({ length: n }, (_, i) => ({ text: `${title} step ${i + 1}`, done: i === 0 })) })
+      return t
+    }
+    const short = await mk('Short one', 3)
+    const long = await mk('Long one', 6)
+    const check = page.getByTestId('task-checklist')
+    const toggle = check.getByTestId('task-checklist-progress')
+
+    // No choice yet: three steps open, six folded (only the bar and n/m).
+    await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${short.id}`)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(check.getByTestId('step')).toHaveCount(3)
+    await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${long.id}`)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(check.getByTestId('step')).toHaveCount(0)
+    await expect(toggle.getByTestId('progress')).toBeVisible()
+    await expect(toggle).toHaveText('1/6')
+    await shot(page, 'card-phone-folded')
+
+    // Open it: kept across a reload, and for the other task too.
+    await toggle.tap()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(check.getByTestId('step')).toHaveCount(6)
+    await page.reload()
+    await expect(check.getByTestId('step')).toHaveCount(6)
+    // Fold it: the short one is folded as well now.
+    await toggle.tap()
+    await expect(check.getByTestId('step')).toHaveCount(0)
+    await expect(toggle.getByTestId('progress')).toBeVisible()
+    await page.reload()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${short.id}`)
+    await expect(check.getByTestId('task-checklist-progress')).toHaveText('1/3')
+    await expect(check.getByTestId('step')).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  })
 })
