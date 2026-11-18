@@ -19,9 +19,20 @@ by the call-based fallback described below).
 2. The mod polls `GET /api/agent/pending?owner=<instance>&wait=20`. The server answers at once if a
    message waits, else after up to 20 s (a long poll). The mod's loop runs once a second
    (`TICK_MS`); while Claude is busy it asks with `wait=0` (just looks).
-3. The mod delivers only into a quiet session: not busy and idle for two ticks
-   (`IDLE_TICKS`), so the person's own typing goes first. An `urgent` message (Send now pressed, or
-   queued over 5 minutes) goes in anyway.
+3. An `urgent` message goes in at once, into a running turn too. The server marks every message of
+   the person urgent (kind `message` or `note`: replies, answers, new threads, hand-offs; `urgentKind`
+   in `internal/store`), so the person never waits for a turn to end and there is no Send now button
+   any more. minbox's own requests (a `place` request, a goal's `continue`) are not urgent: the mod
+   delivers them only into a quiet session, not busy and idle for two ticks (`IDLE_TICKS`), so the
+   person's own typing goes first; they too become urgent after 5 minutes. How each integration
+   puts a message into a running turn:
+   - **Claude Code**: `$.prompt.submit` while a turn runs hands the text to Claude Code, which
+     queues it like input typed during a turn (it is not lost; the model reads it when Claude Code
+     next takes queued input); idle, it starts a turn. A permission prompt or dialog open in the
+     terminal holds it behind that dialog (item 9 below).
+   - **Pi**: `pi.sendUserMessage(text, {deliverAs: "steer"})` steers the running turn.
+   - **OpenCode**: `ctx.session.prompt({delivery: "steer"})`: the running turn takes it at its next step.
+   - **Protocol 0** (an old mod, `fake-claude.py`): the same `urgent` field, so it delivers at once too.
 4. `POST /api/agent/pending/{id}/claim` reserves the message for this mod instance (an `owner` key,
    random per mod start). A claim older than 60 s (`ClaimTimeout`) is stale.
 5. If Claude became busy in the meantime, non-urgent claims are released.
@@ -33,9 +44,10 @@ Busy and idle: the mod sets `busy` on the main loop's `turn.start`, clears it on
 and tells the server (`POST /api/agent/status`). A missed `turn.complete` (Esc, an error) is
 covered by `BUSY_STALE_TICKS` (120 s without any hook event or tool call: treated as idle again).
 
-The UI already warns about a queued reply nobody picks up (`ThreadView.tsx`, delivery line):
-after about 30 s while the session is idle, or when the connection is silent/stale, it says so
-and offers **Send now**.
+The UI warns about a queued reply nobody picks up (`ThreadView.tsx`, delivery line): while the
+agent starts it says "Waiting for <agent> to start…"; after about 20 s it says the agent is not
+picking it up, with **Restart session** when the connection is silent/stale. A stopped session shows
+"Not delivered … Resume to deliver". Cancel is offered while the message is still queued.
 
 ## Failure modes, ranked
 
