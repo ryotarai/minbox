@@ -35,6 +35,20 @@ func TestMigrateOneTask(t *testing.T) {
 		return m.ID
 	}
 	m1, m2, m3, m4 := msg("explicit in older, auto in newer"), msg("auto in all three"), msg("person in older, agent in newer"), msg("one link")
+	// The live mess: the person writes (t=10000), the agent creates B and C in the turn (11000, 12000)
+	// and replies naming the older task (13000); the older server linked the reply to the named task,
+	// both created tasks (agent links) and the person's message's task (auto).
+	p, err := s.AddMessage(ctx, stream, NewMessage{Author: AuthorUser, Body: "do it", Words: "do it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mB, mC := task("created in the turn B", 11000), task("created in the turn C", 12000)
+	r := msg("named older")
+	r2 := msg("named nothing")
+	_, _ = s.db.ExecContext(ctx, `UPDATE messages SET created_at=10000 WHERE id=?`, p.ID)
+	_, _ = s.db.ExecContext(ctx, `UPDATE messages SET created_at=13000 WHERE id IN (?, ?)`, r, r2)
+	_, _ = s.db.ExecContext(ctx, `UPDATE messages SET created_at=500 WHERE id IN (?, ?, ?, ?)`, m1, m2, m3, m4)
+	_, _ = s.db.ExecContext(ctx, `UPDATE tasks SET created_at=created_at/10 WHERE id IN (?, ?, ?)`, older, newer, newest)
 	// The state before: the unique index is not there yet and messages have several links.
 	if _, err := s.db.ExecContext(ctx, `DROP INDEX message_tasks_one`); err != nil {
 		t.Fatal(err)
@@ -53,6 +67,13 @@ func TestMigrateOneTask(t *testing.T) {
 	link(m3, older, LinkPerson)
 	link(m3, newer, LinkAgent)
 	link(m4, older, LinkAuto)
+	link(r, newest, LinkAuto)
+	link(r, mB, LinkAgent)
+	link(r, older, LinkAgent)
+	link(r, mC, LinkAgent)
+	link(r2, newest, LinkAuto)
+	link(r2, mB, LinkAgent)
+	link(r2, mC, LinkAgent)
 	s.Close()
 
 	for round := 0; round < 2; round++ { // idempotent
@@ -60,7 +81,7 @@ func TestMigrateOneTask(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for m, want := range map[string]string{m1: older, m2: newest, m3: newer, m4: older} {
+		for m, want := range map[string]string{m1: older, m2: newest, m3: newer, m4: older, r: older, r2: mC} {
 			tags, _ := s.TasksOf(ctx, []string{m})
 			if len(tags[m]) != 1 || tags[m][0].TaskID != want {
 				t.Fatalf("round %d: %s is in %+v, want %s", round, m, tags[m], want)
@@ -69,7 +90,7 @@ func TestMigrateOneTask(t *testing.T) {
 		var multi, dropped int
 		_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT message_id FROM message_tasks GROUP BY message_id HAVING count(*) > 1)`).Scan(&multi)
 		_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM message_tasks_dropped`).Scan(&dropped)
-		if multi != 0 || dropped != 4 {
+		if multi != 0 || dropped != 9 {
 			t.Fatalf("round %d: multi-linked %d, dropped %d", round, multi, dropped)
 		}
 		var kept string
