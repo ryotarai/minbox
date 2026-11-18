@@ -75,3 +75,16 @@ test.describe('phone', () => {
     await expect(page.getByTestId('fork-dialog')).toBeVisible()
   })
 })
+
+test('E marks the conversation read and goes back to the Board', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  await say(minbox, a, 'hello')
+  await agentReply(minbox, a, /Sure — noted/)
+  await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
+  await expect(page.getByTestId('composer-text')).toBeVisible()
+  const st = (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).stream_thread_id
+  await page.locator('body').click({ position: { x: 900, y: 10 } })
+  await page.keyboard.press('e')
+  await expect(page.getByTestId('board')).toBeVisible()
+  await expect.poll(async () => (await api(minbox, 'GET', `/api/threads/${st}`)).marked_read_at).not.toBeNull()
+})
