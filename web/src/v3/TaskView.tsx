@@ -15,7 +15,7 @@ import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } 
 import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
 import { DeliveryLine } from '../components/ThreadView'
-import { IconChevronDown, IconClose, IconGoal } from '../components/icons'
+import { IconAskStatus, IconCheck, IconChevronDown, IconClose, IconGoal } from '../components/icons'
 
 export function TaskView({
   id,
@@ -128,6 +128,9 @@ export function TaskView({
       throw e
     }
   }
+  // "Ask for status" goes to the task's assigned agent (still live), else to whom the composer would send.
+  const assignedLive = assigned && byId.get(assigned.session_id) && !byId.get(assigned.session_id)!.archived_at ? assigned.session_id : ''
+  const askTo = assignedLive || (toId !== 'new' ? toId : '')
   const st = standing(t)
   const working = typing.length > 0
   const agentChips = t.agents.map((a) => (
@@ -237,7 +240,7 @@ export function TaskView({
                   </div>
                 )
               })}
-              {t.status === 'working' && <WorkingLine name={assigned ? agentName(byId, assigned.session_id) : ''} />}
+              {t.status === 'working' && <WorkingLine name={assigned ? agentName(byId, assigned.session_id) : ''} after={askTo && <AskStatus key={t.id} onAsk={() => send({ words: ASK_STATUS, to: askTo, tasks: [t.id], uploads: [] })} />} />}
             </div>
           </div>
         </div>
@@ -346,5 +349,31 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
         </button>
       )}
     </div>
+  )
+}
+
+const ASK_STATUS = 'このタスクの状況は？'
+
+/** Beside the working line: asks the agent where the task stands (a person message about the task, sent as
+ *  the composer sends one, its draft untouched). "Sent" for a few seconds after, disabled meanwhile. */
+function AskStatus({ onAsk }: { onAsk: () => Promise<void> }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const ask = () => {
+    if (state !== 'idle') return
+    setState('sending')
+    onAsk()
+      .then(() => {
+        setState('sent')
+        timer.current = setTimeout(() => setState('idle'), 4000)
+      })
+      .catch(() => setState('idle'))
+  }
+  return (
+    <button type="button" className="v-btn sm v-askstatus" data-testid="ask-status" data-state={state} disabled={state !== 'idle'} title={`Send “${ASK_STATUS}” to the agent about this task`} onClick={ask}>
+      {state === 'sent' ? <IconCheck size={12} /> : <IconAskStatus size={12} />}
+      {state === 'sent' ? 'Sent' : 'Ask for status'}
+    </button>
   )
 }
