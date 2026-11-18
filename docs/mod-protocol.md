@@ -48,7 +48,9 @@ which tools wait behind ToolSearch (`deferred`: the navigation tools). `version`
 answer. `guards` refuse calls of the host's own tools: a shell command matching one of `patterns`
 (JavaScript regular expressions: the integration runs them), or any call without patterns
 (`main_only`: only in the session minbox started; OpenCode's `question` tool). The deny text is what
-the agent reads.
+the agent reads. Every agent's shell tool has two: a command that opens a page on the host, and
+one that runs `minbox pair accept` (anywhere in the command: accepting a pairing is the person's
+alone, see "Browser pairing" in api-contract.md).
 
 `plugin/testdata/manifest-<agent>.json` hold the served sets; `TestManifestFixtures` keeps them equal
 (`MINBOX_UPDATE_FIXTURES=1 go test ./internal/server -run TestManifestFixtures` rewrites them) and the

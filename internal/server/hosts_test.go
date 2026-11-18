@@ -162,7 +162,7 @@ func TestRemoteHost(t *testing.T) {
 	// The terminal, through the server.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, strings.Replace(e.ts.URL, "http", "ws", 1)+"/api/sessions/"+sessID+"/terminal", nil)
+	ws, _, err := websocket.Dial(ctx, strings.Replace(e.ts.URL, "http", "ws", 1)+"/api/sessions/"+sessID+"/terminal", &websocket.DialOptions{HTTPHeader: e.authHeader()})
 	if err != nil {
 		t.Fatal(err)
 	}

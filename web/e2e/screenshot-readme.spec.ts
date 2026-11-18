@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createSession, expect, expectTerminal, selectProject, test, typeInTerminal } from './fixtures'
+import { createSession, expect, expectTerminal, selectProject, test, trustBrowser, typeInTerminal } from './fixtures'
 
 // Not a check: the README's screenshots (docs/img/readme/), from a made-up scene. Regenerate with
 //   cd web && SCREENSHOTS=1 npx playwright test e2e/screenshot-readme.spec.ts
@@ -294,6 +294,7 @@ test('README screenshots', async ({ page, minbox, browser }) => {
   // Phone: three screens, composed into one image.
   writeFileSync(SUGGESTIONS, JSON.stringify([{ question: 'Which database for the job queue?', kind: 'single', options: [{ label: 'SQLite for now' }, { label: 'Postgres', description: 'we already run it' }] }, { question: 'Anything to plan for?', kind: 'multi', options: [{ label: 'A later migration' }, { label: 'Backups' }] }]))
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark', hasTouch: true, isMobile: true })
+  await trustBrowser(ctx)
   const ph = await ctx.newPage()
   await ph.goto(minbox.url + '/#')
   await expect(ph.getByTestId('phone-home')).toBeVisible()

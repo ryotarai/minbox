@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ryotarai/minbox/internal/devices"
 )
 
 // `minbox start` runs the server as a daemon: it starts itself again as
@@ -94,6 +96,9 @@ func startCmd(args []string) error {
 				_ = os.WriteFile(startArgsFile(dataDir), b, 0o600)
 			}
 			fmt.Printf("minbox started (pid %d): %s\nlog: %s\n", pid, url, lp)
+			if list, err := devices.List(dataDir); err == nil && len(list) == 0 {
+				fmt.Printf("no browser is paired yet: open %s, press Pair this browser, then run the command it shows\n(minbox pair accept <code>) in a terminal on this machine\n", url)
+			}
 			if !*f.noOpen {
 				openBrowser(url)
 			}

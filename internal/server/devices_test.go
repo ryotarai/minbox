@@ -72,6 +72,26 @@ func (k *browserKey) sign(t *testing.T, msg []byte) string {
 	return base64.StdEncoding.EncodeToString(sig)
 }
 
+// pairedCookie pairs a browser key with the server (as `minbox pair accept` does) and
+// answers a cookie of a signed-in session for it (the sign-in itself is tested below).
+func pairedCookie(t *testing.T, srv *Server, name string) string {
+	t.Helper()
+	k := newBrowserKey(t)
+	r, err := devices.NewRequest(srv.cfg.DataDir, name, k.spki, "127.0.0.1", "", time.Now(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, d, err := devices.Accept(srv.cfg.DataDir, r.Code, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := randomToken(32)
+	srv.devAuth.mu.Lock()
+	srv.devAuth.sessions[token] = deviceSession{deviceID: d.ID, expires: time.Now().Add(time.Hour)}
+	srv.devAuth.mu.Unlock()
+	return deviceCookie + "=" + token
+}
+
 // signIn answers a challenge and returns the cookie header value ("" if refused).
 func (e *env) signIn(k *browserKey, hdr map[string]string) (int, string) {
 	e.t.Helper()
@@ -116,9 +136,12 @@ func TestBrowserPairingAndSignIn(t *testing.T) {
 	if code, obj, _ := e.do("GET", "/api/devices/me", nil, remote); code != 200 || obj["trusted"] != false {
 		t.Fatalf("me (unpaired): %d %v", code, obj)
 	}
-	// The loopback browser stays trusted.
-	if code, obj, _ := e.do("GET", "/api/devices/me", nil, nil); code != 200 || obj["via"] != "loopback" {
-		t.Fatalf("me (loopback): %d %v", code, obj)
+	// A browser on loopback is not trusted for its address: only this machine's paired one is.
+	if code, obj, _ := e.do("GET", "/api/devices/me", nil, map[string]string{"Cookie": ""}); code != 200 || obj["trusted"] != false {
+		t.Fatalf("me (loopback, unpaired): %d %v", code, obj)
+	}
+	if code, obj, _ := e.do("GET", "/api/devices/me", nil, nil); code != 200 || obj["via"] != "device" {
+		t.Fatalf("me (loopback, paired): %d %v", code, obj)
 	}
 
 	k := newBrowserKey(t)
@@ -164,10 +187,11 @@ func TestBrowserPairingAndSignIn(t *testing.T) {
 	}
 	_, list, _ = e.do("GET", "/api/devices", nil, auth)
 	devs := list["devices"].([]any)
-	if len(devs) != 1 || devs[0].(map[string]any)["current"] != true {
+	// This machine's browser (paired by newEnv) and the phone, the current one.
+	if len(devs) != 2 || devs[0].(map[string]any)["current"] != false || devs[1].(map[string]any)["current"] != true {
 		t.Fatalf("devices: %v", list)
 	}
-	devID := devs[0].(map[string]any)["id"].(string)
+	devID := devs[1].(map[string]any)["id"].(string)
 
 	// A challenge is answered once; a wrong signature fails.
 	_, obj, _ = e.do("POST", "/api/devices/auth/challenge", map[string]string{"fingerprint": k.fp}, remote)
@@ -304,9 +328,12 @@ func TestTailscaleModeGuard(t *testing.T) {
 	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 403 {
 		t.Fatalf("other host: %v %v", resp, err)
 	}
-	// Loopback stays trusted.
+	// Loopback is no exception: a paired browser only.
+	if code, _, _ := e.do("GET", "/api/sessions", nil, map[string]string{"Cookie": ""}); code != 401 {
+		t.Fatalf("loopback without a device: %d", code)
+	}
 	if code, _, _ := e.do("GET", "/api/sessions", nil, nil); code != 200 {
-		t.Fatalf("loopback: %d", code)
+		t.Fatalf("loopback with a paired browser: %d", code)
 	}
 	_ = context.Background()
 }
@@ -354,8 +381,8 @@ func TestListenAnyNeedsPairingFromElsewhere(t *testing.T) {
 	if code := get("/api/devices/me", "192.168.1.5:4848", "192.0.2.7:51000"); code != 200 {
 		t.Fatalf("pairing routes stay open: %d", code)
 	}
-	if code := get("/api/sessions", "127.0.0.1:4848", "127.0.0.1:51000"); code != 200 {
-		t.Fatalf("this machine: %d, want 200", code)
+	if code := get("/api/sessions", "127.0.0.1:4848", "127.0.0.1:51000"); code != 401 {
+		t.Fatalf("this machine without a paired browser: %d, want 401", code)
 	}
 	// Without --listen any other Host is refused outright.
 	e.srv.cfg.ListenAny = false

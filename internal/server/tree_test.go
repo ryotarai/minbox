@@ -149,7 +149,8 @@ func TestTreeOutsideGit(t *testing.T) {
 
 func treeGetRaw(t *testing.T, e *env, path string) (int, http.Header, []byte) {
 	t.Helper()
-	resp, err := http.Get(e.ts.URL + path)
+	req, _ := http.NewRequest("GET", e.ts.URL+path, nil)
+	resp, err := http.DefaultClient.Do(e.auth(req))
 	if err != nil {
 		t.Fatal(err)
 	}
