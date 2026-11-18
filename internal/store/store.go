@@ -47,7 +47,8 @@ const (
 )
 
 // Thread statuses: what the thread is doing, set by the person's messages, the
-// agent's send_message `status`, and by hand.
+// agent's messages (a question: need_action; else finished), and by hand. send_message has no
+// status (minbox refuses one).
 const (
 	ThreadWorking    = "working"
 	ThreadNeedAction = "need_action"

@@ -322,10 +322,10 @@ export function TaskView({
                       New
                     </div>
                   )}
-                  <MessageView m={m} tasks={tasks} inTask={t.id} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
+                  <MessageView m={m} tasks={tasks} inTask={t.id} latest={m === lastUser} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
                   {m === lastUser && byId.get(m.session_id) && (
                     <div className="v-delivery">
-                      <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} />
+                      <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} compact />
                     </div>
                   )}
                 </div>
