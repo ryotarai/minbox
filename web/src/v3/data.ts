@@ -153,21 +153,32 @@ export function useLive<T>(key: string | null, fetcher: () => Promise<T>): [T | 
   return [data, load, setData]
 }
 
-/** Marks the agent messages shown read (once each). */
+/** Marks the agent messages shown read (once each), while the page is visible: messages that arrive
+ *  while it is hidden (another tab, a minimized window) stay unread until it shows again. */
 export function useMarkRead(messages: V3Message[] | undefined, active = true) {
   const sent = useRef(new Set<string>())
+  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
   useEffect(() => {
-    if (!active || !messages || document.visibilityState === 'hidden') return
+    const on = () => setVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
+  }, [])
+  useEffect(() => {
+    if (!active || !messages || !visible) return
     const ids = messages.filter((m) => m.author === 'agent' && !m.read_at && !m.pending && !sent.current.has(m.id)).map((m) => m.id)
     if (ids.length === 0) return
     // Remembered once sent (a re-render that cancels the timer must not lose them).
     const t = setTimeout(() => {
+      if (document.visibilityState === 'hidden') return
       ids.forEach((id) => sent.current.add(id))
       void v3.read(ids).catch(() => ids.forEach((id) => sent.current.delete(id)))
     }, 400)
     return () => clearTimeout(t)
-  }, [messages, active])
+  }, [messages, active, visible])
 }
+
+/** A task title's class while an agent message about it is unread (bold, as in a mail inbox). */
+export const unreadCls = (t: { unread?: number }) => ((t.unread ?? 0) > 0 ? ' v-unr-t' : '')
 
 /** The answer's choice, Other text or free text ("Skipped"), without its note. */
 export function answerChoice(a: Answer): string {

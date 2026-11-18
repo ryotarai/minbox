@@ -203,6 +203,55 @@ func TestV3QuestionsOnBoardAndAnswerTags(t *testing.T) {
 	}
 }
 
+// A task's unread count (its title is bold in the task lists): the agent's messages about it the person
+// has not seen; the person's own messages never count. Reading them publishes "tasks" (the lists update).
+func TestV3TaskUnread(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	e.personSays(sess, "please fix the gauge")
+	_, tk, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Fix gauge"}, bearer(sess))
+	id := tk["task_id"].(string)
+	unread := func() float64 {
+		t.Helper()
+		_, board, _ := e.do("GET", "/api/v3/board", nil, nil)
+		for _, x := range board["tasks"].([]any) {
+			if m := x.(map[string]any); m["id"] == id {
+				return m["unread"].(float64)
+			}
+		}
+		t.Fatalf("no task %s", id)
+		return 0
+	}
+	if n := unread(); n != 0 {
+		t.Fatalf("before the reply: %v", n)
+	}
+	r := e.agentSays(sess, map[string]any{"body": "On it.", "task_id": id})
+	if n := unread(); n != 1 {
+		t.Fatalf("after the reply: %v", n)
+	}
+	e.personSays(sess, "also the needle", id)
+	if n := unread(); n != 1 {
+		t.Fatalf("the person's message counted: %v", n)
+	}
+	events := make(chan Event, 16)
+	e.srv.hub.mu.Lock()
+	e.srv.hub.subs[events] = struct{}{}
+	e.srv.hub.mu.Unlock()
+	e.do("POST", "/api/v3/read", map[string]any{"message_ids": []string{r["message_id"].(string)}}, nil)
+	if n := unread(); n != 0 {
+		t.Fatalf("after reading: %v", n)
+	}
+	got := false
+	for len(events) > 0 {
+		if ev := <-events; ev.Type == "tasks" {
+			got = true
+		}
+	}
+	if !got {
+		t.Fatal("reading did not publish tasks")
+	}
+}
+
 func TestV3NewMessageToMainAndNewSession(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession() // the project's first session is its main one

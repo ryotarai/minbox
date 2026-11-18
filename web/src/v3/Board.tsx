@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
-import { ago, short, standing, v3, type Board, type BoardTask, type V3Message } from './data'
+import { ago, short, standing, unreadCls, v3, type Board, type BoardTask, type V3Message } from './data'
 import { TaskRowMenu } from './RenameTask'
 import { IconGoal, IconMore, IconPlus } from '../components/icons'
 import { MenuItem, Popover, type MenuAt } from '../components/ui'
@@ -255,7 +255,7 @@ export function BoardView({
             <div>
               <div className="v-ti">
                 <StatusDot t={t} live={live} />
-                <span className="v-t">
+                <span className={'v-t' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
                   {t.kind === 'goal' && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
                   {t.title}
                 </span>

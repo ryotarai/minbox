@@ -95,6 +95,8 @@ select.v-chip { padding: 1px 4px; }
 .v-row .v-more:hover { background: var(--mb-line); color: var(--mb-fg); }
 .v-head .v-rename { display: inline-flex; align-items: center; padding: 2px 5px; color: var(--mb-subtle); flex: none; }
 .v-head .v-title-edit { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; color: var(--mb-fg); background: var(--mb-surface); border: 1px solid var(--mb-accent); border-radius: 5px; padding: 1px 6px; outline: none; }
+/* A task title with an unread agent message about it: bold until the person has seen it. */
+.v-unr-t, .v-mt .v-a.v-unr-t, .v-row .v-ti .v-t.v-unr-t { font-weight: 600; }
 .v-unread { width: 6px; height: 6px; border-radius: 50%; background: var(--mb-work); display: inline-block; flex: none; }
 .v-qmark { font-size: 10.5px; color: var(--mb-wait); border: 1px solid var(--mb-wait); border-radius: 8px; padding: 0 5px; line-height: 15px; }
 .v-bar { display: flex; gap: 2px; width: 120px; height: 5px; flex: none; }
