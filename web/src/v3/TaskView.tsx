@@ -352,7 +352,13 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
   )
 }
 
-const ASK_STATUS = "What's the status of this task?"
+/** The words sent: asks for a short report in a fixed Markdown shape, so answers read the same every time. */
+const ASK_STATUS = `What's the status of this task? Reply with a short Markdown report:
+- **Status**: one line on where it stands
+- **Done**: what's finished
+- **Now**: what you're doing right now
+- **Next**: what comes after
+- **Blocked on**: anything you need from me (or "nothing")`
 
 /** Beside the working line: asks the agent where the task stands (a person message about the task, sent as
  *  the composer sends one, its draft untouched). "Sent" for a few seconds after, disabled meanwhile. */
@@ -371,7 +377,7 @@ function AskStatus({ onAsk }: { onAsk: () => Promise<void> }) {
       .catch(() => setState('idle'))
   }
   return (
-    <button type="button" className="v-btn sm v-askstatus" data-testid="ask-status" data-state={state} disabled={state !== 'idle'} title={`Send “${ASK_STATUS}” to the agent about this task`} onClick={ask}>
+    <button type="button" className="v-btn sm v-askstatus" data-testid="ask-status" data-state={state} disabled={state !== 'idle'} title="Ask the agent for a short status report on this task" onClick={ask}>
       {state === 'sent' ? <IconCheck size={12} /> : <IconAskStatus size={12} />}
       {state === 'sent' ? 'Sent' : 'Ask for status'}
     </button>
