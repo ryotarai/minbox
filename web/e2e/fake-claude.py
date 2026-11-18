@@ -132,6 +132,17 @@ def say(body, task_ids=None, **extra):
     return r
 
 
+TYPED_TASK = None
+
+
+def typed_task():
+    """The task what is typed in the terminal (say / burst) is about: every message belongs to one."""
+    global TYPED_TASK
+    if not TYPED_TASK:
+        TYPED_TASK = api("POST", "/api/agent/tasks", {"title": "Typed in the terminal"})["task_id"]
+    return [TYPED_TASK]
+
+
 def decide(p):
     """The fake agent's turn for a stream message of the person (the prototype's rules)."""
     body = (p.get("body") or "").strip()
@@ -421,7 +432,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     elif line.startswith("burst "):
         _, count, text = line.split(" ", 2)
         for i in range(int(count)):
-            body = {"body": " ".join([f"{text} #{i}"] * 10)}  # ten repeats: tall messages
+            body = {"body": " ".join([f"{text} #{i}"] * 10), "task_ids": typed_task()}  # ten repeats: tall messages
             if last_thread:
                 body["thread_id"] = last_thread
             else:
@@ -430,7 +441,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
     elif line.startswith("say "):
-        body = {"body": line[4:].replace("\\n", "\n")}  # a literal \n types a line break
+        body = {"body": line[4:].replace("\\n", "\n"), "task_ids": typed_task()}  # a literal \n types a line break
         if last_thread:
             body["thread_id"] = last_thread
         else:
