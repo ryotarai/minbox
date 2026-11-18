@@ -203,6 +203,11 @@ def turn(p, body):
         api("PATCH", "/api/agent/tasks/" + named[0], {"status": "needs_you"})
         say("I need you to look at the gauge before I go on.", named[:1])
         return
+    if "TODOS" in body:
+        # Only things for the person to do (no question): the Board's ask is the first one, +n.
+        named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
+        say("Two things for you.\n\n:::actions\n- [ ] Restart the staging box\n- [ ] Rotate the API key\n:::", named[:1])
+        return
     if "ASK" in body:
         named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
         say("One decision first.\n\n:::question\nWhich region should it deploy to?\n- [ ] Tokyo\n- [ ] Oregon\nRecommended: Tokyo\n:::", named[:1])
