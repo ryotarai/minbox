@@ -29,9 +29,9 @@ const (
 // message of an older thread, that thread (the stream shows a divider where it changes).
 type V3Message struct {
 	store.Message
-	SessionID string      `json:"session_id"`
-	Tags      []store.Tag `json:"tags"`
-	Segment   *Segment    `json:"segment,omitempty"`
+	SessionID string          `json:"session_id"`
+	Tasks     []store.TaskRef `json:"tasks"`
+	Segment   *Segment        `json:"segment,omitempty"`
 	// Open: the questions of this (agent) message still waiting on the person.
 	Open int `json:"open"`
 }
@@ -57,6 +57,32 @@ type BoardTask struct {
 	// Goals: how many of its criteria are met; its tasks.
 	CriteriaDone int      `json:"criteria_done"`
 	TaskIDs      []string `json:"task_ids,omitempty"`
+	// LastLine: the start of the newest agent message about it (what the agent said last).
+	LastLine string `json:"last_line"`
+}
+
+// lastLine is a line to show for a message in a list: its first line of prose (no markdown marks, no
+// question blocks), at most 160 characters.
+func lastLine(body string) string {
+	inBlock := false
+	for _, l := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, ":::") {
+			inBlock = t != ":::" && !inBlock
+			continue
+		}
+		if inBlock || t == "" || strings.HasPrefix(t, "```") || strings.HasPrefix(t, "|") || strings.HasPrefix(t, "---") {
+			continue
+		}
+		t = strings.TrimLeft(t, "#>-*0123456789. ")
+		t = strings.NewReplacer("**", "", "`", "", "__", "").Replace(t)
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		return truncRunes(t, 160)
+	}
+	return ""
 }
 
 // openOf counts the open questions of a message as derive left it (answered and closed ones out).
@@ -103,16 +129,16 @@ func (s *Server) loadView(ctx context.Context, ths []store.Thread) (*v3View, err
 	for i := range all {
 		ids[i] = all[i].ID
 	}
-	tags, err := s.store.TagsOf(ctx, ids)
+	tags, err := s.store.TasksOf(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
 	v := &v3View{byID: map[string]int{}, threads: byThread}
 	for _, m := range all {
 		th := byThread[m.ThreadID]
-		vm := V3Message{Message: m, SessionID: th.SessionID, Tags: tags[m.ID]}
-		if vm.Tags == nil {
-			vm.Tags = []store.Tag{}
+		vm := V3Message{Message: m, SessionID: th.SessionID, Tasks: tags[m.ID]}
+		if vm.Tasks == nil {
+			vm.Tasks = []store.TaskRef{}
 		}
 		if th.Kind != store.ThreadStream {
 			vm.Segment = &Segment{ID: th.ID, Subject: firstNonEmpty(th.Name, th.Subject)}
@@ -143,7 +169,7 @@ func (v *v3View) boardTask(t store.Task, tasks []store.Task) BoardTask {
 	b := BoardTask{Task: t, LastActivity: t.UpdatedAt}
 	for _, m := range v.msgs {
 		has := false
-		for _, tg := range m.Tags {
+		for _, tg := range m.Tasks {
 			if tg.TaskID == t.ID {
 				has = true
 				break
@@ -159,6 +185,9 @@ func (v *v3View) boardTask(t store.Task, tasks []store.Task) BoardTask {
 				b.Unread++
 			}
 			b.LastAgent = m.SessionID
+			if l := lastLine(m.Body); l != "" {
+				b.LastLine = l
+			}
 		}
 		if m.CreatedAt.After(b.LastActivity) {
 			b.LastActivity = m.CreatedAt
@@ -497,7 +526,7 @@ func (s *Server) v3CreateTask(w http.ResponseWriter, r *http.Request) {
 	if body.SessionID != "" {
 		_, _ = s.store.AddTaskAgent(ctx, t.ID, body.SessionID, store.RoleAssigned)
 	}
-	if _, err := s.store.TagMessages(ctx, t.ID, body.MessageIDs, store.TagPerson); err != nil {
+	if _, err := s.store.LinkMessages(ctx, t.ID, body.MessageIDs, store.LinkPerson); err != nil {
 		storeError(w, err)
 		return
 	}
@@ -514,8 +543,8 @@ func v3TaskError(w http.ResponseWriter, err error) {
 	storeError(w, err)
 }
 
-// POST /api/v3/messages/{id}/tags {task_id}: the person tags a message.
-func (s *Server) v3Tag(w http.ResponseWriter, r *http.Request) {
+// POST /api/v3/messages/{id}/tasks {task_id}: the person says a message is (also) about a task.
+func (s *Server) v3LinkTask(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TaskID string `json:"task_id"`
 	}
@@ -528,7 +557,7 @@ func (s *Server) v3Tag(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	added, err := s.store.TagMessages(ctx, body.TaskID, []string{mid}, store.TagPerson)
+	added, err := s.store.LinkMessages(ctx, body.TaskID, []string{mid}, store.LinkPerson)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -539,33 +568,33 @@ func (s *Server) v3Tag(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		_ = s.store.AddTaskEvent(ctx, body.TaskID, "tag", "Message tagged by you", "", mid)
+		_ = s.store.AddTaskEvent(ctx, body.TaskID, "link", "A message added by you", "", mid)
 	}
 	s.publishMessage(ctx, mid)
 	writeJSON(w, 200, map[string]any{"ok": true, "added": len(added) > 0})
 }
 
-// DELETE /api/v3/messages/{id}/tags/{task}: the person takes a tag off.
-func (s *Server) v3Untag(w http.ResponseWriter, r *http.Request) {
+// DELETE /api/v3/messages/{id}/tasks/{task}: the person says a message is not about that task.
+func (s *Server) v3UnlinkTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mid, tid := r.PathValue("id"), r.PathValue("task")
-	ok, err := s.store.UntagMessage(ctx, mid, tid)
+	ok, err := s.store.UnlinkMessage(ctx, mid, tid)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
 	if ok {
-		_ = s.store.AddTaskEvent(ctx, tid, "untag", "Tag removed by you", "", mid)
+		_ = s.store.AddTaskEvent(ctx, tid, "unlink", "A message taken out by you", "", mid)
 	}
 	s.publishMessage(ctx, mid)
 	writeJSON(w, 200, map[string]any{"ok": true, "removed": ok})
 }
 
-// POST /api/v3/messages/{id}/retag {from?, to?, title?}: "wrong task?" under an agent reply: the reply
+// POST /api/v3/messages/{id}/move {from?, to?, title?}: "Move to task…" on an agent reply: the reply
 // and the person's messages it answered (its turn) move from task `from` (or from no task) to `to`, or
 // to a new task named `title`. A task the agent created in that turn that is left with no messages is
 // deleted.
-func (s *Server) v3Retag(w http.ResponseWriter, r *http.Request) {
+func (s *Server) v3Move(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		From  string `json:"from"`
 		To    string `json:"to"`
@@ -606,10 +635,10 @@ func (s *Server) v3Retag(w http.ResponseWriter, r *http.Request) {
 	ids := append([]string{m.ID}, m.TurnOf...)
 	if body.From != "" && body.From != to {
 		for _, id := range ids {
-			_, _ = s.store.UntagMessage(ctx, id, body.From)
+			_, _ = s.store.UnlinkMessage(ctx, id, body.From)
 		}
 	}
-	if _, err := s.store.TagMessages(ctx, to, ids, store.TagPerson); err != nil {
+	if _, err := s.store.LinkMessages(ctx, to, ids, store.LinkPerson); err != nil {
 		storeError(w, err)
 		return
 	}
@@ -622,14 +651,14 @@ func (s *Server) v3Retag(w http.ResponseWriter, r *http.Request) {
 			if toTask != nil {
 				title = toTask.Title
 			}
-			_ = s.store.AddTaskEvent(ctx, from.ID, "untag", "Tag moved by you to “"+title+"”", "", m.ID)
+			_ = s.store.AddTaskEvent(ctx, from.ID, "unlink", "Messages moved by you to “"+title+"”", "", m.ID)
 			if n, _ := s.store.TaskCount(ctx, from.ID); n == 0 && m.Decision == store.DecisionCreated && m.DecisionTask == from.ID {
 				_ = s.store.DeleteTask(ctx, from.ID)
 				removed = from.Title
 			}
 		}
 	}
-	_ = s.store.AddTaskEvent(ctx, to, "tag", "Messages tagged by you", "", m.ID)
+	_ = s.store.AddTaskEvent(ctx, to, "link", "Messages moved here by you", "", m.ID)
 	_ = s.store.SetDecision(ctx, m.ID, store.DecisionMoved, to, m.TurnOf)
 	s.publishTasks()
 	s.publishMessage(ctx, m.ID)

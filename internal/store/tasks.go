@@ -29,9 +29,9 @@ const (
 
 // Where a message's tag came from.
 const (
-	TagAgent  = "agent"  // the agent named the task (send_message task_ids, create_task, update_task message_ids)
-	TagAuto   = "auto"   // a rule: inherited from the messages a reply answers, a reply sent from a task, an answer
-	TagPerson = "person" // the person added it
+	LinkAgent  = "agent"  // the agent named the task (send_message task_ids, create_task, update_task message_ids)
+	LinkAuto   = "auto"   // a rule: inherited from the messages a reply answers, a reply sent from a task, an answer
+	LinkPerson = "person" // the person added it
 )
 
 // The agent's decision about the person's messages a reply answers (Message.Decision).
@@ -73,14 +73,14 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_origin ON tasks(origin) WHERE origin != '';
-CREATE TABLE IF NOT EXISTS message_tags (
+CREATE TABLE IF NOT EXISTS message_tasks (
   message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   source TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (message_id, task_id)
 );
-CREATE INDEX IF NOT EXISTS message_tags_task ON message_tags(task_id);
+CREATE INDEX IF NOT EXISTS message_tasks_task ON message_tasks(task_id);
 CREATE TABLE IF NOT EXISTS task_agents (
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   session_id TEXT NOT NULL,
@@ -196,14 +196,14 @@ type TaskEvent struct {
 	ID        string    `json:"id"`
 	TaskID    string    `json:"task_id"`
 	At        time.Time `json:"at"`
-	Kind      string    `json:"kind"` // created | status | step | tag | untag | handoff | report | link | title
+	Kind      string    `json:"kind"` // created | status | step | link | unlink | handoff | report | link | title
 	Text      string    `json:"text"`
 	SessionID string    `json:"session_id,omitempty"`
 	MessageID string    `json:"message_id,omitempty"`
 }
 
-// Tag is a task on a message.
-type Tag struct {
+// TaskRef is a task a message is about (Source: how the link was made).
+type TaskRef struct {
 	TaskID string `json:"task_id"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
@@ -660,14 +660,14 @@ func (s *Store) AddTaskAgent(ctx context.Context, taskID, sessionID, role string
 
 // TagMessages tags messages with a task; it returns the ids that were not tagged with it before.
 // The sessions that wrote tagged agent messages become involved in the task.
-func (s *Store) TagMessages(ctx context.Context, taskID string, messageIDs []string, source string) ([]string, error) {
+func (s *Store) LinkMessages(ctx context.Context, taskID string, messageIDs []string, source string) ([]string, error) {
 	added := []string{}
 	if len(messageIDs) == 0 {
 		return added, nil
 	}
 	now := ms(s.now())
 	for _, id := range messageIDs {
-		res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO message_tags(message_id, task_id, source, created_at)
+		res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO message_tasks(message_id, task_id, source, created_at)
 		  SELECT id, ?, ?, ? FROM messages WHERE id=? AND EXISTS(SELECT 1 FROM tasks WHERE id=?)`, taskID, source, now, id, taskID)
 		if err != nil {
 			return nil, err
@@ -689,8 +689,8 @@ func (s *Store) TagMessages(ctx context.Context, taskID string, messageIDs []str
 }
 
 // UntagMessage takes a task's tag off a message.
-func (s *Store) UntagMessage(ctx context.Context, messageID, taskID string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM message_tags WHERE message_id=? AND task_id=?`, messageID, taskID)
+func (s *Store) UnlinkMessage(ctx context.Context, messageID, taskID string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM message_tasks WHERE message_id=? AND task_id=?`, messageID, taskID)
 	if err != nil {
 		return false, err
 	}
@@ -699,22 +699,22 @@ func (s *Store) UntagMessage(ctx context.Context, messageID, taskID string) (boo
 }
 
 // TagsOf returns the tags of messages, by message id (titles and statuses of their tasks).
-func (s *Store) TagsOf(ctx context.Context, messageIDs []string) (map[string][]Tag, error) {
-	out := map[string][]Tag{}
+func (s *Store) TasksOf(ctx context.Context, messageIDs []string) (map[string][]TaskRef, error) {
+	out := map[string][]TaskRef{}
 	for start := 0; start < len(messageIDs); start += 500 {
 		end := min(start+500, len(messageIDs))
 		args := make([]any, 0, end-start)
 		for _, id := range messageIDs[start:end] {
 			args = append(args, id)
 		}
-		rows, err := s.db.QueryContext(ctx, `SELECT mt.message_id, mt.task_id, t.title, t.status, mt.source FROM message_tags mt JOIN tasks t ON t.id=mt.task_id
+		rows, err := s.db.QueryContext(ctx, `SELECT mt.message_id, mt.task_id, t.title, t.status, mt.source FROM message_tasks mt JOIN tasks t ON t.id=mt.task_id
 		  WHERE mt.message_id IN (`+placeholders(len(args))+`) ORDER BY mt.created_at, t.created_at`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var mid string
-			var tg Tag
+			var tg TaskRef
 			if err := rows.Scan(&mid, &tg.TaskID, &tg.Title, &tg.Status, &tg.Source); err != nil {
 				rows.Close()
 				return nil, err
@@ -731,7 +731,7 @@ func (s *Store) TagsOf(ctx context.Context, messageIDs []string) (map[string][]T
 
 // TaskMessageIDs returns the ids of a task's tagged messages, oldest first.
 func (s *Store) TaskMessageIDs(ctx context.Context, taskID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM message_tags mt JOIN messages m ON m.id=mt.message_id WHERE mt.task_id=? ORDER BY m.created_at, m.rowid`, taskID)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM message_tasks mt JOIN messages m ON m.id=mt.message_id WHERE mt.task_id=? ORDER BY m.created_at, m.rowid`, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +904,7 @@ func (s *Store) MessageSession(ctx context.Context, messageID string) (sessionID
 // TaskCount is how many messages are tagged with a task.
 func (s *Store) TaskCount(ctx context.Context, taskID string) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_tags WHERE task_id=?`, taskID).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_tasks WHERE task_id=?`, taskID).Scan(&n)
 	return n, err
 }
 
@@ -916,7 +916,7 @@ type SearchMessage struct {
 	Author    string    `json:"author"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
-	Tags      []Tag     `json:"tags"`
+	Tasks     []TaskRef `json:"tasks"`
 }
 
 // SearchMessages finds messages of live sessions (of a project, or all) whose text has q, newest first.
@@ -952,18 +952,18 @@ func (s *Store) SearchMessages(ctx context.Context, projectID, q string, limit i
 		if m.Author == AuthorUser && strings.TrimSpace(words) != "" {
 			m.Text = words
 		}
-		m.Tags = []Tag{}
+		m.Tasks = []TaskRef{}
 		out = append(out, m)
 		ids = append(ids, m.ID)
 	}
 	rows.Close()
-	tags, err := s.TagsOf(ctx, ids)
+	tags, err := s.TasksOf(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
 	for i := range out {
 		if tg := tags[out[i].ID]; tg != nil {
-			out[i].Tags = tg
+			out[i].Tasks = tg
 		}
 	}
 	return out, nil
@@ -990,184 +990,6 @@ func (s *Store) SearchTasks(ctx context.Context, projectID, q string) ([]Task, e
 		}
 	}
 	return out, nil
-}
-
-// ---- migration (docs/v3/redesign.md §8) ----
-
-// migrateV3 turns the older data into v3's: topics become tasks (their message ids become tags),
-// unfinished threads without topics become tasks tagged with all their messages, and agent messages
-// older than a thread's Mark read count as read. Nothing is dropped: threads, topics and messages stay
-// as they are (the older threads read as segments of each session's stream). Idempotent: a task
-// remembers its origin (topic:<id>, thread:<id>), and each step only fills what is missing.
-func migrateV3(ctx context.Context, db *sql.DB) error {
-	var done string
-	if err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='v3_migrated'`).Scan(&done); err == nil {
-		return nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	// Topics → tasks.
-	rows, err := tx.QueryContext(ctx, `SELECT tp.id, tp.thread_id, tp.title, tp.summary, tp.status, tp.created_at, tp.updated_at, tp.done_at, tp.manual_status, tp.manual_at,
-	  tp.detail, tp.tasks, tp.message_ids, t.session_id, COALESCE(s.project_id,'')
-	  FROM topics tp JOIN threads t ON t.id=tp.thread_id JOIN sessions s ON s.id=t.session_id
-	  WHERE NOT EXISTS(SELECT 1 FROM tasks x WHERE x.origin='topic:'||tp.id) ORDER BY tp.created_at`)
-	if err != nil {
-		return err
-	}
-	type topicRow struct {
-		id, thread, title, summary, status, manualStatus, detail, steps, msgs, session, project string
-		created, updated                                                                        int64
-		done, manualAt                                                                          sql.NullInt64
-	}
-	var topics []topicRow
-	for rows.Next() {
-		var r topicRow
-		if err := rows.Scan(&r.id, &r.thread, &r.title, &r.summary, &r.status, &r.created, &r.updated, &r.done, &r.manualStatus, &r.manualAt, &r.detail, &r.steps, &r.msgs, &r.session, &r.project); err != nil {
-			rows.Close()
-			return err
-		}
-		topics = append(topics, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	topicThreads := map[string]bool{}
-	for _, r := range topics {
-		topicThreads[r.thread] = true
-		st, ok := NormalizeTaskStatus(r.status)
-		if !ok {
-			st = TaskWorking
-		}
-		manual := ""
-		if r.manualStatus != "" {
-			manual, _ = NormalizeTaskStatus(r.manualStatus)
-		}
-		var old []TopicTask
-		_ = json.Unmarshal([]byte(r.steps), &old)
-		steps := []TaskStep{}
-		for _, k := range old {
-			steps = append(steps, TaskStep{Text: k.Text, Done: k.Done})
-		}
-		var mids []string
-		_ = json.Unmarshal([]byte(r.msgs), &mids)
-		id := NewID("tsk")
-		var done, mAt any
-		if r.done.Valid {
-			done = r.done.Int64
-		}
-		if r.manualAt.Valid && manual != "" {
-			mAt = r.manualAt.Int64
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO tasks(`+taskCols+`, origin) VALUES(?,?,?,?,?,?,?,'','[]',?,?,?,?,?,?,'','','[]','{}',?)`,
-			id, r.project, r.title, r.summary, r.detail, st, jsonText(steps), r.session, r.created, r.updated, done, manual, mAt, "topic:"+r.id); err != nil {
-			return err
-		}
-		if err := migrateTaskRest(ctx, tx, id, r.session, fromMs(r.created), r.done, mids, TagAgent); err != nil {
-			return err
-		}
-	}
-	// Unfinished threads without topics → tasks with all their messages.
-	rows, err = tx.QueryContext(ctx, `SELECT t.id, t.session_id, COALESCE(s.project_id,''), t.subject, t.name, COALESCE(t.status,''), t.created_at, t.updated_at
-	  FROM threads t JOIN sessions s ON s.id=t.session_id
-	  WHERE t.kind!='stream' AND t.archived_at IS NULL AND s.archived_at IS NULL AND COALESCE(t.status,'') IN ('need_action','working','blocked')
-	    AND NOT EXISTS(SELECT 1 FROM topics tp WHERE tp.thread_id=t.id) AND NOT EXISTS(SELECT 1 FROM tasks x WHERE x.origin='thread:'||t.id)
-	  ORDER BY t.created_at`)
-	if err != nil {
-		return err
-	}
-	type threadRow struct {
-		id, session, project, subject, name, status string
-		created, updated                            int64
-	}
-	var ths []threadRow
-	for rows.Next() {
-		var r threadRow
-		if err := rows.Scan(&r.id, &r.session, &r.project, &r.subject, &r.name, &r.status, &r.created, &r.updated); err != nil {
-			rows.Close()
-			return err
-		}
-		ths = append(ths, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, r := range ths {
-		if topicThreads[r.id] {
-			continue
-		}
-		st, _ := NormalizeTaskStatus(r.status)
-		title := oneLine(r.subject)
-		if title == "" {
-			title = oneLine(r.name)
-		}
-		if title == "" {
-			title = "Untitled"
-		}
-		id := NewID("tsk")
-		if _, err := tx.ExecContext(ctx, `INSERT INTO tasks(`+taskCols+`, origin) VALUES(?,?,?,'','',?,'[]','','[]',?,?,?,NULL,'',NULL,'','','[]','{}',?)`,
-			id, r.project, title, st, r.session, r.created, r.updated, "thread:"+r.id); err != nil {
-			return err
-		}
-		mrows, err := tx.QueryContext(ctx, `SELECT id FROM messages WHERE thread_id=? ORDER BY created_at, rowid`, r.id)
-		if err != nil {
-			return err
-		}
-		var mids []string
-		for mrows.Next() {
-			var mid string
-			if err := mrows.Scan(&mid); err != nil {
-				mrows.Close()
-				return err
-			}
-			mids = append(mids, mid)
-		}
-		mrows.Close()
-		if err := migrateTaskRest(ctx, tx, id, r.session, fromMs(r.created), sql.NullInt64{}, mids, TagAuto); err != nil {
-			return err
-		}
-	}
-	// Linear links of threads → the tasks made from them.
-	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET links=(SELECT json_array(json_object('kind','linear','label',l.identifier,'url',l.url,'state',l.state))
-	  FROM thread_links l WHERE 'thread:'||l.thread_id=tasks.origin OR EXISTS(SELECT 1 FROM topics tp WHERE 'topic:'||tp.id=tasks.origin AND tp.thread_id=l.thread_id))
-	  WHERE links='[]' AND EXISTS(SELECT 1 FROM thread_links l WHERE 'thread:'||l.thread_id=tasks.origin OR EXISTS(SELECT 1 FROM topics tp WHERE 'topic:'||tp.id=tasks.origin AND tp.thread_id=l.thread_id))`); err != nil {
-		return err
-	}
-	// Read state: agent messages a Mark read covered are read.
-	if _, err := tx.ExecContext(ctx, `UPDATE messages SET read_at=(SELECT t.marked_read_at FROM threads t WHERE t.id=messages.thread_id)
-	  WHERE author='agent' AND read_at IS NULL AND EXISTS(SELECT 1 FROM threads t WHERE t.id=messages.thread_id AND t.marked_read_at IS NOT NULL AND t.marked_read_at>=messages.created_at)`); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO settings(key, value) VALUES('v3_migrated', ?)`, `"`+time.Now().UTC().Format(time.RFC3339)+`"`); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func migrateTaskRest(ctx context.Context, tx *sql.Tx, taskID, session string, created time.Time, done sql.NullInt64, mids []string, source string) error {
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO task_agents(task_id, session_id, role, created_at) VALUES(?,?,?,?)`, taskID, session, RoleAssigned, ms(created)); err != nil {
-		return err
-	}
-	for _, mid := range mids {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO message_tags(message_id, task_id, source, created_at) SELECT id, ?, ?, created_at FROM messages WHERE id=?`, taskID, source, mid); err != nil {
-			return err
-		}
-	}
-	if err := addEvent(ctx, tx, taskID, created, "created", "Task created (from the earlier inbox)", session, ""); err != nil {
-		return err
-	}
-	if done.Valid {
-		if err := addEvent(ctx, tx, taskID, fromMs(done.Int64), "status", "→ done", session, ""); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // SetAuto stores a goal's autonomous run.

@@ -39,7 +39,7 @@ func (e *env) agentSays(sess *store.Session, body map[string]any) map[string]any
 
 func tagIDs(t *testing.T, e *env, msgID string) []string {
 	t.Helper()
-	tags, err := e.st.TagsOf(context.Background(), []string{msgID})
+	tags, err := e.st.TasksOf(context.Background(), []string{msgID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestV3AgentDecides(t *testing.T) {
 	u5 := e.personSays(sess, "add a dark mode toggle")
 	_, mistaken, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Dark mode"}, bearer(sess))
 	r5 := e.agentSays(sess, map[string]any{"body": "Created a task."})
-	code, rt, _ := e.do("POST", "/api/v3/messages/"+r5["message_id"].(string)+"/retag", map[string]any{"from": mistaken["task_id"], "to": gauge}, nil)
+	code, rt, _ := e.do("POST", "/api/v3/messages/"+r5["message_id"].(string)+"/move", map[string]any{"from": mistaken["task_id"], "to": gauge}, nil)
 	if code != 200 || rt["removed_task"] != "Dark mode" {
 		t.Fatalf("retag: %d %v", code, rt)
 	}

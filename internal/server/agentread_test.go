@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ryotarai/minbox/internal/agent"
+	"github.com/ryotarai/minbox/internal/question"
 	"github.com/ryotarai/minbox/internal/store"
 )
 
@@ -31,26 +32,24 @@ func (e *env) sessionIn(sub, name string) *store.Session {
 	return sess
 }
 
-// send posts an agent message; without threadID it first makes an older-style thread (a segment
-// of the session's stream, as every thread was before v3) and posts into it.
+// send stores an agent message in an older-style thread (a segment of the session's stream, as every
+// thread was before v3; since v3 an agent writes only to its stream, so such data is made directly):
+// a new one titled subject without threadID.
 func (e *env) send(sess *store.Session, threadID, subject, body, status string) string {
 	e.t.Helper()
+	ctx := context.Background()
 	if threadID == "" {
-		id, err := e.st.NewSegmentThread(context.Background(), sess.ID, subject)
+		id, err := e.st.NewSegmentThread(ctx, sess.ID, subject)
 		if err != nil {
 			e.t.Fatal(err)
 		}
 		threadID = id
 	}
-	m := map[string]string{"body": body, "thread_title": subject, "status": status}
-	if threadID != "" {
-		m["thread_id"] = threadID
+	st, _ := store.NormalizeThreadStatus(status)
+	if _, err := e.st.AddMessage(ctx, threadID, store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: question.Parse(body), Status: st}); err != nil {
+		e.t.Fatal(err)
 	}
-	code, obj, _ := e.do("POST", "/api/agent/messages", m, bearer(sess))
-	if code != 201 {
-		e.t.Fatalf("send: %d %v", code, obj)
-	}
-	return obj["thread_id"].(string)
+	return threadID
 }
 
 func rows(t *testing.T, obj map[string]any, key string) []map[string]any {
@@ -237,8 +236,8 @@ func TestAgentReadThreadPagesAcrossSessions(t *testing.T) {
 	if code != 200 || th["own"] != false || th["session_name"] != "s" {
 		t.Fatalf("cross-session read: %d %v", code, th)
 	}
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": tid}, bearer(b)); code != 404 {
-		t.Fatalf("cross-session write: %d", code)
+	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": tid}, bearer(b)); code != 201 || obj["thread_id"] == tid {
+		t.Fatalf("cross-session write: %d %v", code, obj)
 	}
 	msgs := rows(t, th, "messages")
 	if len(msgs) != agentReadDefault || th["message_count"].(float64) != 45 || th["has_more"] != true {

@@ -92,7 +92,7 @@ func TestDeniedCommandWithoutThreadGoesToTheNextMessage(t *testing.T) {
 	if c := e.srv.denied.offer(foreign); c != "" {
 		t.Fatalf("offered in another session's thread: %q", c)
 	}
-	second := e.send(sess, "", "second", "git push was denied", "need_action")
+	second := e.agentSays(sess, map[string]any{"body": "git push was denied"})["thread_id"].(string) // the stream
 	if c := e.srv.denied.offer(second); c != "!git push" {
 		t.Fatalf("offer = %q", c)
 	}

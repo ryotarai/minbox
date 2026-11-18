@@ -95,8 +95,7 @@ func (e *linEnv) connect() {
 
 func (e *linEnv) newThread(sess *store.Session, status string) string {
 	e.t.Helper()
-	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "Working on the secret plan", "subject": "My subject"}, bearer(sess))
-	id := obj["thread_id"].(string)
+	id := e.send(sess, "", "My subject", "Working on the secret plan", "")
 	e.setStatus(id, status)
 	return id
 }

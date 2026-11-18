@@ -1,10 +1,10 @@
-// UC6 (see what one agent is doing / open its terminal): the agent's stream with task chips, + tag to
-// tag any message, the agent's tasks beside it, and its terminal one key away. Older threads read as
-// segments of the stream (divider with their subject).
+// UC6 (see what one agent is doing / open its terminal): the agent's stream with the task each message
+// is about, ⋯ → Put in a task…, the agent's open tasks beside it, and its terminal one key away. Older
+// threads read as segments of the stream (divider with their subject).
 import { test, expect } from './fixtures'
 import { agentReply, api, say, shot, startAgent, taskNamed } from './v3'
 
-test('agent stream: chips, + tag picker with a new task, the terminal beside the stream', async ({ page, minbox }) => {
+test('agent stream: task links, put a message in a new task, the terminal beside the stream', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   await taskNamed(minbox, /Fix the gauge reading/)
@@ -21,26 +21,30 @@ test('agent stream: chips, + tag picker with a new task, the terminal beside the
   await expect(page.getByTestId('agent-side')).toContainText('Fix the gauge reading')
   await shot(page, 'uc6-stream', 'dark')
 
-  // + tag on the untagged question: a new task named in the picker.
+  // The header says what it is on now (one task), not a wall of every task.
+  await expect(stream.getByTestId('now-on')).toContainText('Fix the gauge reading')
+  // ⋯ → Put in a task… on the question about no task: a new task named in the picker.
   const q = stream.locator('[data-testid="v3-message"]').filter({ hasText: 'is the staging server up?' })
-  await q.getByTestId('tag-add').click()
+  await q.hover()
+  await q.getByTestId('msg-menu').click()
+  await page.getByTestId('menu-move').click()
   await page.keyboard.type('Staging health')
-  await expect(page.getByTestId('tag-new')).toContainText('New task “Staging health”')
+  await expect(page.getByTestId('task-new')).toContainText('New task “Staging health”')
   await page.keyboard.press('Enter')
-  await expect(q.getByTestId('tag')).toHaveAttribute('title', 'Staging health')
+  await expect(q.getByTestId('task-link')).toHaveAttribute('title', 'Staging health')
   await taskNamed(minbox, 'Staging health')
 
-  // # at the start of the reply box tags the message being written.
+  // # at the start of the reply box says which task the message being written is about.
   await page.getByTestId('composer-text').click()
   await page.keyboard.type('#')
-  await expect(page.getByTestId('tag-picker')).toBeVisible()
+  await expect(page.getByTestId('task-picker')).toBeVisible()
   await page.keyboard.type('staging')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('composer').getByTestId('tag')).toHaveAttribute('title', 'Staging health')
+  await expect(page.getByTestId('composer').getByTestId('task-link')).toHaveAttribute('title', 'Staging health')
   await page.getByTestId('composer-text').fill('the staging check is green now')
   await page.getByTestId('composer-send').click()
   const sent = stream.locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'the staging check is green now' })
-  await expect(sent.getByTestId('tag')).toHaveAttribute('title', 'Staging health')
+  await expect(sent.getByTestId('task-link')).toHaveAttribute('title', 'Staging health')
   await expect(sent).not.toHaveClass(/pending/)
 
   // T opens the terminal beside the stream (the fake agent's screen).
@@ -52,8 +56,8 @@ test('agent stream: chips, + tag picker with a new task, the terminal beside the
   await page.getByTestId('pane-tasks').click()
   await expect(page.getByTestId('terminal')).toHaveCount(0)
 
-  // A chip opens its task.
-  await stream.locator('[data-testid="tag"][title="Staging health"]').first().click()
+  // A task link opens its task.
+  await stream.locator('[data-testid="task-link"][title="Staging health"] button').first().click()
   await expect(page.getByTestId('task-title')).toHaveText('Staging health')
 })
 

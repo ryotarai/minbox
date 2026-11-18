@@ -15,7 +15,10 @@ import { TaskView } from './TaskView'
 import { StreamView, type SidePane } from './StreamView'
 import { SearchView } from './Search'
 import { v3, type V3Message } from './data'
-import { useNav, useSessionsById } from './parts'
+import { agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
+import { quoteIntoComposer, selectedInConversation } from './quote'
+import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
+import { IconPaperclip } from '../components/icons'
 import './v3.css'
 
 export function V3App() {
@@ -27,6 +30,7 @@ export function V3App() {
   const [focus, setFocus] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [showDone, setShowDone] = useState(false)
+  const [showQuiet, setShowQuiet] = useState(false)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [pane, setPane] = useState<SidePane>('tasks')
   const [viewer, setViewer] = useState<{ a: Attachment; m: V3Message } | null>(null)
@@ -36,7 +40,7 @@ export function V3App() {
     return live.sort((a, b) => Number(b.is_main) - Number(a.is_main) || ((a.last_activity ?? '') < (b.last_activity ?? '') ? 1 : -1))
   }, [sessions, projectId])
   const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : 'board'
-  const needs = board ? board.questions.filter((m) => !hidden.has(m.id)).length + board.tasks.filter((t) => t.status !== 'done' && t.needs_you && !board.questions.some((m) => m.tags.some((tg) => tg.task_id === t.id))).length : 0
+  const needs = board ? board.questions.filter((m) => !hidden.has(m.id)).length + board.tasks.filter((t) => t.status === 'needs_you' && !board.questions.some((m) => !hidden.has(m.id) && m.tasks.some((tg) => tg.task_id === t.id))).length : 0
   const unread = board ? Object.values(board.agents).reduce((n, a) => n + a.unread, 0) : 0
   useEffect(() => {
     document.title = needs > 0 ? `(${needs}) minbox` : 'minbox'
@@ -67,6 +71,23 @@ export function V3App() {
       }
       return
     }
+    // ⌘↵ on a focused question card sends its picked answers.
+    if (view === 'board' && (e.metaKey || e.ctrlKey) && e.key === 'Enter' && focus?.startsWith('q:') && !(typing && t.matches?.('textarea'))) {
+      const m = board?.questions.find((x) => x.id === focus.slice(2))
+      if (m) {
+        e.preventDefault()
+        const idx = boardKeys(board, showDone, hidden, showQuiet).indexOf(focus)
+        sendAnswers(m)
+          .then((as) => {
+            if (!as.length) return
+            setHidden((h) => new Set(h).add(m.id))
+            app.toast(`Sent ${as.length > 1 ? `${as.length} answers` : 'your answer'}`)
+            setFocus(boardKeys(board, showDone, hidden, showQuiet)[idx + 1] ?? null)
+          })
+          .catch(app.error)
+      }
+      return
+    }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return
     if (gPending.current) {
       gPending.current = false
@@ -89,6 +110,12 @@ export function V3App() {
       return nav.search()
     }
     if (e.key === 'r' || e.key === 'R') {
+      // With text selected in the messages: quote it into the reply box (as the Reply bubble does).
+      const sel = selectedInConversation()
+      if (sel) {
+        e.preventDefault()
+        return quoteIntoComposer(sel)
+      }
       const ta = document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')
       if (ta) {
         e.preventDefault()
@@ -98,7 +125,7 @@ export function V3App() {
     }
     if (view === 'agent' && (e.key === 't' || e.key === 'T')) return setPane(pane === 'terminal' ? 'tasks' : 'terminal')
     if (view !== 'board') return
-    const keys = boardKeys(board, showDone, hidden)
+    const keys = boardKeys(board, showDone, hidden, showQuiet)
     const i = focus ? keys.indexOf(focus) : -1
     const move = (k: string | undefined) => {
       if (!k) return
@@ -123,19 +150,14 @@ export function V3App() {
       if (k === 't') nav.task(id)
       else {
         const m = board?.questions.find((x) => x.id === id)
-        if (m) m.tags[0] ? nav.task(m.tags[0].task_id, m.id) : nav.agent(m.session_id, m.id)
+        if (m) m.tasks[0] ? nav.task(m.tasks[0].task_id, m.id) : nav.agent(m.session_id, m.id)
       }
     } else if (/^[1-9]$/.test(e.key) && focus.startsWith('q:')) {
+      // 1–9 picks a choice of the card's first question (nothing is sent: ⌘↵ or Send does).
       const m = board?.questions.find((x) => x.id === focus.slice(2))
-      const q = m?.questions?.find((x) => x.kind === 'single' && !m.answer_state?.[x.key] && !m.closed?.[x.key])
+      const q = m ? openQuestions(m).find((x) => x.kind === 'single' || x.kind === 'multi') : undefined
       const c = q?.choices?.[Number(e.key) - 1]
-      if (m && q && c) {
-        const idx = keys.indexOf(focus)
-        setHidden((h) => new Set(h).add(m.id))
-        app.toast(`Answered “${c.label}”`)
-        v3.send(m.session_id, { words: '', answers_for: m.id, answers: [{ key: q.key, selected: [c.label] }] }, m.thread_id).catch(app.error)
-        setFocus(keys[idx + 1] ?? null)
-      }
+      if (m && q && c) pickChoice(m, q, c.label)
     } else if ((e.key === 'x' || e.key === 'X') && focus.startsWith('t:')) {
       const t = board?.tasks.find((x) => x.id === focus.slice(2))
       if (t) v3.patchTask(t.id, { status: t.status === 'done' ? 'working' : 'done' }).then(reloadBoard).catch(app.error)
@@ -181,6 +203,8 @@ export function V3App() {
         toggleExpanded={(id) => setExpanded((x) => ({ ...x, [id]: !x[id] }))}
         showDone={showDone}
         setShowDone={setShowDone}
+        showQuiet={showQuiet}
+        setShowQuiet={setShowQuiet}
         hidden={hidden}
         hide={(id) => setHidden((h) => new Set(h).add(id))}
       />
@@ -289,6 +313,8 @@ function ViewerEsc({ open, close }: { open: boolean; close: () => void }) {
 
 function AgentRow({ a, sel, counts }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number } }) {
   const nav = useNav()
+  const { sessions } = useApp()
+  const hint = agentHint(sessions ?? [], a)
   const u = counts?.unread ?? 0
   const waits = (counts?.open_questions ?? 0) > 0
   return (
@@ -297,6 +323,7 @@ function AgentRow({ a, sel, counts }: { a: Session; sel: boolean; counts?: { unr
       <span className="v-nm">
         {a.name}{' '}
         <small>
+          {hint && !a.is_main ? hint + ' · ' : ''}
           {a.is_main ? 'main · ' : ''}
           {agentKindLabel(a.agent)}
         </small>
@@ -362,12 +389,20 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
   const [name, setName] = useState('')
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
+  const compose = useComposeFiles('v3:new')
+  const { files, addFiles, addPastedText, remove } = compose
+  const io = fileInputHandlers(addFiles, addPastedText)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const uploading = files.some((f) => f.state === 'uploading')
+  const canSend = (!!body.trim() || files.some((f) => f.state === 'done')) && !uploading && !busy
   const project = projectId || (to !== 'new' ? agents.find((a) => a.id === to)?.project_id : '') || projects?.[0]?.id || ''
   const send = async () => {
-    if (!body.trim() || busy) return
+    if (!canSend) return
     setBusy(true)
     try {
-      const m = await v3.newMessage({ to, project_id: project, words: body.trim(), name: to === 'new' ? name.trim() : undefined })
+      const ups = uploadIds('v3:new')
+      const m = await v3.newMessage({ to, project_id: project, words: body.trim(), name: to === 'new' ? name.trim() : undefined, uploads: ups.length ? ups : undefined })
+      clearFiles('v3:new')
       onClose()
       const sid = to === 'new' ? undefined : to
       if (to === 'new') toast('Started a new agent')
@@ -397,15 +432,20 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
-                {a.is_main ? ' (main)' : ''} · {agentKindLabel(a.agent)}
+                {a.is_main ? ' (main)' : agentHint(agents, a) ? ` (${agentHint(agents, a)})` : ''} · {agentKindLabel(a.agent)}
+                {a.title ? ' — ' + a.title.slice(0, 40) : ''}
               </option>
             ))}
             <option value="new">New agent…</option>
           </select>
           {to === 'new' && <input type="text" aria-label="Agent name" placeholder="name (optional)" value={name} onChange={(e) => setName(e.target.value)} />}
         </div>
+        <ComposeFileTiles files={files} onRemove={remove} onPutBack={(f) => (f.pasted ? (setBody((b) => b + f.pasted!.text), remove(f.key)) : undefined)} />
         <textarea
           autoFocus
+          onPaste={io.onPaste}
+          onDragOver={io.onDragOver}
+          onDrop={io.onDrop}
           data-testid="new-body"
           placeholder="Ask or tell the agent something…"
           value={body}
@@ -422,12 +462,26 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
           }}
         />
         <div className="v-foot">
-          <span>The agent decides: an existing task, new work (it creates a task) or just a reply. ⌘↵ send · Esc close</span>
+          <button type="button" className="v-attach" data-testid="attach-files" aria-label="Attach files" title="Attach files (or paste / drop them)" onClick={() => fileInput.current?.click()}>
+            <IconPaperclip size={16} />
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            data-testid="attach-input"
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
+          />
+          <span className="v-hide-phone">The agent files it under a task when it is work. ⌘↵ send · Esc close</span>
           <span className="v-sp" />
           <button type="button" className="v-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="v-btn pri" data-testid="new-send" disabled={!body.trim() || busy} onClick={() => void send()}>
+          <button type="button" className="v-btn pri" data-testid="new-send" disabled={!canSend} onClick={() => void send()}>
             Send
           </button>
         </div>
@@ -461,12 +515,12 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['J / K', 'Move on the Board'],
     ['Space', 'Expand / collapse a task row'],
     ['Enter', 'Open the task (a question: its task or agent)'],
-    ['1–9', 'Answer the focused question'],
+    ['1–9', 'Pick a choice of the focused question'],
+    ['⌘↵', 'Send the picked answers (Board) · send the message'],
     ['X', 'Done / reopen the focused task'],
-    ['R', 'Focus the reply box'],
+    ['R', 'Reply: quote the selected text, or focus the reply box'],
     ['T', 'Terminal of the agent'],
     ['Ctrl+`', 'Shell of the agent'],
-    ['⌘↵', 'Send'],
     ['Esc', 'Close / back to the Board'],
   ]
   return (

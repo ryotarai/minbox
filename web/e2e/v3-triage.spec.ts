@@ -17,7 +17,7 @@ test('triage on the Board: question cards first, rows expand in place, 1–9 ans
   const card = page.getByTestId('question-card')
   await expect(card).toHaveCount(1)
   await expect(card).toContainText('you: Which region should it deploy to?')
-  await expect(card.getByTestId('tag')).toHaveAttribute('title', 'Fix the gauge reading on the dashboard')
+  await expect(card.getByTestId('task-link')).toHaveAttribute('title', 'Fix the gauge reading on the dashboard')
   await expect(page.getByTestId('needs-count')).toHaveText('1 need you')
   await expect(page.getByTestId('board-badge')).toHaveText('1')
   const row = page.locator(`[data-testid="task-row"][data-task="${gauge.id}"]`)
@@ -26,10 +26,15 @@ test('triage on the Board: question cards first, rows expand in place, 1–9 ans
   await shot(page, 'uc1-board', 'dark')
   await shot(page, 'uc1-board', 'light')
 
-  // J focuses the card, 1 answers it in place: the card goes at once.
+  // The task of the question is on the card, not repeated as a row in NEEDS YOU.
+  await expect(page.getByTestId('group-needs_you').getByTestId('task-row')).toHaveCount(0)
+  // J focuses the card, 1 picks the first choice (nothing sent), ⌘↵ sends: the card goes.
   await page.keyboard.press('j')
   await expect(card).toHaveClass(/focus/)
   await page.keyboard.press('1')
+  await expect(card.getByTestId('choice').first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(card).toHaveCount(1)
+  await page.keyboard.press('ControlOrMeta+Enter')
   await expect(page.getByTestId('question-card')).toHaveCount(0)
   await agentReply(minbox, api, /carrying on/)
   // The answer is tagged with the question's task and reached the agent.

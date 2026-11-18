@@ -17,7 +17,7 @@ func preV3(t *testing.T, path string) {
 	}
 	defer db.Close()
 	for _, q := range []string{
-		`DROP TABLE task_events`, `DROP TABLE task_agents`, `DROP TABLE message_tags`, `DROP TABLE tasks`,
+		`DROP TABLE task_events`, `DROP TABLE task_agents`, `DROP TABLE message_tasks`, `DROP TABLE tasks`,
 		`ALTER TABLE messages DROP COLUMN decision`, `ALTER TABLE messages DROP COLUMN decision_task`, `ALTER TABLE messages DROP COLUMN turn_of`,
 		`ALTER TABLE threads DROP COLUMN kind`, `DELETE FROM settings WHERE key='v3_migrated'`,
 	} {
@@ -64,19 +64,18 @@ func TestMigrateV3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 2 {
+	// Only current work becomes a task: the done topic does not (its row stays).
+	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d: %+v", len(tasks), tasks)
 	}
+	_, _, _ = m1, m2, m3
 	byTitle := map[string]Task{}
 	for _, x := range tasks {
 		byTitle[x.Title] = x
 	}
-	a, b := byTitle["Search UI"], byTitle["Fix flaky CI"]
-	if a.Status != TaskDone || a.DoneAt == nil || len(a.Steps) != 1 || !a.Steps[0].Done || a.ProjectID != sess.ProjectID || len(a.Agents) != 1 || a.Agents[0].SessionID != sess.ID {
-		t.Fatalf("topic task = %+v", a)
-	}
-	if ids, _ := s.TaskMessageIDs(ctx, a.ID); len(ids) != 2 || ids[0] != m1.ID || ids[1] != m2.ID {
-		t.Fatalf("topic tags = %v (want %s %s, not %s)", ids, m1.ID, m2.ID, m3.ID)
+	b := byTitle["Fix flaky CI"]
+	if b.ProjectID != sess.ProjectID || len(b.Agents) != 1 || b.Agents[0].SessionID != sess.ID {
+		t.Fatalf("thread task = %+v", b)
 	}
 	if b.Status != TaskNeedsYou {
 		t.Fatalf("thread task = %+v", b)
@@ -84,7 +83,7 @@ func TestMigrateV3(t *testing.T) {
 	if ids, _ := s.TaskMessageIDs(ctx, b.ID); len(ids) != 2 || ids[0] != n1.ID || ids[1] != n2.ID {
 		t.Fatalf("thread tags = %v", ids)
 	}
-	if evs, _ := s.TaskEvents(ctx, a.ID); len(evs) != 2 || evs[1].Text != "→ done" {
+	if evs, _ := s.TaskEvents(ctx, b.ID); len(evs) != 0 {
 		t.Fatalf("events = %+v", evs)
 	}
 	th, _ := s.GetThread(ctx, th3.ID)
@@ -101,13 +100,13 @@ func TestMigrateV3(t *testing.T) {
 	s, _ = Open(path)
 	defer s.Close()
 	again, _ := s.ListTasks(ctx, TaskQuery{})
-	if len(again) != 2 {
+	if len(again) != 1 {
 		t.Fatalf("after a second migration: %d tasks", len(again))
 	}
 	var tags int
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_tags`).Scan(&tags)
-	if tags != 4 {
-		t.Fatalf("tags = %d", tags)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_tasks`).Scan(&tags)
+	if tags != 2 {
+		t.Fatalf("links = %d", tags)
 	}
 	// The older data is all still there.
 	var topics, threads, msgs int
@@ -154,11 +153,11 @@ func TestTasksTagsAndTurn(t *testing.T) {
 	if tk.Title != "Fix gauge" || !tk.Steps[0].Done || len(FlatSteps(tk.Steps)) != 4 || tk.Agents[0].Role != RoleAssigned {
 		t.Fatalf("task = %+v", tk)
 	}
-	added, _ := s.TagMessages(ctx, tk.ID, []string{u1.ID, r1.ID, u1.ID, "msg_nope"}, TagAgent)
+	added, _ := s.LinkMessages(ctx, tk.ID, []string{u1.ID, r1.ID, u1.ID, "msg_nope"}, LinkAgent)
 	if len(added) != 2 {
 		t.Fatalf("added = %v", added)
 	}
-	tags, _ := s.TagsOf(ctx, []string{u1.ID, a0.ID})
+	tags, _ := s.TasksOf(ctx, []string{u1.ID, a0.ID})
 	if len(tags[u1.ID]) != 1 || tags[u1.ID][0].Title != "Fix gauge" || len(tags[a0.ID]) != 0 {
 		t.Fatalf("tags = %+v", tags)
 	}
@@ -175,7 +174,7 @@ func TestTasksTagsAndTurn(t *testing.T) {
 	if len(evs) != 3 || evs[1].Text != "→ done (you)" {
 		t.Fatalf("events = %+v", evs)
 	}
-	if ok, _ := s.UntagMessage(ctx, u1.ID, tk.ID); !ok {
+	if ok, _ := s.UnlinkMessage(ctx, u1.ID, tk.ID); !ok {
 		t.Fatal("untag")
 	}
 	// Stream questions stay open while the agent writes on.

@@ -1,14 +1,18 @@
 // The Board (home): "what needs me, and what is moving?" NEEDS YOU first (question cards, then tasks
-// set to needs you), then GOALS with their tasks, WORKING, BLOCKED and DONE (folded).
+// set to needs you), then GOALS with their tasks, WORKING (active in the last 3 days), BLOCKED, and,
+// folded, QUIET (open but quiet longer) and DONE (the last 2 days).
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
-import { ago, currentStep, lineOf, short, v3, type Board, type BoardTask, type V3Message } from './data'
-import { Bar, QuickChoices, StatusDot, Steps, TagChip, TagPicker, Timeline, agentName, toggled, useNav, useSessionsById } from './parts'
+import { ago, currentStep, short, v3, type Board, type BoardTask, type V3Message } from './data'
+import { ActionBlock, AnswerBar, Bar, MessageBodyClamp, QuickAnswer, StatusDot, Steps, TaskChip, Timeline, agentName, openQuestions, toggled, useNav, useSessionsById } from './parts'
 
 export type BoardFocus = { key: string | null }
 
-export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string>): string[] {
+const QUIET_AFTER = 3 * 24 * 3600 * 1000
+const DONE_WINDOW = 2 * 24 * 3600 * 1000
+
+export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string>, showQuiet = false): string[] {
   if (!b) return []
   const g = groups(b, hidden)
   return [
@@ -17,29 +21,34 @@ export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string
     ...g.goals.flatMap((t) => ['t:' + t.id, ...g.childrenOf(t.id).map((c) => 't:' + c.id)]),
     ...g.working.map((t) => 't:' + t.id),
     ...g.blocked.map((t) => 't:' + t.id),
+    ...(showQuiet ? g.quiet.map((t) => 't:' + t.id) : []),
     ...(showDone ? g.done.map((t) => 't:' + t.id) : []),
   ]
 }
 
-function groups(b: Board, hidden: Set<string>) {
+export function groups(b: Board, hidden: Set<string>) {
   const questions = b.questions.filter((m) => !hidden.has(m.id))
   const open = b.tasks.filter((t) => t.status !== 'done')
   const goals = open.filter((t) => t.kind === 'goal')
   const goalIds = new Set(goals.map((g) => g.id))
   const loose = open.filter((t) => t.kind !== 'goal' && !(t.parent_id && goalIds.has(t.parent_id)))
-  const hasQ = (t: BoardTask) => questions.some((m) => m.tags.some((tg) => tg.task_id === t.id))
+  const hasQ = (t: BoardTask) => questions.some((m) => m.tasks.some((tg) => tg.task_id === t.id))
   const byActivity = (a: BoardTask, z: BoardTask) => (a.last_activity < z.last_activity ? 1 : -1)
+  const quietNow = (t: BoardTask) => Date.now() - new Date(t.last_activity).getTime() > QUIET_AFTER
   // Set to needs you without a question card: a row in NEEDS YOU. A task whose question is on a card
-  // stays where its status puts it (the card is the thing to act on).
-  const explicit = open.filter((t) => t.status === 'needs_you' && !hasQ(t) && !(t.parent_id && goalIds.has(t.parent_id)))
+  // is not repeated as a row (the card is the thing to act on, and names the task).
+  const explicit = open.filter((t) => t.status === 'needs_you' && !hasQ(t) && !(t.parent_id && goalIds.has(t.parent_id))).sort(byActivity)
+  // A task whose question is on a card still shows in its group below (its progress, with "? n").
+  const rest = loose.filter((t) => !explicit.includes(t))
   return {
-    questions,
+    questions: questions.sort((a, z) => (a.created_at < z.created_at ? 1 : -1)),
     explicit,
     goals: goals.sort(byActivity),
     childrenOf: (id: string) => open.filter((t) => t.parent_id === id && t.kind !== 'goal').sort(byActivity),
-    working: loose.filter((t) => !explicit.includes(t) && (t.status === 'working' || t.status === 'needs_you')).sort(byActivity),
-    blocked: loose.filter((t) => t.status === 'blocked').sort(byActivity),
-    done: b.tasks.filter((t) => t.status === 'done').sort((a, z) => ((a.done_at ?? '') < (z.done_at ?? '') ? 1 : -1)),
+    working: rest.filter((t) => (t.status === 'working' || t.status === 'needs_you') && !quietNow(t)).sort(byActivity),
+    blocked: rest.filter((t) => t.status === 'blocked' && !quietNow(t)).sort(byActivity),
+    quiet: rest.filter((t) => quietNow(t)).sort(byActivity),
+    done: b.tasks.filter((t) => t.status === 'done' && Date.now() - new Date(t.done_at ?? t.updated_at).getTime() < DONE_WINDOW).sort((a, z) => ((a.done_at ?? '') < (z.done_at ?? '') ? 1 : -1)),
   }
 }
 
@@ -52,6 +61,8 @@ export function BoardView({
   toggleExpanded,
   showDone,
   setShowDone,
+  showQuiet,
+  setShowQuiet,
   hidden,
   hide,
 }: {
@@ -63,6 +74,8 @@ export function BoardView({
   toggleExpanded: (id: string) => void
   showDone: boolean
   setShowDone: (v: boolean) => void
+  showQuiet: boolean
+  setShowQuiet: (v: boolean) => void
   hidden: Set<string>
   hide: (id: string) => void
 }) {
@@ -70,7 +83,6 @@ export function BoardView({
   const { project } = useSelectedProject()
   const byId = useSessionsById()
   const nav = useNav()
-  const [tagPop, setTagPop] = useState<string | null>(null)
   const [dropping, setDropping] = useState<string | null>(null)
   if (!board) return <div className="v-col"><div className="v-empty">Loading…</div></div>
   const g = groups(board, hidden)
@@ -82,55 +94,49 @@ export function BoardView({
   }
   const qcard = (m: V3Message) => {
     const k = 'q:' + m.id
-    const q = (m.questions ?? []).find((x) => !m.answer_state?.[x.key] && !m.closed?.[x.key]) ?? m.questions?.[0]
-    if (!q) return null
+    const qs = openQuestions(m)
+    if (!qs.length) return null
+    const sess = byId.get(m.session_id)
     return (
-      <div key={m.id} className={'v-qc' + (m.tags.length ? '' : ' untag') + (focus === k ? ' focus' : '')} data-key={k} data-testid="question-card" onClick={() => setFocus(k)}>
-        <div className="v-q">
-          <b>you:</b> {q.prompt}
-          {m.open > 1 && <span className="v-cnt2"> · {m.open} questions</span>}
-        </div>
-        {q.kind === 'single' ? (
-          <QuickChoices
-            m={m}
-            q={q}
-            keys={focus === k}
-            onAnswered={(text) => {
-              hide(m.id)
-              toast(`Answered “${short(text, 40)}” · sent to ${agentName(byId, m.session_id)}`)
-            }}
-          />
-        ) : (
-          <div className="v-choices">
-            <button type="button" className="v-btn sm" onClick={() => (m.tags[0] ? nav.task(m.tags[0].task_id, m.id) : nav.agent(m.session_id, m.id))}>
-              Answer…
-            </button>
+      <div key={m.id} className={'v-qc' + (focus === k ? ' focus' : '')} data-key={k} data-testid="question-card" onClick={() => setFocus(k)}>
+        {qs
+          .filter((q) => q.kind !== 'action')
+          .map((q, i) => (
+            <div key={q.key} className="v-qq" data-testid="card-question">
+              <div className="v-q">
+                {i === 0 && <b>you: </b>}
+                {q.prompt}
+              </div>
+              <QuickAnswer m={m} q={q} keys={focus === k && i === 0} />
+            </div>
+          ))}
+        {qs.some((q) => q.kind === 'action') && (
+          <div className="v-qq" data-testid="card-actions">
+            {qs.every((q) => q.kind === 'action') && (
+              <div className="v-q">
+                <b>you: </b>
+                {qs.length > 1 ? `${qs.length} things to do` : 'a thing to do'}
+              </div>
+            )}
+            <ActionBlock m={m} items={qs.filter((q) => q.kind === 'action')} />
           </div>
         )}
+        <AnswerBar
+          m={m}
+          onSent={(as) => {
+            hide(m.id)
+            toast(`Sent ${as.length > 1 ? `${as.length} answers` : 'your answer'} to ${agentName(byId, m.session_id)}`)
+          }}
+        />
         <div className="v-meta">
-          {m.tags.map((t) => (
-            <TagChip key={t.task_id} tag={t} />
+          {m.tasks.length > 0 && <span className="v-k">in</span>}
+          {m.tasks.map((t) => (
+            <TaskChip key={t.task_id} task={t} shortN={48} />
           ))}
-          {!m.tags.length && (
-            <span className="v-tag add" role="button" tabIndex={0} data-testid="tag-add" onClick={(e) => (e.stopPropagation(), setTagPop(m.id))}>
-              tag to task
-            </span>
-          )}
-          {tagPop === m.id && (
-            <TagPicker
-              tasks={board.tasks}
-              exclude={[]}
-              onClose={() => setTagPop(null)}
-              onPick={(r) => {
-                setTagPop(null)
-                ;('task_id' in r ? v3.tag(m.id, r.task_id) : v3.createTask({ title: r.title, session_id: m.session_id, message_ids: [m.id] })).then(reload).catch(error)
-              }}
-            />
-          )}
           <span className="v-sp" />
           <button type="button" className="v-link" style={{ color: 'inherit' }} onClick={() => nav.agent(m.session_id, m.id)}>
             {agentName(byId, m.session_id)}
-            {m.tags.length ? '' : ' · untagged'}
+            {sess?.status === 'working' ? ' · working' : ''}
           </button>
           · {ago(m.created_at)}
         </div>
@@ -140,11 +146,12 @@ export function BoardView({
   const row = (t: BoardTask, child = false) => {
     const k = 't:' + t.id
     const open = expanded[t.id]
-    const who = t.agents.map((a) => agentName(byId, a.session_id)).join(' + ')
+    const agents = t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s)
+    const who = agents.map((a) => a.name).join(' + ') || agentName(byId, t.last_agent)
     const cur = currentStep(t.steps)
-    const live = t.agents.some((a) => byId.get(a.session_id)?.status === 'working')
+    const live = agents.some((a) => a.status === 'working')
     const kids = t.kind === 'goal' ? g.childrenOf(t.id) : []
-    const run = t.auto?.state
+    const pr = t.links?.find((l) => l.kind === 'pr') ?? t.links?.[0]
     return (
       <div key={t.id}>
         <div
@@ -168,7 +175,6 @@ export function BoardView({
               <div className="v-ti">
                 <StatusDot t={t} live={live} />
                 <span className="v-t">
-                  {t.status === 'needs_you' && !t.open_questions && <b style={{ color: 'var(--mb-wait)' }}>you: </b>}
                   {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
                   {t.title}
                 </span>
@@ -176,23 +182,33 @@ export function BoardView({
                 {t.unread > 0 && <span className="v-unread" data-testid="unread-dot" title={`${t.unread} unread`} />}
               </div>
               <div className="v-sub">
-                <span>{who || 'no agent'}</span>
+                <span className={live ? 'v-livename' : ''}>
+                  {who}
+                  {live ? ' · working now' : ''}
+                </span>
                 <Bar t={t} />
-                {t.kind !== 'goal' && cur && t.status !== 'done' && <span>now: {short(cur.text, 34)}</span>}
+                {t.kind !== 'goal' && cur && t.status !== 'done' ? (
+                  <span className="v-last">now: {short(cur.text, 60)}</span>
+                ) : t.kind !== 'goal' && t.last_line ? (
+                  <span className="v-last" data-testid="last-line">
+                    {t.last_line}
+                  </span>
+                ) : null}
                 {t.kind === 'goal' && kids.length > 0 && <span>{kids.length} task{kids.length > 1 ? 's' : ''}</span>}
               </div>
             </div>
             <div className="v-ext">
               {t.kind === 'goal' && <GoalRun t={t} reload={reload} />}
-              {t.links?.slice(0, 1).map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="v-link" onClick={(e) => e.stopPropagation()}>
-                  {l.label}
+              {pr && (
+                <a href={pr.url} target="_blank" rel="noreferrer" className="v-link" onClick={(e) => e.stopPropagation()}>
+                  {pr.label}
+                  {pr.state ? ` · ${pr.state}` : ''}
                 </a>
-              ))}
-              {t.kind !== 'goal' && !t.links?.length && <span style={{ color: 'var(--mb-faint)' }}>{t.message_count} msg</span>}
-              {run === 'running' && t.kind !== 'goal' ? null : null}
+              )}
             </div>
-            <div className="v-age">{ago(t.status === 'done' ? t.done_at : t.last_activity)}</div>
+            <div className="v-age" title={t.status === 'done' ? 'done' : 'last activity'}>
+              {ago(t.status === 'done' ? t.done_at : t.last_activity)}
+            </div>
           </div>
           {open && <Expanded t={t} reload={reload} />}
         </div>
@@ -200,19 +216,19 @@ export function BoardView({
       </div>
     )
   }
-  const group = (title: string, cls: string, status: BoardTask['status'] | 'goals', n: number, children: React.ReactNode, extra?: React.ReactNode) => (
+  const group = (title: string, cls: string, status: BoardTask['status'] | 'goals' | 'quiet', n: number, children: React.ReactNode, extra?: React.ReactNode) => (
     <section
       className={'v-group' + (dropping === status ? ' dropping' : '')}
       data-testid={`group-${status}`}
       onDragOver={(e) => {
-        if (status === 'goals') return
+        if (status === 'goals' || status === 'quiet') return
         e.preventDefault()
         setDropping(status)
       }}
       onDragLeave={() => setDropping(null)}
       onDrop={(e) => {
         setDropping(null)
-        if (status === 'goals') return
+        if (status === 'goals' || status === 'quiet') return
         const id = e.dataTransfer.getData('text/plain')
         const t = board.tasks.find((x) => x.id === id)
         if (t && t.status !== status) setStatus(t, status)
@@ -236,9 +252,9 @@ export function BoardView({
           </button>
         </div>
         <div className="v-r2 v-sum">
-          {project?.name ?? 'All projects'} · {openN} open · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working · {g.blocked.length} blocked
+          {project?.name ?? 'All projects'} · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working{g.blocked.length ? ` · ${g.blocked.length} blocked` : ''} · {openN} open
           <span className="v-hide-phone" style={{ marginLeft: 'auto' }}>
-            J/K move · Space expand · ↵ open · 1–9 answer · X done · drag rows
+            J/K move · 1–9 pick · ⌘↵ send · Space expand · ↵ open · X done
           </span>
         </div>
       </div>
@@ -256,16 +272,29 @@ export function BoardView({
         )}
         {g.goals.length > 0 && group('GOALS', 'goals', 'goals', g.goals.length, <>{g.goals.map((t) => row(t))}</>)}
         {group('WORKING', '', 'working', g.working.length, <>{g.working.map((t) => row(t))}{g.working.length === 0 && <div className="v-empty">Nothing in progress. Ask an agent for something with ⇧N.</div>}</>)}
-        {group('BLOCKED', 'blocked', 'blocked', g.blocked.length, <>{g.blocked.map((t) => row(t))}{g.blocked.length === 0 && <div className="v-empty">Nothing blocked.</div>}</>)}
+        {g.blocked.length > 0 && group('BLOCKED', 'blocked', 'blocked', g.blocked.length, <>{g.blocked.map((t) => row(t))}</>)}
+        {g.quiet.length > 0 &&
+          group(
+            'QUIET FOR 3+ DAYS',
+            'quiet',
+            'quiet',
+            g.quiet.length,
+            <>{showQuiet && g.quiet.map((t) => row(t))}</>,
+            <button type="button" className="v-r" data-testid="toggle-quiet" onClick={() => setShowQuiet(!showQuiet)}>
+              {showQuiet ? 'hide' : 'show'}
+            </button>,
+          )}
         {group(
-          'DONE THIS WEEK',
+          'DONE · LAST 2 DAYS',
           '',
           'done',
           g.done.length,
           <>{showDone && g.done.map((t) => row(t))}</>,
-          <button type="button" className="v-r" data-testid="toggle-done" onClick={() => setShowDone(!showDone)}>
-            {showDone ? 'hide' : 'show'}
-          </button>,
+          g.done.length > 0 ? (
+            <button type="button" className="v-r" data-testid="toggle-done" onClick={() => setShowDone(!showDone)}>
+              {showDone ? 'hide' : 'show'}
+            </button>
+          ) : undefined,
         )}
         <div style={{ height: 60 }} />
       </div>
@@ -320,27 +349,28 @@ function Expanded({ t, reload }: { t: BoardTask; reload: () => void }) {
   const lastReport = useMemo(() => {
     if (t.report) return t.report
     const ms = (detail?.messages ?? []).filter((m) => m.author === 'agent')
-    return ms.length ? lineOf(ms[ms.length - 1]!) : ''
+    return ms.length ? ms[ms.length - 1]!.body : ''
   }, [t.report, detail])
   const ls = t.kind === 'goal' ? t.criteria : t.steps
   const done = ls.filter((s) => s.done).length
   return (
     <div className="v-detail" data-testid="task-expanded" onClick={(e) => e.stopPropagation()}>
       <div>
-        <div className="v-sec">
-          {t.kind === 'goal' ? 'DONE WHEN' : 'CHECKLIST'}
-          <span className="v-x">
-            {ls.length ? `${Math.round((100 * done) / ls.length)}% · ` : ''}
-            {ago(t.created_at)}
-          </span>
-        </div>
-        <Steps
-          t={t}
-          criteria={t.kind === 'goal'}
-          onToggle={(path) => v3.patchTask(t.id, t.kind === 'goal' ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
-        />
-        <div className="v-sec">LAST REPORT</div>
-        <div className="v-report">{lastReport ? short(lastReport, 600) : '—'}</div>
+        {ls.length > 0 && (
+          <>
+            <div className="v-sec">
+              {t.kind === 'goal' ? 'DONE WHEN' : 'CHECKLIST'}
+              <span className="v-x">{Math.round((100 * done) / ls.length)}%</span>
+            </div>
+            <Steps
+              t={t}
+              criteria={t.kind === 'goal'}
+              onToggle={(path) => v3.patchTask(t.id, t.kind === 'goal' ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
+            />
+          </>
+        )}
+        <div className="v-sec">{t.report ? 'LAST REPORT' : 'LATEST FROM THE AGENT'}</div>
+        {lastReport ? <MessageBodyClamp text={lastReport} lines={6} /> : <div className="v-cnt2">Nothing yet.</div>}
         <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
           <button type="button" className="v-btn pri sm" data-testid="open-task" onClick={() => nav.task(t.id)}>
             Open {t.kind === 'goal' ? 'goal' : 'task'} ↵

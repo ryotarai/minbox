@@ -13,13 +13,14 @@ Screens and the one question each answers first:
 | **Agent** (stream) | What is this agent doing / saying? | `Esc` → Board; sidebar |
 | **Search** | Where was that said? | `Esc` |
 
-Vocabulary in the UI: *Board, task, agent, message, question, tag*. Never *thread*.
+Vocabulary in the UI: *Board, task, agent, message, question*. Never *thread*, never *tag*: a message simply
+is *about* one or more tasks (or none).
 
 ---
 
 ## UC1. Morning triage: what needs me
 - **Entry**: open minbox (desktop or phone). Lands on the Board.
-- **Shown first**: NEEDS YOU, as question cards (`you: <question>`, its task chips, agent, age, the choices as buttons), then tasks set to *needs you* without a question, then WORKING, BLOCKED, DONE TODAY (collapsed).
+- **Shown first**: NEEDS YOU, as question cards (`you: <question>`, the task it is about, agent, age, the choices as buttons; a task's question shows once, on its card, not again as a task row), then tasks set to *needs you* without a question, then GOALS, WORKING (active in the last 3 days, with agent state, PR / links, age), IDLE (collapsed: open but quiet for more than 3 days), BLOCKED (only when there is one), DONE (collapsed, last 48 h).
 - **Actions**: `J/K` walk the cards, `1–9` answers a single-choice question in place, `Space` expands a task row (checklist, last report, timeline), `Enter` opens it.
 - **Must not be required**: opening an agent or task to see what is asked; choosing a project's thread; reading every report.
 - Spec: `v3-triage.spec.ts`.
@@ -27,57 +28,58 @@ Vocabulary in the UI: *Board, task, agent, message, question, tag*. Never *threa
 ## UC2. Answer a question fast (desktop and phone)
 - **Entry**: Board card, or the question inside the task / agent view, or a notification.
 - **Shown first**: the question and its choices.
-- **Actions**: one click / tap on a choice (or `1–9`); free text in "Other…" + Enter. The card leaves NEEDS YOU at once (optimistic) and the answer goes to the agent that asked, tagged with the question's tasks.
+- **Actions**: one click / tap on a choice (or `1–9`); free text in "Other…" + Enter; a free-text question is answered in place on its card. Long choices wrap as a list, not giant buttons. The card leaves NEEDS YOU at once (optimistic) and the answer goes to the agent that asked, about the question's tasks.
 - **Must not be required**: navigating to the agent; typing a reply around the answer.
 - Spec: `v3-answer.spec.ts` (desktop + phone viewport).
 
 ## UC3. Give a new request without thinking where it goes
 - **Entry**: `⇧N` anywhere (or "New message" in the sidebar / Board header / Agents tab).
 - **Shown first**: a composer: *To* = the project's main agent (changeable to any agent or **New agent**), the text box focused.
-- **Actions**: type, `⌘↵`. The view moves to that agent's stream; the agent decides: existing task (tags the message), new work (creates a task) or no task. The decision shows under its reply (`→ created #…`, `→ tagged #… (existing task)`, `→ no task`).
+- **Actions**: type, `⌘↵`. The view moves to that agent's stream; the agent decides: an open task (the message is about it), new work (creates a task) or no task. The reply shows the task it is about as a plain link (`in: <task>`); a note appears under it only when the agent created a task (`→ new task <task>`) or the person moved it — never a "no task" nag.
 - **Must not be required**: picking or naming a task; choosing "send as task"; picking a thread.
+- **Attachments**: paste an image (⌘V), drop files, or the attach button (on a phone the photo / camera picker); tiles show progress and can be removed; the sent message shows them (thumbnail → viewer). Same in the stream's and the task view's reply box.
 - Spec: `v3-new-request.spec.ts` (main agent, new agent).
 
 ## UC4. Follow up on an existing piece of work
 - **Entry**: Board row → `Enter` (or click), or a task chip anywhere.
-- **Shown first**: the task view: title + status + agents, the tagged messages from every agent in time order, events between; the checklist / last report / facts on the side.
-- **Actions**: `R` (focus reply), type, `⌘↵`. It goes to the agent most recently active on the task (shown as `to: <agent> ▾`, switchable) and is tagged with the task.
-- **Must not be required**: finding which agent is on it; tagging the message by hand.
+- **Shown first**: the task view: title + status + agents, the messages about it from every agent in time order (header: "32 messages"), events between; the checklist / last report / facts on the side.
+- **Actions**: `R` (focus reply), type, `⌘↵`. It goes to the agent most recently active on the task (shown as `to: <agent> ▾`, switchable) and is about the task (shown as `about: <task>`).
+- **Must not be required**: finding which agent is on it; linking the message to the task by hand.
 - Spec: `v3-follow-up.spec.ts`.
 
 ## UC5. Check progress of one task across agents
 - **Entry**: Board row, `Space` to expand inline (checklist with the current step, last report, timeline) or `Enter` for the full task view.
 - **Shown first**: segmented progress bar `n/m`, the step now in progress, who is involved.
-- **Actions**: none beyond expand / open. "Show context" between tagged messages shows the untagged messages around them in that agent's stream.
+- **Actions**: none beyond expand / open. "Show context" between the task's messages shows the other messages around them in that agent's stream.
 - **Must not be required**: reading every agent's stream.
 - Spec: covered in `v3-triage.spec.ts` (expand) and `v3-follow-up.spec.ts` (context).
 
 ## UC6. See what one agent is doing / open its terminal
 - **Entry**: sidebar Agents list (always visible on desktop; Agents tab on phone), `g a`, or an agent chip.
-- **Shown first**: the agent's stream (one conversation, oldest → newest, scrolled to the end), with task chips under messages; its title ("now doing") and turn state in the header; its tasks on the side.
+- **Shown first**: the agent's stream (one conversation, oldest → newest, scrolled to the end), with the task each message is about as a plain link (`in: <task>`); its title ("now doing"), turn state and the task it is on now in the header (one, not every task); older threads as dividers named after them; its open tasks (few, recently active first) on the side. Two agents with the same name are told apart (main / folder / host).
 - **Actions**: `T` / the Terminal button opens the terminal beside the stream; ``Ctrl+` `` the shell; Files button the files pane.
 - **Must not be required**: picking a thread; a separate terminal page.
 - Spec: `v3-agent-stream.spec.ts`.
 
-## UC7. Correct a wrong tag
-- **Entry**: under an agent reply, the decision note's "wrong task?" (or "tag it?" when it chose no task); or any message's `+ tag` chip / the ✕ on a chip.
-- **Shown first**: the `#` picker: open tasks filtered as you type, "+ New task “…”" last.
-- **Actions**: type, `Enter`. Both the person's message and the reply move to the chosen task; a task created by mistake that is left with no messages is removed.
-- **Must not be required**: retagging two messages one by one; going to the task to delete it.
+## UC7. Move a message to the right task
+- **Entry**: a message's `⋯` menu: **Move to task…**, **Also about…**, **Not about a task**.
+- **Shown first**: the task picker: open tasks filtered as you type, "+ New task “…”" last.
+- **Actions**: type, `Enter`. On an agent reply, the person's message it answered moves with it; a task created by mistake that is left with no messages is removed.
+- **Must not be required**: moving two messages one by one; going to the task to delete it; knowing any word for the link ("tag").
 - Spec: `v3-retag.spec.ts`.
 
 ## UC8. Find something said last week
 - **Entry**: `/` anywhere (Search item / tab on phone).
-- **Shown first**: results as you type: TASKS (title, steps, summary) and MESSAGES (text with the match marked, agent, time, tags).
+- **Shown first**: results as you type: TASKS (title, steps, summary) and MESSAGES (text with the match marked, agent, time, its tasks).
 - **Actions**: pick a result: a task opens the task view; a message opens its agent stream scrolled to it (highlighted), or its task.
 - **Must not be required**: knowing the agent or task first.
 - Spec: `v3-search.spec.ts`.
 
 ## UC9. An agent hands work to another session
 - **Entry**: the task view's *to* selector → another agent or **New agent**.
-- **Shown first**: the composer addressed to that agent, still tagged with the task.
-- **Actions**: type, `⌘↵`. The new agent joins the task's agents; its replies about it carry the task tag; the task's timeline shows the hand-off.
-- **Must not be required**: forking a thread; copying context by hand (the task tag + the task id delivered with the message carry it).
+- **Shown first**: the composer addressed to that agent, still about the task.
+- **Actions**: type, `⌘↵`. The new agent joins the task's agents; its replies about it are about the task; the task's timeline shows the hand-off.
+- **Must not be required**: forking a thread; copying context by hand (the task id delivered with the message carries it).
 - Spec: `v3-follow-up.spec.ts` (switch recipient).
 
 ## UC10. Review and close done work
@@ -94,7 +96,7 @@ Vocabulary in the UI: *Board, task, agent, message, question, tag*. Never *threa
 - Spec: `v3-phone.spec.ts`.
 
 ## UC12. Read state that just works
-- Messages are read when they are shown, in the stream **or** the task view; the Agents list shows unread counts, Board rows show a dot while a tagged message is unread.
+- Messages are read when they are shown, in the stream **or** the task view; the Agents list shows unread counts, Board rows show a dot while one of the task's messages is unread.
 - **Must not be required**: a "mark read" step per surface.
 - Spec: `v3-read-state.spec.ts`.
 

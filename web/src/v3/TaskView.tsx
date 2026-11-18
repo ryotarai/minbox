@@ -1,12 +1,13 @@
 // A task (or goal): "where is this work?" Its tagged messages from every agent's stream in time order
 // with the events between them; "show context" opens the untagged messages around them. The reply
 // goes to the agent most recently active on it (switchable) and carries the task's tag.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
-import { ago, hhmm, lineOf, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
+import { ago, hhmm, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { Bar, Composer, MessageView, StatusDot, Steps, TagChip, agentName, toggled, useNav, useSessionsById } from './parts'
+import { Bar, Composer, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById, type Outgoing } from './parts'
+import { QuoteBubble } from './quote'
 
 export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: string; highlight: string | null; tasks: BoardTask[]; onOpenAttachment: (a: Attachment, m: V3Message) => void }) {
   const { error, sessions, isPhone } = useApp()
@@ -17,6 +18,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   const [to, setTo] = useState<string | null>(null)
   const [pending, setPending] = useState<V3Message[]>([])
   const [sideOpen, setSideOpen] = useState(!isPhone)
+  const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     setTo(null)
     setCtx({})
@@ -47,19 +49,22 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   const items: ({ at: string; m: V3Message } | { at: string; e: TaskDetail['events'][number] })[] = [
     ...d.messages.map((m) => ({ at: m.created_at, m })),
     ...pending.filter((p) => !d.messages.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)).map((m) => ({ at: m.created_at, m })),
-    ...d.events.filter((e) => e.kind !== 'tag' && e.kind !== 'answer').map((e) => ({ at: e.at, e })),
+    ...d.events.filter(shownEvent).map((e) => ({ at: e.at, e })),
   ].sort((a, b) => (a.at < b.at ? -1 : 1))
   const lastBy: Record<string, V3Message> = {}
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
   const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
-  const lastReport = t.report || (lastAgentMsg ? lineOf(lastAgentMsg) : '')
-  const send = async (words: string, toSel: string, extraTasks: string[]) => {
-    const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: toSel, tags: [{ task_id: t.id, title: t.title, status: t.status, source: 'person' }], open: 0, pending: true }
+  const lastReport = t.report || lastAgentMsg?.body || ''
+  const send = async (o: Outgoing) => {
+    const words = o.words
+    const toSel = o.to
+    const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: toSel, tasks: [{ task_id: t.id, title: t.title, status: t.status, source: 'person' }], open: 0, pending: true }
     setPending((p) => [...p, tmp])
     try {
-      const ids = [t.id, ...extraTasks]
-      if (toSel === 'new') await v3.newMessage({ to: 'new', project_id: t.project_id, words, task_ids: ids })
-      else await v3.send(toSel, { words, task_ids: ids })
+      const ids = [t.id, ...o.tasks]
+      const uploads = o.uploads.length ? o.uploads : undefined
+      if (toSel === 'new') await v3.newMessage({ to: 'new', project_id: t.project_id, words, task_ids: ids, uploads })
+      else await v3.send(toSel, { words, task_ids: ids, uploads })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -96,19 +101,17 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           {!d.tasks.length && <div className="v-cnt2">No tasks serve it yet.</div>}
         </>
       )}
-      {t.kind !== 'goal' && (
+      {t.kind !== 'goal' && t.steps.length > 0 && (
         <>
-          <div className="v-sec">
-            CHECKLIST <span className="v-x">{ago(t.created_at)}</span>
-          </div>
+          <div className="v-sec">CHECKLIST</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <Bar t={t} />
           </div>
           <Steps t={t} onToggle={(path) => v3.patchTask(t.id, { steps: toggled(t.steps, path) }).then(reload).catch(error)} />
         </>
       )}
-      <div className="v-sec">LAST REPORT</div>
-      <div className="v-report" data-testid="last-report">{lastReport ? short(lastReport, 800) : '—'}</div>
+      <div className="v-sec">{t.report ? 'LAST REPORT' : 'LATEST FROM THE AGENT'}</div>
+      {lastReport ? <MessageBodyClamp text={lastReport} lines={10} testid="last-report" /> : <div className="v-cnt2" data-testid="last-report">Nothing yet.</div>}
       <div className="v-sec">FACTS</div>
       <dl className="v-facts">
         <dt>Agents</dt>
@@ -117,7 +120,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           <>
             <dt>Goal</dt>
             <dd>
-              <TagChip tag={{ task_id: d.goal.id, title: d.goal.title }} goal />
+              <TaskChip task={{ task_id: d.goal.id, title: d.goal.title }} goal />
             </dd>
           </>
         )}
@@ -181,18 +184,19 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
               <button type="button" key={a.session_id} className="v-chip" onClick={() => nav.agent(a.session_id)}>
                 <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
                 {agentName(byId, a.session_id)}
+                {byId.get(a.session_id) && agentHint(sessions ?? [], byId.get(a.session_id)!) ? ` (${agentHint(sessions ?? [], byId.get(a.session_id)!)})` : ''}
               </button>
             ))}
             {t.kind === 'goal' && <GoalRun t={t} reload={reload} />}
             <span style={{ marginLeft: 'auto' }}>
-              {d.messages.length} tagged message{d.messages.length === 1 ? '' : 's'} · {d.events.length} events
+              {d.messages.length} message{d.messages.length === 1 ? '' : 's'}
             </span>
           </div>
         </div>
         {isPhone && sideOpen && side}
-        <div className="v-scroll" data-scroll={'task-' + id}>
+        <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box>
           <div className="v-conv">
-            {items.length === 0 && <div className="v-empty">No messages tagged yet. Write to an agent below; your message is tagged with this task.</div>}
+            {items.length === 0 && <div className="v-empty">No messages about this task yet. Write to an agent below: your message is about this task.</div>}
             {items.map((it) => {
               if ('e' in it) {
                 return (
@@ -233,12 +237,14 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
           toId={toId}
           toOptions={opts}
           onTo={setTo}
-          tags={[{ task_id: t.id, title: t.title }]}
+          about={[{ task_id: t.id, title: t.title }]}
+          draftKey={'v3:task:' + t.id}
           placeholder={toId === 'new' ? 'A new agent starts with this task…' : `Message ${agentName(byId, toId)} about this ${t.kind === 'goal' ? 'goal' : 'task'}…`}
           onSend={send}
           tasks={tasks}
         />
       </div>
+      <QuoteBubble box={scroller} />
       {!isPhone && side}
     </>
   )

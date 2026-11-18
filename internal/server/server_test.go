@@ -195,9 +195,10 @@ func TestAgentNeedsItsToken(t *testing.T) {
 	}
 	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "hi", "subject": "S"}, bearer(a))
 	thread := obj["thread_id"].(string)
-	// Session b cannot write into a's thread (it may read it: read_thread works across sessions).
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": thread}, bearer(b)); code != 404 {
-		t.Fatalf("cross-session write: %d", code)
+	// Session b cannot write into a's thread (it may read it: read_thread works across sessions):
+	// its message goes to its own stream.
+	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": thread}, bearer(b)); code != 201 || obj["thread_id"] == thread {
+		t.Fatalf("cross-session write: %d %v", code, obj)
 	}
 	if code, _, _ := e.do("GET", "/api/agent/threads/"+thread, nil, bearer(b)); code != 200 {
 		t.Fatalf("cross-session read: %d", code)

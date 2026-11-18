@@ -38,7 +38,9 @@ const CRITERIA_SCHEMA = {
 export const TASK_DESCRIPTION: Record<TaskTool, string> = {
   create_task: [
     "Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in.",
-    'Create one when the person asks for new work (a feature, a bug, an investigation): the message that asked for it, and your replies in this turn, are tagged with it by themselves. Not for small steps inside one piece of work (those are its `steps`), not for a quick answer.',
+    'A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question, a status check or a quick answer.',
+    "The person's message that asked for it, and your replies in this turn, belong to it by themselves.",
+    'If the result lists similar_tasks that are the same work, use that task (send_message task_ids) and do not create more.',
     'kind "goal": an outcome to keep pursuing until its `criteria` are met ("keep going until CI is green"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.',
     'It returns the task id; keep the task current with update_task.',
   ].join(' '),
@@ -46,7 +48,7 @@ export const TASK_DESCRIPTION: Record<TaskTool, string> = {
     'Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.',
     'Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.',
     'Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. report: a short "where it stands" the person reads on the Board.',
-    'message_ids tags earlier messages with the task.',
+    'message_ids: earlier messages that are about this task.',
   ].join(' '),
   list_tasks:
     "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
@@ -65,7 +67,7 @@ export const TASK_SCHEMA: Record<TaskTool, object> = {
       steps: STEPS_SCHEMA,
       criteria: CRITERIA_SCHEMA,
       autonomous: { type: 'boolean', description: 'Goals only: minbox keeps continuing you until the criteria are met. Only when the person asked for it.' },
-      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of earlier messages about it (the ones of this turn are tagged anyway).' },
+      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of earlier messages about it (the ones of this turn belong to it anyway).' },
     },
     required: ['title'],
     additionalProperties: false,
@@ -85,7 +87,7 @@ export const TASK_SCHEMA: Record<TaskTool, object> = {
       criteria: CRITERIA_SCHEMA,
       check_criteria: { type: 'array', items: { type: 'number' }, description: "Numbers (from 1) of a goal's criteria that are now met." },
       goal_id: { type: 'string', description: 'The goal this task serves.' },
-      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of more messages about it (tagged with it).' },
+      message_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of more messages that are about this task.' },
     },
     required: ['task_id'],
     additionalProperties: false,
@@ -177,8 +179,13 @@ export function taskText(tool: TaskTool, v: any): string {
   const t = v?.task ?? v
   switch (tool) {
     case 'create_task': {
-      const tagged = Array.isArray(v?.tagged_messages) && v.tagged_messages.length ? ` The person's message${v.tagged_messages.length > 1 ? 's' : ''} of this turn and your replies in it are tagged with it.` : ''
-      return [`${t?.kind === 'goal' ? 'Goal' : 'Task'} created (task_id ${t?.id}).${tagged} Keep it current with update_task.`, ...taskLines(t)].join('\n')
+      const linked = Array.isArray(v?.tagged_messages) && v.tagged_messages.length ? ` The person's message${v.tagged_messages.length > 1 ? 's' : ''} of this turn and your replies in it belong to it.` : ''
+      const similar = Array.isArray(v?.similar_tasks) && v.similar_tasks.length
+        ? [
+            `${typeof v?.note === 'string' && v.note ? oneLine(v.note) + ' ' : ''}Similar open tasks: ${v.similar_tasks.map((x: any) => `${x?.id} "${oneLine(x?.title)}"${x?.status ? ` (${x.status})` : ''}`).join('; ')}. If one is the same work, keep using it (send_message task_ids) and do not create more.`,
+          ]
+        : []
+      return [`${t?.kind === 'goal' ? 'Goal' : 'Task'} created (task_id ${t?.id}).${linked} Keep it current with update_task.`, ...similar, ...taskLines(t)].join('\n')
     }
     case 'update_task':
       return [`${t?.kind === 'goal' ? 'Goal' : 'Task'} updated.`, ...taskLines(t)].join('\n')

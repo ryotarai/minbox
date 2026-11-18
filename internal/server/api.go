@@ -865,19 +865,30 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	}
 	var threadID, messageID, subject string
 	isNew := false
-	if req.ThreadID == "" {
-		// v3: the session's stream.
+	// v3: every message goes to the session's stream. The older contract's thread_id (a thread of
+	// before v3) says which task the message is about; its thread_title names an open task of the
+	// session at most (it never renames anything: the stream has no title).
+	if req.ThreadID != "" {
+		if th, err := s.store.GetThread(ctx, req.ThreadID); err == nil && th.SessionID == sess.ID && th.Kind != store.ThreadStream {
+			if id, err := s.store.TaskOfThread(ctx, th.ID); err == nil && id != "" {
+				taskIDs = appendNew(taskIDs, id)
+			}
+		}
+	}
+	if title != "" && len(taskIDs) == 0 {
+		if id, err := s.store.OpenTaskTitled(ctx, sess.ID, title); err == nil && id != "" {
+			taskIDs = appendNew(taskIDs, id)
+		}
+	}
+	{
 		stream, err := s.store.StreamThread(ctx, sess.ID)
 		if err != nil {
 			storeError(w, err)
 			return
 		}
-		req.ThreadID = stream
-	}
-	if !isNew {
-		th, err := s.store.GetThread(ctx, req.ThreadID)
-		if err != nil || th.SessionID != sess.ID {
-			httpError(w, 404, "no thread "+req.ThreadID+" in this session; leave thread_id out to start a new thread")
+		th, err := s.store.GetThread(ctx, stream)
+		if err != nil {
+			storeError(w, err)
 			return
 		}
 		msg, err := s.store.AddMessage(ctx, th.ID, m)
@@ -885,28 +896,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			storeError(w, err)
 			return
 		}
-		threadID, messageID, subject = th.ID, msg.ID, th.Subject
-		if title != "" && title != th.Subject {
-			subject = title
-			if err := s.store.UpdateThread(ctx, th.ID, &title, nil); err != nil {
-				storeError(w, err)
-				return
-			}
-		}
-	} else {
-		subject = title
-		if subject == "" {
-			subject = firstLine(body)
-		}
-		th, msg, err := s.store.CreateThread(ctx, sess.ID, subject, m)
-		if err != nil {
-			storeError(w, err)
-			return
-		}
-		threadID, messageID = th.ID, msg.ID
-		if name := strings.TrimSpace(req.Name); name != "" {
-			_ = s.store.UpdateThread(ctx, threadID, nil, &name)
-		}
+		threadID, messageID, subject = th.ID, msg.ID, title
 	}
 	// Denied commands reported without a thread belong to the thread the agent writes to next.
 	s.denied.assign(sess.ID, threadID)
@@ -960,6 +950,15 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	}
 	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_ids": tagged, "decision": decision,
 		"attachments": attsOut, "images_not_shown": notShown})
+}
+
+func appendNew(ids []string, id string) []string {
+	for _, x := range ids {
+		if x == id {
+			return ids
+		}
+	}
+	return append(ids, id)
 }
 
 func (s *Server) agentListThreads(w http.ResponseWriter, r *http.Request, sess *store.Session) {

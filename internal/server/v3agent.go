@@ -78,8 +78,8 @@ func (s *Server) sameProjectTasks(ctx context.Context, sess *store.Session, ids 
 }
 
 // untaggedOf is the messages among ids that have no tag.
-func (s *Server) untaggedOf(ctx context.Context, ids []string) ([]string, map[string][]store.Tag) {
-	tags, _ := s.store.TagsOf(ctx, ids)
+func (s *Server) untaggedOf(ctx context.Context, ids []string) ([]string, map[string][]store.TaskRef) {
+	tags, _ := s.store.TasksOf(ctx, ids)
 	out := []string{}
 	for _, id := range ids {
 		if len(tags[id]) == 0 {
@@ -113,15 +113,15 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 		if !have[id] {
 			have[id] = true
 			all = append(all, id)
-			_, _ = s.store.TagMessages(ctx, id, []string{messageID}, store.TagAgent)
-			_, _ = s.store.TagMessages(ctx, id, untagged, store.TagAgent)
+			_, _ = s.store.LinkMessages(ctx, id, []string{messageID}, store.LinkAgent)
+			_, _ = s.store.LinkMessages(ctx, id, untagged, store.LinkAgent)
 		}
 	}
 	for _, id := range inherited {
 		if !have[id] {
 			have[id] = true
 			all = append(all, id)
-			_, _ = s.store.TagMessages(ctx, id, []string{messageID}, store.TagAuto)
+			_, _ = s.store.LinkMessages(ctx, id, []string{messageID}, store.LinkAuto)
 		}
 	}
 	for _, id := range all {
@@ -168,7 +168,7 @@ func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID st
 		if err != nil {
 			continue
 		}
-		if added, _ := s.store.TagMessages(ctx, id, []string{messageID}, store.TagPerson); len(added) > 0 {
+		if added, _ := s.store.LinkMessages(ctx, id, []string{messageID}, store.LinkPerson); len(added) > 0 {
 			changed = true
 		}
 		if isNew, _ := s.store.AddTaskAgent(ctx, id, sessionID, store.RoleAssigned); isNew && len(t.Agents) > 0 {
@@ -185,9 +185,9 @@ func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID st
 		}
 	}
 	if answersFor != "" {
-		tags, _ := s.store.TagsOf(ctx, []string{answersFor})
+		tags, _ := s.store.TasksOf(ctx, []string{answersFor})
 		for _, tg := range tags[answersFor] {
-			if added, _ := s.store.TagMessages(ctx, tg.TaskID, []string{messageID}, store.TagAuto); len(added) > 0 {
+			if added, _ := s.store.LinkMessages(ctx, tg.TaskID, []string{messageID}, store.LinkAuto); len(added) > 0 {
 				changed = true
 				_ = s.store.AddTaskEvent(ctx, tg.TaskID, "answer", "You answered", "", messageID)
 			}
@@ -349,6 +349,21 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 			return
 		}
 	}
+	// Open tasks of the project that look like the same work: the agent is told, so that it keeps
+	// using one task instead of making another (the Board stays the real set of ongoing work).
+	type similar struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+	}
+	similarTasks := []similar{}
+	if open, err := s.store.ListTasks(ctx, store.TaskQuery{ProjectID: sess.ProjectID}); err == nil {
+		for _, x := range open {
+			if x.Status != store.TaskDone && x.Kind == "" && len(similarTasks) < 3 && store.SimilarTitles(x.Title, *b.Title) {
+				similarTasks = append(similarTasks, similar{x.ID, x.Title, x.Status})
+			}
+		}
+	}
 	t, err := s.store.CreateTask(ctx, sess.ProjectID, sess.ID, f)
 	if err != nil {
 		v3TaskError(w, err)
@@ -358,12 +373,12 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 	st := v3Turns.get(sess.ID, cand)
 	st.Created = append(st.Created, t.ID)
 	untagged, _ := s.untaggedOf(ctx, cand)
-	_, _ = s.store.TagMessages(ctx, t.ID, untagged, store.TagAgent)
+	_, _ = s.store.LinkMessages(ctx, t.ID, untagged, store.LinkAgent)
 	if ids, msg := s.projectMessages(ctx, sess, b.MessageIDs); msg != "" {
 		httpError(w, 400, msg)
 		return
 	} else {
-		_, _ = s.store.TagMessages(ctx, t.ID, ids, store.TagAgent)
+		_, _ = s.store.LinkMessages(ctx, t.ID, ids, store.LinkAgent)
 	}
 	if t.Kind == store.KindGoal && b.Autonomous != nil && *b.Autonomous {
 		s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
@@ -371,7 +386,12 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 	t, _ = s.store.GetTask(ctx, t.ID)
 	s.modLog(sess.ID, "task-create", "task=%q kind=%q status=%s tagged=%d", t.ID, t.Kind, t.Status, len(untagged))
 	s.publishTasks()
-	writeJSON(w, 200, map[string]any{"task_id": t.ID, "task": t, "tagged_messages": untagged, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria})
+	res := map[string]any{"task_id": t.ID, "task": t, "tagged_messages": untagged, "messages": untagged, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
+	if len(similarTasks) > 0 {
+		res["similar_tasks"] = similarTasks
+		res["note"] = "Open tasks with a similar title exist. If one of them is the same work, use it (send_message task_ids) and do not create more tasks for it; put parts of a piece of work in its steps."
+	}
+	writeJSON(w, 200, res)
 }
 
 // projectMessages keeps the ids that are messages of the session's project.
@@ -422,8 +442,8 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 		v3TaskError(w, err)
 		return
 	}
-	if added, _ := s.store.TagMessages(ctx, t.ID, ids, store.TagAgent); len(added) > 0 {
-		_ = s.store.AddTaskEvent(ctx, t.ID, "tag", strconv.Itoa(len(added))+" message(s) tagged by "+sess.Name, sess.ID, "")
+	if added, _ := s.store.LinkMessages(ctx, t.ID, ids, store.LinkAgent); len(added) > 0 {
+		_ = s.store.AddTaskEvent(ctx, t.ID, "link", strconv.Itoa(len(added))+" earlier message(s) added by "+sess.Name, sess.ID, "")
 	}
 	_, _ = s.store.AddTaskAgent(ctx, t.ID, sess.ID, store.RoleInvolved)
 	if t.Kind == store.KindGoal {
@@ -488,7 +508,7 @@ func (s *Server) v3Inject(ctx context.Context, pending []store.PendingDelivery) 
 	for i := range pending {
 		ids[i] = pending[i].ID
 	}
-	tags, err := s.store.TagsOf(ctx, ids)
+	tags, err := s.store.TasksOf(ctx, ids)
 	if err != nil {
 		return
 	}
