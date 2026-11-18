@@ -106,15 +106,8 @@ test('delivery: a busy agent gets messages in its running turn, in order; a queu
   await open(page, minbox, a)
   await typeInTerminal(page, 'work')
   await expectTerminal(page, 'status work')
-  // While it works, "api is working…" under the stream is animated: the dot pulses, a shimmer sweeps the
-  // words, the ellipsis's dots bounce in turn.
-  const working = page.getByTestId('stream-view').getByTestId('working-line')
-  await expect(working).toContainText('api is working')
-  const anim = (sel: string) => working.locator(sel).first().evaluate((el) => getComputedStyle(el).animationName)
-  expect(await anim('.v-dot')).toBe('v-pulse')
-  expect(await anim('.v-typing-t')).toBe('v-shimmer')
-  expect(await anim('.v-ell i')).toBe('v-ell')
-  if (process.env.WORKING_SHOT) await page.getByTestId('stream-view').screenshot({ path: process.env.WORKING_SHOT })
+  // The agent's stream has no "is working" line: a running turn says nothing useful (tasks show their own).
+  await expect(page.getByTestId('stream-view').getByTestId('working-line')).toHaveCount(0)
   // Working: the message goes into the running turn at once (as Send now did); no Queued line, no Send now.
   await box(page).fill('mid-turn one')
   await page.getByTestId('composer-send').click()
@@ -350,6 +343,30 @@ test('task view: a pick and words go together to the agent, about the task; its 
   expect(ans.words).toBe('ship it today')
   expect(ans.tasks.map((x: any) => x.task_id)).toEqual([t.id])
   await expect(userMsgs(page).last().getByTestId('delivery')).toBeVisible()
+})
+
+test("task view: the animated working line follows the task's status, live; the stream has none", async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  await say(minbox, a, 'please fix the gauge reading')
+  const t = await taskNamed(minbox, /Fix the gauge reading/)
+  await agentReply(minbox, a, /created a task/)
+  // The agent is idle (its turn is over), but the task is Working: the line shows, animated.
+  await page.goto(`${minbox.url}/#v=agent&s=${a.id}&k=${t.id}`)
+  const working = page.getByTestId('working-line')
+  // Exactly one: the task's; the agent's stream beside it has none.
+  await expect(working).toHaveCount(1)
+  await expect(working).toContainText('api is working on this')
+  const anim = (sel: string) => working.locator(sel).first().evaluate((el) => getComputedStyle(el).animationName)
+  expect(await anim('.v-dot')).toBe('v-pulse')
+  expect(await anim('.v-typing-t')).toBe('v-shimmer')
+  expect(await anim('.v-ell i')).toBe('v-ell')
+  // Needs you, then Done: it goes; Working again: it comes back.
+  await api(minbox, 'PATCH', `/api/v3/tasks/${t.id}`, { status: 'needs_you' })
+  await expect(working).toHaveCount(0)
+  await api(minbox, 'PATCH', `/api/v3/tasks/${t.id}`, { status: 'working' })
+  await expect(working).toHaveCount(1)
+  await api(minbox, 'PATCH', `/api/v3/tasks/${t.id}`, { status: 'done' })
+  await expect(working).toHaveCount(0)
 })
 
 test('the conversation menu: snooze shows a notice with Unsnooze', async ({ page, minbox }) => {

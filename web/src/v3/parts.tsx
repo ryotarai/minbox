@@ -152,14 +152,15 @@ export function TaskBadge({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
   )
 }
 
-/** "<agent> is working…" under the stream while the agent is busy: a pulsing blue dot, a shimmer
- *  sweeping across the words and an ellipsis whose dots bounce in turn (all static with reduced motion). */
+/** "<agent> is working on this…" under a task's conversation while the task is Working (its status, not
+ *  whether an agent's turn is running): a pulsing blue dot, a shimmer sweeping across the words and an
+ *  ellipsis whose dots bounce in turn (all static with reduced motion). */
 export function WorkingLine({ name }: { name: string }) {
   return (
     <div className="v-typing" data-testid="working-line">
       <span className="v-dot d-work v-live" aria-hidden />
       <span>
-        <span className="v-typing-t">{name} is working</span>
+        <span className="v-typing-t">{name ? `${name} is working on this` : 'Working'}</span>
         <span className="v-ell" aria-hidden><i>.</i><i>.</i><i>.</i></span>
       </span>
     </div>
