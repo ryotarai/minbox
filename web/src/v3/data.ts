@@ -7,7 +7,8 @@ export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
 export const STATUS_LABEL: Record<TaskStatus, string> = { working: 'Working', needs_you: 'Needs you', blocked: 'Blocked', done: 'Done' }
 
 export type Step = { text: string; done: boolean; steps?: Step[] }
-export type Tag = { task_id: string; title: string; status: TaskStatus; source: 'agent' | 'auto' | 'person' }
+/** A task a message is about; source: how that link was made (by the agent, a rule, or the person). */
+export type TaskRef = { task_id: string; title: string; status: TaskStatus; source: 'agent' | 'auto' | 'person' }
 export type TaskAgent = { session_id: string; role: 'assigned' | 'involved'; since: string }
 export type AutoRun = { state: '' | 'running' | 'paused' | 'stopped'; session_id?: string; max_turns?: number; turns?: number; until?: string; reason?: string; last_at?: string }
 export type TaskLink = { kind: string; label: string; url: string; state?: string }
@@ -43,11 +44,14 @@ export type BoardTask = Task & {
   needs_you: boolean
   criteria_done: number
   task_ids?: string[]
+  /** The start of the newest agent message about it. */
+  last_line: string
 }
 
 export type V3Message = Message & {
   session_id: string
-  tags: Tag[]
+  /** The tasks this message is about. */
+  tasks: TaskRef[]
   segment?: { id: string; subject: string }
   open: number
   decision?: 'existing' | 'created' | 'none' | 'moved'
@@ -64,7 +68,7 @@ export type TaskEvent = { id: string; task_id: string; at: string; kind: string;
 export type Board = { tasks: BoardTask[]; questions: V3Message[]; agents: Record<string, { unread: number; open_questions: number }> }
 export type TaskDetail = { task: BoardTask; messages: V3Message[]; events: TaskEvent[]; tasks: BoardTask[]; goal: Task | null }
 export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string }
-export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tags: Tag[] }[] }
+export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tasks: TaskRef[] }[] }
 
 export type SendRequest = ReplyRequest & { task_ids?: string[] }
 
@@ -85,9 +89,12 @@ export const v3 = {
     call<Stream>('GET', `/api/v3/sessions/${session}/stream` + q({ before: opts.before, after: opts.after, limit: opts.limit ? String(opts.limit) : undefined })),
   send: (session: string, req: SendRequest, thread?: string) => call<Message>('POST', `/api/v3/sessions/${session}/messages` + q({ thread }), req),
   newMessage: (req: SendRequest & { to: string; project_id: string; agent?: string; name?: string }) => call<Message>('POST', '/api/v3/new', req),
-  tag: (msg: string, task_id: string) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/tags`, { task_id }),
-  untag: (msg: string, task: string) => call<{ ok: boolean }>('DELETE', `/api/v3/messages/${msg}/tags/${task}`),
-  retag: (msg: string, body: { from?: string; to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/retag`, body),
+  /** The message is (also) about the task. */
+  link: (msg: string, task_id: string) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/tasks`, { task_id }),
+  /** The message is not about the task. */
+  unlink: (msg: string, task: string) => call<{ ok: boolean }>('DELETE', `/api/v3/messages/${msg}/tasks/${task}`),
+  /** An agent reply and the person's messages it answered move to another task (or a new one). */
+  move: (msg: string, body: { from?: string; to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/move`, body),
   read: (ids: string[]) => call<{ marked: number }>('POST', '/api/v3/read', { message_ids: ids }),
   search: (qs: string, project: string) => call<SearchResult>('GET', '/api/v3/search' + q({ q: qs, project })),
 }
@@ -141,8 +148,11 @@ export function useMarkRead(messages: V3Message[] | undefined, active = true) {
     if (!active || !messages || document.visibilityState === 'hidden') return
     const ids = messages.filter((m) => m.author === 'agent' && !m.read_at && !m.pending && !sent.current.has(m.id)).map((m) => m.id)
     if (ids.length === 0) return
-    ids.forEach((id) => sent.current.add(id))
-    const t = setTimeout(() => void v3.read(ids).catch(() => {}), 400)
+    // Remembered once sent (a re-render that cancels the timer must not lose them).
+    const t = setTimeout(() => {
+      ids.forEach((id) => sent.current.add(id))
+      void v3.read(ids).catch(() => ids.forEach((id) => sent.current.delete(id)))
+    }, 400)
     return () => clearTimeout(t)
   }, [messages, active])
 }

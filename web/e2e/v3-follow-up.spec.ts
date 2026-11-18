@@ -3,7 +3,7 @@
 import { test, expect } from './fixtures'
 import { agentReply, api, say, shot, startAgent, taskNamed } from './v3'
 
-test('task view: tagged messages, show context, reply tagged to the last agent, hand off to another agent', async ({ page, minbox }) => {
+test('task view: its messages, show context, reply to the last agent about the task, hand off to another agent', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -17,7 +17,7 @@ test('task view: tagged messages, show context, reply tagged to the last agent, 
   await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).dblclick()
   const view = page.getByTestId('task-view')
   await expect(view.getByTestId('task-title')).toHaveText('Fix the gauge reading')
-  // 4 tagged messages (2 asks, 2 replies); the chat between them is folded into a gap.
+  // 4 messages about it (2 asks, 2 replies); the chat between them is folded into a gap.
   await expect(view.getByTestId('v3-message')).toHaveCount(4)
   const gap = view.getByTestId('show-context')
   await expect(gap).toContainText('api · 2 other messages')
@@ -32,7 +32,7 @@ test('task view: tagged messages, show context, reply tagged to the last agent, 
   await page.keyboard.type('what is left on this?')
   await page.keyboard.press('ControlOrMeta+Enter')
   const reply = await agentReply(minbox, a, /Noted for “Fix the gauge reading”/)
-  expect(reply.tags.map((t: any) => t.task_id)).toEqual([gauge.id])
+  expect(reply.tasks.map((t: any) => t.task_id)).toEqual([gauge.id])
   await expect(view.getByTestId('v3-message').filter({ hasText: 'Noted for' })).toBeVisible()
 
   // Hand off: a second agent; the message goes there with the task's tag, the task gains the agent.

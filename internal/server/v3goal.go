@@ -237,7 +237,7 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 		log.Printf("goal %s: %v", g.ID, err)
 		return
 	}
-	_, _ = s.store.TagMessages(ctx, g.ID, []string{msg.ID}, store.TagAuto)
+	_, _ = s.store.LinkMessages(ctx, g.ID, []string{msg.ID}, store.LinkAuto)
 	a.Turns++
 	a.LastAt = &now
 	_ = s.store.SetAuto(ctx, g.ID, a)
@@ -287,7 +287,7 @@ func (s *Server) goalNeedsYou(ctx context.Context, g *store.Task) bool {
 		if m.Open == 0 {
 			continue
 		}
-		for _, tg := range m.Tags {
+		for _, tg := range m.Tasks {
 			if want[tg.TaskID] {
 				return true
 			}

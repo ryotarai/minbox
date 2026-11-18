@@ -8,18 +8,24 @@ test('a stream message asks the agent to decide; one written from a task names i
   const base = { thread_id: 'thr_s', author: 'user' as const, created_at: '', subject: '', new_thread: false, stream: true }
   const plain = wakeText([{ ...base, id: 'm1', body: 'fix the gauge' }], 'minbox_send_message', 'minbox_read_thread')
   assert.match(plain, /a message from the person \(message m1\)/)
-  assert.match(plain, /existing task .*task_ids.*new work \(create_task/)
+  assert.match(plain, /open task .*task_ids.*new work the person asked for \(create_task/)
   assert.doesNotMatch(plain, /thread_id/)
-  const tagged = wakeText([{ ...base, id: 'm2', body: 'status?', tasks: [{ task_id: 'tsk_1', title: 'Fix gauge', status: 'working' }] }], 's', 'r')
-  assert.match(tagged, /Tasks: tsk_1 "Fix gauge" \(they wrote it about these tasks\)/)
+  const about = wakeText([{ ...base, id: 'm2', body: 'status?', tasks: [{ task_id: 'tsk_1', title: 'Fix gauge', status: 'working' }] }], 's', 'r')
+  assert.match(about, /Tasks: tsk_1 "Fix gauge" \(they wrote it about these tasks\)/)
   const cont = wakeText([{ ...base, id: 'm3', kind: 'continue', body: 'minbox goal (autonomous run, turn 1 of 20): go' }], 's', 'r')
   assert.equal(cont, 'minbox goal (autonomous run, turn 1 of 20): go')
 })
 
-test('send_message needs only a body; the reply says what it was tagged with', () => {
+test('send_message needs only a body; the reply says which tasks it is about', () => {
   assert.deepEqual(sendRequest({ body: ' ' }), { error: 'body is required.' })
   assert.deepEqual(sendRequest({ body: 'x', task_ids: ['a', 3], subject: 'old' }), { body: { body: 'x', task_ids: ['a'], thread_title: 'old' } })
-  assert.match(sentText({ thread_id: 't', new_thread: false, task_ids: ['tsk_1'] }), /Tagged with task tsk_1\./)
+  assert.match(sentText({ thread_id: 't', new_thread: false, task_ids: ['tsk_1'] }), /About task tsk_1\./)
+})
+
+test('create_task: similar open tasks are named so the agent keeps using one', () => {
+  const t = taskText('create_task', { task_id: 'n', task: { id: 'n', status: 'working', title: 'Fix PDF' }, note: 'An open task looks like the same work.', similar_tasks: [{ id: 'o', title: 'PDF attachments', status: 'needs_you' }] })
+  assert.match(t, /An open task looks like the same work\. Similar open tasks: o "PDF attachments" \(needs_you\)\. If one is the same work, keep using it/)
+  assert.doesNotMatch(taskText('create_task', { task_id: 'n', task: { id: 'n', status: 'working', title: 'x' } }), /Similar/)
 })
 
 test('goals: create with criteria, tick them, read them back', () => {

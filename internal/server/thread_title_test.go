@@ -4,52 +4,87 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/ryotarai/minbox/internal/store"
 )
 
-func TestAgentThreadTitle(t *testing.T) {
+// The older send_message contract (thread_id / thread_title / status), as agents started before v3
+// still call it: every message lands in the session's stream; an older thread's id says which task it
+// is about; thread_title only finds an open task with that name; nothing gets renamed or created.
+func TestAgentLegacyThreadContract(t *testing.T) {
 	e := newEnv(t)
+	ctx := context.Background()
 	sess := e.createSession()
 	subject := func(id string) string {
 		_, obj, _ := e.do("GET", "/api/threads/"+id, nil, nil)
 		return obj["subject"].(string)
 	}
-	send := func(m map[string]any) string {
-		code, obj, _ := e.do("POST", "/api/agent/messages", m, bearer(sess))
-		if code != 201 {
-			t.Fatalf("send %v: %d", m, code)
-		}
-		return obj["thread_id"].(string)
+	// No thread: the stream. A thread_title never renames it.
+	r1 := e.agentSays(sess, map[string]any{"body": "First line\nmore", "thread_title": "a reply"})
+	stream := r1["thread_id"].(string)
+	if got := subject(stream); got != "" {
+		t.Fatalf("the stream got a title: %q", got)
 	}
-	id := send(map[string]any{"body": "First line\nmore", "thread_title": "Plan"})
-	if got := subject(id); got != "Plan" {
-		t.Fatalf("new thread title %q", got)
+	if r2 := e.agentSays(sess, map[string]any{"body": "again", "subject": "Via alias"}); r2["thread_id"] != stream {
+		t.Fatalf("not the stream: %v", r2)
 	}
-	send(map[string]any{"body": "again", "thread_id": id})
-	send(map[string]any{"body": "again", "thread_id": id, "thread_title": "  "})
-	if got := subject(id); got != "Plan" {
-		t.Fatalf("omitted/empty changed the title: %q", got)
+	// An older thread with a task made from it: the message goes to the stream, about that task;
+	// status applies to it.
+	old, err := e.st.NewSegmentThread(ctx, sess.ID, "update readme")
+	if err != nil {
+		t.Fatal(err)
 	}
-	send(map[string]any{"body": "drift", "thread_id": id, "thread_title": "Other topic"})
-	if got := subject(id); got != "Other topic" {
-		t.Fatalf("update %q", got)
+	task, _ := e.st.CreateTask(ctx, sess.ProjectID, sess.ID, store.TaskFields{Title: ptrS("Update the readme")})
+	if err := e.st.SetTaskOrigin(ctx, task.ID, "thread:"+old); err != nil {
+		t.Fatal(err)
 	}
-	send(map[string]any{"body": "alias", "thread_id": id, "subject": "Via alias"})
-	if got := subject(id); got != "Via alias" {
-		t.Fatalf("alias %q", got)
+	r3 := e.agentSays(sess, map[string]any{"body": "Done with the readme.", "thread_id": old, "thread_title": "a reply", "status": "finished"})
+	if r3["thread_id"] != stream {
+		t.Fatalf("legacy thread_id: went to %v, not the stream", r3["thread_id"])
 	}
-	send(map[string]any{"body": "both", "thread_id": id, "subject": "old", "thread_title": "new"})
-	if got := subject(id); got != "new" {
-		t.Fatalf("thread_title should win: %q", got)
+	if ids := r3["task_ids"].([]any); len(ids) != 1 || ids[0] != task.ID {
+		t.Fatalf("legacy thread_id → task: %v", r3)
 	}
-	// v3: without a thread_id every message goes to the session's one stream; a title is optional.
-	id2 := send(map[string]any{"body": "Derived title here"})
-	if id2 != id || send(map[string]any{"body": "again"}) != id {
-		t.Fatalf("not the stream: %s %s", id, id2)
+	if got, _ := e.st.GetTask(ctx, task.ID); got.Status != store.TaskDone {
+		t.Fatalf("status finished → %s", got.Status)
 	}
-	long := send(map[string]any{"body": "x", "thread_title": "line one\n\nline   two " + strings.Repeat("あ", 200)})
-	got := subject(long)
-	if strings.ContainsAny(got, "\n\t") || strings.Contains(got, "  ") || got != "line one line two "+strings.Repeat("あ", 200) {
-		t.Fatalf("not collapsed to one full line: %q (%d)", got, len([]rune(got)))
+	// thread_title = an open task's title: about it. Any other title: nothing (no task is made).
+	other, _ := e.st.CreateTask(ctx, sess.ProjectID, sess.ID, store.TaskFields{Title: ptrS("Fix the gauge")})
+	r4 := e.agentSays(sess, map[string]any{"body": "gauge fixed?", "thread_title": "fix the  gauge"})
+	if ids := r4["task_ids"].([]any); len(ids) != 1 || ids[0] != other.ID {
+		t.Fatalf("thread_title → open task: %v", r4)
+	}
+	before, _ := e.st.ListTasks(ctx, store.TaskQuery{ProjectID: sess.ProjectID})
+	r5 := e.agentSays(sess, map[string]any{"body": "x", "thread_title": "Some other words"})
+	after, _ := e.st.ListTasks(ctx, store.TaskQuery{ProjectID: sess.ProjectID})
+	if len(r5["task_ids"].([]any)) != 0 || len(after) != len(before) {
+		t.Fatalf("an unknown thread_title made something: %v", r5)
+	}
+	// Another session's thread id: ignored (its own stream).
+	b := e.createSession()
+	if rb := e.agentSays(b, map[string]any{"body": "x", "thread_id": old}); rb["thread_id"] == old || len(rb["task_ids"].([]any)) != 0 {
+		t.Fatalf("cross-session thread_id: %v", rb)
+	}
+}
+
+func ptrS(s string) *string { return &s }
+
+// create_task warns about an open task that looks like the same work.
+func TestCreateTaskSimilar(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	_, first, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Slack の PDF 添付を認識しない"}, bearer(sess))
+	code, again, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Slack の PDF 添付を認識しない問題"}, bearer(sess))
+	if code != 200 {
+		t.Fatalf("create: %d", code)
+	}
+	sim, _ := again["similar_tasks"].([]any)
+	if len(sim) != 1 || sim[0].(map[string]any)["id"] != first["task_id"] || !strings.Contains(again["note"].(string), "similar") {
+		t.Fatalf("similar = %v", again)
+	}
+	_, third, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Dark mode toggle"}, bearer(sess))
+	if _, ok := third["similar_tasks"]; ok {
+		t.Fatalf("unrelated title warned: %v", third)
 	}
 }
 

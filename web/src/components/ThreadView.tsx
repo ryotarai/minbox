@@ -1805,7 +1805,7 @@ export { IconArchive }
  * `clip`: cut a selection that runs on past the messages (a triple-click ends at the start of the
  * next block, and what is put in between, such as the Reply bubble, joins it) to its part inside.
  */
-function selectedQuote(box: HTMLElement | null, clip = false): string {
+export function selectedQuote(box: HTMLElement | null, clip = false): string {
   const sel = window.getSelection()
   if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !box) return ''
   const range = sel.getRangeAt(0)

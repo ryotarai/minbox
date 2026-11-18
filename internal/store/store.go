@@ -535,6 +535,9 @@ func migrate(db *sql.DB) error {
 	if err := migrateThreadStatus(context.Background(), db); err != nil {
 		return fmt.Errorf("thread status: %w", err)
 	}
+	if err := renameMessageTags(db); err != nil {
+		return fmt.Errorf("message_tasks: %w", err)
+	}
 	if _, err := db.Exec(taskSchema); err != nil {
 		return fmt.Errorf("tasks: %w", err)
 	}
@@ -1459,8 +1462,8 @@ type PendingDelivery struct {
 	// The agent message the person answered (the latest one before this message).
 	InReplyTo *Message `json:"in_reply_to,omitempty"`
 	// v3: the message's tasks, and whether it is in the session's stream (else an older thread).
-	Tasks  []Tag `json:"tasks,omitempty"`
-	Stream bool  `json:"stream,omitempty"`
+	Tasks  []TaskRef `json:"tasks,omitempty"`
+	Stream bool      `json:"stream,omitempty"`
 }
 
 // PendingForSession lists the person's undelivered messages of the session,

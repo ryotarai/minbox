@@ -9,8 +9,9 @@ import { IconAgentKind, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
-import { ago, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { Bar, Composer, MessageView, StatusDot, TagChip, useNav, useSessionsById } from './parts'
+import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
+import { Bar, Composer, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById, type Outgoing } from './parts'
+import { QuoteBubble } from './quote'
 
 export type SidePane = 'tasks' | 'terminal' | 'shell' | 'files'
 
@@ -29,7 +30,7 @@ export function StreamView({
   setPane: (p: SidePane) => void
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
-  const { error, isPhone } = useApp()
+  const { error, isPhone, sessions } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -56,13 +57,16 @@ export function StreamView({
   if (!sess) return <div className="v-col"><div className="v-empty">This agent is gone. Pick another one on the left.</div></div>
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
-  const untaggedQ = msgs.filter((m) => m.open > 0 && !m.tags.length).length
-  const send = async (words: string, _to: string, extraTasks: string[]) => {
-    const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: id, tags: [], open: 0, pending: true }
+  const doneTasks = mine.filter((t) => t.status === 'done')
+  // What it is on now: the open task of its newest message that is about one.
+  const nowOn = [...msgs].reverse().flatMap((m) => m.tasks).map((r) => openTasks.find((t) => t.id === r.task_id)).find((t) => !!t)
+  const hint = agentHint(sessions ?? [], sess)
+  const send = async (o: Outgoing) => {
+    const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: o.words, words: o.words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: id, tasks: [], open: 0, pending: true }
     setPending((p) => [...p, tmp])
     atBottom.current = true
     try {
-      await v3.send(id, { words, task_ids: extraTasks.length ? extraTasks : undefined })
+      await v3.send(id, { words: o.words, task_ids: o.tasks.length ? o.tasks : undefined, uploads: o.uploads.length ? o.uploads : undefined })
       reload()
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
@@ -86,7 +90,10 @@ export function StreamView({
         <div className="v-head">
           <div className="v-r1">
             <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
-            <h2 data-testid="agent-name">{sess.name}</h2>
+            <h2 data-testid="agent-name">
+              {sess.name}
+              {hint && <small className="v-hint"> · {hint}</small>}
+            </h2>
             <span className="v-hide-phone" style={{ color: 'var(--mb-subtle)', fontSize: 12 }}>
               {agentKindLabel(sess.agent)}
               {sess.is_main ? ' · main' : ''}
@@ -122,15 +129,19 @@ export function StreamView({
           </div>
           <div className="v-r2">
             <span data-testid="agent-state">{sess.status === 'working' ? 'in a turn' : sess.status === 'ended' ? 'ended' : sess.status === 'starting' ? 'starting' : 'idle'}</span>
-            {sess.title && <span>· {sess.title}</span>}
-            {openTasks.map((t) => (
-              <TagChip key={t.id} tag={{ task_id: t.id, title: t.title }} goal={t.kind === 'goal'} />
-            ))}
+            {sess.title && <span className="v-doingnow">· {sess.title}</span>}
+            {nowOn && (
+              <span className="v-nowon" data-testid="now-on">
+                · on <TaskChip task={{ task_id: nowOn.id, title: nowOn.title }} goal={nowOn.kind === 'goal'} />
+              </span>
+            )}
+            {openTasks.length > 1 && <span className="v-hide-phone">· {openTasks.length} open tasks</span>}
           </div>
         </div>
         <div
           className="v-scroll"
           ref={scroller}
+          data-quote-box
           data-scroll={'agent-' + id}
           onScroll={(e) => {
             const el = e.currentTarget
@@ -163,7 +174,7 @@ export function StreamView({
                 if (m.segment) {
                   out.push(
                     <div key={'s' + m.id} className="v-divider" data-testid="segment-divider">
-                      — {m.segment.subject || 'earlier conversation'} —
+                      — {short((m.segment.subject || 'earlier conversation').split('\n')[0]!, 70)} —
                     </div>,
                   )
                 }
@@ -174,7 +185,8 @@ export function StreamView({
             {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
           </div>
         </div>
-        <Composer toId={id} toOptions={[sess]} tags={[]} tasks={tasks} placeholder={`Message ${sess.name}…`} onSend={send} />
+        <Composer toId={id} toOptions={[sess]} about={[]} tasks={tasks} draftKey={'v3:agent:' + id} placeholder={`Message ${sess.name}…`} onSend={send} />
+        <QuoteBubble box={scroller} />
       </div>
       {(!isPhone || terminalish) && (
         <aside className={'v-side' + (terminalish ? ' wide' : '')} data-testid="agent-side">
@@ -188,9 +200,9 @@ export function StreamView({
           {pane === 'tasks' && (
             <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
               <div className="v-sec">
-                TASKS OF {sess.name.toUpperCase()} <span className="v-x">{openTasks.length} open</span>
+                OPEN TASKS <span className="v-x">{openTasks.length}</span>
               </div>
-              {mine.map((t) => (
+              {openTasks.map((t) => (
                 <button type="button" key={t.id} className="v-mt" onClick={() => nav.task(t.id)}>
                   <div className="v-a">
                     <StatusDot t={t} />
@@ -206,14 +218,19 @@ export function StreamView({
                   </div>
                 </button>
               ))}
-              {!mine.length && <div className="v-cnt2">No tasks yet.</div>}
-              {untaggedQ > 0 && (
-                <div className="v-mt">
-                  <div className="v-a">
-                    <span className="v-dot d-wait" />
-                    {untaggedQ} untagged question{untaggedQ > 1 ? 's' : ''}
-                  </div>
-                </div>
+              {!openTasks.length && <div className="v-cnt2">No open tasks. Ask for something; the agent makes a task when it is new work.</div>}
+              {doneTasks.length > 0 && (
+                <details className="v-donelist">
+                  <summary className="v-sec">DONE THIS WEEK <span className="v-x">{doneTasks.length}</span></summary>
+                  {doneTasks.map((t) => (
+                    <button type="button" key={t.id} className="v-mt" onClick={() => nav.task(t.id)}>
+                      <div className="v-a">
+                        <StatusDot t={t} />
+                        {t.title}
+                      </div>
+                    </button>
+                  ))}
+                </details>
               )}
               <div className="v-sec">AGENT</div>
               <dl className="v-facts">
@@ -223,8 +240,8 @@ export function StreamView({
                 <dd className="font-mono" title={sess.cwd}>
                   {sess.cwd}
                 </dd>
-                <dt>Tagged</dt>
-                <dd>{msgs.length ? Math.round((100 * msgs.filter((m) => m.tags.length).length) / msgs.length) : 0}% of messages</dd>
+                <dt>Started</dt>
+                <dd>{sess.created_at ? new Date(sess.created_at).toLocaleDateString() : '—'}</dd>
               </dl>
             </div>
           )}

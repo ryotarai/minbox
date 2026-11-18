@@ -3,7 +3,7 @@
 import { test, expect } from './fixtures'
 import { agentReply, api, board, shot, startAgent } from './v3'
 
-test('⇧N to the main agent: new work becomes a task, a follow-up is tagged to it, chit-chat stays untagged', async ({ page, minbox }) => {
+test('⇧N to the main agent: new work becomes a task, a follow-up is about it, chit-chat is about no task', async ({ page, minbox }) => {
   const main = await startAgent(minbox, 'api')
   await page.goto(minbox.url)
   await expect(page.getByTestId('board')).toBeVisible()
@@ -23,19 +23,24 @@ test('⇧N to the main agent: new work becomes a task, a follow-up is tagged to 
   const created = stream.locator('[data-testid="decision"][data-decision="created"]')
   await expect(created).toBeVisible({ timeout: 15_000 })
   await expect(created).toContainText('Add a dark mode toggle to settings')
-  // The person's message got the new task's tag retroactively.
+  // The person's message is about the new task too.
   const mine = stream.locator('[data-testid="v3-message"][data-author="user"]').first()
-  await expect(mine.getByTestId('tag')).toHaveAttribute('title', 'Add a dark mode toggle to settings')
+  await expect(mine.getByTestId('task-link')).toHaveAttribute('title', 'Add a dark mode toggle to settings')
 
-  // A follow-up about it: tagged with the existing task.
+  // A follow-up about it: "in <task>" under the reply, no decision note (nothing new happened).
   await page.getByTestId('composer-text').fill('the dark toggle should remember the choice')
   await page.getByTestId('composer-send').click()
-  await expect(stream.locator('[data-testid="decision"][data-decision="existing"]')).toBeVisible({ timeout: 15_000 })
+  const follow = stream.locator('[data-testid="v3-message"][data-author="agent"]').nth(1)
+  await expect(follow.getByTestId('task-link')).toHaveAttribute('title', 'Add a dark mode toggle to settings', { timeout: 15_000 })
+  await expect(follow.getByTestId('decision')).toHaveCount(0)
 
-  // Chit-chat: no task.
+  // Chit-chat: no task, and no note nagging about it.
   await page.getByTestId('composer-text').fill('is the staging server up?')
   await page.keyboard.press('ControlOrMeta+Enter')
-  await expect(stream.locator('[data-testid="decision"][data-decision="none"]')).toBeVisible({ timeout: 15_000 })
+  const chat = stream.locator('[data-testid="v3-message"][data-author="agent"]').nth(2)
+  await expect(chat).toContainText('Sure', { timeout: 15_000 })
+  await expect(chat.getByTestId('task-link')).toHaveCount(0)
+  await expect(stream.getByTestId('decision')).toHaveCount(1)
   await shot(page, 'uc3-decisions', 'light')
   const b = await board(minbox)
   expect(b.tasks.map((t: any) => t.title)).toEqual(['Add a dark mode toggle to settings'])
@@ -52,7 +57,7 @@ test('⇧N to a new agent starts a session and its stream gets the message', asy
   await page.getByTestId('new-send').click()
   const stream = page.getByTestId('stream-view')
   await expect(page.getByTestId('agent-name')).toHaveText('helper')
-  await expect(stream.locator('[data-testid="decision"][data-decision="none"]')).toBeVisible({ timeout: 20_000 })
+  await expect(stream.locator('[data-testid="v3-message"][data-author="agent"]')).toContainText('Sure', { timeout: 20_000 })
   const sessions = await api(minbox, 'GET', '/api/sessions')
   expect(sessions.map((s: any) => s.name).sort()).toEqual(['api', 'helper'])
   expect(sessions.find((s: any) => s.name === 'helper').id).not.toBe(main.id)

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSelectedProject } from '../lib/projects'
 import { hhmm, short, v3, STATUS_LABEL, type SearchResult } from './data'
-import { StatusDot, Tags, agentName, useNav, useSessionsById } from './parts'
+import { StatusDot, TaskLinks, agentName, useNav, useSessionsById } from './parts'
 
 function Hl({ s, q }: { s: string; q: string }) {
   const i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1
@@ -86,7 +86,7 @@ export function SearchView() {
                 </div>
                 <div className="v-k">
                   {m.author === 'user' ? 'You → ' : ''}
-                  {agentName(byId, m.session_id)} · {new Date(m.created_at).toLocaleDateString()} {hhmm(m.created_at)} <Tags tags={m.tags} />
+                  {agentName(byId, m.session_id)} · {new Date(m.created_at).toLocaleDateString()} {hhmm(m.created_at)} <TaskLinks tasks={m.tasks} />
                 </div>
               </button>
             ))}
