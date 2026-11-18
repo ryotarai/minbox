@@ -4,7 +4,7 @@ import type { ContextMenuItem as FileTreeContextMenuItem, ContextMenuOpenContext
 import { api, type FileTreeListing, type Session, type TreeFile } from '../api'
 import { useApp } from '../lib/app'
 import { CODE_HIGHLIGHT_MAX_CHARS, CODE_WRAP_LINE_CHARS, langOf } from './AttachmentViewer'
-import { IconBack, IconCheck, IconClose, IconCopy, IconRefresh } from './icons'
+import { IconBack, IconCheck, IconClose, IconCopy, IconRefresh, IconWrapText } from './icons'
 import { insertFileMention } from './Files'
 import { cx, IconButton } from './ui'
 
@@ -243,6 +243,24 @@ function MenuButton({ testid, onClick, children }: { testid: string; onClick: ()
 
 type Tok = { content: string; color?: string }
 
+/** The viewer's word-wrap choice, kept across files and reloads (this browser only). */
+const WRAP_KEY = 'minbox:files-wrap'
+function readWrap(): boolean | null {
+  try {
+    const v = localStorage.getItem(WRAP_KEY)
+    return v === null ? null : v === '1'
+  } catch {
+    return null
+  }
+}
+function writeWrap(v: boolean) {
+  try {
+    localStorage.setItem(WRAP_KEY, v ? '1' : '0')
+  } catch {
+    // Storage blocked: the choice lasts until the page reloads.
+  }
+}
+
 function sizeLabel(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
@@ -256,6 +274,7 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
   const [tokens, setTokens] = useState<Tok[][] | null>(null)
   const { error } = useApp()
   const [copied, setCopied] = useState(false)
+  const [wrapPref, setWrapPref] = useState<boolean | null>(readWrap)
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
   // Copies the text already loaded for the viewer; a brief check says it worked.
@@ -300,7 +319,12 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
       live = false
     }
   }, [text, path])
-  const wrap = lines.some((l) => l.length > CODE_WRAP_LINE_CHARS)
+  // Word wrap: the viewer's toggle; with no choice made yet, only files with huge lines wrap.
+  const wrap = wrapPref ?? lines.some((l) => l.length > CODE_WRAP_LINE_CHARS)
+  const toggleWrap = () => {
+    setWrapPref(!wrap)
+    writeWrap(!wrap)
+  }
   const slash = path.lastIndexOf('/') + 1
   const note = (s: string) => (
     <div data-testid="file-viewer-note" className="px-3.5 py-3 text-[12.5px] leading-[1.5] text-subtle">
@@ -326,6 +350,19 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
         </button>
         {file?.kind === 'text' && (
           <IconButton
+            aria-label="Word wrap"
+            title={wrap ? 'Word wrap: on' : 'Word wrap: off'}
+            aria-pressed={wrap}
+            data-testid="file-viewer-wrap"
+            size={phone ? 32 : 26}
+            onClick={toggleWrap}
+            className={wrap ? 'bg-raised text-fg' : undefined}
+          >
+            <IconWrapText size={14} />
+          </IconButton>
+        )}
+        {file?.kind === 'text' && (
+          <IconButton
             aria-label={copied ? 'Copied' : 'Copy contents'}
             title={copied ? 'Copied' : 'Copy contents'}
             data-testid="file-viewer-copy"
@@ -343,7 +380,7 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
           </IconButton>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div data-testid="file-viewer-scroll" className="min-h-0 flex-1 overflow-auto">
         {err && note(err)}
         {!file && !err && note('Loading…')}
         {file?.kind === 'binary' && note(`A binary file (${sizeLabel(file.size)}): nothing to show.`)}
@@ -355,11 +392,11 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
           </div>
         )}
         {file?.kind === 'text' && (
-          <div data-testid="file-viewer-code" className="mono min-w-max py-1.5 text-[12px] leading-[1.65]">
+          <div data-testid="file-viewer-code" data-wrap={wrap || undefined} className={cx('mono py-1.5 text-[12px] leading-[1.65]', !wrap && 'min-w-max')}>
             {lines.map((l, i) => (
               <div key={i} className="flex">
                 <span className="w-11 shrink-0 select-none pr-3 text-right text-faint">{i + 1}</span>
-                <span className={cx('pr-3 text-fg2', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
+                <span className={cx('pr-3 text-fg2', wrap ? 'min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre')}>
                   {tokens?.[i]
                     ? tokens[i]!.map((t, j) => (
                         <span key={j} style={{ color: t.color }}>
