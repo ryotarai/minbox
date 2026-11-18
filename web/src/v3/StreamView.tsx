@@ -246,11 +246,11 @@ export function StreamView({
               data-agent={sess.agent || 'claude'}
               aria-pressed={on('terminal')}
               aria-label={`${on('terminal') ? 'Hide' : 'Show'} ${agentKindLabel(sess.agent)} terminal`}
-              title={`${on('terminal') ? 'Hide' : 'Show'} the ${agentKindLabel(sess.agent)} terminal`}
-              style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}
+              title={`${on('terminal') ? 'Hide' : 'Show'} the ${agentKindLabel(sess.agent)} terminal (T)`}
+              style={{ display: 'inline-flex', alignItems: 'center' }}
               onClick={() => side.toggle('terminal')}
             >
-              <IconAgentKind kind={sess.agent} size={13} /> <span className="v-term-label">Terminal</span> <span className="v-kbd v-hide-phone">T</span>
+              <IconAgentKind kind={sess.agent} size={14} />
             </button>
             {sess.kind !== 'shell' && sess.status !== 'ended' && (
               <button
