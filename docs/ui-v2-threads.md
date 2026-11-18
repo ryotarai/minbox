@@ -40,9 +40,7 @@ of a thread (where it runs), shown as a chip and as the terminal on the right.
 ```
 
 At >= 1680 px the same three columns just get wider defaults (list 380, thread 600) and the shell pane fits
-beside the terminal without squeezing. Column order is `Threads | Thread | Terminal | Shell`. The
-*swap panes* setting flips the thread and terminal: `Threads | Terminal(+Shell) | Thread`. (Implemented
-with CSS `order`, so toggling it does not remount the terminal.) Every column edge has a Resizer (mouse and
+beside the terminal without squeezing. Column order is `Threads | Thread | Terminal | Shell`. Every column edge has a Resizer (mouse and
 touch) as before; the terminal is the flexible column.
 
 **The terminal is hidden by default** (`layout.terminalPane`, stored in `localStorage` `minbox:layout` with the other

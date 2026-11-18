@@ -374,15 +374,14 @@ export function V3App() {
     ...(layout.v3SideW ? { '--v-side-w': layout.v3SideW + 'px' } : {}),
     ...(layout.v3WideW ? { '--v-wide-w': layout.v3WideW + 'px' } : {}),
   } as React.CSSProperties
-  // The side panes' edges: on their left (on their right when the panes are swapped in Settings).
-  const swapped = !settings.swap_panes
+  // The side panes' edges: on their left.
   // An agent's side pane's edge (on the stream's side of it): up to as wide as leaves the stream MIN_STREAM.
   // (A declaration: StreamView above gets it.)
   function dragPane(p: PaneKind) {
     return (dx: number, start: number) => {
       const now = document.querySelector<HTMLElement>(`.v-main > [data-side-pane="${p}"]`)?.offsetWidth ?? start
       const col = document.querySelector<HTMLElement>('.v-main > .v-col')?.offsetWidth ?? MIN_STREAM
-      const w = clamp(start + (swapped ? dx : -dx) / zoom, MIN_PANE, Math.max(MIN_PANE, now + col - MIN_STREAM))
+      const w = clamp(start + -dx / zoom, MIN_PANE, Math.max(MIN_PANE, now + col - MIN_STREAM))
       // The others keep the widths they show now (squeezed ones too), so only this one moves.
       const others = Object.fromEntries(shownPanes.filter((q) => q !== p).map((q) => [q, fitted.widths[q]]))
       setLayout({ v3PaneW: { ...layout.v3PaneW, ...others, [p]: Math.round(w) } })
@@ -446,7 +445,7 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + (view === 'agent' && !wide ? ' conv' : '')}>
+      <main className={'v-main' + (wide ? ' wide' : '') + (view === 'agent' && !wide ? ' conv' : '')}>
         {main}
       </main>
       {isPhone && (

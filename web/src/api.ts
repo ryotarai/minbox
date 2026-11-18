@@ -462,8 +462,6 @@ export type Settings = {
   tab_count: boolean
   single_key: boolean
   decision_mode: boolean
-  /** The inbox pane left of the terminal (the default) instead of right of it. */
-  swap_panes: boolean
   prompt_extra: string
   /** Append the orchestration block to the system prompt of sessions started or resumed from now on. */
   orchestrator_prompt: boolean
@@ -765,7 +763,6 @@ export const DEFAULT_SETTINGS: Settings = {
   tab_count: true,
   single_key: true,
   decision_mode: false,
-  swap_panes: true,
   prompt_extra: '',
   orchestrator_prompt: true,
   claude_trust_folders: true,
