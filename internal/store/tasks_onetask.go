@@ -14,10 +14,14 @@ import (
 // migrateOneTask (once, v3_one_task, in one transaction) keeps one link of each message that has
 // several, and drops the others:
 //
-//  1. an explicit link (the agent named the task, or the person put it there: source agent / person)
-//     wins over a rule's (auto: inherited from the turn, the migration's placement);
-//  2. among those, the most recently created task;
-//  3. then the most recent link, then the larger task id (only so that it is deterministic).
+//  1. the task the agent named explicitly (send_message task_ids): an agent link to a task that
+//     already existed when the message's turn began (the older server linked the tasks created in
+//     the turn as agent links too, and those were created during it);
+//  2. then the person's link (source person);
+//  3. then another agent link (a task created in the turn);
+//  4. then a rule's link (auto: inherited from the turn, the migration's placement);
+//  5. within a rank, the most recently created task (the most specific), then the most recent link,
+//     then the larger task id (only so that it is deterministic).
 //
 // Every dropped link is written to message_tasks_dropped (with the task that was kept and when), so
 // the change can be audited and undone by hand. Nothing else is touched: no message, task or event is
@@ -56,9 +60,18 @@ func migrateOneTask(ctx context.Context, db *sql.DB) error {
 		message, task, source string
 		created               int64
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT mt.message_id, mt.task_id, mt.source, mt.created_at FROM message_tasks mt LEFT JOIN tasks t ON t.id=mt.task_id
-	  WHERE mt.message_id IN (SELECT message_id FROM message_tasks GROUP BY message_id HAVING count(*) > 1)
-	  ORDER BY mt.message_id, (mt.source IN ('agent','person')) DESC, COALESCE(t.created_at, 0) DESC, mt.created_at DESC, mt.task_id DESC`)
+	// turn: when the message's turn began (the newest of the person's messages up to it, itself for
+	// one of theirs). An agent link to a task that existed before that was named (send_message
+	// task_ids); an agent link to a task created during the turn came from create_task.
+	rows, err := tx.QueryContext(ctx, `SELECT message_id, task_id, source, created_at FROM (
+	  SELECT mt.message_id, mt.task_id, mt.source, mt.created_at, COALESCE(t.created_at, 0) AS task_created,
+	    COALESCE((SELECT max(m2.created_at) FROM messages m2 JOIN threads t2 ON t2.id=m2.thread_id
+	      WHERE t2.session_id=th.session_id AND m2.author='user' AND m2.kind NOT IN ('command','note') AND m2.created_at<=m.created_at), m.created_at) AS turn
+	  FROM message_tasks mt JOIN messages m ON m.id=mt.message_id JOIN threads th ON th.id=m.thread_id LEFT JOIN tasks t ON t.id=mt.task_id
+	  WHERE mt.message_id IN (SELECT message_id FROM message_tasks GROUP BY message_id HAVING count(*) > 1))
+	  ORDER BY message_id,
+	    CASE WHEN source='agent' AND task_created < turn THEN 0 WHEN source='person' THEN 1 WHEN source='agent' THEN 2 ELSE 3 END,
+	    task_created DESC, created_at DESC, task_id DESC`)
 	if err != nil {
 		return err
 	}
