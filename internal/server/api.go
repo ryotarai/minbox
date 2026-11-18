@@ -813,7 +813,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		Name        string     `json:"name"`
 		Attachments []string   `json:"attachments"`
 		Review      *reviewReq `json:"review"`
-		Status      string     `json:"status"`
+		Status      string     `json:"status"` // refused: send_message has no status (sendStatusError)
 		// TaskID (v3): the one task the message is about; the turn's person's messages in no task get
 		// it too. TaskIDs is its older name, kept as an alias: one element.
 		TaskID  string   `json:"task_id"`
@@ -827,17 +827,11 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		httpError(w, 400, msg)
 		return
 	}
-	status := ""
+	// send_message has no status (it used to set the named task's status, which reopened done tasks
+	// by accident): refuse the call, store nothing, and tell the agent where status is set.
 	if strings.TrimSpace(req.Status) != "" {
-		v, ok := store.NormalizeThreadStatus(req.Status)
-		if !ok {
-			if _, isTask := store.NormalizeTaskStatus(req.Status); !isTask {
-				httpError(w, 400, "unknown status "+req.Status+" (working, needs_you, blocked or done)")
-				return
-			}
-			v = store.ThreadWorking
-		}
-		status = v
+		httpError(w, 400, sendStatusError)
+		return
 	}
 	taskIDs, msg := s.sameProjectTasks(r.Context(), sess, named)
 	if msg != "" {
@@ -884,7 +878,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		snaps = append(snaps, snap)
 	}
 	questions := question.Parse(body)
-	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions, Status: status}
+	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions}
 	title := cleanTitle(req.ThreadTitle)
 	if title == "" {
 		title = cleanTitle(req.Subject)
@@ -960,7 +954,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			return
 		}
 	}
-	tagged, decision := s.v3AgentReply(ctx, sess, messageID, taskIDs, req.Status)
+	tagged, decision := s.v3AgentReply(ctx, sess, messageID, taskIDs)
 	note := ""
 	if len(tagged) == 0 {
 		cand, _ := s.store.TurnMessages(ctx, sess.ID)
