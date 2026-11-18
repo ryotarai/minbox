@@ -4,8 +4,7 @@ import { createSession, createShellSession, expect, expectTerminal, showTerminal
 // X-Forwarded-For, as through tailscale serve) pairs its key first; a browser
 // on this machine accepts it in Settings › Devices.
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('a remote browser pairs with a code accepted in Settings › Devices, and Revoke sends it back', async ({ page, browser, minbox }) => {
+test('a remote browser pairs with a code accepted in Settings › Devices, and Revoke sends it back', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'home')
   await expectTerminal(page, 'ready>')
@@ -30,9 +29,9 @@ test.skip('a remote browser pairs with a code accepted in Settings › Devices, 
   await expect(page.getByTestId('device-row').filter({ hasText: 'Test phone' })).toBeVisible()
 
   // The phone signs in by itself and sees the sessions.
-  await expect(phone.getByTestId('threads-pane')).toBeVisible({ timeout: 15_000 })
-  await phone.getByTestId('session-filter').click()
-  await expect(phone.getByTestId('session-row').filter({ hasText: 'home' })).toBeVisible()
+  await expect(phone.getByTestId('phone-tabs')).toBeVisible({ timeout: 15_000 })
+  await phone.getByTestId('tab-agents').click()
+  await expect(phone.getByTestId('agent-row').filter({ hasText: 'home' })).toBeVisible()
 
   // Revoked: its next request finds it unpaired.
   await page.getByTestId('device-row').filter({ hasText: 'Test phone' }).getByTestId('device-revoke').click()
@@ -42,8 +41,7 @@ test.skip('a remote browser pairs with a code accepted in Settings › Devices, 
   await remote.close()
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('a paired remote browser signs in again by itself after the server forgets its cookie (a restart)', async ({ page, browser, minbox }) => {
+test('a paired remote browser signs in again by itself after the server forgets its cookie (a restart)', async ({ page, browser, minbox }) => {
   await page.goto(minbox.url)
   await createShellSession(page, minbox, 'home')
 
@@ -68,6 +66,7 @@ test.skip('a paired remote browser signs in again by itself after the server for
   await expect(page.getByTestId('pair-request-banner')).toBeVisible({ timeout: 10_000 })
   await page.getByTestId('pair-request-banner').getByRole('button', { name: 'Review' }).click()
   await page.getByTestId('device-request').getByTestId('device-accept').click()
+  await phone.getByTestId('agent-row').filter({ hasText: 'home' }).click({ timeout: 15_000 })
   await showTerminal(phone)
   await expect(phone.getByTestId('terminal-session-name')).toHaveText('home', { timeout: 15_000 })
   await typeInTerminal(phone, 'echo before-$((1+1))')

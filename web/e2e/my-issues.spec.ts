@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { createSession, expect, expectTerminal, test, type Minbox } from './fixtures'
+import { startAgent } from './v3'
 
 // My issues: the Linear issues assigned to me (list, detail), starting a linked thread from one, and
 // creating an issue from plain language. Against the fake Linear (OAuth + MCP) on loopback.
@@ -19,8 +20,7 @@ async function connect(page: Page, minbox: Minbox) {
   await expect(page.getByTestId('linear-status')).toHaveText('Connected', { timeout: 15_000 })
 }
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('desktop: entry above All projects only when connected; list, search, detail; start a linked thread; new issue from plain language', async ({ page, minbox }) => {
+test('desktop: entry above All projects only when connected; list, search, detail; start a linked thread; new issue from plain language', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
   const lin = minbox.linear
@@ -126,9 +126,8 @@ test.skip('desktop: entry above All projects only when connected; list, search, 
   await expect(preview).toContainText('Please add the toggle, tests first')
   await shot(page, 'issue-start-thread-desktop')
   await page.getByTestId('issue-thread-start').click()
-  // The new thread opens, linked to the issue; the agent got the issue as untrusted context.
-  await expect(page.getByTestId('thread-view')).toHaveAttribute('data-thread-id', /^thr_/)
-  await expect(page.getByTestId('linear-chip')).toContainText('ENG-202')
+  // The agent's stream opens; the agent got the issue as untrusted context.
+  await expect(page.getByTestId('stream-view')).toBeVisible()
   await expectTerminal(page, 'linear_issue_handoff')
   await expectTerminal(page, 'Add a dark mode toggle')
   await expectTerminal(page, 'Please add the toggle, tests first')
@@ -140,7 +139,7 @@ test.skip('desktop: entry above All projects only when connected; list, search, 
   await expect(page.getByTestId('issue-row').filter({ hasText: 'ENG-202' }).getByTestId('issue-row-threads')).toHaveText(/1/)
   await expect(page.getByTestId('issue-thread')).toHaveCount(1)
   await page.getByTestId('issue-thread').click()
-  await expect(page.getByTestId('thread-view')).toHaveAttribute('data-thread-id', /^thr_/)
+  await expect(page.getByTestId('stream-view')).toBeVisible()
 
   // New issue from plain language. Linear's lists are held back until after ⌘/Ctrl+Enter, so the
   // request made while they load must be kept and sent once they arrive (not dropped).
@@ -182,14 +181,12 @@ test.skip('desktop: entry above All projects only when connected; list, search, 
   await expect(page).not.toHaveURL(/v=issues/)
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('desktop: with several projects the helper picks one; the main session is the default; changing the project re-defaults it', async ({ page, minbox }) => {
+test('desktop: with several projects the helper picks one; the main session is the default; changing the project re-defaults it', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   await page.goto(minbox.url)
   await createSession(page, minbox.dataDir, 'alpha')
   await expectTerminal(page, 'ready>')
   mkdirSync(join(minbox.dataDir, 'beta'))
-  await page.getByTestId('new-session').click()
   await createSession(page, join(minbox.dataDir, 'beta'), 'beta')
   await connect(page, minbox)
   await page.goto(`${minbox.url}/#v=issues&issue=ENG-202`)
@@ -247,15 +244,14 @@ test('logged out: no entry, and the screen asks to connect', async ({ page, minb
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
-  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-  test.skip('list, detail with back, start thread, new issue', async ({ page, minbox }) => {
+  test('list, detail with back, start thread, new issue', async ({ page, minbox }) => {
     test.setTimeout(150_000)
     if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
-    await page.goto(minbox.url)
-    await createSession(page, minbox.dataDir, 'alpha')
-    await expectTerminal(page, 'ready>')
+    await startAgent(minbox, 'alpha')
     await connect(page, minbox)
     await page.goto(minbox.url)
+    // The project sheet (the Agents tab's project button) has the entry.
+    await page.getByTestId('tab-agents').tap()
     await page.getByTestId('project-switch').click()
     // The entry sits above All projects in the sheet.
     const a = (await page.getByTestId('my-issues').boundingBox())!

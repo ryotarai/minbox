@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { createSession, expect, expectTerminal, test, type Minbox } from './fixtures'
 import { FAKE_USER_TOKEN } from './fake-slack-user'
+import { startAgent } from './v3'
 
 // Slack (personal): the user token in Settings, the Slack screen (threads that need my reply,
 // judged by the helper), dismiss / snooze, and starting a minbox thread. Against the fake Slack
@@ -105,8 +106,7 @@ test('settings: connect with errors, scopes, manifest, backend, details, disconn
   await expect(page.getByTestId('slack-error')).toContainText('Slack is not connected')
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('desktop: list groups, detail, dismiss / snooze, cache, start a minbox thread', async ({ page, minbox }) => {
+test('desktop: list groups, detail, dismiss / snooze, cache, start a minbox thread', async ({ page, minbox }) => {
   test.setTimeout(150_000)
   if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
   const sl = minbox.slackUser
@@ -114,7 +114,6 @@ test.skip('desktop: list groups, detail, dismiss / snooze, cache, start a minbox
   await createSession(page, minbox.dataDir, 'alpha')
   await expectTerminal(page, 'ready>')
   mkdirSync(join(minbox.dataDir, 'eng'))
-  await page.getByTestId('new-session').click()
   await createSession(page, join(minbox.dataDir, 'eng'), 'eng')
   await connect(page, minbox)
   await page.goto(minbox.url)
@@ -221,7 +220,7 @@ test.skip('desktop: list groups, detail, dismiss / snooze, cache, start a minbox
   await expect(preview).toContainText('Draft my reply to Alice')
   await shot(page, 'slack-start-thread-desktop')
   await page.getByTestId('slack-thread-start').click()
-  await expect(page.getByTestId('thread-view')).toHaveAttribute('data-thread-id', /^thr_/)
+  await expect(page.getByTestId('stream-view')).toBeVisible()
   await expectTerminal(page, 'slack_thread_handoff')
   await expectTerminal(page, 'Draft my reply to Alice')
   // The Slack list shows the link, and the detail opens the minbox thread.
@@ -230,7 +229,7 @@ test.skip('desktop: list groups, detail, dismiss / snooze, cache, start a minbox
   await page.getByTestId('slack-row').filter({ hasText: '#eng' }).click()
   await expect(page.getByTestId('slack-linked-thread')).toBeVisible()
   await page.getByTestId('slack-linked-thread').click()
-  await expect(page.getByTestId('thread-view')).toHaveAttribute('data-thread-id', /^thr_/)
+  await expect(page.getByTestId('stream-view')).toBeVisible()
   // Back to the threads from the rail.
   await page.getByTestId('slack-entry').click()
   await page.getByTestId('project-all').click()
@@ -287,15 +286,14 @@ test('a rate limit shows partial results and waits; the Real-time Search API ref
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
-  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-  test.skip('list, detail with back, start thread', async ({ page, minbox }) => {
+    test('list, detail with back, start thread', async ({ page, minbox }) => {
     test.setTimeout(150_000)
     if (SHOTS) await page.emulateMedia({ colorScheme: 'dark' })
-    await page.goto(minbox.url)
-    await createSession(page, minbox.dataDir, 'alpha')
-    await expectTerminal(page, 'ready>')
+    await startAgent(minbox, 'alpha')
     await connect(page, minbox)
     await page.goto(minbox.url)
+    // The project sheet (the Agents tab's project button) has the entry.
+    await page.getByTestId('tab-agents').tap()
     await page.getByTestId('project-switch').click()
     const a = (await page.getByTestId('slack-entry').boundingBox())!
     const b = (await page.getByTestId('project-all').boundingBox())!

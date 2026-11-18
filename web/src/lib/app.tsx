@@ -124,6 +124,12 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   /** Desktop: the Files pane (the session's folder as a tree) is shown (after the Tasks pane), and its width. */
   filesPane: boolean
   filesW: number
+  /** v3: the agent's side pane last shown (tasks, terminal, shell, files), kept across agents and reloads. */
+  v3Pane?: 'tasks' | 'terminal' | 'shell' | 'files'
+  /** v3: widths dragged by the person: the sidebar, the narrow side pane (tasks), the wide one (terminal, shell, files). */
+  v3SidebarW?: number
+  v3SideW?: number
+  v3WideW?: number
 }
 function defaultLayout(): Layout {
   const w = window.innerWidth
