@@ -28,6 +28,7 @@ import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
 import { AgentTaskList, agentTasks } from './AgentTasks'
 import { AgentColumns, ColumnsBar, useColumnPick } from './Columns'
+import { TaskView } from './TaskView'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 
 /** The agent's side pane: its terminal, shell or files. 'tasks' is none of them on a desktop or tablet (the
@@ -56,7 +57,10 @@ export function StreamView({
   // The tasks checked in the Tasks pane: shown side by side in place of the stream (not on a phone).
   const mine = agentTasks(tasks, id)
   const pick = useColumnPick(id, [...mine.open, ...mine.done])
-  const cols = !isPhone && pick.columns
+  // A task picked by its title in the Tasks pane (#v=agent&s=…&k=…): that one task in place of the
+  // stream, before the checked columns (desktop and tablet; a phone opens the task view).
+  const detail = !isPhone && route.view === 'agent' && route.k ? route.k : null
+  const cols = !isPhone && pick.columns && !detail
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -83,7 +87,7 @@ export function StreamView({
   const arrived = (p: V3Message) => msgs.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)
   const shown = [...msgs, ...pending.filter((p) => !arrived(p))]
   const nearQ = answersNearQuestions(foldAll ? [] : shown)
-  useMarkRead(s?.messages)
+  useMarkRead(s?.messages, !cols && !detail)
   const firstNew = useFirstNew(id, s?.messages)
   const keep = useKeepPosition(scroller)
   const follow = useFollow(scroller, id, s ? shown : [], !!highlight || keep.pending())
@@ -102,15 +106,16 @@ export function StreamView({
   // Older messages arrive above: what the person reads stays where it is.
   useLayoutEffect(() => keep.after(), [older.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const files = threadArtifacts(msgs)
-  useConversationKeys(scroller, msgs, onOpenAttachment, !cols)
-  // Back from the columns: the stream at its newest message.
-  const wasCols = useRef(cols)
+  const streamShown = !cols && !detail
+  useConversationKeys(scroller, msgs, onOpenAttachment, streamShown)
+  // Back from the columns or a task: the stream at its newest message.
+  const wasShown = useRef(streamShown)
   useLayoutEffect(() => {
-    if (wasCols.current && !cols && scroller.current) {
+    if (!wasShown.current && streamShown && scroller.current) {
       scroller.current.scrollTop = scroller.current.scrollHeight
       follow.atBottom.current = true
     }
-    wasCols.current = cols
+    wasShown.current = streamShown
   })
   // E: mark the conversation read (it moves to Quiet; its questions close), back to the Board.
   useHotkeys(
@@ -203,10 +208,10 @@ export function StreamView({
   const terminalish = pane !== 'tasks'
   return (
     <>
-      <div className="v-col" data-testid="stream-view" data-session={id} data-columns={cols || undefined}>
+      <div className="v-col" data-testid="stream-view" data-session={id} data-columns={cols || undefined} data-detail={detail ?? undefined}>
         <div className="v-head">
           <div className="v-r1">
-            <BackButton tasks={tasks} />
+            <BackButton tasks={tasks} fallback={detail ? { k: null } : undefined} />
             <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
             <h2 data-testid="agent-name" className="v-tline">
               <span>{sess.name}</span>
@@ -274,8 +279,14 @@ export function StreamView({
             )}
           </div>
         </div>
-        {!isPhone && pick.selected.length > 0 && <ColumnsBar pick={pick} />}
-        {cols ? (
+        {!isPhone && !detail && pick.selected.length > 0 && <ColumnsBar pick={pick} />}
+        {detail ? (
+          <div className="v-colsone" data-testid="agent-task-detail">
+            <div className="v-colcell">
+              <TaskView key={detail} id={detail} highlight={null} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ onRemove: () => goBack({ k: null }), detail: pick.columns ? 'columns' : 'stream' }} />
+            </div>
+          </div>
+        ) : cols ? (
           <AgentColumns pick={pick} tasks={tasks} onOpenAttachment={onOpenAttachment} />
         ) : (
         <>

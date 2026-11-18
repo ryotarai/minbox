@@ -24,8 +24,10 @@ export function TaskView({
   highlight: string | null
   tasks: BoardTask[]
   onOpenAttachment: (a: Attachment, m: V3Message) => void
-  /** The columns view: one of several tasks side by side (a short header, no details pane, no conversation keys). */
-  column?: { onRemove: () => void }
+  /** The columns on an agent's page: one of several tasks side by side (a short header, no details pane,
+   *  no conversation keys). detail: the one task picked in the agent's Tasks pane; ✕ goes back to its
+   *  stream (or its columns). */
+  column?: { onRemove: () => void; detail?: 'stream' | 'columns' }
 }) {
   const { error, sessions, isPhone, toast } = useApp()
   const byId = useSessionsById()
@@ -222,7 +224,14 @@ export function TaskView({
             {t.title}
           </button>
         </h2>
-        <button type="button" className="v-btn v-colx" data-testid="column-remove" aria-label={`Remove “${t.title}” from the columns`} title="Remove from the columns" onClick={column.onRemove}>
+        <button
+          type="button"
+          className="v-btn v-colx"
+          data-testid={column.detail ? 'task-detail-close' : 'column-remove'}
+          aria-label={column.detail ? `Back to the ${column.detail}` : `Remove “${t.title}” from the columns`}
+          title={column.detail ? `Back to the ${column.detail} (Esc)` : 'Remove from the columns'}
+          onClick={column.onRemove}
+        >
           ✕
         </button>
       </div>
