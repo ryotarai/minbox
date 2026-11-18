@@ -197,7 +197,8 @@ export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'> &
   return <span className={`v-dot ${c}${live || c === 'd-work' ? ' v-live' : ''}`} data-status={t.status} />
 }
 
-export function Bar({ t }: { t: BoardTask | Task }) {
+/** A task's progress: a bar of segments (one per step or criterion) and, unless count is false, "n/m". */
+export function Bar({ t, count = true }: { t: BoardTask | Task; count?: boolean }) {
   const isGoal = t.kind === 'goal' && (t.criteria?.length ?? 0) > 0
   const items: Step[] = isGoal ? t.criteria : leaves(t.steps)
   if (!items.length) return null
@@ -210,9 +211,11 @@ export function Bar({ t }: { t: BoardTask | Task }) {
           <i key={i} className={s.done ? 'ok' : s === cur ? (q ? 'wt' : t.status === 'blocked' ? 'blk' : 'doing') : ''} />
         ))}
       </div>
-      <span className="v-cnt2">
-        {items.filter((s) => s.done).length}/{items.length}
-      </span>
+      {count && (
+        <span className="v-cnt2">
+          {items.filter((s) => s.done).length}/{items.length}
+        </span>
+      )}
     </>
   )
 }
