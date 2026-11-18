@@ -139,7 +139,6 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     act('new-agent', 'New agent', () => ctx.openNewAgent(), { keywords: 'new session create start claude pi opencode folder host' })
     act('board', 'Open Board', () => go({ view: 'main', k: null, s: null, m: null }), { keywords: 'home tasks questions needs you', shortcut: 'g b' })
     act('search', 'Search tasks and messages', () => go({ view: 'search' }), { keywords: 'find', shortcut: '/' })
-    act('columns', 'Open Columns (tasks side by side)', () => go({ view: 'columns', k: null, s: null, m: null }), { keywords: 'columns side by side tweetdeck multi tasks working all', shortcut: 'g c' })
     if (isPhone) act('agents', 'Open Agents', () => go({ view: 'agents' }), { keywords: 'sessions list' })
     act('all-projects', 'All projects', () => selectProject(''), { keywords: 'project scope everything show' })
     act('new-project', 'New project', () => setOverlay({ kind: 'new-project' }), { keywords: 'add folder create' })

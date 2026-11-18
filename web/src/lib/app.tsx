@@ -15,8 +15,8 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-/** v3: main is the Board; task, agent (a stream), agents (the phone's list), search and columns (tasks side by side). */
-export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search' | 'columns'
+/** v3: main is the Board; task, agent (a stream), agents (the phone's list) and search. */
+export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -50,7 +50,7 @@ function readRoute(hash = location.hash): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search', 'columns'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : p.get('tab') === 'tasks' ? 'tasks' : 'inbox',
     ss: p.get('ss') || 'general',
@@ -72,7 +72,8 @@ function routeHash(r: Route): string {
   if (r.view === 'settings' && r.ss !== 'general') p.set('ss', r.ss)
   if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
   if (r.view === 'slack' && r.slack) p.set('thread', r.slack)
-  if (r.view === 'task' && r.k) p.set('k', r.k)
+  // k on an agent: the task shown in its page (picked in its Tasks pane).
+  if ((r.view === 'task' || r.view === 'agent') && r.k) p.set('k', r.k)
   if (r.m && (r.view === 'task' || r.view === 'agent')) p.set('m', r.m)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
@@ -321,6 +322,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const next = { ...routeRef.current, ...patch }
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.t === undefined) next.t = null
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.f === undefined) next.f = null
+      // To an agent: its stream, unless a task of its page is named (a task view's k does not carry over).
+      if (patch.view === 'agent' && patch.k === undefined) next.k = null
       const h = routeHash(next)
       // Where we are now: a push to the same place makes no second entry.
       const here = location.hash || location.pathname
