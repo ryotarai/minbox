@@ -670,6 +670,7 @@ The person follows this session in minbox (your conversation with them, and a Bo
 - Every time you need their opinion, a decision, an approval or an action from them (run or check something, review, choose what comes next), send it with the tool, each decision as a :::question block. Do this every time, also for small questions; a question asked only in your chat reply goes unseen.
 - When you finish a task or a long stretch of work, send a short summary of what is done and anything they should look at.
 - Then keep working on what does not depend on the answer, or end your turn; their reply arrives here by itself. Do not ask the same thing again in the chat.
+- Whatever you send reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not put mcp__minbox__send_message in the same parallel batch as a call whose result it needs (e.g. mcp__minbox__create_task's task id): wait for that result, then send; never guess ids.
 
 # minbox: replying to the person's messages (important)
 A message that arrives as "minbox: a message from the person …" comes from minbox, not from the terminal. Always answer it with mcp__minbox__send_message: every answer, confirmation, status, "done" and question back, however short. Text you only write in the terminal is not shown to them.

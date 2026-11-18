@@ -131,6 +131,7 @@ var sendDescription = strings.Join([]string{
 	"Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal.",
 	"Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).",
 	"It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.",
+	"It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids.",
 	"Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id).",
 	"`thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
@@ -431,6 +432,7 @@ func fallbackReminderText(sendTool string) string {
 		"minbox: the person follows this session through the minbox inbox and may not be watching the terminal.",
 		"Whenever you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at, send it with " + sendTool + " (each decision as a :::question block) and keep going; their reply comes back here by itself.",
 		"Messages that arrive as \"minbox: a message from the person\" come from minbox: always answer them with " + sendTool + ", never only in the terminal.",
+		"Whatever you send with " + sendTool + " reaches the person at once and cannot be taken back: never send placeholder, test or draft text, and do not send it in the same parallel batch as a call whose result it needs (e.g. a task id); wait for that result, never guess ids.",
 	}, " ")
 }
 
