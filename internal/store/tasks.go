@@ -420,6 +420,15 @@ func (s *Store) AddTaskEvent(ctx context.Context, taskID, kind, text, sessionID,
 		NewID("tev"), taskID, ms(s.now()), kind, text, sessionID, messageID)
 }
 
+// eventText is an event's line as the timeline shows it. Status changes were once stored as a bare
+// "→ needs you", a line with no subject: they read "Status → needs you" now.
+func eventText(kind, text string) string {
+	if kind == "status" && strings.HasPrefix(text, "→ ") {
+		return "Status " + text
+	}
+	return text
+}
+
 // statusWord is a status as the timeline says it.
 func statusWord(st string) string {
 	return map[string]string{TaskWorking: "working", TaskNeedsYou: "needs you", TaskBlocked: "blocked", TaskDone: "done"}[st]
@@ -518,7 +527,7 @@ func (s *Store) UpdateTask(ctx context.Context, id, by string, f TaskFields) (*T
 			t.DoneAt = nil
 		}
 		if st != cur.Status {
-			w := "→ " + statusWord(st)
+			w := "Status → " + statusWord(st)
 			if by == "" {
 				w += " (you)"
 			}
@@ -794,6 +803,7 @@ func (s *Store) TaskEvents(ctx context.Context, taskID string) ([]TaskEvent, err
 			return nil, err
 		}
 		e.At = fromMs(at)
+		e.Text = eventText(e.Kind, e.Text)
 		out = append(out, e)
 	}
 	return out, rows.Err()

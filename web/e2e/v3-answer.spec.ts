@@ -1,5 +1,6 @@
-// UC2 (answer a question fast): a pick only selects; Send (or ⌘↵) sends the picked answers, on the
-// Board and inside the task or stream; the answer goes to the agent that asked, about the question's task.
+// UC2 (answer a question fast): a pick only selects; Send (or ⌘↵) sends the picked answers inside the
+// task or stream (the Board only lists the question and opens it there); the answer goes to the agent
+// that asked, about the question's task.
 import { test, expect } from './fixtures'
 import { agentReply, api, board, say, startAgent, taskNamed } from './v3'
 
@@ -34,18 +35,23 @@ test('in the task view a pick selects, Send sends; the answer is about the task'
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
-  test('a question card: tap a choice, then Send', async ({ page, minbox }) => {
+  test('a question on the Board: a compact row; tap expands, Answer opens where to answer, tap a choice, then Send', async ({ page, minbox }) => {
     const a = await startAgent(minbox, 'api')
     await say(minbox, a, 'ASK about the deploy')
-    await agentReply(minbox, a, /One decision first/)
+    const q = await agentReply(minbox, a, /One decision first/)
     await page.goto(minbox.url)
     const card = page.getByTestId('question-card')
-    await expect(card).toContainText('Which region')
-    await card.getByTestId('choice').filter({ hasText: 'Tokyo' }).tap()
-    await expect(card.getByTestId('choice').filter({ hasText: 'Tokyo' })).toHaveAttribute('aria-pressed', 'true')
-    await expect(card).toHaveCount(1)
-    await card.getByTestId('answers-send').tap()
-    await expect(card).toHaveCount(0)
+    await expect(card.getByTestId('ask')).toHaveText('you: Which region should it deploy to?')
+    await expect(card.getByTestId('choice')).toHaveCount(0)
+    await card.locator('.v-line').tap()
+    await expect(card.getByTestId('task-expanded')).toBeVisible()
+    await card.getByTestId('answer-in-task').tap()
+    const msg = page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)
+    await expect(msg).toHaveClass(/\bhl\b/)
+    await msg.getByTestId('question').getByText('Tokyo', { exact: true }).tap()
+    await msg.getByTestId('send-answers').tap()
+    await expect(msg.getByTestId('question')).toHaveAttribute('data-open', 'false')
     await agentReply(minbox, a, /carrying on/)
+    await expect.poll(async () => (await board(minbox)).questions.length).toBe(0)
   })
 })

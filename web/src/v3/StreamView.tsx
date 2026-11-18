@@ -401,17 +401,6 @@ export function StreamView({
                   ))}
                 </details>
               )}
-              <div className="v-sec">AGENT</div>
-              <dl className="v-facts">
-                <dt>Kind</dt>
-                <dd>{agentKindLabel(sess.agent)}</dd>
-                <dt>Folder</dt>
-                <dd className="font-mono" title={sess.cwd}>
-                  {sess.cwd}
-                </dd>
-                <dt>Started</dt>
-                <dd>{sess.created_at ? new Date(sess.created_at).toLocaleDateString() : '—'}</dd>
-              </dl>
             </div>
           )}
           {pane === 'terminal' && (

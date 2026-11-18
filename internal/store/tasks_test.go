@@ -171,7 +171,7 @@ func TestTasksTagsAndTurn(t *testing.T) {
 		t.Fatalf("agent = %+v", up)
 	}
 	evs, _ := s.TaskEvents(ctx, tk.ID)
-	if len(evs) != 3 || evs[1].Text != "→ done (you)" {
+	if len(evs) != 3 || evs[1].Text != "Status → done (you)" || evs[2].Text != "Status → working" {
 		t.Fatalf("events = %+v", evs)
 	}
 	if ok, _ := s.UnlinkMessage(ctx, u1.ID, tk.ID); !ok {

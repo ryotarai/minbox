@@ -240,6 +240,8 @@ test.describe('phone', () => {
     await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeHidden() // folded
     await tasksList.getByText('DONE THIS WEEK').tap()
     await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeVisible()
+    // Only tasks: the agent's kind / folder / start live in its ⋯ menu.
+    await expect(tasksList).not.toContainText('Folder')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
     await snap(page, 'phone-agent-sheet')
 
