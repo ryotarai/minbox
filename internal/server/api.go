@@ -437,7 +437,7 @@ func (s *Server) reply(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 422, "a message that starts with ! runs as a command; send it without answers, files or markups (start with \\! to send the text)")
 			return
 		}
-		s.replyCommand(w, r, th, rest)
+		s.replyCommand(w, r, th, rest, req.TaskIDs)
 		return
 	}
 	req.Words = rest
@@ -725,6 +725,10 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 	if req.Status == store.StatusIdle {
 		v3Turns.end(sess.ID)
 		noteIdle(sess.ID)
+		// A turn is over: messages it left in no task are asked about (v3place.go).
+		if sess.Status == store.StatusWorking {
+			s.schedulePlace(sess.ID, placeSettle)
+		}
 		defer func() { go s.goalTick() }()
 	}
 	if sess.Status != store.StatusEnded && sess.Status != req.Status {
@@ -934,6 +938,12 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		}
 	}
 	tagged, decision := s.v3AgentReply(ctx, sess, messageID, taskIDs, req.Status)
+	note := ""
+	if len(tagged) == 0 {
+		cand, _ := s.store.TurnMessages(ctx, sess.ID)
+		unplaced, _ := s.untaggedOf(ctx, append([]string{messageID}, cand...))
+		note = unplacedNote(unplaced)
+	}
 	s.publishThread(sess.ID, threadID)
 	if subject == "" {
 		subject = firstLine(body)
@@ -949,7 +959,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		qs = append(qs, qInfo{q.Key, q.Kind, q.Prompt})
 	}
 	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_ids": tagged, "decision": decision,
-		"attachments": attsOut, "images_not_shown": notShown})
+		"attachments": attsOut, "images_not_shown": notShown, "note": note})
 }
 
 func appendNew(ids []string, id string) []string {

@@ -38,7 +38,7 @@ const (
 const (
 	DecisionExisting = "existing" // about a task that existed
 	DecisionCreated  = "created"  // new work: the agent created the task in this turn
-	DecisionNone     = "none"     // no task (a quick answer)
+	DecisionNone     = "none"     // the reply named no task (minbox asks the agent to place it after the turn)
 	DecisionMoved    = "moved"    // the person moved the tags to another task
 )
 

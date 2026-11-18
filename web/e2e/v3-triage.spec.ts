@@ -53,5 +53,6 @@ test('triage on the Board: question cards first, rows expand in place, 1–9 ans
   await page.keyboard.press('x')
   await expect(page.getByTestId('group-working').getByTestId('task-row')).toHaveCount(0)
   await page.getByTestId('toggle-done').click()
-  await expect(page.getByTestId('group-done').getByTestId('task-row')).toHaveCount(1)
+  // (the quick exchange's own small task is done too)
+  await expect(page.getByTestId('group-done').locator(`[data-testid="task-row"][data-task="${gauge.id}"]`)).toHaveCount(1)
 })

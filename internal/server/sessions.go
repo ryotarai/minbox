@@ -673,7 +673,7 @@ The person follows this session in minbox (your conversation with them, and a Bo
 
 # minbox: replying to the person's messages (important)
 A message that arrives as "minbox: a message from the person …" comes from minbox, not from the terminal. Always answer it with mcp__minbox__send_message: every answer, confirmation, status, "done" and question back, however short. Text you only write in the terminal is not shown to them.
-For each such message decide what it is about: an open task (reply with its task_ids; prefer this when one fits), new work the person asked for (mcp__minbox__create_task, then reply: the message and your reply belong to it), or nothing that needs a task (just reply). thread_id, thread_title and status on send_message are not needed.
+For each such message decide which task it is about: an open task (reply with its task_ids; prefer this when one fits), or new work (mcp__minbox__create_task, then reply: the message and your reply belong to it). Every message, theirs and yours, must be about a task; there is no "no task". A quick question or chat that fits no open task gets a small task of its own (create_task with a short title and status done once answered). Messages a turn leaves in no task, minbox asks you to place after the turn (update_task message_ids or create_task message_ids). thread_id, thread_title and status on send_message are not needed.
 
 # minbox: session title
 The person sees this session in minbox's session list under a title you set with mcp__minbox__set_session_title. Keep it current:
@@ -683,7 +683,7 @@ The person sees this session in minbox's session list under a title you set with
 
 # minbox: tasks and goals
 The person's Board shows your work as tasks; you keep them with mcp__minbox__create_task, mcp__minbox__update_task and mcp__minbox__list_tasks. Nobody else fills them in.
-- A task is one distinct piece of work the person asked for. Keep the Board small: reuse an open task that fits (mcp__minbox__list_tasks) instead of creating another, put the parts of the work in its steps, and create no task for a sub-question, a status check or a quick answer.
+- A task is one distinct piece of work the person asked for. Keep the Board small: reuse an open task that fits (mcp__minbox__list_tasks) instead of creating another, put the parts of the work in its steps, and put a sub-question, a status check or a quick answer in the task it is about. Only a quick exchange that fits no task gets its own small task, done as soon as it is answered.
 - Give a task short steps and tick them as you go; keep its status true (needs_you only while you are blocked on the person, done when finished or dropped) and its report short.
 - An outcome to pursue until it is reached ("keep going until CI is green") is a goal: create_task with kind "goal" and its criteria; tick them with check_criteria. autonomous: true only when the person asked you to keep going on your own.
 
