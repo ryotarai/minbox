@@ -1,6 +1,6 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
-// Board · Agents · Search. Keys: ⌘K J/K Space Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
+// Board · Agents · Search. Columns: several tasks side by side. Keys: ⌘K J/K Space Enter X N Z R ⇧N ⇧F / ? g b g a g c T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
@@ -25,6 +25,7 @@ import { TaskView } from './TaskView'
 import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
 import { SearchView } from './Search'
+import { ColumnsView } from './Columns'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTaskTitles, agentHint, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
@@ -57,7 +58,7 @@ export function V3App() {
   }, [sessions, projectId])
   // Plain login shells an older build left (they can no longer be made): listed apart, they open on their terminal.
   const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
-  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : 'board'
+  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : route.view === 'columns' ? 'columns' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const [pane, setPane] = useSidePane(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
@@ -116,6 +117,7 @@ export function V3App() {
       gPending.current = false
       if (e.key === 'b') nav.board()
       if (e.key === 'a' && agents[0]) nav.agent(agents[0].id)
+      if (e.key === 'c') nav.columns()
       return
     }
     if (e.key === 'g') {
@@ -234,6 +236,7 @@ export function V3App() {
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
+  else if (view === 'columns') main = <ColumnsView tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
   else
     main = (
@@ -303,6 +306,12 @@ export function V3App() {
           <button type="button" className={'v-sb-item' + (view === 'board' ? ' sel' : '')} data-testid="nav-board" onClick={nav.board}>
             ▤ Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
           </button>
+          <button type="button" className={'v-sb-item' + (view === 'columns' ? ' sel' : '')} data-testid="nav-columns" title="Tasks side by side" onClick={nav.columns}>
+            ▥ Columns{' '}
+            <span className="v-cnt">
+              <span className="v-kbd">g c</span>
+            </span>
+          </button>
           <button type="button" className={'v-sb-item' + (view === 'search' ? ' sel' : '')} data-testid="nav-search" onClick={nav.search}>
             ⌕ Search{' '}
             <span className="v-cnt">
@@ -338,7 +347,7 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' ? ' conv' : '')}>
+      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' || view === 'columns' ? ' conv' : '')}>
         {main}
         {hasSide && <Resizer testid="side-resizer" measure={() => sideEl()?.offsetWidth ?? 300} onDrag={dragSide} />}
       </main>
@@ -669,7 +678,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     [mod + 'K', 'Quick actions: go to a task, an agent or a project, or run an action (> actions · @ agents · # tasks · ! projects)'],
     ['⇧N', 'New message (to the main agent by default)'],
     ['/', 'Search'],
-    ['g b · g a', 'Board · first agent'],
+    ['g b · g a · g c', 'Board · first agent · Columns (tasks side by side)'],
     ['J / K', 'Move on the Board'],
     ['Space', 'Expand / collapse a row on the Board'],
     ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],

@@ -136,7 +136,7 @@ export function useKeepPosition(box: RefObject<HTMLElement | null>) {
  * The conversation's keys: N to "new", Q to the next open question, O (and F) the newest file, ]
  * the first, [ the newest. Off while a file is open (its viewer has its own keys).
  */
-export function useConversationKeys(box: RefObject<HTMLElement | null>, messages: V3Message[], open: (a: Attachment, m: V3Message) => void) {
+export function useConversationKeys(box: RefObject<HTMLElement | null>, messages: V3Message[], open: (a: Attachment, m: V3Message) => void, enabled = true) {
   const { route } = useApp()
   const files = steppable(messages)
   const ownerOf = (a: Attachment) => messages.find((m) => (m.attachments ?? []).some((x) => x.id === a.id)) ?? messages[messages.length - 1]!
@@ -164,7 +164,7 @@ export function useConversationKeys(box: RefObject<HTMLElement | null>, messages
       ']': () => openFile(files[0]),
       '[': () => openFile(files[files.length - 1]),
     },
-    !route.f,
+    !route.f && enabled,
   )
 }
 
