@@ -6,7 +6,7 @@ import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { ago, hhmm, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
@@ -342,9 +342,7 @@ export function TaskView({
               )
             })}
             {typing.map((s) => (
-              <div key={s!.id} className="v-typing">
-                {s!.name} is working…
-              </div>
+              <WorkingLine key={s!.id} name={s!.name} />
             ))}
           </div>
         </div>

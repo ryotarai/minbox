@@ -106,6 +106,15 @@ test('delivery: a busy agent gets messages in its running turn, in order; a queu
   await open(page, minbox, a)
   await typeInTerminal(page, 'work')
   await expectTerminal(page, 'status work')
+  // While it works, "api is working…" under the stream is animated: the dot pulses, a shimmer sweeps the
+  // words, the ellipsis's dots bounce in turn.
+  const working = page.getByTestId('stream-view').getByTestId('working-line')
+  await expect(working).toContainText('api is working')
+  const anim = (sel: string) => working.locator(sel).first().evaluate((el) => getComputedStyle(el).animationName)
+  expect(await anim('.v-dot')).toBe('v-pulse')
+  expect(await anim('.v-typing-t')).toBe('v-shimmer')
+  expect(await anim('.v-ell i')).toBe('v-ell')
+  if (process.env.WORKING_SHOT) await page.getByTestId('stream-view').screenshot({ path: process.env.WORKING_SHOT })
   // Working: the message goes into the running turn at once (as Send now did); no Queued line, no Send now.
   await box(page).fill('mid-turn one')
   await page.getByTestId('composer-send').click()
