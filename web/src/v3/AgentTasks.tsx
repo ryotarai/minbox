@@ -87,7 +87,8 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
 /**
  * The Tasks pane beside the stream (desktop and tablet). Shown, it lists the tasks under a header with
  * a fold button; folded, a narrow strip with the open count unfolds it. overlay: there is no room for
- * it beside the stream (a tablet, or a narrow window with the terminal open), so unfolded it lies over
+ * it beside the stream (the stream would get narrower than MIN_STREAM: a narrow window or tablet with
+ * the terminal open), so unfolded it lies over
  * the stream and folds again when a task opens, on Esc or a click outside.
  */
 export function TasksPane({
