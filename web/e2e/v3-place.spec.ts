@@ -2,7 +2,7 @@
 // agent to place them; it asks again after each turn that leaves them, until the agent does. Until
 // then the message says it waits for the agent.
 import { test, expect } from './fixtures'
-import { agentReply, api, say, startAgent } from './v3'
+import { agentReply, api, say, startAgent, taskAbove } from './v3'
 
 test('the agent ignores the request to place its messages, is asked again after each turn, and places them', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
@@ -17,7 +17,7 @@ test('the agent ignores the request to place its messages, is asked again after 
   await expect(asks).toHaveCount(3, { timeout: 20_000 })
   await expect(asks.first()).toContainText('Asked api to put 2 messages in tasks')
   await expect(reply.getByTestId('unplaced')).toHaveCount(0, { timeout: 10_000 })
-  await expect(reply.getByTestId('task-link')).toHaveAttribute('title', 'Quick questions')
+  await expect(taskAbove(reply)).toHaveAttribute('title', 'Quick questions')
   await expect(stream.getByTestId('unplaced')).toHaveCount(0)
   // Nothing is left in no task, and no more requests come.
   await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).messages.filter((m: any) => m.tasks.length === 0).length).toBe(0)
