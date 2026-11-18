@@ -232,7 +232,7 @@ thread's status. The Board (cards, the agent `card` tool, `/api/cards`, `/api/ag
 - A thread's Tasks pane: the checklist button in the thread header (`tasks-toggle`, "Show tasks" / "Hide tasks"; ⌘K
   "Show tasks" / "Hide tasks") shows the open thread's topics (`GET /api/topics?thread=`, reloaded on SSE `topics`). On a
   desktop it is a resizable column (default 320 px, min 240) right of the thread and, with the agent terminal open,
-  between them: `[thread | tasks | terminal | shell]` (swapped panes: `[terminal | shell | tasks | thread]`); its × closes
+  between them: `[thread | tasks | terminal | shell]`; its × closes
   it, and the open state and width are stored with the layout (`minbox:layout` `tasksPane`, `tasksW`). A narrow window
   hides it after the shell. On a tablet or phone it opens full screen with Back. The list groups the thread's topics by
   status (compact cards, the "…" menu moves them); selecting one shows the topic pane's contents in place (Back to the

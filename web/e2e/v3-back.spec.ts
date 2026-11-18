@@ -261,7 +261,7 @@ test.describe('phone', () => {
     await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
     await expect(back(page)).toHaveAccessibleName('Back to api')
     // The task's checklist in its card, below the title (no Details pane).
-    await page.getByTestId('task-checklist-progress').tap() // four steps start folded on a phone
+    await page.getByTestId('task-checklist-toggle').tap() // four steps start folded on a phone
     await expect(page.getByTestId('task-card').getByTestId('task-checklist').getByTestId('step')).toHaveCount(4)
     const card = (await page.getByTestId('task-title').boundingBox())!
     const list = (await page.getByTestId('task-checklist').boundingBox())!

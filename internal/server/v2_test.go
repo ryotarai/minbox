@@ -222,6 +222,9 @@ func TestSessionArchiveSettings(t *testing.T) {
 	if _, had := st["board"]; had {
 		t.Fatalf("the retired board setting is still listed: %v", st)
 	}
+	if _, had := st["swap_panes"]; had {
+		t.Fatalf("the retired swap_panes setting is still listed: %v", st)
+	}
 	_, st, _ = e.do("PUT", "/api/settings", map[string]any{"decision_mode": true, "prompt_extra": "be brief"}, nil)
 	if st["decision_mode"] != true || st["theme"] != "system" {
 		t.Fatalf("put = %v", st)
@@ -231,6 +234,9 @@ func TestSessionArchiveSettings(t *testing.T) {
 	}
 	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"board": true}, nil); code != 400 {
 		t.Fatal("the board setting is gone")
+	}
+	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"swap_panes": false}, nil); code != 400 {
+		t.Fatal("the swap_panes setting is gone")
 	}
 	if code, _, _ := e.do("POST", "/api/agent/cards", map[string]any{"title": "x"}, bearer(sess)); code != 404 {
 		t.Fatalf("agent cards: %d", code)
