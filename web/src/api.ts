@@ -98,8 +98,6 @@ export type Session = {
   host_name?: string
   /** The project (host + folder) the session belongs to. */
   project_id?: string
-  /** The project's main session: new threads go to it by default. */
-  is_main?: boolean
 }
 
 /** GET /api/sessions/{id}/connection: the diagnostics of a session's mod connection. */
@@ -143,8 +141,6 @@ export type Project = {
   created_at: string
   archived_at: string | null
   pinned_at: string | null
-  /** The Claude Code session a new thread goes to by default ('' until the project has one). */
-  main_session_id: string
   /** The agent new sessions of the project start with; '' follows the default_agent setting. */
   default_agent?: AgentKind | ''
   session_count: number
@@ -628,7 +624,8 @@ export type IssueComment = { id: string; author: string; body: string; url: stri
 export type IssueDetailResult = { issue: IssueSummary; comments: IssueComment[]; comments_total: number; comments_error?: string; fetched_at: string }
 
 export type IssueThreadRequest = {
-  target: { kind: 'session' | 'new_session'; session_id?: string; project_id?: string; agent?: string; name?: string }
+  /** auto: the helper picks one of the project's live agents for the work, else a new agent starts. */
+  target: { kind: 'session' | 'new_session' | 'auto'; session_id?: string; project_id?: string; agent?: string; name?: string }
   subject?: string
   instruction?: string
 }
@@ -941,10 +938,9 @@ export const api = {
   sessions: () => call<Session[]>('GET', '/api/sessions'),
   createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind, agent }),
   /** A session inside a project: its host and folder. */
-  createSessionIn: (project_id: string, name: string, kind?: SessionKind, main?: boolean, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind, main: main || undefined, agent }),
+  createSessionIn: (project_id: string, name: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind, agent }),
   agents: (hostId?: string, fresh?: boolean) =>
     call<AgentsInfo>('GET', `/api/agents${hostId ? `?host_id=${encodeURIComponent(hostId)}${fresh ? '&fresh=1' : ''}` : ''}`),
-  setMainSession: (project_id: string, session_id: string) => call<Project>('PATCH', `/api/projects/${project_id}`, { main_session_id: session_id }),
   setProjectEmoji: (id: string, emoji: string) => call<Project>('PUT', `/api/projects/${id}/icon`, { emoji }),
   clearProjectIcon: (id: string) => call<Project>('DELETE', `/api/projects/${id}/icon`),
   setProjectImage: async (id: string, file: Blob) => {

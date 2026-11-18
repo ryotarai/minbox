@@ -99,19 +99,6 @@ export function SessionMenu({
       >
         Rename
       </MenuItem>
-      {s.kind !== 'shell' && s.project_id && (
-        <MenuItem
-          testid="menu-set-main"
-          disabled={!!s.is_main}
-          hint={s.is_main ? 'is main' : undefined}
-          onClick={act(async () => {
-            await api.setMainSession(s.project_id!, s.id)
-            toast(`${s.name} is now the project's main session`)
-          })}
-        >
-          Set as main session
-        </MenuItem>
-      )}
       {s.status === 'ended' ? (
         <MenuItem testid="menu-restart" onClick={act(() => api.restartSession(s.id))}>
           Resume

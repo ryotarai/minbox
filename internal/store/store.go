@@ -155,7 +155,6 @@ type Session struct {
 	Title     string `json:"title"`               // what Claude says the session is doing (set_session_title)
 	HostName  string `json:"host_name,omitempty"` // filled by the server
 	ProjectID string `json:"project_id"`
-	IsMain    bool   `json:"is_main"` // the project's main session
 	// Folder change (see RelocateSession): RelocateTo is the project's new folder, applied at the
 	// next start; PrevDir and PrevClaudeSessionID name the conversation left behind in the old folder.
 	RelocateTo          string `json:"relocate_to,omitempty"`
@@ -699,29 +698,20 @@ func (s *Store) CreateSessionAgent(ctx context.Context, projectID, kind, agentKi
 	if _, err := tx.ExecContext(ctx, `UPDATE projects SET archived_at=NULL WHERE id=?`, p.ID); err != nil {
 		return nil, err
 	}
-	// The first Claude Code session of a project is its main one.
-	if kind == KindClaude {
-		if _, err := tx.ExecContext(ctx, `UPDATE projects SET main_session_id=? WHERE id=? AND (main_session_id IS NULL OR main_session_id='' OR main_session_id NOT IN (SELECT id FROM sessions))`, sess.ID, p.ID); err != nil {
-			return nil, err
-		}
-		var main string
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(main_session_id,'') FROM projects WHERE id=?`, p.ID).Scan(&main)
-		sess.IsMain = main == sess.ID
-	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), EXISTS(SELECT 1 FROM projects p WHERE p.main_session_id=sessions.id), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
 	var chain string
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.IsMain, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

@@ -9,8 +9,9 @@ import { IconClose } from './icons'
 /**
  * Start a minbox thread from a Linear issue. The project is picked for you (a thread already linked
  * to the issue, a project named like the Linear project or team, else the helper agent; "Picking
- * project…" never blocks the dialog and you can change it), the session defaults to that project's
- * main session, and the preview on the right is the text the agent receives first, composed by the
+ * project…" never blocks the dialog and you can change it), the session defaults to "Let minbox
+ * choose" (on start the helper picks one of the project's running agents whose work fits, else a new
+ * agent starts; you can pick one yourself), and the preview on the right is the text the agent receives first, composed by the
  * server (POST /api/linear/issues/{id}/thread/preview). The new thread is linked to the issue at once.
  */
 export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onClose: () => void }) {
@@ -28,17 +29,13 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
   const agentsInfo = useAgents(project?.host_id)
   const installed = installedAgents(agentsInfo)
 
-  // Sessions of the project that can take a thread; the main one first.
+  // Sessions of the project that can take a thread; the most recently active first.
   const choices = useMemo(() => {
     const ok = (sessions ?? []).filter((s) => s.project_id === projectId && s.kind === 'claude' && !s.archived_at && s.status !== 'ended')
-    return [...ok].sort((a, b) => Number(!!b.is_main) - Number(!!a.is_main) || a.name.localeCompare(b.name))
+    return [...ok].sort((a, b) => (b.last_activity ?? '').localeCompare(a.last_activity ?? '') || a.name.localeCompare(b.name))
   }, [sessions, projectId])
-  const mainOf = (pid: string) => {
-    const p = live.find((x) => x.id === pid)
-    return (sessions ?? []).find((s) => s.id === p?.main_session_id && s.kind === 'claude' && !s.archived_at && s.status !== 'ended')
-  }
-  // The default session: the project's main session; without a usable one, a new session.
-  const [sessionPick, setSessionPick] = useState(() => mainOf(projectId)?.id ?? 'new')
+  // The default: 'auto', minbox picks the agent when the thread starts (an agent whose work fits, else a new one).
+  const [sessionPick, setSessionPick] = useState('auto')
   const [agentPick, setAgentPick] = useState<AgentKind | ''>('')
   const [sessionName, setSessionName] = useState('')
   const [subject, setSubject] = useState(`${issue.identifier} ${issue.title}`.slice(0, 100))
@@ -48,13 +45,13 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
   const [previewErr, setPreviewErr] = useState('')
   const [showPreview, setShowPreview] = useState(!isPhone)
 
-  // Changing the project re-defaults the session to that project's main session.
+  // Changing the project re-defaults the session to "Let minbox choose".
   const chooseProject = (id: string, byPerson: boolean) => {
     if (byPerson) projectTouched.current = true
     setProjectId(id)
     if (byPerson || !sessionTouched.current) {
       sessionTouched.current = false
-      setSessionPick(mainOf(id)?.id ?? 'new')
+      setSessionPick('auto')
     }
   }
   // The server's pick, asynchronously; it never overrides a project the person already chose.
@@ -71,26 +68,25 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
     return () => void (alive = false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issue.identifier])
-  // Sessions load after the dialog opens: when the default could not be the main session yet.
-  useEffect(() => {
-    if (!sessionTouched.current) setSessionPick(mainOf(projectId)?.id ?? 'new')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, projectId])
-
   const newSession = sessionPick === 'new'
+  const autoPick = sessionPick === 'auto'
   const req: IssueThreadRequest = useMemo(
     () => ({
-      target: newSession ? { kind: 'new_session', project_id: projectId, agent: agentPick || undefined, name: sessionName.trim() || undefined } : { kind: 'session', session_id: sessionPick },
+      target: newSession
+        ? { kind: 'new_session', project_id: projectId, agent: agentPick || undefined, name: sessionName.trim() || undefined }
+        : autoPick
+          ? { kind: 'auto', project_id: projectId }
+          : { kind: 'session', session_id: sessionPick },
       subject: subject.trim() || undefined,
       instruction: instruction.trim() || undefined,
     }),
-    [newSession, projectId, sessionPick, agentPick, sessionName, subject, instruction],
+    [newSession, autoPick, projectId, sessionPick, agentPick, sessionName, subject, instruction],
   )
 
   const seqNo = useRef(0)
   useEffect(() => {
     const n = ++seqNo.current
-    if (!projectId && newSession) {
+    if (!projectId && (newSession || autoPick)) {
       setPreviewErr('Pick a project for the new session.')
       return
     }
@@ -109,7 +105,7 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
         })
     }, 200)
     return () => clearTimeout(t)
-  }, [issue.identifier, req, projectId, newSession])
+  }, [issue.identifier, req, projectId, newSession, autoPick])
 
   const starting = useRef(false)
   const start = async () => {
@@ -191,16 +187,14 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
               }}
               className={cx(field, 'h-[38px] text-[13px]')}
             >
+              <option value="auto">Let minbox choose (an agent whose work fits, else a new one)</option>
               {choices.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.is_main ? 'Main session' : 'Session'} · {s.name} · {agentLabel(agentsInfo, s.agent)}
+                  Session · {s.name} · {agentLabel(agentsInfo, s.agent)}
                 </option>
               ))}
               <option value="new">New session{project ? ` in ${project.name}` : ''}</option>
             </select>
-            {!newSession && !choices.find((s) => s.id === sessionPick)?.is_main && (
-              <span className="text-[11.5px] text-subtle">That session has one conversation across its threads: the new thread queues behind its current work.</span>
-            )}
           </label>
           {newSession && installed.length > 1 && (
             <div className="flex flex-col gap-1.5">

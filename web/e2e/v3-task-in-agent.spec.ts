@@ -1,7 +1,7 @@
 // The task page is gone: a task opens in its agent's page, selected there (#s=<agent>&v=agent&k=<task>),
 // as a card (title, where it stands, status, agents, and its checklist beside them) above its messages.
 // Old #v=task&k=… links (bookmarks, notifications already sent) are replaced with that page; a task no
-// agent has touched opens in its project's main agent, and with no agent at all on the Board, its row
+// agent has touched opens in its project's most recently active live agent, and with no agent at all on the Board, its row
 // focused. The agent's header has no status line under the name, and the card has no ✕ or Open.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -106,12 +106,21 @@ test('a long checklist stays a short box until Show all', async ({ page, minbox 
   expect((await box.boundingBox())!.height).toBeGreaterThan(folded + 40)
 })
 
-test('a task no agent has touched opens in its project main agent; with no agent at all, the Board with its row focused', async ({ page, minbox }) => {
+test('a task no agent has touched opens in its project\'s most recently active agent; with no agent at all, the Board with its row focused', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
-  const main = (await api(minbox, 'GET', '/api/sessions')).find((s: any) => s.project_id === a.project_id && s.is_main)
+  const b = await startAgent(minbox, 'web')
+  // a, started first, is the one active last.
+  await say(minbox, a, 'hello there')
+  const at = (s: any) => new Date(s.last_activity ?? s.updated_at).getTime()
+  await expect
+    .poll(async () => {
+      const ss = await api(minbox, 'GET', '/api/sessions')
+      return at(ss.find((s: any) => s.id === a.id)) > at(ss.find((s: any) => s.id === b.id))
+    })
+    .toBe(true)
   const loose = await api(minbox, 'POST', '/api/v3/tasks', { project_id: a.project_id, title: 'Nobody has this yet' })
   await page.goto(`${minbox.url}/#v=task&k=${loose.id}`)
-  await expect(page).toHaveURL(new RegExp(`#s=${main.id}&v=agent&k=${loose.id}`))
+  await expect(page).toHaveURL(new RegExp(`#s=${a.id}&v=agent&k=${loose.id}`))
   await expect(page.getByTestId('task-title')).toHaveText('Nobody has this yet')
 
   // A project without agents.

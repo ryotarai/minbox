@@ -39,10 +39,6 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 409, "only an ended session can be archived; stop it first")
 		return
 	}
-	if err := s.store.ReleaseMain(ctx, id, r.URL.Query().Get("promote")); err != nil {
-		storeError(w, err)
-		return
-	}
 	if err := s.store.SetSessionArchived(ctx, id, true); err != nil {
 		storeError(w, err)
 		return
