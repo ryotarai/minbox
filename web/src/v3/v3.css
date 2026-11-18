@@ -94,15 +94,10 @@ select.v-chip { padding: 1px 4px; }
 .v-cnt2 { color: var(--mb-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .v-pill { font-size: 10.5px; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
 .v-pill.run { color: var(--mb-purple); } .v-pill.pause { color: var(--mb-wait); }
-.v-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; padding: 2px 18px 14px 34px; }
+.v-detail { max-width: 760px; padding: 2px 18px 14px 34px; }
 .v-sec { font-size: 11px; letter-spacing: .08em; font-weight: 600; color: var(--mb-subtle); margin: 12px 0 7px; display: flex; gap: 8px; align-items: center; }
 .v-sec .v-x { margin-left: auto; letter-spacing: 0; font-weight: 500; color: var(--mb-faint); }
 .v-report { background: var(--mb-sunken); border: 1px solid var(--mb-line); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; overflow-wrap: anywhere; }
-.v-tl { list-style: none; margin: 0; padding: 0; }
-.v-tl li { display: grid; grid-template-columns: 10px 40px minmax(0, 1fr); gap: 8px; padding: 2px 0; align-items: center; font-size: 12px; }
-.v-tl .v-m { width: 8px; height: 8px; border-radius: 50%; }
-.v-tl .v-tm { color: var(--mb-faint); font-variant-numeric: tabular-nums; }
-.v-tl .v-tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* checklist */
 ul.v-steps { list-style: none; margin: 0; padding: 0; }
@@ -228,7 +223,7 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-side, .v-side.wide { width: auto; border-left: 0; border-top: 1px solid var(--mb-line); overflow: visible; }
   .v-row .v-line { grid-template-columns: minmax(0, 1fr) 44px; }
   .v-row .v-ext { display: none; }
-  .v-detail { grid-template-columns: 1fr; padding-left: 18px; }
+  .v-detail { padding-left: 18px; }
   .v-hide-phone { display: none !important; }
   .v-ph-only { display: initial; }
   .v-tabs { display: flex; border-top: 1px solid var(--mb-line); background: var(--mb-surface); padding: 4px 0 calc(8px + env(safe-area-inset-bottom)); flex: none; }
