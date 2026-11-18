@@ -272,6 +272,15 @@ func TestInstructionsCarryTheOrchestration(t *testing.T) {
 		if !strings.Contains(hello["instructions"].(string), want) {
 			t.Errorf("%s hello: missing %q", kind, want)
 		}
+		// v3 terms in the finding-things section (agents, tasks, conversations), and no "no task" option.
+		for _, want := range []string{"an agent, a task or an earlier conversation the person mentions", "Every message, theirs and yours, must be about a task"} {
+			if !strings.Contains(hello["instructions"].(string), want) {
+				t.Errorf("%s: missing %q", kind, want)
+			}
+		}
+		if strings.Contains(hello["instructions"].(string), "nothing that needs a task") {
+			t.Errorf("%s: the instructions still offer no task", kind)
+		}
 		_, o, _ := e.do("POST", "/api/agent/event", map[string]any{"type": "prompt"}, bearer(sess))
 		if c := o["context"].([]any); len(c) != 1 || !strings.Contains(c[0].(string), want) {
 			t.Errorf("%s prompt: %v", kind, o)
