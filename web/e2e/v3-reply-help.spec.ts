@@ -245,16 +245,37 @@ test("minbox's request to place messages in tasks does not hide the questions fo
   expect(sug.questions).toHaveLength(3)
 })
 
-test('columns: each task column has the questions for its latest agent message', async ({ page, minbox }) => {
+/** The agent's Tasks pane, unfolded. */
+async function tasksPane(page: Page) {
+  const pane = page.getByTestId('tasks-pane')
+  await expect(pane).toBeVisible()
+  if ((await pane.getAttribute('data-shown')) === 'false') await page.getByTestId('tasks-pane-toggle').first().click()
+  await expect(pane).toHaveAttribute('data-shown', 'true')
+  return pane
+}
+
+test("columns on an agent's page: each task column has the questions for its latest agent message", async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(minbox.url)
   await seed(page, minbox)
   const t = await taskNamed(minbox, 'Typed in the terminal')
-  await page.goto(`${minbox.url}/#v=columns`)
-  await expect(page.getByTestId('columns-view')).toBeVisible()
-  await page.getByTestId('columns-all').check()
+  const pane = await tasksPane(page)
+  await pane.locator(`[data-testid="agent-task-check"][data-task="${t.id}"]`).check()
   const col = page.locator(`[data-testid="task-column"][data-task="${t.id}"]`)
   await expect(col.getByTestId('reply-q')).toHaveCount(3)
   await expect(col.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
+})
+
+test("an agent's page: a task opened from its Tasks pane has the questions for the task's latest agent message", async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const t = await taskNamed(minbox, 'Typed in the terminal')
+  const pane = await tasksPane(page)
+  await pane.locator(`[data-testid="agent-task"][data-task="${t.id}"]`).click()
+  const detail = page.getByTestId('agent-task-detail')
+  await expect(detail.getByTestId('column-title')).toHaveText(/Typed in the terminal/)
+  await expect(detail.getByTestId('reply-q')).toHaveCount(3)
+  await expect(detail.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
 })
 
 test("phone: a task's view has the questions above its reply box", async ({ page, minbox }) => {
