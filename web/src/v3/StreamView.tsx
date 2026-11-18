@@ -12,6 +12,7 @@ import { FilesPane } from '../components/FilesPane'
 import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
 import { Bar, Composer, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById, type Outgoing } from './parts'
 import { QuoteBubble } from './quote'
+import { AgentActions } from './AgentActions'
 
 export type SidePane = 'tasks' | 'terminal' | 'shell' | 'files'
 
@@ -99,6 +100,7 @@ export function StreamView({
               {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
             </span>
+            <AgentActions session={sess} />
             <button
               type="button"
               className={'v-btn' + (pane === 'terminal' ? ' pri' : '')}
