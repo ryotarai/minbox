@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, type ReplyQuestion, type SuggestResult } from '../api'
 import { useApp } from '../lib/app'
 import { getReplyHelpDraft, setReplyHelpDraft, useDraftsVersion, type ReplyHelpAnswer, type ReplyHelpDraft } from '../lib/drafts'
@@ -70,13 +70,18 @@ function visibleQuestions(fresh: ReplyQuestion[], saved: ReplyHelpDraft): ReplyQ
   return [...kept, ...fresh.map((q) => (touched(saved[q.question]?.a) ? saved[q.question].q : q))]
 }
 
-/** State of the reply help for the thread's last message; fetches when enabled. */
-export function useReplyHelp(threadId: string, lastId: string | undefined, enabled: boolean) {
-  const key = `${threadId}:${lastId ?? ''}`
+/** State of the reply help for the thread's last message; fetches when enabled. threadId is the thread
+ *  the denied command runs in (and is dismissed from); `opts.key` keeps the answers elsewhere than by
+ *  that thread (a v3 task's view: by the task) and `opts.fetch` asks another endpoint for the questions. */
+export function useReplyHelp(threadId: string, lastId: string | undefined, enabled: boolean, opts: { key?: string; fetch?: () => Promise<SuggestResult> } = {}) {
+  const draftKey = opts.key ?? threadId
+  const key = `${draftKey}:${lastId ?? ''}`
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick((n) => n + 1), [])
+  const fetchRef = useRef(opts.fetch)
+  fetchRef.current = opts.fetch
   useDraftsVersion()
-  const saved = getReplyHelpDraft(threadId)
+  const saved = getReplyHelpDraft(draftKey)
   const get = (): HelpState => {
     let s = store.get(key)
     if (!s) {
@@ -98,8 +103,7 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
       store.set(key, { ...(store.get(key) ?? { dismissed: false, commandSent: false }), data })
       if (live) bump()
     }
-    api
-      .suggestions(threadId)
+    ;(fetchRef.current ? fetchRef.current() : api.suggestions(threadId))
       .then(fill)
       .catch(() => fill({ questions: [] }))
     return () => {
@@ -118,18 +122,18 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     /** The answers as reply text ('' when none or dismissed). */
     text,
     setAnswer: (q: ReplyQuestion, a: ReplyHelpAnswer) => {
-      const d = { ...getReplyHelpDraft(threadId) }
+      const d = { ...getReplyHelpDraft(draftKey) }
       if (touched(a)) d[q.question] = { q, a }
       else delete d[q.question]
-      setReplyHelpDraft(threadId, d)
+      setReplyHelpDraft(draftKey, d)
     },
     dismiss: () => {
-      setReplyHelpDraft(threadId, {})
+      setReplyHelpDraft(draftKey, {})
       // The denied command goes too, also on the server (it is not offered again).
-      if (get().data?.command) api.dismissDeniedCommand(threadId).catch(() => {})
+      if (get().data?.command && threadId) api.dismissDeniedCommand(threadId).catch(() => {})
       set((st) => ({ ...st, dismissed: true }))
     },
-    clear: () => setReplyHelpDraft(threadId, {}),
+    clear: () => setReplyHelpDraft(draftKey, {}),
     commandSent: (v: boolean) => set((st) => ({ ...st, commandSent: v })),
   }
 }

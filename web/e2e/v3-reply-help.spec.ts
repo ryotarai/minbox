@@ -2,9 +2,10 @@ import type { Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, expectTerminal, test, typeInTerminal, type Minbox } from './fixtures'
-import { agentReply, api, say as sayTo, startAgent, type Agent } from './v3'
+import { agentReply, api, say as sayTo, startAgent, taskNamed, type Agent } from './v3'
 
-// v3 (ported from suggestions.spec.ts): the reply help above an agent stream's reply box.
+// v3 (ported from suggestions.spec.ts): the reply help above the reply box of an agent's stream, of a
+// task's view (its latest agent message; also in the Columns view and on a phone).
 
 // Reply help: when the agent spoke last, questions with options above the reply box; the answers go
 // into the reply on Send. The server runs e2e/fake-suggest.py instead of claude
@@ -184,6 +185,94 @@ test('the setting turns the questions off', async ({ page, minbox }) => {
   await expect(page.getByTestId('reply-qa')).toHaveCount(0)
   await expect(page.getByTestId('reply-qa-loading')).toHaveCount(0)
   await expect(page.getByTestId('composer-text')).toBeVisible()
+  // Nor in a task's view.
+  const t = await taskNamed(minbox, 'Typed in the terminal')
+  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await expect(page.getByTestId('task-composer')).toBeVisible()
+  await page.waitForTimeout(800)
+  await expect(page.getByTestId('reply-qa')).toHaveCount(0)
+})
+
+test("a task's view: questions for the task's latest agent message; the answers go with the reply about the task and are kept by the task", async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox) // "Finished the migration" is in the task "Typed in the terminal"
+  const t = await taskNamed(minbox, 'Typed in the terminal')
+  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  const box = page.getByTestId('task-composer')
+  const tq = (i: number) => box.locator(`[data-testid="reply-q"][data-index="${i}"]`)
+  await expect(box.getByTestId('reply-q')).toHaveCount(3)
+  // Drafted from the task's messages: no message of the person is in it (the stream has one).
+  await expect(tq(0)).toContainText('How should it continue? (0)')
+  await tq(0).getByRole('radio', { name: /Go ahead/ }).click()
+  await tq(2).getByTestId('reply-q-other-input').fill('keep the old table')
+  await expect(box.getByTestId('reply-qa-toggle')).toContainText('2 answered')
+
+  // The stream's help is its own (drafted from the stream; nothing answered there).
+  await page.goto(`${minbox.url}/#v=agent&s=${current!.a.id}`)
+  await expect(q(page, 0)).toContainText('How should it continue? (1)')
+  await expect(page.getByTestId('reply-qa-toggle')).not.toContainText('answered')
+
+  // Back in the task (and after a reload): the answers are still there.
+  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.reload()
+  await expect(box.getByTestId('reply-qa-toggle')).toContainText('2 answered')
+  await expect(tq(2).getByTestId('reply-q-other-input')).toHaveValue('keep the old table')
+  await box.getByTestId('composer-text').fill('Then ship it.')
+  await box.getByTestId('composer-send').click()
+  await expect(box.getByTestId('composer-text')).toHaveValue('')
+  await expect.poll(() => lastWords(minbox.url)).toBe('Q: How should it continue? (0) → A: Go ahead\nQ: Anything else to tell it? → A: keep the old table\n\nThen ship it.')
+  const s = await api(minbox, 'GET', `/api/v3/sessions/${current!.a.id}/stream`)
+  const sent = [...s.messages].reverse().find((x: any) => x.author === 'user' && x.kind !== 'command')
+  expect(sent.tasks.map((x: any) => x.task_id)).toEqual([t.id])
+  // Sent: the answers are gone; the agent's next message about the task brings fresh questions.
+  await agentReply(minbox, current!.a, /Sure — noted/)
+  await expect(tq(0)).toContainText('How should it continue? (1)')
+  await expect(box.getByTestId('reply-qa-toggle')).not.toContainText('answered')
+})
+
+test("minbox's request to place messages in tasks does not hide the questions for the agent's message before it", async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'sg')
+  current = { m: minbox, a }
+  await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
+  await sayTo(minbox, a, 'IGNORE how is it going?')
+  await agentReply(minbox, a, /Sure — noted/)
+  await expect(page.getByTestId('stream-view').locator('[data-testid="v3-message"][data-kind="place"]').first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(q(page, 0)).toContainText('How should it continue? (1)')
+  const st = await streamThread(minbox, a)
+  const sug = await (await fetch(`${minbox.url}/api/threads/${st}/suggestions`)).json()
+  expect(sug.reason).toBeUndefined()
+  expect(sug.questions).toHaveLength(3)
+})
+
+test('columns: each task column has the questions for its latest agent message', async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const t = await taskNamed(minbox, 'Typed in the terminal')
+  await page.goto(`${minbox.url}/#v=columns`)
+  await expect(page.getByTestId('columns-view')).toBeVisible()
+  await page.getByTestId('columns-all').check()
+  const col = page.locator(`[data-testid="task-column"][data-task="${t.id}"]`)
+  await expect(col.getByTestId('reply-q')).toHaveCount(3)
+  await expect(col.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
+})
+
+test("phone: a task's view has the questions above its reply box", async ({ page, minbox }) => {
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  const t = await taskNamed(minbox, 'Typed in the terminal')
+  await page.setViewportSize({ width: 390, height: 800 })
+  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  const box = page.getByTestId('task-composer')
+  await expect(box.getByTestId('reply-q')).toHaveCount(3)
+  const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }))
+  expect(m.scroll).toBeLessThanOrEqual(m.inner)
+  const panel = await box.getByTestId('reply-qa').boundingBox()
+  const text = await box.getByTestId('composer-text').boundingBox()
+  expect(panel!.y + panel!.height).toBeLessThanOrEqual(text!.y + 1)
+  await box.locator('[data-testid="reply-q"][data-index="0"]').getByRole('radio', { name: /Wait for me/ }).click()
+  await box.getByTestId('composer-send').click()
+  await expect.poll(() => lastWords(minbox.url)).toBe('Q: How should it continue? (0) → A: Wait for me')
 })
 
 test('a denied command the agent reported is offered as a one-tap !command; running it clears it', async ({ page, minbox }) => {

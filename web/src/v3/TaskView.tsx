@@ -351,6 +351,7 @@ export function TaskView({
           tasks={tasks}
           messages={d.messages}
           annotationKeys={[...new Set(d.messages.map((m) => m.thread_id))]}
+          helpTask={t.id}
         />
       </div>
       <QuoteBubble box={scroller} />
