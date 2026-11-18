@@ -47,7 +47,7 @@ func TestV3PlaceAsksUntilPlaced(t *testing.T) {
 	}
 	e.idle(sess)
 	pend := e.takePending(sess)
-	if len(pend) != 1 || pend[0].Kind != store.KindPlace || !strings.Contains(pend[0].Body, u) || !strings.Contains(pend[0].Body, reply) || !strings.Contains(pend[0].Body, "create_task") {
+	if len(pend) != 1 || pend[0].Kind != store.KindPlace || pend[0].Urgent || !strings.Contains(pend[0].Body, u) || !strings.Contains(pend[0].Body, reply) || !strings.Contains(pend[0].Body, "create_task") {
 		t.Fatalf("first request = %+v", pend)
 	}
 	// Not idle again since: no second request.

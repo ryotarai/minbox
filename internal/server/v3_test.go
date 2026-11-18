@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -241,7 +242,7 @@ func TestV3GoalAutonomousRun(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	e.srv.goalTick()
 	pend, _ := e.st.PendingForSession(context.Background(), sess.ID, "")
-	if len(pend) != 1 || pend[0].Kind != KindContinue {
+	if len(pend) != 1 || pend[0].Kind != KindContinue || pend[0].Urgent {
 		t.Fatalf("no continuation: %+v", pend)
 	}
 	// Not idle again since: no second continuation.
@@ -292,5 +293,56 @@ func TestV3HandoffCarriesTheTask(t *testing.T) {
 	got, _ := e.st.GetTask(context.Background(), tid)
 	if len(got.Agents) != 2 {
 		t.Fatalf("agents = %+v", got.Agents)
+	}
+}
+
+// Every message of the person goes into a busy agent's running turn at once (urgent by default, as
+// Send now did): a stream message, a task's message, an answer, an older thread's reply, a new
+// thread. Both protocols see it; minbox's own place request and a goal's continue do not.
+func TestPersonMessagesAreUrgent(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	e.do("POST", "/api/agent/status", map[string]string{"status": "working"}, bearer(sess))
+	code, obj, _ := e.do("POST", "/api/v3/sessions/"+sess.ID+"/messages", map[string]any{"words": "first"}, nil)
+	if code != 201 {
+		t.Fatalf("stream: %d %v", code, obj)
+	}
+	code, obj, _ = e.do("POST", "/api/v3/sessions/"+sess.ID+"/messages", map[string]any{"words": "second"}, nil)
+	if code != 201 {
+		t.Fatalf("stream 2: %d %v", code, obj)
+	}
+	code, obj, _ = e.do("POST", "/api/sessions/"+sess.ID+"/threads", map[string]any{"body": "a new thread"}, nil)
+	if code != 201 {
+		t.Fatalf("new thread: %d %v", code, obj)
+	}
+	streamID, err := e.st.StreamThread(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddMessage(context.Background(), streamID, store.NewMessage{Author: store.AuthorUser, Body: "place them", Kind: store.KindPlace}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddMessage(context.Background(), streamID, store.NewMessage{Author: store.AuthorUser, Body: "carry on", Kind: KindContinue}); err != nil {
+		t.Fatal(err)
+	}
+	// Protocol 0 (an old mod, fake-claude.py): a list of messages.
+	var got []string
+	for _, p := range e.pending(sess) {
+		got = append(got, fmt.Sprintf("%s:%v", p["body"], p["urgent"]))
+	}
+	want := "first:true second:true a new thread:true place them:false carry on:false"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("proto 0 pending = %s, want %s", strings.Join(got, " "), want)
+	}
+	// Protocol 1: items with the text to inject, in the same order.
+	_, ans, _ := e.do("GET", "/api/agent/pending?owner=o&proto=1", nil, bearer(sess))
+	items, _ := ans["items"].([]any)
+	got = nil
+	for _, v := range items {
+		p := v.(map[string]any)
+		got = append(got, fmt.Sprintf("%s:%v", p["body"], p["urgent"]))
+	}
+	if strings.Join(got, " ") != want {
+		t.Fatalf("proto 1 pending = %s, want %s", strings.Join(got, " "), want)
 	}
 }

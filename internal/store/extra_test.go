@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,16 +137,26 @@ func TestUrgentPending(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 	sess, _ := s.CreateSession(ctx, "demo", "/tmp", "u")
-	th, m, _ := s.CreateThread(ctx, sess.ID, "S", NewMessage{Author: AuthorUser, Body: "hi", Words: "hi"})
-	_ = th
+	// The person's own messages go into a running turn at once (urgent by default, as Send now did);
+	// minbox's own requests (place, a goal's continue) wait for the turn to end. Order is kept.
+	th, _, _ := s.CreateThread(ctx, sess.ID, "S", NewMessage{Author: AuthorUser, Body: "hi", Words: "hi"})
+	place, _ := s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "place them", Kind: KindPlace})
+	cont, _ := s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "carry on", Kind: "continue"})
+	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "note", Kind: KindNote})
+	_, _ = s.AddMessage(ctx, th.ID, NewMessage{Author: AuthorUser, Body: "second", Words: "second"})
 	p, _ := s.PendingForSession(ctx, sess.ID, "o")
-	if len(p) != 1 || p[0].Urgent {
-		t.Fatalf("pending = %+v", p)
+	var got []string
+	for _, x := range p {
+		got = append(got, fmt.Sprintf("%s:%v", x.Body, x.Urgent))
 	}
-	_ = s.SetUrgent(ctx, m.ID)
+	if want := "hi:true place them:false carry on:false note:true second:true"; strings.Join(got, " ") != want {
+		t.Fatalf("pending = %s, want %s", strings.Join(got, " "), want)
+	}
+	// Send now still marks one urgent (an old page may press it), e.g. a nudge.
+	_ = s.SetUrgent(ctx, place.ID)
 	p, _ = s.PendingForSession(ctx, sess.ID, "o")
-	if !p[0].Urgent {
-		t.Fatal("send now")
+	if !p[1].Urgent || p[2].Urgent || p[2].ID != cont.ID {
+		t.Fatalf("send now: %+v", p)
 	}
 	b, _ := json.Marshal(p[0])
 	var v map[string]any

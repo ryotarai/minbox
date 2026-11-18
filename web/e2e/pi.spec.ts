@@ -45,9 +45,13 @@ test('a Pi session reports status and its messages; the person’s messages from
   await typeInTerminal(page, 'title Choose the database')
   await expect(page.getByTestId('agent-row').filter({ hasText: 'pi-flow' })).toContainText('Choose the database')
 
-  // working / idle reach the session status.
+  // working / idle reach the session status; while working, the person's message goes into the
+  // running turn at once (Pi steers it in).
   await typeInTerminal(page, 'work')
   await expect.poll(async () => (await (await fetch(piMinbox.url + '/api/sessions')).json())[0].status).toBe('working')
+  await page.getByTestId('composer-text').fill('And the CHANGELOG')
+  await page.getByTestId('composer-send').click()
+  await expectTerminal(page, 'And the CHANGELOG')
   await typeInTerminal(page, 'idle')
   await expect.poll(async () => (await (await fetch(piMinbox.url + '/api/sessions')).json())[0].status).toBe('idle')
 })

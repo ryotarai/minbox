@@ -1,6 +1,6 @@
 // The conversation of an agent stream and a task (as the thread view before v3): the reply box (draft,
 // growth, full height, long paste, drop, phone), message actions (context menu, copy, 👍, start a new
-// thread, mark unread), delivery (cancel, send now, resume, forward), new / pill / older messages,
+// thread, mark unread), delivery (into a running turn, cancel, resume, forward), new / pill / older messages,
 // fold all, files (artifacts, O, ] [, comments), Q, picked answers with the words, the conversation's
 // menu (snooze), Linear.
 import { test, expect, expectTerminal, typeInTerminal, type Minbox } from './fixtures'
@@ -101,22 +101,36 @@ test('message actions: right-click Reply and Copy; ⋯ starts a new thread from 
   await expect.poll(async () => (await stream(minbox, a)).messages.some((m: any) => m.words === '👍 Looks good'), { timeout: 12_000 }).toBe(true)
 })
 
-test('delivery: a queued reply can be cancelled (its words come back) or sent now', async ({ page, minbox }) => {
+test('delivery: a busy agent gets messages in its running turn, in order; a queued one can be cancelled', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await open(page, minbox, a)
   await typeInTerminal(page, 'work')
   await expectTerminal(page, 'status work')
-  await box(page).fill('first try')
+  // Working: the message goes into the running turn at once (as Send now did); no Queued line, no Send now.
+  await box(page).fill('mid-turn one')
+  await page.getByTestId('composer-send').click()
+  await box(page).fill('mid-turn two')
   await page.getByTestId('composer-send').click()
   const line = page.getByTestId('delivery-line')
+  await expect(line).toHaveAttribute('data-delivery', 'delivered', { timeout: 15_000 })
+  await expect(line).toContainText('Delivered to Claude Code')
+  await expectTerminal(page, /mid-turn one[\s\S]*mid-turn two/)
+  await expect(page.getByTestId('send-now')).toHaveCount(0)
+  await expect(page.getByText(/Queued|turn ends/)).toHaveCount(0)
+  // The integration does not take it (not polling): it waits and can be cancelled; its words come back.
+  await typeInTerminal(page, 'deaf')
+  await expectTerminal(page, 'status deaf')
+  await box(page).fill('first try')
+  await page.getByTestId('composer-send').click()
   await expect(line).toHaveAttribute('data-delivery', 'queued')
+  await expect(line.getByTestId('send-now')).toHaveCount(0)
   await line.getByTestId('cancel-message').click()
   await expect(box(page)).toHaveValue('first try')
   await expect(userMsgs(page).filter({ hasText: 'first try' })).toHaveCount(0)
   await page.getByTestId('composer-send').click()
   await expect(line).toHaveAttribute('data-delivery', 'queued')
-  await line.getByTestId('send-now').click()
-  await expect(line).toHaveAttribute('data-delivery', 'delivered', { timeout: 15_000 })
+  await typeInTerminal(page, 'listen')
+  await expect(line).toHaveAttribute('data-delivery', 'delivered', { timeout: 25_000 })
 })
 
 test('an ended agent: Send asks where the reply goes; Resume delivers it, or it goes to another agent', async ({ page, minbox }) => {
