@@ -113,14 +113,40 @@ test('all projects: the agents are grouped under their project; one project show
   await expect(page.getByTestId('agent-group-name')).toHaveCount(2)
   await expect(groups.filter({ hasText: 'api-agent' }).getByTestId('agent-group-name')).toHaveText('api')
   await expect(groups.filter({ hasText: 'web-agent' }).getByTestId('agent-group-name')).toHaveText('web')
+  // Each project's header has its ＋: the New agent dialog in that project.
+  await expect(page.getByTestId('sidebar-new')).toHaveCount(0)
+  await expect(page.getByTestId('sidebar-new-agent')).toHaveCount(0)
+  const plusWeb = groups.filter({ hasText: 'web-agent' }).getByTestId('project-new-agent')
+  await expect(plusWeb).toHaveAttribute('aria-label', 'New agent in web')
+  await groups.filter({ hasText: 'web-agent' }).getByTestId('agent-group-head').hover()
+  await expect(plusWeb).toHaveCSS('opacity', '1')
+  await plusWeb.click()
+  const dlg = page.getByRole('dialog', { name: 'New session' })
+  await expect(dlg).toBeVisible()
+  await expect(page.getByTestId('new-session-project-name')).toHaveText('web')
+  await page.keyboard.press('Escape')
+  await expect(dlg).toHaveCount(0)
+  // Keyboard: Tab reaches the ＋ (shown on focus); Enter opens the dialog in that project.
+  const plusApi = groups.filter({ hasText: 'api-agent' }).getByTestId('project-new-agent')
+  await plusApi.focus()
+  await expect(plusApi).toHaveCSS('opacity', '1')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('new-session-project-name')).toHaveText('api')
+  await page.keyboard.press('Escape')
+
   await page.locator('[data-testid="project-select"][title^="web"]').click()
   await expect(page.getByTestId('agent-row')).toHaveCount(1)
   await expect(page.getByTestId('agent-group-name')).toHaveCount(0)
+  // One project: the ＋ is on the AGENTS header that names it.
+  await expect(page.getByTestId('project-new-agent')).toHaveCount(1)
+  await page.getByTestId('project-new-agent').click()
+  await expect(page.getByTestId('new-session-project-name')).toHaveText('web')
 })
 
 test('New agent: the full dialog (folder, name) from the sidebar starts an agent and opens its terminal', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await page.getByTestId('sidebar-new-agent').click()
+  // No project and no agent yet: the empty list offers the dialog (a folder).
+  await page.getByTestId('first-agent').click()
   const dlg = page.getByRole('dialog', { name: 'New session' })
   await expect(dlg).toBeVisible()
   await page.getByTestId('new-session-cwd').fill(minbox.dataDir)
@@ -134,7 +160,9 @@ test('New agent: the full dialog (folder, name) from the sidebar starts an agent
 
   // From the New message dialog's New agent… choice too.
   await page.keyboard.press('Escape')
-  await page.getByTestId('sidebar-new').click()
+  // ⇧N (no sidebar button any more), out of the terminal.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press('Shift+N')
   await page.getByTestId('new-to').selectOption('new')
   await page.getByTestId('new-agent-options').click()
   await expect(dlg).toBeVisible()
@@ -172,7 +200,7 @@ test('the mod connection badge is in the agent header and goes stale', async ({ 
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
-  test('the badge and the agent menu are in the stream header; the Agents tab has New agent', async ({ page, connMinbox: minbox }) => {
+  test('the badge and the agent menu are in the stream header; the Agents tab has a ＋ per project', async ({ page, connMinbox: minbox }) => {
     const a = await startAgent(minbox, 'pocketbeat')
     await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
     const badge = page.getByTestId('agent-actions').getByTestId('mod-conn')
@@ -182,7 +210,15 @@ test.describe('phone', () => {
     await expect(page.getByTestId('menu-restart')).toBeVisible()
     await page.keyboard.press('Escape')
     await page.getByTestId('tab-agents').tap()
-    await page.getByTestId('agents-new-agent').tap()
+    // No header buttons for a new agent or message: a project's ＋ (always shown on touch) starts an agent;
+    // a message is written in the agent's own stream.
+    await expect(page.getByTestId('agents-new-agent')).toHaveCount(0)
+    await expect(page.getByTestId('agents-view').getByRole('button', { name: /Message/ })).toHaveCount(0)
+    const plus = page.getByTestId('agents-view').getByTestId('project-new-agent')
+    await expect(plus).toHaveCount(1)
+    await expect(plus).toHaveCSS('opacity', '1')
+    await plus.tap()
     await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible()
+    await expect(page.getByTestId('new-session-project-name')).toHaveText('proj')
   })
 })

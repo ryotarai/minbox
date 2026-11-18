@@ -87,7 +87,7 @@ test('with only OpenCode installed there is no picker and OpenCode is the defaul
   ])
   await page.goto(ocOnlyMinbox.url)
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-  await page.getByTestId('sidebar-new-agent').click()
+  await page.getByTestId('project-new-agent').or(page.getByTestId('first-agent')).first().click()
   await expect(form).toBeVisible()
   await expect(page.getByTestId('new-session-start')).toContainText('Start OpenCode')
   await expect(page.getByTestId('new-session-agent')).toHaveCount(0)

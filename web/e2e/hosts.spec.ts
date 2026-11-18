@@ -109,7 +109,7 @@ test('Pi and OpenCode sessions on a remote host: per-host detection, the host’
   // New agent: the full dialog (kind, folder, host).
   const openNew = async () => {
     const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-    await page.getByTestId('sidebar-new-agent').click()
+    await page.getByTestId('project-new-agent').or(page.getByTestId('first-agent')).first().click()
     await expect(form).toBeVisible()
   }
   try {
