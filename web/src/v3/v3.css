@@ -118,20 +118,26 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-msg .v-w b { color: var(--mb-fg2); font-weight: 600; }
 .v-msg .v-src { font-size: 11px; border-radius: 4px; padding: 0 5px; background: var(--mb-chip); color: var(--mb-muted); border: 0; }
 .v-msg .v-bd { background: var(--mb-surface); border: 1px solid var(--mb-line); border-radius: 10px; padding: 8px 12px; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 8px; }
-/* The header's task slot: the message's task when it is not named above it, "waiting for … to place
-   it", the agent's decision, and the ⋮ menu. On the person's messages it sits before "You", so the
-   name and time stay at the bubble's edge. */
-.v-msg .v-slot { display: inline-flex; gap: 6px; align-items: center; position: relative; min-width: 0; flex-wrap: wrap; color: var(--mb-faint); }
-.v-msg .v-slot .v-k { color: var(--mb-faint); }
-.v-msg.me .v-slot { order: -1; }
-.v-intask { display: inline-flex; gap: 5px; align-items: center; min-width: 0; }
-.v-intask .v-dot, .v-topic .v-dot { width: 7px; height: 7px; }
-/* A run of messages in one task starts with its topic line: "── ● Fix the gauge ───────". */
-.v-topic { align-self: stretch; display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--mb-subtle); min-width: 0; }
-.v-topic::before { content: ''; flex: none; width: 12px; height: 1px; background: var(--mb-line); }
-.v-topic::after { content: ''; flex: 1; min-width: 24px; height: 1px; background: var(--mb-line); margin-left: 4px; }
-.v-topic .v-task { min-width: 0; max-width: min(520px, 75%); }
+/* The ⋮ menu (and its task picker): beside the task badge in the box, else in the header (before
+   "You" on the person's messages, so the name and time stay at the bubble's edge). */
+.v-msg .v-slot { display: inline-flex; gap: 6px; align-items: center; position: relative; min-width: 0; color: var(--mb-faint); }
+.v-msg.me .v-w .v-slot { order: -1; }
+/* The message's task: a quiet pill at the top of its box (status dot + title), the ⋮ beside it. A
+   message in the same task as the one before dims it, so a run reads as one. */
+.v-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; min-width: 0; margin: -2px 0 -3px; font-size: 11.5px; color: var(--mb-faint); }
+.v-tags .v-k { color: var(--mb-faint); }
+.v-tbadge { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 0 8px 0 7px; border: 1px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--mb-fg) 6%, transparent); color: var(--mb-subtle); font-size: 11.5px; line-height: 18px; transition: opacity .15s; }
+.v-tbadge .v-dot { width: 6px; height: 6px; }
+.v-tbadge .v-task { font-size: 11.5px; max-width: min(420px, 62vw); }
+.v-tbadge .v-task .v-task-t { color: inherit; text-decoration: none; }
+.v-tbadge .v-task .v-task-t:hover { color: var(--mb-fg); text-decoration: underline; }
+.v-tbadge.wait { background: transparent; border-style: dashed; border-color: var(--mb-line2); color: var(--mb-faint); }
+.v-msg.rep .v-tags .v-tbadge { opacity: .5; }
+.v-msg.rep:hover .v-tags .v-tbadge, .v-msg.rep .v-tbadge:focus-within { opacity: 1; }
 .v-more { position: relative; display: inline-flex; }
+/* In the box the ⋮ menu and the task picker hang from the whole row: on the person's bubble they open
+   leftwards from its right edge, on the agent's rightwards from its left, so they stay on screen. */
+.v-tags .v-slot, .v-tags .v-more { position: static; }
 .v-dots { border: 0; background: none; color: var(--mb-faint); padding: 0 3px; border-radius: 4px; display: inline-flex; opacity: 0; }
 .v-msg:hover .v-dots, .v-dots:focus-visible, .v-more:focus-within .v-dots { opacity: 1; }
 .v-dots:hover { background: var(--mb-rowsel); color: var(--mb-fg2); }

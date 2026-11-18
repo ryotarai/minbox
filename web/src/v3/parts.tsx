@@ -140,16 +140,16 @@ export function msgTask(m: Pick<V3Message, 'tasks' | 'decision_task'>): TaskRef 
 }
 
 /**
- * A run of messages in one task starts with this line ("── ● Fix the gauge ────"), like a topic
- * separator in a chat: the task is named once above its messages, again when the task changes.
+ * The task of a message as a small pill at the top of its box: the task's status dot and its title,
+ * which opens it.
  */
-export function TaskTopic({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
+export function TaskBadge({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
   const t = tasks.find((x) => x.id === task.task_id)
   return (
-    <div className="v-topic" data-testid="task-topic" data-task={task.task_id}>
+    <span className="v-tbadge" data-testid="task-badge" data-task={task.task_id}>
       <StatusDot t={{ status: t?.status ?? task.status, kind: t?.kind ?? '', needs_you: (t as BoardTask | undefined)?.needs_you }} />
       <TaskChip task={task} shortN={60} goal={t?.kind === 'goal'} />
-    </div>
+    </span>
   )
 }
 
@@ -422,15 +422,15 @@ export function MessageView({
   onOpenAttachment,
   onChanged,
   inTask,
+  repeat,
   onUnread,
 }: {
   m: V3Message
   tasks: Task[]
-  /**
-   * The task already named above this message (the task view, or the topic line of its run in the
-   * stream): not repeated in its header.
-   */
+  /** Shown in this task's view: every message there is about it, so it shows no badge for it. */
   inTask?: string
+  /** The message before it is in the same task: its badge is dimmed (a run reads as one). */
+  repeat?: boolean
   ctx?: boolean
   unread?: boolean
   highlight?: boolean
@@ -531,13 +531,55 @@ export function MessageView({
   const decisionTask = m.decision_task ? taskOf(m.decision_task) ?? m.tasks.find((t) => t.task_id === m.decision_task) : undefined
   // The decision is worth a line only when it changed something: a new task, or the person's move.
   const showDecision = !me && (decision === 'created' || decision === 'moved') && !!decisionTask
-  // The task shows above the message (the stream's topic line, or the task view itself); here only
-  // when it is another one (a message shown as context in a task view).
+  // Every message shows its task, except in that task's own view.
   const shown = about.filter((t) => t.task_id !== inTask)
+  // The task is a badge at the top of the box (with the ⋮ menu beside it); in a task view, where every
+  // message is that task, the box has no badge row and the ⋮ sits in the header.
+  const tagRow = !m.pending && (about.length === 0 || shown.length > 0 || showDecision)
+  const more = (
+    <span className="v-slot">
+      <span className="v-more" ref={menuRef}>
+        <button type="button" className="v-dots" data-testid="msg-menu" aria-label="Which task this message is about" title="Which task is this about?" onClick={() => setMenu(!menu)}>
+          <IconMoreV size={14} />
+        </button>
+        {menu && (
+          <div className="v-menu" role="menu">
+            <button type="button" role="menuitem" data-testid="message-reply-item" onClick={() => (setMenu(false), reply())}>
+              Reply
+            </button>
+            <button type="button" role="menuitem" data-testid="message-copy-item" onClick={() => (setMenu(false), copy())}>
+              Copy text
+            </button>
+            <button type="button" role="menuitem" data-testid="message-fork-item" onClick={() => (setMenu(false), startFork())}>
+              Start new thread from here
+            </button>
+            {!me && onUnread && (
+              <button type="button" role="menuitem" data-testid="message-unread" onClick={() => (setMenu(false), onUnread(m))}>
+                Mark unread from here
+              </button>
+            )}
+            <hr className="v-menusep" />
+            <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
+              {about.length ? 'Move to another task…' : 'Put in a task…'}
+            </button>
+          </div>
+        )}
+      </span>
+      {pick && (
+        <TaskPicker
+          tasks={tasks}
+          exclude={about.map((t) => t.task_id)}
+          head={me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…'}
+          onPick={(r) => void choose(r)}
+          onClose={() => setPick(null)}
+        />
+      )}
+    </span>
+  )
   return (
     <div
       ref={ref}
-      className={'v-msg' + (me ? ' me' : '') + (ctx ? ' ctx' : '') + (unread ? ' unr' : '') + (highlight ? ' hl' : '') + (m.pending ? ' pending' : '')}
+      className={'v-msg' + (me ? ' me' : '') + (ctx ? ' ctx' : '') + (repeat ? ' rep' : '') + (unread ? ' unr' : '') + (highlight ? ' hl' : '') + (m.pending ? ' pending' : '')}
       data-testid="v3-message"
       data-author={me ? 'user' : 'agent'}
       data-message-id={m.id}
@@ -580,69 +622,32 @@ export function MessageView({
         <span>{hhmm(m.created_at)}</span>
         {m.pending && <span>sending…</span>}
         {me && m.delivery && m.delivery !== 'delivered' && !m.pending && <span data-testid="delivery">{m.delivery === 'queued' ? 'queued' : m.delivery}</span>}
-        {!m.pending && (
-          <span className="v-slot" data-testid="about">
+        {!me && !m.pending && (
+          <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
+            <IconThumb size={13} />
+          </button>
+        )}
+        {!m.pending && !tagRow && more}
+      </div>
+      <div className="v-bd">
+        {tagRow && (
+          <div className="v-tags" data-testid="about">
             {about.length === 0 && (
-              <span className="v-k" data-testid="unplaced">
+              <span className="v-tbadge wait" data-testid="unplaced">
                 waiting for {name} to place it in a task
               </span>
             )}
             {shown.map((t) => (
-              <span key={t.task_id} className="v-intask">
-                <StatusDot t={{ status: taskOf(t.task_id)?.status ?? t.status, kind: taskOf(t.task_id)?.kind ?? '' }} />
-                <TaskChip task={t} goal={taskOf(t.task_id)?.kind === 'goal'} />
-              </span>
+              <TaskBadge key={t.task_id} task={t} tasks={tasks} />
             ))}
             {showDecision && (
               <span className="v-k" data-testid="decision" data-decision={decision} title={decisionTask!.title}>
                 {decision === 'created' ? '→ new task' : '→ moved here by you'}
               </span>
             )}
-            {!me && (
-              <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
-                <IconThumb size={13} />
-              </button>
-            )}
-            <span className="v-more" ref={menuRef}>
-              <button type="button" className="v-dots" data-testid="msg-menu" aria-label="Which task this message is about" title="Which task is this about?" onClick={() => setMenu(!menu)}>
-                <IconMoreV size={14} />
-              </button>
-              {menu && (
-                <div className="v-menu" role="menu">
-                  <button type="button" role="menuitem" data-testid="message-reply-item" onClick={() => (setMenu(false), reply())}>
-                    Reply
-                  </button>
-                  <button type="button" role="menuitem" data-testid="message-copy-item" onClick={() => (setMenu(false), copy())}>
-                    Copy text
-                  </button>
-                  <button type="button" role="menuitem" data-testid="message-fork-item" onClick={() => (setMenu(false), startFork())}>
-                    Start new thread from here
-                  </button>
-                  {!me && onUnread && (
-                    <button type="button" role="menuitem" data-testid="message-unread" onClick={() => (setMenu(false), onUnread(m))}>
-                      Mark unread from here
-                    </button>
-                  )}
-                  <hr className="v-menusep" />
-                  <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
-                    {about.length ? 'Move to another task…' : 'Put in a task…'}
-                  </button>
-                </div>
-              )}
-            </span>
-            {pick && (
-              <TaskPicker
-                tasks={tasks}
-                exclude={about.map((t) => t.task_id)}
-                head={me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…'}
-                onPick={(r) => void choose(r)}
-                onClose={() => setPick(null)}
-              />
-            )}
-          </span>
+            {more}
+          </div>
         )}
-      </div>
-      <div className="v-bd">
         {segs.map((seg, i) => {
           if (seg.kind === 'md') return seg.text.trim() ? <MessageBody key={i} text={seg.text} message={m} baseDir={sess?.cwd ?? ''} onOpen={(a) => onOpenAttachment(a, m)} author={me ? 'you' : name} className="text-[13.5px]" /> : null
           if (seg.kind === 'actions') {

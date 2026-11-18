@@ -72,12 +72,9 @@ export async function taskNamed(m: Minbox, title: string | RegExp): Promise<any>
 
 export { api }
 
-/**
- * The task named above a message in an agent's stream: the topic line its run of messages in one task
- * starts with (the nearest one before it), as its task link.
- */
-export function taskAbove(msg: Locator): Locator {
-  return msg.locator('xpath=preceding-sibling::*[@data-testid="task-topic"][1]').getByTestId('task-link')
+/** The task badge at the top of a message's box, as its task link. */
+export function taskOn(msg: Locator): Locator {
+  return msg.getByTestId('task-badge').getByTestId('task-link')
 }
 
 /** Saves a screenshot of the use-case flow into docs/v3/screens (UX review), light or dark. */

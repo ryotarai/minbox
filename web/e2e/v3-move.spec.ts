@@ -58,15 +58,11 @@ test('move both messages to the right task and remove the mistaken one; put in a
   await expect(page.getByTestId('menu-also')).toHaveCount(0)
   await expect(page.getByTestId('menu-out')).toHaveCount(0)
   await expect(page.getByText('Also about another task…')).toHaveCount(0)
-  // Moving the person's message: it leaves its task; its one task shows as the topic line above it
-  // (the stream's run divider), not as a chip on the message.
+  // Moving the person's message: it leaves its task; its one task shows as the one badge in its box.
   await page.getByTestId('menu-move').click()
   await page.keyboard.type('Elsewhere')
   await page.keyboard.press('Enter')
-  const topic = last.locator('xpath=preceding-sibling::*[1]')
-  await expect(topic).toHaveAttribute('data-testid', 'task-topic')
-  await expect(topic.getByTestId('task-link')).toHaveCount(1)
-  await expect(topic.getByTestId('task-link')).toContainText('Elsewhere')
-  await expect(last.getByTestId('about').getByTestId('task-link')).toHaveCount(0)
+  await expect(last.getByTestId('task-badge')).toHaveCount(1)
+  await expect(last.getByTestId('task-badge').getByTestId('task-link')).toContainText('Elsewhere')
   await expect.poll(async () => (await board(minbox)).tasks.find((x: any) => x.id === gauge.id).message_count).toBe(5)
 })
