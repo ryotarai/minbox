@@ -8,7 +8,7 @@ import { selectProject, useSelectedProject } from '../lib/projects'
 import { revealMessage } from '../lib/revealMessage'
 import { taskMessage } from '../lib/taskContext'
 import { ContextMenu, useContextMenu } from './ContextMenu'
-import { IconBack, IconCheck, IconClose, IconMore, IconSend, IconUndo } from './icons'
+import { IconBack, IconCheck, IconChevronDown, IconClose, IconMore, IconSend, IconUndo } from './icons'
 import { ThreadProjectBadge } from './ThreadList'
 import { Button, IconButton, MenuItem, MenuLabel, MenuSep, Popover, Segmented, cx } from './ui'
 
@@ -322,7 +322,7 @@ export function TopicsPage() {
         )}
         <span className="flex-1" />
         <Button size="sm" className="h-8 max-w-[50vw]" data-testid="topics-project" onClick={(e) => setFilterAnchor(e.currentTarget)}>
-          <span className="truncate">{project ? project.name : 'All projects'}</span> ▾
+          <span className="truncate">{project ? project.name : 'All projects'}</span> <IconChevronDown size={14} />
         </Button>
       </div>
       <Popover anchor={filterAnchor} open={!!filterAnchor} onClose={() => setFilterAnchor(null)}>
@@ -476,7 +476,7 @@ function TopicCard({
             }}
             onKeyDown={(e) => e.stopPropagation()}
           >
-            {isDone ? <IconUndo size={13} /> : <IconCheck size={13} />}
+            {isDone ? <IconUndo size={14} /> : <IconCheck size={14} />}
           </IconButton>
           <IconButton
             aria-label="Move to…"

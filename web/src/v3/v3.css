@@ -374,3 +374,5 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
 .v-sec input[type='checkbox'] { margin: 0; }
 /* The task shown in the agent's page (picked by its title in the Tasks pane). */
 .v-mt.sel { background: var(--mb-rowsel); box-shadow: inset 2px 0 0 var(--mb-accent); padding-left: 7px; padding-right: 4px; border-radius: 0 6px 6px 0; }
+.v-goal { margin-right: 4px; }
+.v-ev-ic { display: inline-flex; align-items: center; gap: 3px; }

@@ -1,20 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { SECTION_ORDER, api, type Delivery, type Section, type Thread } from '../api'
 import { useApp } from '../lib/app'
 import { initials, oneLine, shortTime } from '../lib/format'
 import { proseOf } from '../lib/markdown'
 import { projectHueStyle } from '../lib/projectColor'
-import { IconFork, IconPin } from './icons'
+import { IconCheckCheck, IconClock, IconFork, IconPin, IconWarning } from './icons'
 import { ThreadStatusBadge, cx } from './ui'
 import { useSelectedProject } from '../lib/projects'
 import { useContextMenu } from './ContextMenu'
 import { ThreadRowMenu } from './ThreadMenu'
 
-export const DELIVERY: Record<Delivery, { icon: string; label: string; color: string }> = {
-  queued: { icon: '◷', label: 'Queued', color: 'text-muted' },
+export const DELIVERY: Record<Delivery, { icon: ReactNode; label: string; color: string }> = {
+  queued: { icon: <IconClock size={12} className="inline" />, label: 'Queued', color: 'text-muted' },
   sending: { icon: '…', label: 'Sending', color: 'text-muted' },
-  delivered: { icon: '✓✓', label: 'Delivered', color: 'text-ok' },
-  undelivered: { icon: '△', label: 'Undelivered', color: 'text-danger' },
+  delivered: { icon: <IconCheckCheck size={14} className="inline" />, label: 'Delivered', color: 'text-ok' },
+  undelivered: { icon: <IconWarning size={12} className="inline" />, label: 'Undelivered', color: 'text-danger' },
 }
 
 export function DeliveryTick({ d }: { d: Delivery }) {

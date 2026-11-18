@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { SECTION_ORDER, api, type Section, type Session } from '../api'
 import { useApp } from '../lib/app'
 import { notificationPermission, requestNotifications } from '../lib/alerts'
-import { IconInbox } from './icons'
+import { IconClose, IconInbox } from './icons'
 import { Button, MenuItem, MenuSep, Popover, type MenuAt } from './ui'
 
 export function sectionOf(s: Session): Section {
@@ -51,13 +51,13 @@ export function NotificationAsk() {
       <button
         type="button"
         aria-label="Dismiss"
-        className="border-0 bg-transparent text-subtle hover:text-fg"
+        className="flex border-0 bg-transparent text-subtle hover:text-fg"
         onClick={() => {
           localStorage.setItem('minbox:notify-asked', '1')
           setDismissed(true)
         }}
       >
-        ×
+        <IconClose size={14} />
       </button>
     </div>
   )

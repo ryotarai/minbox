@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
 import { Modal, MenuItem, Popover, type MenuAt } from '../components/ui'
-import { IconPencil } from '../components/icons'
+import { IconGoal, IconPencil } from '../components/icons'
 import { v3, type Task } from './data'
 
 /** The event that starts editing the open task view's title (E / F2, the palette). */
@@ -84,11 +84,11 @@ export function TaskTitle({ t, onShow, onSaved, goal }: { t: Task; onShow: (titl
   return (
     <>
       <h2 data-testid="task-title" title="Double-click to rename (E)" onDoubleClick={start}>
-        {goal && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
+        {goal && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
         {t.title}
       </h2>
       <button type="button" className="v-btn sm v-rename" data-testid="task-rename" aria-label="Rename task" title="Rename (E)" onClick={start}>
-        <IconPencil size={13} />
+        <IconPencil size={14} />
       </button>
     </>
   )

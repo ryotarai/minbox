@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Project } from '../api'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir, useProjectStats, useSelectedProject } from '../lib/projects'
-import { IconClose, IconLinear, IconMore, IconPlus, IconSlack } from './icons'
+import { IconChevronDown, IconClose, IconLinear, IconMore, IconPlus, IconSlack } from './icons'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { projectHueStyle } from '../lib/projectColor'
@@ -34,7 +34,7 @@ export function PhoneProjectButton() {
         <span data-testid="project-switch-name" className="min-w-0 truncate text-[15px] font-[650]">
           {project ? project.name : 'All projects'}
         </span>
-        <span aria-hidden="true" className="text-subtle">▾</span>
+        <IconChevronDown size={14} className="text-subtle" />
         {!project && <ProjectBadges stat={stat} />}
       </button>
       {open && <PhoneProjectSheet onClose={() => setOpen(false)} />}

@@ -62,7 +62,7 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
 
   // The folded strip counts the checked ones.
   await page.getByTestId('tasks-pane-toggle').first().click()
-  await expect(page.getByTestId('tasks-strip-checked')).toHaveText('☑2')
+  await expect(page.getByTestId('tasks-strip-checked')).toHaveText('2')
   await snap(page, 'columns-strip')
   await page.getByTestId('tasks-pane-toggle').click()
 
@@ -218,7 +218,7 @@ test('the Tasks pane message box: to the agent itself while columns or one task 
   await box.getByTestId('composer-text').fill('what is left on the deploy?')
   await snap(page, 'tasks-composer-columns')
   await box.getByTestId('composer-text').press('ControlOrMeta+Enter')
-  await expect(page.getByTestId('tasks-composer-sent')).toHaveText('Sent to api ✓')
+  await expect(page.getByTestId('tasks-composer-sent')).toHaveText('Sent to api')
   await snap(page, 'tasks-composer-sent')
   await expect.poll(() => inStream('what is left on the deploy?')).toBe(true)
   await expect(box.getByTestId('composer-text')).toHaveValue('')

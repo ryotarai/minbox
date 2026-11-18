@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, type NotifyDestination, type NotifyField, type NotifyType, type ReceiveStatus } from '../api'
 import { useApp } from '../lib/app'
 import { Button, Modal, Switch, cx } from './ui'
+import { IconWarning } from './icons'
 
 // Settings › Notifications: where minbox tells you about each new message from Claude (Slack
 // incoming webhook first). A destination's form is built from the field schema its type
@@ -247,7 +248,7 @@ function ReceiveStatusView({ d, s, onChecked }: { d: NotifyDestination; s: Recei
         <ul data-testid="slack-receive-problems" className="m-0 flex list-none flex-col gap-0.5 p-0 text-wait">
           {problems.map((p) => (
             <li key={p} className="break-words">
-              ⚠ {p}
+              <IconWarning size={12} /> {p}
             </li>
           ))}
         </ul>

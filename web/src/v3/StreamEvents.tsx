@@ -4,6 +4,7 @@
 // checklist has them, and a line for each would bury the conversation.
 import { hhmm, short, tagColor, type TaskStatus } from './data'
 import { useNav } from './parts'
+import { IconGoal, IconPlus } from '../components/icons'
 
 export type StreamTaskEvent = {
   id: string
@@ -46,7 +47,7 @@ export function StreamTaskEventLine({ ev }: { ev: StreamTaskEvent }) {
   const title = (
     <span className="v-task" style={{ ['--c' as string]: tagColor(ev.task_id), maxWidth: 360 }} title={ev.title}>
       <button type="button" className="v-task-t" data-testid="stream-event-task" onClick={() => nav.task(ev.task_id)}>
-        {goal ? '◎ ' : ''}
+        {goal && <IconGoal size={14} className="v-goal" />}
         {short(ev.title, 60)}
       </button>
     </span>
@@ -58,7 +59,9 @@ export function StreamTaskEventLine({ ev }: { ev: StreamTaskEvent }) {
     dot = 'var(--mb-work)'
     body = (
       <>
-        <span>＋ New {goal ? 'goal' : 'task'}:</span> {title} {who}
+        <span className="v-ev-ic">
+          <IconPlus size={12} /> New {goal ? 'goal' : 'task'}:
+        </span> {title} {who}
       </>
     )
   } else if (ev.kind === 'title') {

@@ -4,6 +4,7 @@ import { agentLabel, installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { lastSlackProject, rememberSlackProject } from '../lib/slack'
 import { Button, IconButton, Modal, cx } from './ui'
+import { IconClose } from './icons'
 
 /**
  * Start a minbox thread from a Slack thread. The project is picked for you (a minbox thread already
@@ -152,8 +153,8 @@ export function SlackStartThreadDialog({ thread, onClose, onStarted }: { thread:
     <Modal label="Start minbox thread from Slack" onClose={onClose} top={!isPhone} className={cx('flex max-h-[calc(100vh-32px)] flex-col overflow-hidden rounded-2xl bg-raised', isPhone ? 'w-full' : 'w-[min(1020px,100%)]')}>
       <div className="flex h-14 shrink-0 items-center border-b border-line2 pl-[22px] pr-3">
         <h2 className="m-0 flex-1 truncate text-[16px] font-[650]">Start minbox thread from Slack</h2>
-        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose} className="text-[18px]">
-          ×
+        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose}>
+          <IconClose size={18} />
         </IconButton>
       </div>
       <div data-testid="slack-thread-dialog" className={cx('flex min-h-0 flex-1 overflow-y-auto', isPhone ? 'flex-col' : 'flex-row')}>

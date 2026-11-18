@@ -7,7 +7,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
-import { IconAgentKind, IconBack, IconFiles, IconShell } from '../components/icons'
+import { IconAgentKind, IconBack, IconChevronRight, IconFiles, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
@@ -260,7 +260,7 @@ export function StreamView({
                 style={{ display: 'inline-flex', alignItems: 'center' }}
                 onClick={() => side.toggle('shell')}
               >
-                <IconShell size={13} />
+                <IconShell size={14} />
               </button>
             )}
             <button
@@ -273,7 +273,7 @@ export function StreamView({
               style={{ display: 'inline-flex', alignItems: 'center' }}
               onClick={() => side.toggle('files')}
             >
-              <IconFiles size={13} />
+              <IconFiles size={14} />
             </button>
           </div>
           <div className="v-r2">
@@ -287,7 +287,7 @@ export function StreamView({
             {openTasks.length > 1 && <span className="v-hide-phone">· {openTasks.length} open tasks</span>}
             {isPhone && (
               <button type="button" className="v-chip v-sheetbtn" data-testid="agent-sheet-open" aria-label={`Tasks (${openTasks.length} open), terminal, shell and files`} onClick={() => navigate({ tab: 'tasks' }, { push: true })}>
-                Tasks <b>{openTasks.length}</b> ›
+                Tasks <b>{openTasks.length}</b> <IconChevronRight size={12} />
               </button>
             )}
           </div>

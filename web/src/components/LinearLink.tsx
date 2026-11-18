@@ -252,7 +252,7 @@ export function LinearLinkDialog({ thread, onClose, onNew }: { thread: Thread; o
           onClick={() => choose(issues.length)}
           className={cx('mx-1 flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg2', at === issues.length && 'bg-raised')}
         >
-          <IconPlus size={13} />
+          <IconPlus size={14} />
           <span className="min-w-0 flex-1 truncate">{query ? <>New issue “{query}”</> : 'New issue'}</span>
         </div>
       </div>

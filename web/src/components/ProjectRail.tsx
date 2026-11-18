@@ -498,7 +498,7 @@ export function ProjectRail() {
           onClick={() => setOverlay({ kind: 'new-project' })}
           className={cx('flex h-8 items-center justify-center gap-1.5 rounded-lg border border-dashed border-linestrong bg-transparent text-[12.5px] text-fg2 hover:bg-raised', tiles ? 'w-8' : 'flex-1')}
         >
-          <IconPlus size={13} />
+          <IconPlus size={14} />
           {!tiles && 'New project'}
         </button>
         <IconButton

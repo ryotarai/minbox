@@ -9,7 +9,7 @@ import { useApp } from '../lib/app'
 import { ago, standing, STATUS_LABEL, v3, type BoardTask } from './data'
 import { Composer, type Outgoing } from './Composer'
 import { Bar, StatusDot, useNav } from './parts'
-import { IconTasks } from '../components/icons'
+import { IconCheck, IconCheckSquare, IconFoldLeft, IconGoal, IconTasks } from '../components/icons'
 import { TriBox, useColumnPick, type ColumnPickState } from './Columns'
 
 /** The tasks an agent works on: open first, then done. */
@@ -50,7 +50,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
         <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
           <div className="v-a">
             <StatusDot t={t} />
-            {t.kind === 'goal' ? '◎ ' : ''}
+            {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
             {t.title}
           </div>
           <TaskSubtitle t={t} />
@@ -152,7 +152,8 @@ export function TasksPane({
       <b>{open.length}</b>
       {checked > 0 && (
         <span className="v-tasks-strip-checked" data-testid="tasks-strip-checked" title={`${checked} checked: shown as columns`}>
-          ☑{checked}
+          <IconCheckSquare size={12} />
+          {checked}
         </span>
       )}
     </button>
@@ -178,7 +179,7 @@ export function TasksPane({
               title="Hide the tasks (⇧T)"
               onClick={() => onToggle(false)}
             >
-              «
+              <IconFoldLeft size={14} />
             </button>
           </div>
           <div className="v-tasks-body">
@@ -224,7 +225,7 @@ function PaneComposer({ sessionId, tasks }: { sessionId: string; tasks: BoardTas
     <div className="v-tasks-compose">
       {sent > 0 && (
         <div key={sent} className="v-tasks-sent" role="status" data-testid="tasks-composer-sent">
-          Sent to {sess.name} ✓
+          Sent to {sess.name} <IconCheck size={12} />
         </div>
       )}
       <Composer compact testid="tasks-composer" toId={sessionId} toOptions={[sess]} about={[]} tasks={tasks} draftKey={'v3:agent:' + sessionId} placeholder={`Message ${sess.name}…`} onSend={send} />

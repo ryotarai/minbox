@@ -3,6 +3,7 @@ import type { Answer, ClosedReason, Question } from '../api'
 import { hm } from '../lib/format'
 import { renderMarkdown } from '../lib/markdown'
 import { cx } from './ui'
+import { IconCheckSquare, IconSquare } from './icons'
 
 export function answerIsEmpty(a?: Answer): boolean {
   if (!a) return true
@@ -205,7 +206,7 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
                       !readOnly && 'hover:border-muted',
                     )}
                   >
-                    <span aria-hidden="true">{on ? '☑' : '☐'}</span>
+                    <span aria-hidden="true" className="flex">{on ? <IconCheckSquare size={14} /> : <IconSquare size={14} />}</span>
                     {c.label}
                     {c.recommended && <span className="text-[10.5px] font-bold text-wait">Recommended</span>}
                     {c.settled && <span className="text-[10.5px] text-subtle">decided</span>}

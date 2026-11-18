@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes
 import { createPortal } from 'react-dom'
 import { placePopover } from '../lib/popoverPlacement'
 import { THREAD_STATUS_LABEL, type ThreadStatus } from '../api'
+import { IconCheck } from './icons'
 
 export function cx(...v: (string | false | null | undefined)[]): string {
   return v.filter(Boolean).join(' ')
@@ -70,7 +71,7 @@ export function ThreadStatusBadge({ status, className, testid = 'thread-status' 
       className={cx('inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold', st.bg, st.text, className)}
     >
       {status === 'finished' ? (
-        <span aria-hidden="true">✓</span>
+        <IconCheck size={11} strokeWidth={3} />
       ) : (
         <span aria-hidden="true" className={cx('inline-block h-[6px] w-[6px] rounded-full', status === 'working' ? 'mb-pulse bg-work' : status === 'blocked' ? 'bg-muted' : 'bg-wait')} />
       )}

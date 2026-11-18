@@ -7,6 +7,7 @@ import { isMac, plural, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { answerIsEmpty, RecommendedTag } from './QuestionCard'
 import { Button, Modal, cx } from './ui'
+import { IconCheckSquare, IconClose, IconSquare } from './icons'
 
 // ---- toasts ----
 
@@ -364,8 +365,8 @@ export function DecisionMode({ onClose }: { onClose: () => void }) {
           All
         </button>
         ·
-        <button type="button" aria-label="Close" onClick={onClose} className="border-0 bg-transparent text-muted hover:text-fg">
-          ×
+        <button type="button" aria-label="Close" onClick={onClose} className="flex border-0 bg-transparent text-muted hover:text-fg">
+          <IconClose size={14} />
         </button>
       </div>
       {items && items.length > 0 && (
@@ -414,7 +415,7 @@ export function DecisionMode({ onClose }: { onClose: () => void }) {
                     c.recommended || on ? 'border-wait/50 bg-wait/8' : 'border-linestrong bg-transparent',
                   )}
                 >
-                  <b className="font-[650]">{n + 1}</b> {cur.q.kind === 'multi' && <span>{on ? '☑' : '☐'}</span>} {c.label} {c.recommended && <RecommendedTag />}
+                  <b className="font-[650]">{n + 1}</b> {cur.q.kind === 'multi' && (on ? <IconCheckSquare size={14} /> : <IconSquare size={14} />)} {c.label} {c.recommended && <RecommendedTag />}
                 </button>
               )
             })

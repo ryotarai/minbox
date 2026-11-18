@@ -3,6 +3,7 @@ import { THREAD_STATUS_ORDER, api, type Thread } from '../api'
 import { threadLink, useApp } from '../lib/app'
 import { hm, plural } from '../lib/format'
 import { Button, Kbd, MenuItem, MenuLabel, MenuSep, Popover, type MenuAt } from './ui'
+import { IconChevronRight } from './icons'
 
 /**
  * A thread's actions: the open thread's "…" menu, and the thread list's right-click / long-press
@@ -89,7 +90,7 @@ export function ThreadMoreMenu({
           </MenuItem>
         ) : (
           <MenuItem testid="thread-snooze" active={!!snooze} onClick={(e) => setSnooze(at ? e.currentTarget : anchor)}>
-            Snooze ›
+            Snooze <IconChevronRight size={14} className="ml-auto" />
           </MenuItem>
         )}
         {onShell && (

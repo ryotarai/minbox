@@ -334,12 +334,12 @@ function FileViewer({ sessionId, path, phone, onClose, onMention }: { sessionId:
             onClick={copy}
             className={copied ? 'text-ok' : undefined}
           >
-            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+            {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
           </IconButton>
         )}
         {!phone && (
           <IconButton aria-label="Close file" title="Close file" data-testid="file-viewer-close" size={26} onClick={onClose}>
-            <IconClose size={13} />
+            <IconClose size={14} />
           </IconButton>
         )}
       </div>

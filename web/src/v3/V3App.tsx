@@ -30,7 +30,7 @@ import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTaskTitles, agentHint, openQuestions, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
-import { IconPaperclip } from '../components/icons'
+import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconPlus, IconSearch } from '../components/icons'
 // The phone's bottom tabs: Lucide icons, one module each (not the barrel), so only these three ship.
 import IconTabBoard from 'lucide-react/icons/square-kanban'
 import IconTabAgents from 'lucide-react/icons/bot'
@@ -363,7 +363,7 @@ export function V3App() {
         <div className="v-rail" data-testid="rail-column" style={{ width: railWidth(layout), flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
           {isTablet && !showSidebar && (
             <button type="button" className="v-railbtn" data-testid="sidebar-toggle" aria-label="Show the sidebar" title="Board, Search and the agents" onClick={() => setSbOpen(true)}>
-              ☰
+              <IconMenu size={18} />
             </button>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>
@@ -378,16 +378,16 @@ export function V3App() {
           <NotificationAsk />
           <div style={{ height: 8 }} />
           <button type="button" className={'v-sb-item' + (view === 'board' ? ' sel' : '')} data-testid="nav-board" onClick={nav.board}>
-            ▤ Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
+            <IconBoard /> Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
           </button>
           <button type="button" className={'v-sb-item' + (view === 'search' ? ' sel' : '')} data-testid="nav-search" onClick={nav.search}>
-            ⌕ Search{' '}
+            <IconSearch /> Search{' '}
             <span className="v-cnt">
               <span className="v-kbd">/</span>
             </span>
           </button>
           <button type="button" className="v-sb-item" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
-            ⌘ Quick actions{' '}
+            <IconCommand /> Quick actions{' '}
             <span className="v-cnt">
               <span className="v-kbd">{isMac() ? '⌘K' : 'Ctrl+K'}</span>
             </span>
@@ -578,16 +578,16 @@ function AgentsList({ agents, shells, counts, onNew, onNewAgent, onRename }: { a
           <BackButton />
           <h1>Agents</h1>
           <button type="button" className="v-btn" data-testid="open-palette" aria-label="Quick actions" onClick={() => setOverlay({ kind: 'palette' })}>
-            ⌘
+            <IconCommand size={14} />
           </button>
           <button type="button" className="v-btn" data-testid="open-settings-phone" onClick={() => navigate({ view: 'settings' }, { push: true })}>
             Settings
           </button>
           <button type="button" className="v-btn" data-testid="agents-new-agent" onClick={onNewAgent}>
-            ＋ Agent
+            <IconPlus size={14} /> Agent
           </button>
           <button type="button" className="v-btn" onClick={onNew}>
-            ＋ Message
+            <IconPlus size={14} /> Message
           </button>
         </div>
         <div className="v-r2">

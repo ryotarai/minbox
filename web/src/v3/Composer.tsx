@@ -14,7 +14,7 @@ import { SketchButton } from '../components/Sketch'
 import { useMentions } from '../components/Mentions'
 import { commandOf } from '../components/CommandMessage'
 import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from '../components/ReplyHelp'
-import { IconExpand, IconPaperclip, IconPlus, IconSketch } from '../components/icons'
+import { IconCheck, IconClose, IconComment, IconExpand, IconPaperclip, IconPlus, IconSketch } from '../components/icons'
 import { Popover } from '../components/ui'
 import { v3, type Task, type V3Message } from './data'
 import { TaskChip, TaskPicker, agentHint, clearAnswers, draftedAnswers, openQuestions, useAnswersVersion } from './parts'
@@ -259,7 +259,7 @@ export function Composer({
         {tasks && all.length === 0 && (
           <span style={{ position: 'relative' }}>
             <button type="button" className="v-addtask" data-testid="composer-task" title="Say which task this is about (#)" onClick={() => setPicking(true)}>
-              ＋ about a task
+              <IconPlus size={12} /> about a task
             </button>
             {picking && (
               <TaskPicker
@@ -320,15 +320,15 @@ export function Composer({
         <div className="v-chips">
           {picksCount > 0 && (
             <span className="v-pchip" data-testid="picks-chip" title={cmd ? 'A command goes alone: the answers wait for the next message' : 'The picked answers go with Send'}>
-              ✓ {plural(picksCount, 'pick')}
+              <IconCheck size={12} /> {plural(picksCount, 'pick')}
               {actionsDone > 0 ? ` · ${actionsDone} done` : ''}
             </span>
           )}
           {annos.length > 0 && (
             <span className="v-pchip" data-testid="annotations-chip">
-              💬 {plural(annos.length, 'annotation')}
+              <IconComment size={12} /> {plural(annos.length, 'annotation')}
               <button type="button" aria-label="Remove annotations" title="Remove annotations" onClick={() => annoKeys.forEach((k) => updateReplyDraft(k, (d) => ({ ...d, annotations: [] })))}>
-                ×
+                <IconClose size={12} />
               </button>
             </span>
           )}
@@ -364,7 +364,7 @@ export function Composer({
           </button>
         ) : (
           <button type="button" className={'v-attach' + (full ? ' on' : '')} data-testid="reply-full" aria-pressed={full} aria-label={full ? 'Back to the conversation' : 'Full height'} title={full ? 'Back to the conversation' : 'Full height'} onClick={() => setFull(!full)}>
-            <IconExpand size={15} />
+            <IconExpand size={16} />
           </button>
         )}
         <span className="v-sp" />

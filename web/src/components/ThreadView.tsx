@@ -11,28 +11,7 @@ import { SketchButton } from './Sketch'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { AttachmentTiles, ArtifactsGrid } from './AttachmentTiles'
 import { MessageBody } from './MessageBody'
-import {
-  IconArchive,
-  IconBack,
-  IconCheck,
-  IconClaude,
-  IconFork,
-  IconExpand,
-  IconFold,
-  IconGrid,
-  IconMore,
-  IconSend,
-  IconThumb,
-  IconUnfold,
-  IconShell,
-  IconAgentKind,
-  IconTasks,
-  IconFiles,
-  IconTerminal,
-  IconPaperclip,
-  IconPlus,
-  IconSketch,
-} from './icons'
+import { IconAgentKind, IconArchive, IconArrowDown, IconBack, IconCheck, IconChevronRight, IconClaude, IconClose, IconComment, IconExpand, IconFiles, IconFold, IconFork, IconGrid, IconMore, IconPaperclip, IconPlus, IconReply, IconSend, IconShell, IconSketch, IconTasks, IconTerminal, IconThumb, IconUnfold } from './icons'
 import { ActionItems, QuestionCard, SOFT_CLOSED, answerIsEmpty } from './QuestionCard'
 import { DELIVERY } from './ThreadList'
 import { ForkDialog } from './ForkDialog'
@@ -118,7 +97,7 @@ export function ShellButton({ session }: { session: Session }) {
       onClick={() => setLayout({ shellPane: !open })}
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
-      <IconShell size={15} />
+      <IconShell size={16} />
     </IconButton>
   )
 }
@@ -140,7 +119,7 @@ export function TasksButton() {
       onClick={() => (isTablet ? setThreadTasksOverlay(!overlay) : setLayout({ tasksPane: !open }))}
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
-      <IconTasks size={15} />
+      <IconTasks size={16} />
     </IconButton>
   )
 }
@@ -166,7 +145,7 @@ export function FilesButton() {
       onClick={toggle}
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
     >
-      <IconFiles size={15} />
+      <IconFiles size={16} />
     </IconButton>
   )
 }
@@ -595,7 +574,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           <TasksButton />
           <FilesButton />
           <IconButton data-testid="mark-read" aria-label="Mark read" title="Mark read (E)" onClick={markRead}>
-            <IconCheck size={15} />
+            <IconCheck size={16} />
           </IconButton>
           {attachments.length > 0 && (
             <IconButton
@@ -606,17 +585,17 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
               onClick={() => setShowArtifacts((v) => !v)}
               className={showArtifacts ? 'bg-raised! text-fg!' : undefined}
             >
-              <IconGrid size={15} />
+              <IconGrid size={16} />
             </IconButton>
           )}
           <IconButton aria-label={foldAll ? 'Unfold all' : 'Fold all'} title={foldAll ? 'Unfold all' : 'Fold all'} data-testid="fold-all" onClick={() => {
             setFoldAll((v) => !v)
             setExpanded(false)
           }}>
-            {foldAll ? <IconUnfold size={15} /> : <IconFold size={15} />}
+            {foldAll ? <IconUnfold size={16} /> : <IconFold size={16} />}
           </IconButton>
           <IconButton aria-label="More" data-testid="thread-more" onClick={(e) => setMoreAnchor(e.currentTarget)}>
-            <IconMore size={15} />
+            <IconMore size={16} />
           </IconButton>
         </ThreadHeaderBar>
       )}
@@ -633,7 +612,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           }}
           className="absolute bottom-3 left-1/2 z-[2] flex h-8 -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full border-0 bg-accent px-3.5 text-[12.5px] font-semibold text-onaccent shadow-pop"
         >
-          ↓ {unseen === 1 ? 'New message' : `${unseen} new messages`}
+          <IconArrowDown size={14} /> {unseen === 1 ? 'New message' : `${unseen} new messages`}
         </button>
       )}
       <div
@@ -779,7 +758,7 @@ export function ThreadView({ session, threadId, siblings, onBack, onTerminal, te
           style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
           className="fixed z-[30] flex h-8 items-center gap-1.5 rounded-lg border border-linestrong bg-overlay px-3 text-[12.5px] font-semibold text-fg shadow-pop hover:bg-raised"
         >
-          ❝ Reply
+          <IconReply size={14} /> Reply
           {!phone && <Kbd className="ml-0.5 font-normal">R</Kbd>}
         </button>
       )}
@@ -1015,7 +994,7 @@ function AgentMessage({
           <IconThumb size={14} />
         </button>
         <button type="button" onClick={onReply} title="Reply (R)" className="border-0 bg-transparent text-[12px] text-subtle hover:text-fg">
-          {hm(m.created_at)} ↩
+          {hm(m.created_at)} <IconReply size={12} className="inline" />
         </button>
         <MessageForkControls onFork={onFork} phone={phone} />
       </div>
@@ -1115,13 +1094,13 @@ function UserMessage({
             const q = qs[i]
             return (
               <span key={a.key}>
-                <span className="text-subtle">{q?.kind === 'action' ? '✓' : `Q${i + 1}`}</span> {q?.prompt ?? a.key} → <span className="text-fg">{summarize(a)}</span>
+                <span className="text-subtle">{q?.kind === 'action' ? <IconCheck size={12} className="inline" /> : `Q${i + 1}`}</span> {q?.prompt ?? a.key} → <span className="text-fg">{summarize(a)}</span>
               </span>
             )
           })}
         </div>
       )}
-      {(m.annotations?.length ?? 0) > 0 && <div className="text-[12.5px] text-muted">💬 {plural(m.annotations!.length, 'annotation')}</div>}
+      {(m.annotations?.length ?? 0) > 0 && <div className="text-[12.5px] text-muted"><IconComment size={12} /> {plural(m.annotations!.length, 'annotation')}</div>}
     </article>
   )
 }
@@ -1134,7 +1113,7 @@ function TaskContextChip({ task }: { task: { title: string; context: string[] } 
   return (
     <details data-testid="task-context" className="group/task self-start text-[12px] text-muted">
       <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-1 rounded-full border border-line2 px-2 py-px marker:hidden [&::-webkit-details-marker]:hidden">
-        <span className="text-subtle transition-transform group-open/task:rotate-90">▸</span>
+        <IconChevronRight size={12} className="text-subtle transition-transform group-open/task:rotate-90" />
         <span className="truncate">
           Task: <span data-testid="task-context-title" className="text-fg2">{task.title}</span>
         </span>
@@ -1252,7 +1231,7 @@ export function ForkBreadcrumb({ from }: { from: NonNullable<Thread['forked_from
   const { navigate } = useApp()
   return (
     <div data-testid="fork-breadcrumb" className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-[8px] border border-line2 bg-raised px-2.5 py-1.5 text-[12px] text-muted">
-      <IconFork size={13} className="shrink-0 text-accent" />
+      <IconFork size={14} className="shrink-0 text-accent" />
       <span>Forked from</span>
       {from.thread_id ? (
         <button
@@ -1514,7 +1493,7 @@ function ReplyBox({
       onClick={onToggleFull}
       className={cx(full && 'bg-sel text-fg')}
     >
-      <IconExpand size={15} />
+      <IconExpand size={16} />
     </IconButton>
   )
   const fileTiles = <ComposeFileTiles files={files} onRemove={removeFile} onPutBack={putBack} />
@@ -1769,7 +1748,7 @@ function ReplyBox({
             {...longPress}
             className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-accent p-0 text-onaccent disabled:bg-chip disabled:text-faint', full && 'self-end')}
           >
-            {cmd ? <IconTerminal size={19} /> : <IconSend size={20} />}
+            {cmd ? <IconTerminal size={20} /> : <IconSend size={20} />}
           </button>
         </div>
         <Popover anchor={menuAnchor} open={!!menuAnchor} onClose={closeMenu} side="top" align="start" className="w-[240px] p-1.5">
@@ -1804,18 +1783,20 @@ function ReplyBox({
       {commandHint}
       {(picksCount > 0 || annos.length > 0 || counter) && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center rounded-[6px] bg-chip px-2 text-[12px]">✓ {plural(picksCount, 'pick')}</span>}
+          {picksCount > 0 && <span data-testid="picks-chip" className="flex h-6 items-center gap-1 rounded-[6px] bg-chip px-2 text-[12px]">
+              <IconCheck size={12} /> {plural(picksCount, 'pick')}
+            </span>}
           {annos.length > 0 && (
             <span data-testid="annotations-chip" className="flex h-6 items-center gap-1 rounded-[6px] bg-chip px-2 text-[12px]">
-              💬 {plural(annos.length, 'annotation')}
+              <IconComment size={12} /> {plural(annos.length, 'annotation')}
               <button
                 type="button"
                 aria-label="Remove annotations"
                 title="Remove annotations"
                 onClick={() => updateReplyDraft(thread.id, (d) => ({ ...d, annotations: [] }))}
-                className="border-0 bg-transparent px-0.5 text-subtle hover:text-fg"
+                className="flex border-0 bg-transparent px-0.5 text-subtle hover:text-fg"
               >
-                ×
+                <IconClose size={12} />
               </button>
             </span>
           )}

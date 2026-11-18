@@ -6,6 +6,7 @@ import { useApp } from '../lib/app'
 import { selectProject, shortDir } from '../lib/projects'
 import { homeRelative, isMac } from '../lib/format'
 import { Button, HostTag, IconButton, MenuItem, Modal, Popover, cx } from './ui'
+import { IconArrowUp, IconChevronDown, IconChevronRight, IconClose, IconFiles, IconSearch } from './icons'
 
 type Entry = { name: string; path: string; display: string; git: boolean; branch?: string }
 type Listing = { path: string; display: string; parent?: string; home: string; entries: Entry[] }
@@ -219,7 +220,7 @@ export function NewSessionDialog({
     <div data-testid="new-session-browser" className="flex h-full min-h-0 flex-col overflow-hidden rounded-[10px] border border-line2 bg-surface">
       <nav aria-label="Path" className="flex h-10 shrink-0 items-center gap-0.5 border-b border-line px-2 text-[13px]">
         <IconButton size={30} aria-label="Up one folder" disabled={!listing?.parent} onClick={() => listing?.parent && browse(listing.parent)}>
-          ↑
+          <IconArrowUp size={16} />
         </IconButton>
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
           {crumbs.map((c, i) => (
@@ -236,7 +237,7 @@ export function NewSessionDialog({
           ))}
         </div>
         <label className="flex h-7 w-[150px] shrink-0 items-center gap-1.5 rounded-[6px] border border-line2 bg-sunken px-2 text-[12.5px] text-subtle">
-          <span aria-hidden="true">⌕</span>
+          <IconSearch size={14} />
           <input
             aria-label="Filter folders"
             data-testid="new-session-filter"
@@ -263,12 +264,10 @@ export function NewSessionDialog({
               }}
               className={cx('flex h-9 shrink-0 cursor-default items-center gap-2.5 rounded-[7px] px-2.5 text-[13px]', sel ? 'bg-sel' : 'hover:bg-raised')}
             >
-              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke={sel ? 'var(--mb-wait)' : 'var(--mb-subtle)'} strokeWidth="1.4" strokeLinejoin="round">
-                <path d="M1.5 4.5a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
-              </svg>
+              <IconFiles size={16} style={{ color: sel ? 'var(--mb-wait)' : 'var(--mb-subtle)' }} />
               <span className={cx('mono min-w-0 flex-1 truncate', sel ? 'text-fg' : 'text-fg2')}>{d.name}</span>
               {d.git && <span className="mono shrink-0 rounded border border-linestrong px-[5px] text-[11px] leading-4 text-muted">git{d.branch ? ` · ${d.branch}` : ''}</span>}
-              {!sel && <span className="text-[#52525b]">›</span>}
+              {!sel && <IconChevronRight size={14} className="text-[#52525b]" />}
             </div>
           )
         })}
@@ -331,7 +330,7 @@ export function NewSessionDialog({
           <span className="flex-1">
             {host?.name ?? 'Choose a host'} {host?.builtin && <span className="text-[13px] text-subtle">This machine</span>}
           </span>
-          ▾
+          <IconChevronDown size={14} />
         </button>
         <Popover anchor={hostAnchor} open={!!hostAnchor} onClose={() => setHostAnchor(null)} align="start" className="w-[300px]">
           {hosts.map((h) => (
@@ -485,7 +484,7 @@ export function NewSessionDialog({
           ) : (
             <span className="flex-1 text-muted">A folder without a project yet…</span>
           )}
-          <span aria-hidden="true" className="text-subtle">▾</span>
+          <IconChevronDown size={14} className="text-subtle" />
         </button>
         <Popover anchor={projAnchor} open={!!projAnchor} onClose={() => setProjAnchor(null)} align="start" className="w-[340px]">
           <div className="max-h-[320px] overflow-y-auto">
@@ -570,8 +569,8 @@ export function NewSessionDialog({
     <Modal label={title} onClose={onClose} className="flex max-h-[calc(100vh-80px)] w-[min(800px,100%)] flex-col overflow-hidden rounded-2xl bg-raised" top>
       <div className="flex h-14 shrink-0 items-center border-b border-line2 pl-[22px] pr-3">
         <h2 className="m-0 flex-1 text-[16px] font-[650]">{title}</h2>
-        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose} className="text-[18px]">
-          ×
+        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose}>
+          <IconClose size={18} />
         </IconButton>
       </div>
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { api, uploadToInbox, type AttachmentType, type Upload } from '../api'
 import { formatBytes } from './attachments'
-import { IconPencil } from '../components/icons'
+import { IconClose, IconPencil } from '../components/icons'
 import { cx } from '../components/ui'
 import { isRasterName, requestSketch, type Scene } from './sketch'
 
@@ -228,16 +228,16 @@ export function ComposeFileTiles({ files, onRemove, onPutBack }: { files: Compos
                   className="flex items-center border-0 bg-transparent px-1 text-subtle hover:text-fg"
                   data-testid={f.sketch ? 'file-edit' : 'file-annotate'}
                 >
-                  <IconPencil size={13} />
+                  <IconPencil size={14} />
                 </button>
               )}
               <button
                 type="button"
                 aria-label={f.state === 'uploading' ? `Stop uploading ${f.name}` : `Remove ${f.name}`}
                 onClick={() => onRemove(f.key)}
-                className="border-0 bg-transparent px-1 text-subtle hover:text-fg"
+                className="flex border-0 bg-transparent px-1 text-subtle hover:text-fg"
               >
-                ×
+                <IconClose size={12} />
               </button>
             </span>
           </div>

@@ -4,6 +4,7 @@ import { agentLabel, installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { lastIssueProject, rememberIssueProject } from '../lib/issues'
 import { Button, IconButton, Modal, cx } from './ui'
+import { IconClose } from './icons'
 
 /**
  * Start a minbox thread from a Linear issue. The project is picked for you (a thread already linked
@@ -151,8 +152,8 @@ export function StartThreadDialog({ issue, onClose }: { issue: IssueSummary; onC
     <Modal label="Start thread from issue" onClose={onClose} top={!isPhone} className={cx('flex max-h-[calc(100vh-32px)] flex-col overflow-hidden rounded-2xl bg-raised', isPhone ? 'w-full' : 'w-[min(1020px,100%)]')}>
       <div className="flex h-14 shrink-0 items-center border-b border-line2 pl-[22px] pr-3">
         <h2 className="m-0 flex-1 truncate text-[16px] font-[650]">Start thread from {issue.identifier}</h2>
-        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose} className="text-[18px]">
-          ×
+        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose}>
+          <IconClose size={18} />
         </IconButton>
       </div>
       <div data-testid="issue-thread-dialog" className={cx('flex min-h-0 flex-1 overflow-y-auto', isPhone ? 'flex-col' : 'flex-row')}>

@@ -11,7 +11,7 @@ import { selectProject, shortDir, useProjectStats } from '../lib/projects'
 import { useLinearStatus } from '../lib/issues'
 import { useSlackStatus } from '../lib/slack'
 import { ProjectDot } from '../components/ProjectRail'
-import { IconSearch } from '../components/icons'
+import { IconAt, IconChevronRight, IconHash, IconSearch } from '../components/icons'
 import { Kbd, Modal, cx } from '../components/ui'
 import { v3, STATUS_LABEL, type BoardTask } from './data'
 import type { PaneKind } from './layout'
@@ -390,8 +390,8 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
               >
                 <span className="flex w-4 shrink-0 items-center justify-center">
                   {item.leading ?? (
-                    <span aria-hidden="true" className="mono text-[12px] text-muted">
-                      {item.kind === 'action' ? '›' : item.kind === 'agent' ? '@' : '#'}
+                    <span aria-hidden="true" className="flex text-muted">
+                      {item.kind === 'action' ? <IconChevronRight size={14} /> : item.kind === 'agent' ? <IconAt size={14} /> : <IconHash size={14} />}
                     </span>
                   )}
                 </span>

@@ -12,6 +12,7 @@ import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } 
 import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
 import { DeliveryLine } from '../components/ThreadView'
+import { IconClose, IconExternal, IconGoal } from '../components/icons'
 
 export function TaskView({
   id,
@@ -220,7 +221,7 @@ export function TaskView({
         <StatusDot t={t} live={typing.length > 0} />
         <h2 data-testid="column-title" title={t.title}>
           <button type="button" className="v-coltitle" title="Open the task" onClick={() => nav.task(t.id)}>
-            {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
+            {t.kind === 'goal' && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
             {t.title}
           </button>
         </h2>
@@ -232,7 +233,7 @@ export function TaskView({
           title={column.detail ? `Back to the ${column.detail} (Esc)` : 'Remove from the columns'}
           onClick={column.onRemove}
         >
-          ✕
+          <IconClose size={14} />
         </button>
       </div>
       {st && (
@@ -250,7 +251,7 @@ export function TaskView({
           </button>
         ))}
         <button type="button" className="v-link" data-testid="column-open" style={{ marginLeft: 'auto' }} onClick={() => nav.task(t.id)}>
-          Open ↗
+          Open <IconExternal size={12} />
         </button>
       </div>
     </div>

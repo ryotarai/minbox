@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, type ReplyQuestion, type SuggestResult } from '../api'
 import { useApp } from '../lib/app'
 import { getReplyHelpDraft, setReplyHelpDraft, useDraftsVersion, type ReplyHelpAnswer, type ReplyHelpDraft } from '../lib/drafts'
-import { IconChevronDown, IconChevronRight, IconClose, IconPencil, IconSparkle, IconTerminal } from './icons'
+import { IconCheckSquare, IconChevronDown, IconChevronRight, IconClose, IconPencil, IconRadioOff, IconRadioOn, IconSparkle, IconSquare, IconTerminal } from './icons'
 import { cx } from './ui'
 
 // Reply help: questions for the person (drafted by the helper agent, GET /api/threads/{id}/suggestions)
@@ -168,7 +168,7 @@ export function ReplyHelpPanel({
   if (!s.data && qs.length === 0)
     return (
       <div data-testid="reply-qa-loading" className="flex items-center gap-2 text-[12px] text-subtle" aria-live="polite">
-        <IconSparkle size={13} />
+        <IconSparkle size={14} />
         <span>Drafting questions to help you reply…</span>
         <span aria-hidden className="h-5 w-16 animate-pulse rounded-full bg-chip" />
         <span aria-hidden className="h-5 w-12 animate-pulse rounded-full bg-chip" />
@@ -195,7 +195,7 @@ export function ReplyHelpPanel({
         onClick={runCommand}
         className={cx('flex min-w-0 max-w-[60ch] items-center gap-1.5 border-0 bg-transparent pl-3 pr-1.5 text-left hover:bg-raised hover:text-fg', phone ? 'min-h-10' : 'py-1')}
       >
-        <IconTerminal size={13} />
+        <IconTerminal size={14} />
         <span className="shrink-0 text-subtle">Run yourself:</span>
         <code className="min-w-0 truncate font-mono">{cmd}</code>
       </button>
@@ -207,7 +207,7 @@ export function ReplyHelpPanel({
         onClick={() => onEditCommand(cmd)}
         className={cx('shrink-0 border-0 bg-transparent pl-1 pr-2.5 text-subtle hover:bg-raised hover:text-fg', phone ? 'min-h-10' : 'py-1')}
       >
-        <IconPencil size={13} />
+        <IconPencil size={14} />
       </button>
     </span>
   ) : null
@@ -225,8 +225,8 @@ export function ReplyHelpPanel({
               onClick={() => setCollapsed(!collapsed)}
               className={cx('flex min-w-0 flex-1 items-center gap-1.5 border-0 bg-transparent p-0 text-left text-[12px] text-subtle hover:text-fg', phone && 'min-h-8')}
             >
-              {collapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />}
-              <IconSparkle size={13} />
+              {collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
+              <IconSparkle size={14} />
               <span className="min-w-0 truncate">
                 {qs.length === 1 ? '1 question' : `${qs.length} questions`} to help you reply
                 {answered > 0 && ` · ${answered} answered`}
@@ -241,7 +241,7 @@ export function ReplyHelpPanel({
               onClick={help.dismiss}
               className={cx('flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0 text-subtle hover:bg-raised hover:text-fg', phone ? 'h-8 w-8' : 'h-6 w-6')}
             >
-              <IconClose size={13} />
+              <IconClose size={14} />
             </button>
           </div>
           {!collapsed && (
@@ -312,7 +312,7 @@ function HelpQuestion({ q, index, a, phone, onChange, onSubmit }: { q: ReplyQues
                 onClick={() => toggle(o.label)}
                 className={chip(on)}
               >
-                <span aria-hidden className="text-[11px]">{multi ? (on ? '☑' : '☐') : on ? '●' : '○'}</span>
+                <span aria-hidden className="flex">{multi ? on ? <IconCheckSquare size={14} /> : <IconSquare size={14} /> : on ? <IconRadioOn size={14} /> : <IconRadioOff size={14} />}</span>
                 <span className="min-w-0 truncate">{o.label}</span>
               </button>
             )
@@ -327,7 +327,7 @@ function HelpQuestion({ q, index, a, phone, onChange, onSubmit }: { q: ReplyQues
             onClick={toggleOther}
             className={chip(a.other)}
           >
-            <span aria-hidden className="text-[11px]">{multi ? (a.other ? '☑' : '☐') : a.other ? '●' : '○'}</span>
+            <span aria-hidden className="flex">{multi ? a.other ? <IconCheckSquare size={14} /> : <IconSquare size={14} /> : a.other ? <IconRadioOn size={14} /> : <IconRadioOff size={14} />}</span>
             Other…
           </button>
         </div>

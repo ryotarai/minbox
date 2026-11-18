@@ -6,7 +6,7 @@ import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { ago, short, standing, v3, type Board, type BoardTask, type V3Message } from './data'
 import { TaskRowMenu } from './RenameTask'
-import { IconMore } from '../components/icons'
+import { IconGoal, IconMore, IconPlus } from '../components/icons'
 import { MenuItem, Popover, type MenuAt } from '../components/ui'
 import type { Question } from '../api'
 import { Bar, StatusDot, agentName, openQuestions, useNav, useSessionsById } from './parts'
@@ -256,7 +256,7 @@ export function BoardView({
               <div className="v-ti">
                 <StatusDot t={t} live={live} />
                 <span className="v-t">
-                  {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
+                  {t.kind === 'goal' && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
                   {t.title}
                 </span>
                 {t.open_questions > 0 && <span className="v-qmark">? {t.open_questions}</span>}
@@ -345,7 +345,7 @@ export function BoardView({
         <div className="v-r1">
           <h1>Board</h1>
           <button type="button" className="v-btn" data-testid="new-message" onClick={() => setOverlay({ kind: 'v3-new' } as never)}>
-            ＋ New message <span className="v-kbd v-hide-phone">⇧N</span>
+            <IconPlus size={14} /> New message <span className="v-kbd v-hide-phone">⇧N</span>
           </button>
         </div>
         <div className="v-r2 v-sum">

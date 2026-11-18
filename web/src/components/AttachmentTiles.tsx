@@ -6,6 +6,7 @@ import { Diagram } from './Diagram'
 import { Kbd, MenuItem, cx } from './ui'
 import { ContextMenu, useContextMenu } from './ContextMenu'
 import { useApp } from '../lib/app'
+import { IconComment, IconDiagram, IconFile, IconFileCode, IconFileText, IconPaperclip, IconPlay, IconReview } from './icons'
 
 // Attachments at the foot of a message, and the thread's Artifacts grid
 // (Plannotator's AttachmentTiles and Artifacts view; spec §7).
@@ -70,12 +71,12 @@ function TileButton({ a, onOpen, style, children, ...rest }: ButtonHTMLAttribute
 
 function Icon({ a }: { a: Attachment }) {
   const t = typeOf(a)
-  const glyph = t === 'html' || t === 'code' ? '</>' : t === 'mermaid' || t === 'graphviz' ? '◇' : t === 'video' ? '▶' : t === 'file' ? '▣' : t === 'image' ? '' : '≡'
+  const glyph = t === 'html' || t === 'code' ? <IconFileCode size={16} /> : t === 'mermaid' || t === 'graphviz' ? <IconDiagram size={16} /> : t === 'video' ? <IconPlay size={16} /> : t === 'file' ? <IconFile size={16} /> : t === 'image' ? '' : <IconFileText size={16} />
   if (t === 'image')
     return <img alt="" src={api.attachmentRawUrl(a.id, 'sent')} className="h-[30px] w-[30px] shrink-0 rounded-[7px] object-cover" loading="lazy" />
   return (
     <span aria-hidden="true" className="mono flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[7px] bg-chip text-[11px] text-muted">
-      {a.kind === 'review' ? '📖' : glyph}
+      {a.kind === 'review' ? <IconReview size={16} /> : glyph}
     </span>
   )
 }
@@ -101,7 +102,7 @@ export function AttachmentTiles({
   return (
     <div className="flex flex-col gap-1.5" data-testid="attachments">
       <span className="text-[12px] text-muted">
-        📎 {plural(items.length, 'attachment')}
+        <IconPaperclip size={12} /> {plural(items.length, 'attachment')}
         {changed > 0 && <span className="text-wait"> · {changed} changed</span>}
       </span>
       {images.length > 0 && (
@@ -231,7 +232,7 @@ export function ArtifactsGrid({
                   {a.inline && ' · shown in the message text'}
                 </span>
                 {ch && <span className="text-[11.5px] text-wait">{ch.short === 'Changed type' || ch.short === 'No longer on disk' ? ch.short : 'Changed since sent'}</span>}
-                {n > 0 && <span className="text-[11.5px] text-muted">💬 {plural(n, 'comment')}</span>}
+                {n > 0 && <span className="text-[11.5px] text-muted"><IconComment size={12} /> {plural(n, 'comment')}</span>}
               </span>
             </>
           )
@@ -275,7 +276,9 @@ function Preview({ a }: { a: Attachment }) {
         .catch(() => {})
   }, [near, a.id, a.kind, t])
   const box = 'h-[120px] w-full shrink-0 overflow-hidden border-b border-line bg-sunken'
-  if (a.kind === 'review') return <div ref={ref} className={cx(box, 'flex items-center justify-center text-[28px]')}>📖</div>
+  if (a.kind === 'review') return <div ref={ref} className={cx(box, 'flex items-center justify-center text-muted')}>
+        <IconReview size={32} />
+      </div>
   return (
     <div ref={ref} className={box}>
       {!near ? null : t === 'image' ? (

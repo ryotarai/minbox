@@ -1,4 +1,4 @@
-import type { MutableRefObject } from 'react'
+import type { MutableRefObject, ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../lib/app'
@@ -21,7 +21,7 @@ import {
   type Tool,
 } from '../lib/sketch'
 import { unique, type useComposeFiles } from '../lib/uploads'
-import { IconSketch } from './icons'
+import { IconArrow, IconEllipse, IconEraser, IconLine, IconPen, IconRect, IconRedo, IconSelect, IconSketch, IconSquare, IconText, IconUndoStep } from './icons'
 import { cx } from './ui'
 
 // A simple shape drawing tool (plain SVG), opened from the compose boxes. The
@@ -29,15 +29,15 @@ import { cx } from './ui'
 // be edited before the message is sent. The same modal draws on an attached image.
 
 const FONT = 'system-ui, -apple-system, Segoe UI, sans-serif'
-const TOOLS: { tool: Tool; label: string; glyph: string }[] = [
-  { tool: 'select', label: 'Select / move (Option-drag to duplicate)', glyph: '↖' },
-  { tool: 'rect', label: 'Rectangle', glyph: '▭' },
-  { tool: 'ellipse', label: 'Ellipse', glyph: '◯' },
-  { tool: 'line', label: 'Line', glyph: '╱' },
-  { tool: 'arrow', label: 'Arrow', glyph: '→' },
-  { tool: 'text', label: 'Text', glyph: 'T' },
-  { tool: 'pen', label: 'Pen', glyph: '✎' },
-  { tool: 'eraser', label: 'Eraser', glyph: '⌫' },
+const TOOLS: { tool: Tool; label: string; glyph: ReactNode }[] = [
+  { tool: 'select', label: 'Select / move (Option-drag to duplicate)', glyph: <IconSelect size={16} /> },
+  { tool: 'rect', label: 'Rectangle', glyph: <IconRect size={16} /> },
+  { tool: 'ellipse', label: 'Ellipse', glyph: <IconEllipse size={16} /> },
+  { tool: 'line', label: 'Line', glyph: <IconLine size={16} /> },
+  { tool: 'arrow', label: 'Arrow', glyph: <IconArrow size={16} /> },
+  { tool: 'text', label: 'Text', glyph: <IconText size={16} /> },
+  { tool: 'pen', label: 'Pen', glyph: <IconPen size={16} /> },
+  { tool: 'eraser', label: 'Eraser', glyph: <IconEraser size={16} /> },
 ]
 
 type Paint = { stroke: string; strokeWidth: number; fill: string; fillOpacity?: number; pointerEvents?: 'all' | 'stroke' }
@@ -525,14 +525,14 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
             </Btn>
           ))}
           <Btn aria-label="Fill shapes" aria-pressed={fill} title="Fill rectangles and ellipses" data-testid="sketch-fill" className={cx(fill && 'border-accent bg-sel')} onClick={() => style({ fill: !fill })}>
-            ■ Fill
+            <IconSquare size={14} fill="currentColor" /> Fill
           </Btn>
           {sep}
           <Btn aria-label="Undo" title="Undo" data-testid="sketch-undo" disabled={h.past.length === 0} onClick={undo}>
-            ↶
+            <IconUndoStep size={16} />
           </Btn>
           <Btn aria-label="Redo" title="Redo" data-testid="sketch-redo" disabled={h.future.length === 0} onClick={redo}>
-            ↷
+            <IconRedo size={16} />
           </Btn>
           <Btn aria-label="Delete selected" title="Delete selected" data-testid="sketch-delete" disabled={selIds.length === 0} onClick={() => removeMany(selIds)}>
             Delete

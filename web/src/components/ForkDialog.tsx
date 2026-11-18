@@ -3,6 +3,7 @@ import { api, type AgentKind, type ForkPreview, type ForkRequest, type Message, 
 import { agentLabel, installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { Button, IconButton, Modal, cx } from './ui'
+import { IconClose } from './icons'
 
 type Dest = 'same' | 'new' | 'other'
 
@@ -125,8 +126,8 @@ export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; 
     <Modal label="Start new thread from here" onClose={onClose} top={!isPhone} className={cx('flex max-h-[calc(100vh-32px)] flex-col overflow-hidden rounded-2xl bg-raised', isPhone ? 'w-full' : 'w-[min(1020px,100%)]')}>
       <div className="flex h-14 shrink-0 items-center border-b border-line2 pl-[22px] pr-3">
         <h2 className="m-0 flex-1 text-[16px] font-[650]">Start new thread from here</h2>
-        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose} className="text-[18px]">
-          ×
+        <IconButton size={36} aria-label="Close (Esc)" onClick={onClose}>
+          <IconClose size={18} />
         </IconButton>
       </div>
       <div data-testid="fork-dialog" className={cx('flex min-h-0 flex-1 overflow-y-auto', isPhone ? 'flex-col' : 'flex-row')}>

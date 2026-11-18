@@ -4,7 +4,7 @@ import { useApp } from '../lib/app'
 import { updateReplyDraft, useReplyDraft } from '../lib/drafts'
 import { hm, plural } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
-import { IconBack, IconClose } from './icons'
+import { IconBack, IconChevronDown, IconChevronUp, IconClose, IconComment } from './icons'
 import { Button, IconButton, Segmented, cx } from './ui'
 import { useThread } from './ThreadView'
 
@@ -128,7 +128,7 @@ export function GuidedReview({ attachmentId }: { attachmentId: string }) {
                   <div key={si} className="flex flex-col gap-2 border-b border-[#1f1f24] pb-3.5" data-testid="review-section">
                     <button type="button" onClick={() => setOpenSec(isOpen ? -1 : si)} className="flex items-center gap-2 border-0 bg-transparent p-0 text-left">
                       <span className={cx('flex-1 text-[15px]', isOpen ? 'font-[650] text-fg' : 'text-muted')}>{s.title}</span>
-                      <span className="text-subtle">{isOpen ? '⌃' : '⌄'}</span>
+                      <span className="flex text-subtle">{isOpen ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}</span>
                     </button>
                     <label className="flex items-center gap-2 text-[12.5px] text-muted">
                       <span className="mono">
@@ -223,7 +223,9 @@ function DiffView({ file, mode, attachmentId, threadId }: { file: ReviewFile; mo
               )}
               <span className="w-4 shrink-0 text-subtle">{row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : ' '}</span>
               <span className="whitespace-pre text-[#d4d4d8] [[data-theme=light]_&]:text-fg2">{row.text}</span>
-              <span className="ml-auto hidden pr-3 text-subtle group-hover:inline">💬</span>
+              <span className="ml-auto hidden pr-3 text-subtle group-hover:inline">
+                <IconComment size={14} />
+              </span>
             </div>
             {here.map((c, ci) => (
               <div key={ci} className="my-1.5 ml-[66px] mr-4 flex flex-col gap-1.5 rounded-[10px] border border-[#3a3a42] bg-overlay px-3 py-2.5 font-sans">

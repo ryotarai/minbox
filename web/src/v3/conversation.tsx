@@ -9,6 +9,7 @@ import { useHotkeys } from '../lib/hotkeys'
 import { steppable } from '../lib/attachments'
 import { call } from '../api'
 import { hhmm, lineOf, type V3Message } from './data'
+import { IconArrowDown } from '../components/icons'
 
 /** The first agent message not yet read when the conversation opened (fixed while it stays open). */
 export function useFirstNew(key: string, messages: V3Message[] | null | undefined): string | null {
@@ -94,7 +95,7 @@ export function NewPill({ n, onClick }: { n: number; onClick: () => void }) {
   if (n <= 0) return null
   return (
     <button type="button" className="v-convpill" data-testid="new-message-pill" onClick={onClick}>
-      ↓ {n === 1 ? 'New message' : `${n} new messages`}
+      <IconArrowDown size={14} /> {n === 1 ? 'New message' : `${n} new messages`}
     </button>
   )
 }

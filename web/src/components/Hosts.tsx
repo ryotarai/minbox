@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type Host, type HostProbe, type TailnetPeer, type TailscaleInfo } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel, agentsSummary } from '../lib/agents'
-import { IconMore } from './icons'
+import { IconCheck, IconChevronDown, IconKey, IconMore, IconWarning } from './icons'
 import { Button, IconButton, MenuItem, MenuSep, Modal, Popover, cx } from './ui'
 import { useContextMenu } from './ContextMenu'
 
@@ -565,7 +565,7 @@ export function AddHostWizard({ repair, onClose }: { repair?: Host; onClose: () 
                 >
                   {address && <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-ok" />}
                   <span className={cx('mono flex-1 truncate text-[13.5px]', address ? 'text-fg' : 'text-faint')}>{address || 'Choose a machine'}</span>
-                  <span className="text-muted">▾</span>
+                  <IconChevronDown size={14} className="text-muted" />
                 </button>
                 <Popover anchor={pickAnchor} open={!!pickAnchor} onClose={() => setPickAnchor(null)} align="start" className="w-[476px]">
                   {withHost.length > 0 && <span className="block px-2.5 pb-0.5 pt-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-subtle">With a minbox host</span>}
@@ -618,14 +618,12 @@ export function AddHostWizard({ repair, onClose }: { repair?: Host; onClose: () 
               <div className="text-[13px] text-subtle">Looking for a minbox host…</div>
             ) : probe?.ok ? (
               <div role="status" data-testid="host-probe" className="flex items-center gap-2 rounded-[9px] border border-ok/35 bg-ok/8 px-3 py-2.5 text-[13px] text-fg">
-                <span aria-hidden="true" className="text-ok">
-                  ✓
-                </span>
+                <IconCheck size={14} className="text-ok" />
                 Found · minbox host {probe.version} · {probe.os}/{probe.arch}
               </div>
             ) : probe ? (
               <div role="status" data-testid="host-probe" className="flex items-center gap-2 rounded-[9px] border border-danger/40 bg-dangerstrong/10 px-3 py-2.5 text-[13px] text-dangerfg">
-                <span aria-hidden="true">△</span>
+                <IconWarning size={14} />
                 No minbox host there: {probe.error ?? 'no answer'}. Run the command from step 2 on that machine.
               </div>
             ) : null)}
@@ -654,7 +652,7 @@ export function AddHostWizard({ repair, onClose }: { repair?: Host; onClose: () 
             <h3 className="m-0 text-[18px] font-[650]">Accept on {hostName}</h3>
             <span className="text-[13.5px] leading-[1.6] text-fg2">Run this on {hostName}.</span>
             <div role="note" className="flex gap-2 rounded-[9px] border border-line2 bg-[#141417] px-3 py-2.5 text-[12.5px] leading-[1.55] text-fg2 [[data-theme=light]_&]:bg-sunken">
-              <span aria-hidden="true">🔑</span>
+              <IconKey size={14} className="mt-[3px]" />
               <span>
                 Public-key authentication: accepting registers this server's public key (ed25519) on the host. Every later request is signed with the server's private key, and the host checks it with
                 that public key. The private key never leaves the server.
@@ -701,8 +699,8 @@ export function AddHostWizard({ repair, onClose }: { repair?: Host; onClose: () 
       {step === 5 && (
         <>
           <div className="flex flex-1 flex-col items-center justify-center gap-3.5 px-8 py-10 text-center" data-testid="host-added">
-            <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-full bg-ok/14 text-[26px] text-ok">
-              ✓
+            <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-full bg-ok/14 text-ok">
+              <IconCheck size={28} />
             </span>
             <h3 className="m-0 text-[20px] font-[650]">{repair ? `Paired ${hostName} again` : `Added ${hostName}`}</h3>
             <span className="mono text-[12.5px] leading-[1.7] text-muted">

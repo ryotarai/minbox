@@ -390,3 +390,6 @@ kbd {
   background: hsl(var(--h) 45% 50% / 0.1);
   box-shadow: 0 0 0 1.5px hsl(var(--h) 45% 40% / 0.45);
 }
+
+/* Lucide icons (components/icons.tsx): sit on the text line beside words, never shrink in a flex row. */
+svg.lucide { display: inline-block; flex: none; vertical-align: -0.125em; }

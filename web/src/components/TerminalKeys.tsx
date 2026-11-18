@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { TerminalHandle } from './Terminal'
 import { cx } from './ui'
+import { IconArrowDown, IconArrowLeft, IconArrowRight, IconArrowUp } from './icons'
 
-const KEYS: { id: string; label: string; seq: string; ctrlSeq?: string }[] = [
+const KEYS: { id: string; label: ReactNode; seq: string; ctrlSeq?: string }[] = [
   { id: 'esc', label: 'Esc', seq: '\x1b' },
   { id: 'tab', label: 'Tab', seq: '\t' },
   { id: 'ctrl-c', label: '^C', seq: '\x03' },
-  { id: 'up', label: '↑', seq: '\x1b[A', ctrlSeq: '\x1b[1;5A' },
-  { id: 'down', label: '↓', seq: '\x1b[B', ctrlSeq: '\x1b[1;5B' },
-  { id: 'left', label: '←', seq: '\x1b[D', ctrlSeq: '\x1b[1;5D' },
-  { id: 'right', label: '→', seq: '\x1b[C', ctrlSeq: '\x1b[1;5C' },
+  { id: 'up', label: <IconArrowUp size={18} />, seq: '\x1b[A', ctrlSeq: '\x1b[1;5A' },
+  { id: 'down', label: <IconArrowDown size={18} />, seq: '\x1b[B', ctrlSeq: '\x1b[1;5B' },
+  { id: 'left', label: <IconArrowLeft size={18} />, seq: '\x1b[D', ctrlSeq: '\x1b[1;5D' },
+  { id: 'right', label: <IconArrowRight size={18} />, seq: '\x1b[C', ctrlSeq: '\x1b[1;5C' },
 ]
 
 // A touch screen as the main pointer (phones, tablets, foldables): there is likely no

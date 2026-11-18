@@ -3,6 +3,7 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { useApp } from '../lib/app'
 import { selectedQuote } from '../components/ThreadView'
+import { IconReply } from '../components/icons'
 
 const QUOTE_EVENT = 'minbox:v3-quote'
 
@@ -94,7 +95,7 @@ export function QuoteBubble({ box }: { box: RefObject<HTMLElement | null> }) {
       title={isPhone ? undefined : 'Reply (R)'}
       style={{ left: quote.x, top: quote.y, transform: quote.below ? 'translateX(-100%)' : 'translate(-100%, -100%)' }}
     >
-      ❝ Reply {!isPhone && <span className="v-kbd">R</span>}
+      <IconReply size={14} /> Reply {!isPhone && <span className="v-kbd">R</span>}
     </button>
   )
 }

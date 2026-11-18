@@ -4,7 +4,7 @@ import { railWidth, useApp } from '../lib/app'
 import { shortTime } from '../lib/format'
 import { groupIssues, isClosed, matchesIssue, useMyIssues, type IssuesState } from '../lib/issues'
 import { renderMarkdown } from '../lib/markdown'
-import { IconBack, IconLinear, IconPlus, IconRefresh, IconSearch } from './icons'
+import { IconBack, IconExternal, IconLinear, IconLink, IconPlus, IconRefresh, IconSearch } from './icons'
 import { LinearCreateDialog } from './LinearCreate'
 import { ProjectRail } from './ProjectRail'
 import { StartThreadDialog } from './IssueStartThread'
@@ -223,16 +223,16 @@ function IssueList({
           </span>
         )}
         <IconButton size={phone ? 44 : 30} aria-label="Refresh" title="Refresh from Linear" data-testid="issues-refresh" disabled={syncing} onClick={refresh}>
-          <IconRefresh size={15} />
+          <IconRefresh size={16} />
         </IconButton>
         <Button size="sm" variant="primary" data-testid="issues-new" onClick={onNew} className={phone ? 'h-9' : undefined}>
-          <IconPlus size={13} />
+          <IconPlus size={14} />
           New issue
         </Button>
       </header>
       <div className="flex shrink-0 flex-col gap-1.5 border-b border-line px-3 py-2">
         <label className="flex h-8 items-center gap-2 rounded-md border border-linestrong bg-sunken px-2 text-subtle focus-within:border-accent">
-          <IconSearch size={13} />
+          <IconSearch size={14} />
           <input
             data-testid="issues-search"
             aria-label="Search issues"
@@ -324,7 +324,7 @@ function IssueRow({ issue: i, on, phone, onSelect }: { issue: IssueSummary; on: 
         </span>
         {i.threads.length > 0 && (
           <span data-testid="issue-row-threads" title={`${i.threads.length} linked minbox thread${i.threads.length === 1 ? '' : 's'}`} className="shrink-0 rounded-full bg-chip px-1.5 text-[11px] font-bold leading-[18px] text-fg2">
-            ⛓ {i.threads.length}
+            <IconLink size={11} /> {i.threads.length}
           </span>
         )}
       </span>
@@ -404,7 +404,7 @@ function IssueDetail({ ident, preview, phone, onBack, onRefreshList }: { ident: 
         {issue?.url && (
           <a href={issue.url} target="_blank" rel="noopener noreferrer" data-testid="issue-open-linear" aria-label="Open in Linear" title="Open in Linear" className="inline-flex items-center gap-1 text-[12.5px] text-accent no-underline hover:underline">
             <IconLinear size={13} />
-            Open in Linear ↗
+            Open in Linear <IconExternal size={12} />
           </a>
         )}
         <span className="flex-1" />
@@ -414,7 +414,7 @@ function IssueDetail({ ident, preview, phone, onBack, onRefreshList }: { ident: 
           </span>
         )}
         <IconButton size={phone ? 44 : 30} aria-label="Reload issue" title="Reload issue" data-testid="issue-reload" onClick={() => (reload(), onRefreshList())}>
-          <IconRefresh size={15} />
+          <IconRefresh size={16} />
         </IconButton>
         {!phone && (
           <Button variant="primary" size="sm" data-testid="issue-start-thread" disabled={!issue} onClick={() => setStarting(true)}>

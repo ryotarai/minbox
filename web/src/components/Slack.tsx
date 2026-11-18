@@ -3,7 +3,7 @@ import { api, type SlackItem, type SlackThreadDetail } from '../api'
 import { railWidth, useApp } from '../lib/app'
 import { fullTime, shortTime } from '../lib/format'
 import { GROUP_TITLES, matchesSlack, tomorrowMorning, useSlackThreads, type SlackState } from '../lib/slack'
-import { IconBack, IconRefresh, IconSearch, IconSlack } from './icons'
+import { IconBack, IconChevronDown, IconChevronRight, IconExternal, IconLink, IconPaperclip, IconRefresh, IconSearch, IconSlack } from './icons'
 import { ProjectRail } from './ProjectRail'
 import { SlackStartThreadDialog } from './SlackStartThread'
 import { Button, IconButton, cx } from './ui'
@@ -96,7 +96,7 @@ function SlackRow({ item: i, on, phone, onSelect }: { item: SlackItem; on: boole
         <UrgencyChip item={i} />
         {i.minbox_thread && (
           <span data-testid="slack-row-thread" title="A minbox thread exists for this Slack thread" className="shrink-0 rounded-full bg-chip px-1.5 text-[11px] font-bold leading-[18px] text-fg2">
-            ⛓
+            <IconLink size={11} />
           </span>
         )}
         <span className="shrink-0 text-[11.5px] text-subtle">{i.last_at ? shortTime(i.last_at) : ''}</span>
@@ -145,12 +145,12 @@ function SlackList({ state, selected, onSelect, phone, onBack }: { state: SlackS
           </span>
         )}
         <IconButton size={phone ? 44 : 30} aria-label="Refresh" title="Refresh from Slack" data-testid="slack-refresh" disabled={syncing} onClick={refresh}>
-          <IconRefresh size={15} />
+          <IconRefresh size={16} />
         </IconButton>
       </header>
       <div className="flex shrink-0 flex-col gap-1.5 border-b border-line px-3 py-2">
         <label className="flex h-8 items-center gap-2 rounded-md border border-linestrong bg-sunken px-2 text-subtle focus-within:border-accent">
-          <IconSearch size={13} />
+          <IconSearch size={14} />
           <input
             data-testid="slack-search"
             aria-label="Search threads"
@@ -234,7 +234,7 @@ function SlackList({ state, selected, onSelect, phone, onBack }: { state: SlackS
               onClick={() => setShowDismissed((v) => !v)}
               className="flex w-full items-center gap-2 border-0 bg-bg px-3 py-1.5 text-left text-[12px] font-semibold text-muted"
             >
-              <span>{showDismissed ? '▾' : '▸'}</span>
+              <span className="flex">{showDismissed ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}</span>
               <span>{GROUP_TITLES.dismissed}</span>
               <span data-testid="slack-group-count" className="font-normal text-subtle">
                 {by('dismissed').length}
@@ -302,7 +302,7 @@ function SnoozeMenu({ onSnooze, phone }: { onSnooze: (d: Date) => void; phone?: 
   return (
     <div ref={ref} className="relative">
       <Button size={phone ? 'lg' : 'sm'} data-testid="slack-snooze" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        Snooze ▾
+        Snooze <IconChevronDown size={14} />
       </Button>
       {open && (
         <div role="menu" data-testid="slack-snooze-menu" className={cx('absolute z-20 w-[220px] overflow-hidden rounded-lg border border-linestrong bg-raised py-1 shadow-lg', phone ? 'bottom-full mb-1 right-0' : 'right-0 mt-1')}>
@@ -372,7 +372,7 @@ function SlackDetail({ id, item, phone, onBack, onChanged }: { id: string; item?
         </span>
         {permalink && (
           <a href={permalink} target="_blank" rel="noopener noreferrer" data-testid="slack-open" aria-label="Open in Slack" className="inline-flex shrink-0 items-center gap-1 text-[12.5px] text-accent no-underline hover:underline">
-            Open in Slack ↗
+            Open in Slack <IconExternal size={12} />
           </a>
         )}
         <span className="flex-1" />
@@ -382,7 +382,7 @@ function SlackDetail({ id, item, phone, onBack, onChanged }: { id: string; item?
           </span>
         )}
         <IconButton size={phone ? 44 : 30} aria-label="Reload thread" title="Reload thread" data-testid="slack-reload" onClick={reload}>
-          <IconRefresh size={15} />
+          <IconRefresh size={16} />
         </IconButton>
         {!phone && (
           <>
@@ -477,7 +477,7 @@ function SlackDetail({ id, item, phone, onBack, onChanged }: { id: string; item?
                   <ul className="m-0 mt-1 flex list-none flex-col gap-0.5 p-0 text-[12.5px]" data-testid="slack-message-files">
                     {[...m.files, ...m.attachments].map((f, n) => (
                       <li key={n} className="truncate text-subtle">
-                        📎{' '}
+                        <IconPaperclip size={12} />{' '}
                         {f.url ? (
                           <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-accent">
                             {f.name}

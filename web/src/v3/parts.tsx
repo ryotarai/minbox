@@ -12,7 +12,7 @@ import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
 import { CommandMessage } from '../components/CommandMessage'
-import { IconBack, IconFork, IconMoreV, IconThumb } from '../components/icons'
+import { IconBack, IconCheck, IconClose, IconFork, IconGoal, IconMoreV, IconPlus, IconRefresh, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
 import {
   STATUS_LABEL,
@@ -121,12 +121,12 @@ export function TaskChip({ task, shortN = 40, goal, onRemove }: { task: { task_i
   return (
     <span className="v-task" data-testid="task-link" data-task={task.task_id} title={task.title} style={{ ['--c' as string]: tagColor(task.task_id) }}>
       <button type="button" className="v-task-t" onClick={() => nav.task(task.task_id)}>
-        {goal ? '◎ ' : ''}
+        {goal && <IconGoal size={14} className="v-goal" />}
         {short(task.title, shortN)}
       </button>
       {onRemove && (
         <button type="button" className="v-x" title="Not about this task" aria-label={`Not about ${task.title}`} onClick={onRemove}>
-          ✕
+          <IconClose size={12} />
         </button>
       )}
     </span>
@@ -185,7 +185,7 @@ export function Steps({ t, list, onToggle, criteria }: { t: Task; list?: Step[];
       {items.map((s, i) => (
         <li key={i}>
           <button type="button" className={'v-st' + (s.done ? ' done' : s === cur ? ' doing' : '')} data-testid={criteria ? 'criterion' : 'step'} onClick={() => !s.steps?.length && onToggle?.([...base, i])}>
-            <span className="v-ck">{s.done ? '✓' : ''}</span>
+            <span className="v-ck">{s.done && <IconCheck size={10} strokeWidth={3} />}</span>
             <span>{s.text}</span>
             {s === cur && !s.done && <span className="v-now">now</span>}
           </button>
@@ -268,13 +268,13 @@ export function TaskPicker({ tasks, exclude, head, onPick, onClose }: { tasks: T
       {opts.map((t, i) => (
         <button type="button" key={t.id} className={'v-opt' + (i === cur ? ' sel' : '')} data-testid="task-option" onClick={() => onPick({ task_id: t.id })}>
           <StatusDot t={{ ...t, needs_you: t.status === 'needs_you' }} />
-          {t.kind === 'goal' ? '◎ ' : ''}
+          {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
           {t.title}
         </button>
       ))}
       {qq && (
         <button type="button" className={'v-opt' + (cur === opts.length ? ' sel' : '')} data-testid="task-new" onClick={() => onPick({ title: name })}>
-          ＋ New task “{name}”
+          <IconPlus size={14} /> New task “{name}”
         </button>
       )}
       {!opts.length && !qq && <div className="v-hd">No open tasks yet. Type a name to make one.</div>}
@@ -515,7 +515,7 @@ export function MessageView({
     return (
       <div className="v-msg cont" data-testid="v3-message" data-kind="place" data-message-id={m.id}>
         <div className="v-bd">
-          ↻ Asked {name} to put {n} message{n === 1 ? '' : 's'} in tasks ({hhmm(m.created_at)})
+          <IconRefresh size={12} /> Asked {name} to put {n} message{n === 1 ? '' : 's'} in tasks ({hhmm(m.created_at)})
         </div>
       </div>
     )
@@ -523,7 +523,8 @@ export function MessageView({
   if (m.kind === ('continue' as string)) {
     return (
       <div className="v-msg cont" data-testid="v3-message" data-kind="continue" data-message-id={m.id}>
-        <div className="v-bd">↻ Goal run continued {name} ({hhmm(m.created_at)})</div>
+        <div className="v-bd">
+          <IconRefresh size={12} /> Goal run continued {name} ({hhmm(m.created_at)})</div>
       </div>
     )
   }
@@ -636,12 +637,16 @@ export function MessageView({
             className={'v-dlv ' + m.delivery}
             title={m.delivery === 'delivered' ? `Delivered to ${name}, ${hhmm(m.delivered_at ?? m.created_at)}` : undefined}
           >
-            {m.delivery === 'delivered' ? '✓ delivered' : m.delivery === 'undelivered' ? 'not delivered' : 'sending'}
+            {m.delivery === 'delivered' ? (
+              <>
+                <IconCheck size={12} /> delivered
+              </>
+            ) : m.delivery === 'undelivered' ? 'not delivered' : 'sending'}
           </span>
         )}
         {!me && !m.pending && (
           <button type="button" className="v-thumb" aria-label="Looks good" title="👍 Looks good" data-testid="thumbs-up" onClick={thumbs}>
-            <IconThumb size={13} />
+            <IconThumb size={14} />
           </button>
         )}
         {!m.pending && !tagRow && more}

@@ -7,7 +7,7 @@ import { hm, plural } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { renderMarkdown } from '../lib/markdown'
 import { Diagram } from './Diagram'
-import { IconClose, IconComment, IconExpand, IconImage, IconPen, IconSelect } from './icons'
+import { IconCheck, IconChevronDown, IconClose, IconComment, IconExpand, IconFileText, IconImage, IconInfo, IconPackage, IconPen, IconSelect } from './icons'
 import { Button, IconButton, Kbd, MenuItem, MenuLabel, Popover, cx } from './ui'
 import { useThread } from './ThreadView'
 
@@ -115,11 +115,11 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
             <span className="min-w-0 flex-1 truncate text-[15.5px] font-[650]">{detail?.name ?? '…'}</span>
             {siblings.length > 1 && (
               <button type="button" onClick={(e) => setListAnchor(e.currentTarget)} className="mono h-11 shrink-0 border-0 bg-transparent px-1.5 text-[12.5px] text-muted">
-                {idx + 1}/{siblings.length} ⌄
+                {idx + 1}/{siblings.length} <IconChevronDown size={14} />
               </button>
             )}
             <button type="button" onClick={(e) => setOpenAnchor(e.currentTarget)} className="h-11 shrink-0 border-0 bg-transparent px-2 text-[13px] text-muted">
-              Open in ▾
+              Open in <IconChevronDown size={14} />
             </button>
             <button type="button" aria-label="Close file" data-testid="close-file" onClick={close} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border-0 bg-transparent text-fg2">
               <IconClose size={20} />
@@ -139,14 +139,14 @@ export function AttachmentViewer({ attachmentId, sessionName, sessionCwd, phone 
           <span className="flex-1" />
           {siblings.length > 1 && (
             <button type="button" onClick={(e) => setListAnchor(e.currentTarget)} className="mono shrink-0 border-0 bg-transparent text-[12px] text-muted hover:text-fg" title="] and [ step through the files">
-              {idx + 1}/{siblings.length} ⌄
+              {idx + 1}/{siblings.length} <IconChevronDown size={14} />
             </button>
           )}
           <Button size="sm" onClick={(e) => setOpenAnchor(e.currentTarget)}>
-            Open in ▾
+            Open in <IconChevronDown size={14} />
           </Button>
           <Button size="sm" onClick={() => setFull((v) => !v)} data-testid="fullscreen">
-            <IconExpand size={13} /> {full ? 'Exit full screen' : 'Full screen'} <Kbd>F</Kbd>
+            <IconExpand size={14} /> {full ? 'Exit full screen' : 'Full screen'} <Kbd>F</Kbd>
           </Button>
           <IconButton aria-label="Close file" data-testid="close-file" onClick={close}>
             <IconClose />
@@ -243,9 +243,7 @@ function VersionLine({ d, version, sender, onVersion }: { d: AttachmentDetail; v
   if (version === 'sent' && d.changed)
     return (
       <div role="status" data-testid="changed-banner" className="flex shrink-0 items-center gap-2.5 border-b border-wait/25 bg-wait/8 px-4 py-[9px] text-[12.5px] text-fg2">
-        <span aria-hidden="true" className="text-wait">
-          ⓘ
-        </span>
+        <IconInfo size={14} className="text-wait" />
         <span>
           The version {Sender} sent at {sentAt}.
         </span>
@@ -257,9 +255,7 @@ function VersionLine({ d, version, sender, onVersion }: { d: AttachmentDetail; v
   if (d.changed)
     return (
       <div role="status" data-testid="changed-banner" className="flex shrink-0 items-center gap-2.5 border-b border-wait/25 bg-wait/8 px-4 py-[9px] text-[12.5px] text-fg2">
-        <span aria-hidden="true" className="text-wait">
-          ⓘ
-        </span>
+        <IconInfo size={14} className="text-wait" />
         <span>
           Changed since {Sender} sent it at {sentAt}.{d.modified_at ? ` Edited ${hm(d.modified_at)}.` : ''}
         </span>
@@ -274,7 +270,7 @@ function VersionLine({ d, version, sender, onVersion }: { d: AttachmentDetail; v
 function DownloadCard({ d }: { d: AttachmentDetail }) {
   return (
     <div data-download-card data-testid="download-card" className="mx-auto mt-10 flex max-w-[460px] flex-col items-center gap-3 rounded-xl border border-line2 bg-card p-6 text-center">
-      <span className="text-[30px]">{typeOf(d) === 'pdf' ? '📄' : '📦'}</span>
+      <span className="text-muted">{typeOf(d) === 'pdf' ? <IconFileText size={32} /> : <IconPackage size={32} />}</span>
       <span className="text-[15px] font-semibold">{d.name}</span>
       <span className="text-[13px] leading-normal text-muted">
         {kindLabel(d)}, {sizeLine(d).split(', ').pop()}. minbox does not show this kind of file; download it to open it.
@@ -381,7 +377,7 @@ function DocView({
           style={{ left: Math.max(0, offer.x), top: offer.y - 4 }}
           className="absolute z-20 flex h-7 items-center gap-1.5 rounded-[7px] border border-line2 bg-raised px-2.5 text-[12.5px] text-fg shadow-lg hover:bg-sel"
         >
-          <IconComment size={13} /> Comment
+          <IconComment size={14} /> Comment
         </button>
       )}
       {linked && (
@@ -724,10 +720,10 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
           </ToolBtn>
         </div>
         <Button size="sm" onClick={() => onComment({ kind: 'comment', quote: d.name, x: 40, y: 60 })} data-testid="image-comment">
-          <IconComment size={13} /> Comment
+          <IconComment size={14} /> Comment
         </Button>
         <Button size="sm" onClick={() => setMarkup((v) => !v)} title="Draw on the image (pen, arrow, circle)" data-testid="image-markup">
-          <IconPen size={13} /> Mark up
+          <IconPen size={14} /> Mark up
         </Button>
         <span className="text-[12px] text-subtle">{sizeLine(d)}</span>
       </div>
@@ -743,7 +739,7 @@ function ImageView({ d, version, onComment, onMarkup }: { d: AttachmentDetail; v
           </Button>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className="h-[30px] min-w-0 flex-1 rounded-md border border-linestrong bg-sunken px-2 text-[12.5px] outline-none focus:border-accent" />
           <Button size="sm" variant="primary" onClick={() => void finish()} disabled={!strokes.length} data-testid="markup-done">
-            ✓
+            <IconCheck size={14} />
           </Button>
         </div>
       )}
@@ -846,7 +842,7 @@ function VideoView({ d, version, annotations, onComment }: { d: AttachmentDetail
       <video ref={v} src={api.attachmentRawUrl(d.id, version)} controls preload="metadata" className="max-h-[70vh] max-w-full rounded-md border border-line bg-black" data-testid="video-view" />
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => void commentHere()} data-testid="video-comment">
-          <IconComment size={13} /> Comment at this moment
+          <IconComment size={14} /> Comment at this moment
         </Button>
         <span className="text-[12px] text-subtle">
           {sizeLine(d)}
@@ -882,11 +878,11 @@ function CommentBox({ phone, pending, onCancel, onSave }: { phone?: boolean; pen
           {pending.quote ? `"${pending.quote}"` : 'Comment'}
           {loc ? ` · ${loc}` : ''}
         </span>
-        <button type="button" aria-label="Expand" onClick={() => setBig((v) => !v)} className="border-0 bg-transparent text-muted hover:text-fg">
-          ⤢
+        <button type="button" aria-label="Expand" onClick={() => setBig((v) => !v)} className="flex border-0 bg-transparent text-muted hover:text-fg">
+          <IconExpand size={14} />
         </button>
-        <button type="button" aria-label="Cancel" onClick={onCancel} className="border-0 bg-transparent text-muted hover:text-fg">
-          ×
+        <button type="button" aria-label="Cancel" onClick={onCancel} className="flex border-0 bg-transparent text-muted hover:text-fg">
+          <IconClose size={14} />
         </button>
       </div>
       <textarea
@@ -997,7 +993,7 @@ function AnnotationItem({ a, threadId, onSeek }: { a: Annotation; threadId: stri
       )}
       {a.images?.map((im) => (
         <span key={im.path} className="mono text-[11px] text-subtle">
-          🖼 {im.name}
+          <IconImage size={11} /> {im.name}
         </span>
       ))}
       <span className="flex gap-2 text-[12px] text-subtle">
