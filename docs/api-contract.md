@@ -712,11 +712,22 @@ run `tailscale serve` to it (as the host does). Requests that come through tails
 `--tailscale-user-login` any other login is refused (403). The guard accepts the server's own
 MagicDNS name as Host in this mode.
 
-Trust: a request straight to a loopback address with a loopback Host and no Tailscale headers is
-trusted as today. Any other request needs a paired browser's cookie `minbox_device` (HttpOnly,
-Secure, SameSite=Strict, 12 h, re-issued by signing again); without it only these answer:
-`GET /` (the app, which shows the pairing screen), static assets, and `/api/devices/pair*`,
-`/api/devices/auth*`. `/api/agent/*` stays as it is (bearer).
+Trust: every request needs a paired browser's cookie `minbox_device` (HttpOnly, Secure over
+https, SameSite=Strict, 12 h, re-issued by signing again), a request straight to loopback
+too: any local process (a coding agent with a shell among them) can reach 127.0.0.1, so the
+address proves nothing (finding H1; before, loopback was trusted without a device). Without the
+cookie only these answer: `GET /` (the app, which shows the pairing screen), static assets, and
+`/api/devices/pair*`, `/api/devices/auth*`, `GET /api/devices/me`. `/api/agent/*` stays as it is
+(the session's bearer token). "Remote" (below) now only decides the Tailscale-user check.
+
+One pairing model for everything that gets to act on this machine's minbox: the one asking
+(a browser here or elsewhere; another machine's server, for the host) shows a 6-digit code and
+its key's fingerprint, `minbox pair list` lists it, and the person accepts the code on a paired
+browser (Settings › Devices, browsers only) or with `minbox pair accept <code>` in a terminal on
+this machine. `minbox pair accept` prints who asks (code, name, key, from where, when) and asks
+`Accept it? [y/N]`; it refuses (exit 2) when stdin is not an interactive terminal and there is
+no flag to skip that, so a coding agent's shell tool cannot pair a key of its own. A browser's
+request may also be named by its fingerprint (`minbox pair accept SHA256:…`).
 
 Cross-site: a request with `Sec-Fetch-Site: cross-site` is refused (403) except a safe top-level
 launch: GET/HEAD with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document` to a path outside
@@ -729,11 +740,12 @@ Browser key: ECDSA P-256 made with WebCrypto, private key non-extractable, kept 
 ```
 POST /api/devices/pair {public_key /* base64 SPKI */, name /* "Chrome on iPhone" */}
      → {request_id, code: "482-913", fingerprint /* SHA256:… of the SPKI */}
+       (the same key asking again while its request waits gets that request back)
 GET  /api/devices/pair/{request_id}         → {status: "pending"|"accepted"|"rejected"|"expired"}   (10 min)
 POST /api/devices/auth/challenge {fingerprint}  → {challenge /* base64 32 bytes, 60 s */}
 POST /api/devices/auth {fingerprint, challenge, signature /* base64 ECDSA P-256 SHA-256, IEEE P1363 */}
      → 200 + Set-Cookie minbox_device; 401 when unknown/revoked/bad
-GET  /api/devices/me                        → {trusted: bool, via: "loopback"|"device"|null, device?: Device}
+GET  /api/devices/me                        → {trusted: bool, via: "device"|null, device?: Device}
 GET  /api/devices                            (trusted) → {devices: Device[], requests: PairRequest[]}
 POST /api/devices/requests/{request_id}/accept | /reject   (trusted)
 DELETE /api/devices/{id}                    (trusted) revoke: its cookies stop working at once
@@ -751,9 +763,9 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
   `device-pairing/<code>.json` (requests). Package `internal/devices`; server side in
   `internal/server/devices.go` (the guard moved there).
 - "Remote" = the request carries `Tailscale-User-Login`, `X-Forwarded-For` or `Forwarded`, or its
-  Host is not a loopback address. Only non-remote requests are trusted without a device.
+  Host is not a loopback address. Nothing is trusted without a device (loopback neither).
   The Origin check compares with `X-Forwarded-Host` when present.
-- Open routes for an unpaired remote browser: every non-`/api/` GET/HEAD (the app and its
+- Open routes for an unpaired browser: every non-`/api/` GET/HEAD (the app and its
   assets), `POST /api/devices/pair`, `GET /api/devices/pair/{id}`, `POST /api/devices/auth/challenge`,
   `POST /api/devices/auth`, `GET /api/devices/me`; `/api/agent/*` keeps its bearer token; the
   sandboxed-frame GETs of `/api/html-assets/` and `/api/embeds/` stay open (no cookie is sent
@@ -762,9 +774,17 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 - Cookie sessions live in memory: after a server restart a paired browser signs a new challenge.
   Revoking (API or CLI) ends the device's cookies and cancels its open SSE/WebSocket requests.
 - Limits: 3 waiting requests per client IP, 10 in all (429). Challenges: 60 s, single use.
+- Residual risk (same-user processes): the guard keeps a local process without a paired key out
+  of the person's API, and minbox never hands agents a credential for it (their env and prompt
+  carry only the session's bearer token for `/api/agent/*`). `minbox pair accept` needs an
+  interactive terminal (no bypass flag), and every agent's shell tool refuses a command that runs
+  it (a mod guard: `pairAcceptPatterns`, internal/server/modtext.go). But a process running as the
+  person can read and write the 0700 data dir (devices.json) and could fake a terminal (`script`),
+  so this stops accidental or prompt-injected use, not a determined same-user attacker. Loopback
+  requests share one client IP: up to 3 waiting requests from 127.0.0.1 (`minbox pair reject` clears them).
 - `POST /api/devices/pair` answers 201. `POST /api/devices/auth` answers
   `{ok: true, device: Device}` with the cookie; `Secure` when X-Forwarded-Proto is https (or TLS).
-- `GET /api/devices/me` → `{trusted, via: "loopback"|"device"|null, device?}`.
+- `GET /api/devices/me` → `{trusted, via: "device"|null, device?}`.
 - Accept/reject answer 409 when the request is no longer pending; accept answers
   `{ok: true, device}`. Revoke answers `{ok: true}` (404 for an unknown id).
 - SSE `devices` also fires when the CLI changes the files (polled every 2 s).
@@ -1333,7 +1353,7 @@ A Pi or OpenCode session on a host older than protocol 5 is refused at create an
 
 ## Restarting the local terminal host (Settings › Hosts)
 
-`POST /api/hosts/{id}/restart {resume?: bool}` (same guard as every browser route: loopback or a paired device, same
+`POST /api/hosts/{id}/restart {resume?: bool}` (same guard as every browser route: a paired device, same
 origin). Only the built-in host (`id` "local"): 400 for a remote host, 404 for an unknown id, 409 while a restart is under
 way (one at a time). It does what `minbox restart --host` does, with the server kept running:
 
