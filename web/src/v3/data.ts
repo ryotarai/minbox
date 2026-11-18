@@ -176,6 +176,53 @@ export function currentStep(steps: Step[]): Step | undefined {
   return leaves(steps).find((s) => !s.done)
 }
 
+/** Markdown as plain text on one line (for a subtitle): question/action blocks, code fences and tables
+ *  out; heading, list and quote markers, emphasis and link targets stripped. */
+export function plainText(md: string): string {
+  const out: string[] = []
+  let block = false
+  let fence = false
+  for (const raw of md.split('\n')) {
+    const l = raw.trim()
+    if (l.startsWith('```')) {
+      fence = !fence
+      continue
+    }
+    if (fence) continue
+    if (l.startsWith(':::')) {
+      block = l !== ':::' && !block
+      continue
+    }
+    if (block || !l || l.startsWith('|') || /^(-{3,}|\*{3,}|_{3,})$/.test(l)) continue
+    const t = l
+      .replace(/^(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)+/, '')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/(\*\*|__|~~|`)/g, '')
+      .trim()
+    if (t) out.push(t)
+  }
+  return out.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+export type Standing = { text: string; from: 'summary' | 'report' | 'message' | 'step' }
+
+/** Where a task stands, as its subtitle (the agent's Tasks list and the Board say the same): the
+ *  summary the agent keeps, else its latest report, else the agent's latest line about it, else the
+ *  step it is on (open tasks only). Null when there is nothing to say. */
+export function standing(t: Pick<Task, 'summary' | 'report' | 'steps' | 'status' | 'kind'> & { last_line?: string }): Standing | null {
+  const cap = (s: string) => (s.length > 280 ? s.slice(0, 279) + '…' : s)
+  const summary = plainText(t.summary ?? '')
+  if (summary) return { text: cap(summary), from: 'summary' }
+  const report = plainText(t.report ?? '')
+  if (report) return { text: cap(report), from: 'report' }
+  const line = plainText(t.last_line ?? '')
+  if (line) return { text: cap(line), from: 'message' }
+  const cur = t.kind === 'goal' || t.status === 'done' ? undefined : currentStep(t.steps ?? [])
+  if (cur) return { text: cap(cur.text), from: 'step' }
+  return null
+}
+
 /** Colors of task chips: stable per task id. */
 export function tagColor(id: string): string {
   let h = 0

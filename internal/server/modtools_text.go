@@ -387,6 +387,9 @@ func criteriaSchema() jobj {
 	}
 }
 
+// summaryGuide: a task's summary is the line the person reads under its title in their lists.
+const summaryGuide = "One line on where it stands now, shown under the task's title; update it as the work moves."
+
 var taskDescription = map[string]string{
 	"create_task": strings.Join([]string{
 		"Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in.",
@@ -399,7 +402,7 @@ var taskDescription = map[string]string{
 	"update_task": strings.Join([]string{
 		"Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.",
 		"Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.",
-		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. report: a short \"where it stands\" the person reads on the Board.",
+		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. Keep summary current: one line on where it stands now, updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board.",
 		"message_ids: earlier messages that are about this task.",
 	}, " "),
 	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
@@ -412,7 +415,7 @@ func taskSchema(tool string) jobj {
 			"title":       jobj{"type": "string", "description": "A short name for the work (2 to 8 words), in the person's language."},
 			"kind":        jobj{"type": "string", "enum": []string{"task", "goal"}, "description": "task (default) or goal (an outcome pursued until its criteria are met)."},
 			"goal_id":     jobj{"type": "string", "description": "The goal this task serves."},
-			"summary":     jobj{"type": "string", "description": "One line on where it stands now."},
+			"summary":     jobj{"type": "string", "description": summaryGuide},
 			"detail":      jobj{"type": "string", "description": "Optional: a few sentences (Markdown) on what it is about, what was decided, what is left."},
 			"status":      jobj{"type": "string", "enum": taskStatuses, "description": taskStatusGuide},
 			"steps":       stepsSchema(),
@@ -424,7 +427,7 @@ func taskSchema(tool string) jobj {
 		return jobj{"type": "object", "properties": jobj{
 			"task_id":        jobj{"type": "string", "description": "The task or goal to update (from create_task or list_tasks)."},
 			"title":          jobj{"type": "string"},
-			"summary":        jobj{"type": "string", "description": "One line on where it stands now."},
+			"summary":        jobj{"type": "string", "description": summaryGuide},
 			"detail":         jobj{"type": "string", "description": "The fuller summary (Markdown); replaces the current one."},
 			"report":         jobj{"type": "string", "description": "The latest report the person reads on the Board."},
 			"status":         jobj{"type": "string", "enum": taskStatuses, "description": taskStatusGuide},

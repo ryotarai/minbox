@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
-import { ago, currentStep, short, v3, type Board, type BoardTask, type V3Message } from './data'
+import { ago, short, standing, v3, type Board, type BoardTask, type V3Message } from './data'
 import type { Question } from '../api'
 import { Bar, MessageBodyClamp, StatusDot, Steps, agentName, openQuestions, statusLabel, toggled, useNav, useSessionsById } from './parts'
 
@@ -34,10 +34,11 @@ export function needsCount(b: Board | null, hidden: Set<string>): number {
   return g.questions.length + g.explicit.length
 }
 
-/** What a task set to needs you without a question waits on: its report, else its summary, else the agent's last line. */
+/** What a task set to needs you without a question waits on: where it stands (summary, else report, else
+ *  the agent's latest line about it; see standing), never its step. */
 export function needsWhat(t: BoardTask): string {
-  const l = (s: string) => s.trim().split('\n')[0]!.trim()
-  return l(t.report ?? '') || l(t.summary ?? '') || (t.last_line ?? '').trim() || 'Set to needs you — open it to see what it waits on'
+  const s = standing(t)
+  return s && s.from !== 'step' ? s.text : 'Set to needs you — open it to see what it waits on'
 }
 
 /** A NEEDS YOU row's ask in one line: the first question's prompt (+n for the others), or the first thing to do (+n). Never empty. */
@@ -192,7 +193,7 @@ export function BoardView({
     const open = expanded[t.id]
     const agents = t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s)
     const who = agents.map((a) => a.name).join(' + ') || agentName(byId, t.last_agent)
-    const cur = currentStep(t.steps)
+    const st = standing(t)
     const live = agents.some((a) => a.status === 'working')
     const kids = t.kind === 'goal' ? g.childrenOf(t.id) : []
     const pr = t.links?.find((l) => l.kind === 'pr') ?? t.links?.[0]
@@ -235,11 +236,10 @@ export function BoardView({
                   <span className="v-last" data-testid="needs-what" title={needsWhat(t)}>
                     needs: {short(needsWhat(t), 120)}
                   </span>
-                ) : t.kind !== 'goal' && cur && t.status !== 'done' ? (
-                  <span className="v-last">now: {short(cur.text, 60)}</span>
-                ) : t.kind !== 'goal' && t.last_line ? (
-                  <span className="v-last" data-testid="last-line">
-                    {t.last_line}
+                ) : st ? (
+                  <span className="v-last" data-testid="task-standing" data-from={st.from} title={st.text}>
+                    {st.from === 'step' ? 'now: ' : ''}
+                    {st.text}
                   </span>
                 ) : null}
                 {t.kind === 'goal' && kids.length > 0 && <span>{kids.length} task{kids.length > 1 ? 's' : ''}</span>}

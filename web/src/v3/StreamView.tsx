@@ -9,7 +9,7 @@ import { IconAgentKind, IconBack, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
-import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
+import { ago, short, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
 import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
@@ -378,6 +378,7 @@ export function StreamView({
                     {t.kind === 'goal' ? '◎ ' : ''}
                     {t.title}
                   </div>
+                  <TaskSubtitle t={t} />
                   <div className="v-b">
                     <Bar t={t} />
                     <span className="v-cnt2">
@@ -397,6 +398,7 @@ export function StreamView({
                         <StatusDot t={t} />
                         {t.title}
                       </div>
+                      <TaskSubtitle t={t} />
                     </button>
                   ))}
                 </details>
@@ -421,5 +423,17 @@ export function StreamView({
         </aside>
       )}
     </>
+  )
+}
+
+/** A task's subtitle in the agent's Tasks list: where it stands, in a line or two (see standing). */
+function TaskSubtitle({ t }: { t: BoardTask }) {
+  const st = standing(t)
+  if (!st) return null
+  return (
+    <div className="v-mt-sub" data-testid="task-standing" data-from={st.from} title={st.text}>
+      {st.from === 'step' ? 'now: ' : ''}
+      {st.text}
+    </div>
   )
 }
