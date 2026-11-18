@@ -31,13 +31,12 @@ async function setup(minbox: Parameters<typeof startAgent>[0]) {
 async function openTask(page: Page, t: { id: string }, tap = false) {
   const row = page.locator(`[data-testid="task-row"][data-task="${t.id}"] .v-line`)
   await expect(row).toBeVisible()
-  // The row unfolds (once: the Board keeps it unfolded), then Open.
-  if (!(await page.getByTestId('open-task').isVisible())) await (tap ? row.tap() : row.click())
-  await (tap ? page.getByTestId('open-task').tap() : page.getByTestId('open-task').click())
+  // A click (a tap) on the row opens the task.
+  await (tap ? row.tap() : row.click())
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
 }
 
-/** Board → the task (its row, then Open) → the agent (the task's agent chip). */
+/** Board → the task (its row) → the agent (the task's agent chip). */
 async function boardTaskAgent(page: Page, url: string, a: Agent, t: { id: string }, prefix: string, tap = false) {
   await page.goto(url)
   await expect(view(page)).toHaveAttribute('data-view', 'board')
