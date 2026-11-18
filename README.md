@@ -72,21 +72,63 @@ Resizing across a band keeps the selected thread, session and draft. A session's
 (Rename, Resume / **Restart**, Stop, Archive, Delete) sits over its terminal. Restart kills the
 running Claude and resumes the conversation in one step; a running turn is interrupted.
 
-## Quick start
+## Install
 
-Requirements: Go 1.26+, Node.js (to build the web UI), and a coding agent: Claude Code with mod support, or Pi 1.x
-(Node 22.19+), or both. With both installed the New session dialog lets you pick; with one it just uses that one.
+minbox is one binary. The web UI, the Claude Code mod, the Pi extension and the OpenCode plugin are
+embedded in it; at start it writes the mod and the extensions to private, versioned folders in its data
+directory (`~/.minbox/plugin/<hash>/`, `pi-extension/<hash>/`, `opencode-plugin/<hash>/`) and passes them to
+each agent it starts (`claude --plugin-dir`, `pi -e`, OpenCode's `OPENCODE_CONFIG_CONTENT`). There is
+nothing else to install: no `claude plugin install`, no marketplace, nothing next to the binary.
+
+You also need a coding agent on `PATH`: Claude Code with mod support, Pi 1.x (Node 22.19+) or OpenCode 2.x.
+With several installed the New session dialog lets you pick; with one it just uses that one.
+
+### From a release (macOS, Linux; arm64, amd64)
+
+Pick a version on the [Releases](https://github.com/<owner>/<repo>/releases) page, then:
+
+```sh
+version=v0.1.0   # the release to install
+os=$(uname -s | tr '[:upper:]' '[:lower:]')                              # darwin or linux
+arch=$(uname -m); case "$arch" in x86_64) arch=amd64;; aarch64) arch=arm64;; esac
+name=minbox_${version#v}_${os}_${arch}
+base=https://github.com/<owner>/<repo>/releases/download/$version
+curl -fL -O "$base/$name.tar.gz" -O "$base/checksums.txt"
+grep " $name.tar.gz\$" checksums.txt | shasum -a 256 -c   # or: sha256sum -c
+tar xzf "$name.tar.gz"
+mkdir -p ~/.local/bin && install -m 755 "$name/minbox" ~/.local/bin/minbox   # any folder on PATH
+```
+
+On macOS the binary is not signed or notarized. `curl` does not mark it as downloaded, but if you
+fetched the archive with a browser, Gatekeeper refuses to run it; clear the mark with
+`xattr -d com.apple.quarantine ~/.local/bin/minbox`.
+
+To upgrade, install the new binary over the old one and run `minbox restart` (see **Settings → Hosts**
+for the terminal host).
+
+### From source
+
+Requirements: Go 1.26+ and Node.js 22.12+ (to build the web UI).
 
 ```sh
 make build                 # builds web/dist and embeds it in bin/minbox
-./bin/minbox start         # runs in the background and opens http://127.0.0.1:4848
+```
+
+The result is the same single binary, `bin/minbox`. While working on the mod or the extensions,
+`MINBOX_PLUGIN_SOURCE=$PWD/plugin ./bin/minbox start` makes minbox use the live `plugin/` folder
+instead of the copies embedded at build time.
+
+## Quick start
+
+```sh
+minbox start               # runs in the background and opens http://127.0.0.1:4848
 ```
 
 The first time, the browser asks to pair (every browser pairs once, one on this machine too):
 press **Pair this browser**, then run the command it shows in a terminal on this machine:
 
 ```sh
-./bin/minbox pair accept 482-913   # shows the browser and its key, asks Accept it? [y/N]
+minbox pair accept 482-913   # shows the browser and its key, asks Accept it? [y/N]
 ```
 
 The page goes on by itself. Upgrading from a version that trusted any browser on 127.0.0.1:
@@ -97,13 +139,13 @@ its mod loaded. When Claude needs something from you, its thread is marked **nee
 up the list and shows the question.
 
 ```sh
-./bin/minbox status        # running? its URL and log (exit code 3 when stopped)
-./bin/minbox restart       # stop, then start with the flags of the last `minbox start`
-./bin/minbox restart --host   # also restart the local terminal host: asks first (--yes/-y skips it);
+minbox status              # running? its URL and log (exit code 3 when stopped)
+minbox restart             # stop, then start with the flags of the last `minbox start`
+minbox restart --host         # also restart the local terminal host: asks first (--yes/-y skips it);
                               # sessions' claude stops and resumes (running turns are interrupted)
-./bin/minbox stop          # stop the server; sessions keep running in the terminal host
-./bin/minbox start --foreground   # stay in the foreground, logs on stderr
-./bin/minbox host stop     # stop the terminal host too: every session's claude ends
+minbox stop                # stop the server; sessions keep running in the terminal host
+minbox start --foreground         # stay in the foreground, logs on stderr
+minbox host stop           # stop the terminal host too: every session's claude ends
 ```
 
 **Settings → Hosts** shows the local terminal host's version, pid and start time, and marks it
