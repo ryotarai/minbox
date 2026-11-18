@@ -23,41 +23,45 @@ test('with two agents installed the dialog offers both and starts a Pi session',
   expect(sessions.map((s: any) => s.agent)).toEqual(['pi'])
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('a Pi session reports status and its messages and the replies flow through the inbox', async ({ page, piMinbox }) => {
+test('a Pi session reports status and its messages; the person’s messages from its stream reach it', async ({ page, piMinbox }) => {
   await page.goto(piMinbox.url)
   await createSession(page, piMinbox.dataDir, 'pi-flow', 'pi')
   await expectTerminal(page, 'ready>')
 
-  // Pi sends a question (as the extension's minbox_send_message does).
+  // Pi sends a question (as the extension's minbox_send_message does): it waits on the Board.
   await typeInTerminal(page, 'ask')
   await expectTerminal(page, /sent question in thr_/)
-  const row = page.getByTestId('thread-row').filter({ hasText: 'Pick a database' })
-  await expect(row).toBeVisible()
-  await expect(page.getByTestId('filter-waiting-count')).toHaveText('1')
-  await row.click()
-  const card = page.getByTestId('question-card').first()
-  await card.getByTestId('accept-recommended').click()
-  await page.getByTestId('reply-box').fill('Go with it.')
-  await page.getByTestId('reply-send').click()
+  await expect(page.getByTestId('board-badge')).toHaveText('1')
 
-  // The reply is picked up (claim -> delivered) by the Pi side.
-  await expectTerminal(page, '<<< inbox [Pick a database]')
-  expect(await terminalText(page)).toContain('Answer: SQLite (your recommendation)')
-  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
-
-  // The person starts a thread of their own; the session title the agent sets shows up.
-  await page.getByTestId('quick-body').fill('Please also update the README')
-  await page.getByTestId('quick-send').click()
-  await expectTerminal(page, '<<< inbox [Please also update the README]')
+  // A message from the agent's stream is picked up (claim -> delivered) by the Pi side.
+  await page.getByTestId('composer-text').fill('Please also update the README')
+  await page.getByTestId('composer-send').click()
+  await expectTerminal(page, '<<< inbox')
+  await expectTerminal(page, 'Please also update the README')
+  // The session title the agent sets shows up in the agents list.
   await typeInTerminal(page, 'title Choose the database')
-  await expect(page.getByTestId('terminal-session-title')).toHaveText('Choose the database')
+  await expect(page.getByTestId('agent-row').filter({ hasText: 'pi-flow' })).toContainText('Choose the database')
 
   // working / idle reach the session status.
   await typeInTerminal(page, 'work')
   await expect.poll(async () => (await (await fetch(piMinbox.url + '/api/sessions')).json())[0].status).toBe('working')
   await typeInTerminal(page, 'idle')
   await expect.poll(async () => (await (await fetch(piMinbox.url + '/api/sessions')).json())[0].status).toBe('idle')
+})
+
+test('New agent offers the installed agents; picking Pi starts a Pi agent', async ({ page, piMinbox }) => {
+  await page.goto(piMinbox.url)
+  await page.getByTestId('sidebar-new-agent').click()
+  await expect(page.getByTestId('new-session-agent-option')).toHaveCount(2)
+  await page.getByTestId('new-session-cwd').fill(piMinbox.dataDir)
+  await page.locator('[data-testid="new-session-agent-option"][data-agent="pi"]').click()
+  await expect(page.getByTestId('new-session-start')).toContainText('Start Pi')
+  await page.getByTestId('new-session-name').fill('picked')
+  await page.getByTestId('new-session-start').click()
+  await expect(page.getByTestId('agent-name')).toContainText('picked')
+  await expectTerminal(page, 'hello agent=pi')
+  const [s] = await (await fetch(piMinbox.url + '/api/sessions')).json()
+  expect(s.agent).toBe('pi')
 })
 
 test('a restarted Pi session continues the same conversation id', async ({ page, piMinbox }) => {
@@ -72,8 +76,7 @@ test('a restarted Pi session continues the same conversation id', async ({ page,
   expect(after.claude_session_id).toBe(s.claude_session_id)
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('with only Pi installed there is no picker, Pi is the default, and nothing needs claude', async ({ page, piOnlyMinbox }) => {
+test('with only Pi installed there is no picker, Pi is the default, and nothing needs claude', async ({ page, piOnlyMinbox }) => {
   const agents = await (await fetch(piOnlyMinbox.url + '/api/agents')).json()
   expect(agents.default).toBe('pi')
   expect(agents.agents.map((a: any) => [a.kind, a.installed])).toEqual([
@@ -85,7 +88,7 @@ test.skip('with only Pi installed there is no picker, Pi is the default, and not
   await page.goto(piOnlyMinbox.url)
   // The dialog: no agent choice, and the button names the only agent.
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-  for (let i = 0; i < 30 && !(await form.isVisible()); i++) await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
+  await page.getByTestId('sidebar-new-agent').click()
   await expect(form).toBeVisible()
   await expect(page.getByTestId('new-session-start')).toContainText('Start Pi')
   await expect(page.getByTestId('new-session-agent')).toHaveCount(0)

@@ -1,11 +1,19 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
-// Board · Agents · Search. Keys: J/K Space Enter 1–9 X R ⇧N / ? g b g a T Esc.
+// Board · Agents · Search. Keys: ⌘K J/K Space Enter 1–9 X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
 import { useMentions } from '../components/Mentions'
 import { useApp } from '../lib/app'
+import { isMac } from '../lib/format'
+import { NotificationAsk, SessionMenu } from '../components/Sidebar'
+import { PhoneProjectButton } from '../components/PhoneProjects'
+import { useContextMenu } from '../components/ContextMenu'
+import { projectHueStyle } from '../lib/projectColor'
+import { V3Palette, type PaletteCtx } from './Palette'
+import { RenameAgentDialog } from './AgentActions'
+import { Resizer, clamp, useSidePane, useWindowWidth, useZoom } from './layout'
 import { agentKindLabel } from '../lib/agents'
 import { selectProject, useSelectedProject } from '../lib/projects'
 import { ProjectRail } from '../components/ProjectRail'
@@ -14,7 +22,7 @@ import { ConnectionBanner } from '../components/Banners'
 import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, useBoard } from './Board'
 import { TaskView } from './TaskView'
-import { StreamView, type SidePane } from './StreamView'
+import { StreamView } from './StreamView'
 import { SearchView } from './Search'
 import { v3, type V3Message } from './data'
 import { agentHint, openQuestions, pickChoice, sendAnswers, useNav, useSessionsById } from './parts'
@@ -22,10 +30,11 @@ import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconPaperclip } from '../components/icons'
 import './v3.css'
+import './shell.css'
 
 export function V3App() {
   const app = useApp()
-  const { route, isPhone, overlay, setOverlay, sessions } = app
+  const { route, isPhone, isTablet, overlay, setOverlay, sessions, settings, layout, setLayout } = app
   const { id: projectId, project } = useSelectedProject()
   const [board, reloadBoard] = useBoard()
   const nav = useNav()
@@ -34,15 +43,22 @@ export function V3App() {
   const [showDone, setShowDone] = useState(false)
   const [showQuiet, setShowQuiet] = useState(false)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
-  const [pane, setPane] = useState<SidePane>('tasks')
   // The file open over the conversation (route f: ] / [ in the viewer step through the files).
   const [viewerSession, setViewerSession] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<Session | null>(null)
+  // Tablet: the sidebar folds away on a task or an agent (two panes); the rail's ☰ brings it back.
+  const [sbOpen, setSbOpen] = useState(false)
   useEffect(() => setHidden(new Set()), [board])
   const agents = useMemo(() => {
     const live = (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell' && (!projectId || s.project_id === projectId))
     return live.sort((a, b) => Number(b.is_main) - Number(a.is_main) || ((a.last_activity ?? '') < (b.last_activity ?? '') ? 1 : -1))
   }, [sessions, projectId])
+  // Plain login shells an older build left (they can no longer be made): listed apart, they open on their terminal.
+  const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
   const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : 'board'
+  const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
+  const [pane, setPane] = useSidePane(current)
+  useEffect(() => setSbOpen(false), [view, route.s, route.k])
   const needs = board ? board.questions.filter((m) => !hidden.has(m.id)).length + board.tasks.filter((t) => t.status === 'needs_you' && !board.questions.some((m) => !hidden.has(m.id) && m.tasks.some((tg) => tg.task_id === t.id))).length : 0
   const unread = board ? Object.values(board.agents).reduce((n, a) => n + a.unread, 0) : 0
   useEffect(() => {
@@ -54,9 +70,9 @@ export function V3App() {
     const s = sessions?.find((x) => x.id === route.s)
     if (s && projectId && s.project_id && s.project_id !== projectId) selectProject(s.project_id)
   }, [view, route.s, sessions, projectId])
-  // A link with tab=terminal (older links, the phone's terminal) opens the agent with its terminal.
-  useEffect(() => setPane(route.tab === 'terminal' ? 'terminal' : 'tasks'), [route.s, route.tab])
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
+  const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
+  const paletteCtx: PaletteCtx = { agent: current, pane, setPane, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
 
   // ---- keys ----
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -93,6 +109,8 @@ export function V3App() {
       return
     }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return
+    // Settings › single-key shortcuts off: only the arrows and Enter move on the Board.
+    if (!settings.single_key && !['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return
     if (gPending.current) {
       gPending.current = false
       if (e.key === 'b') nav.board()
@@ -127,7 +145,19 @@ export function V3App() {
       }
       return
     }
+    if (view === 'agent' && e.key === 'F' && e.shiftKey) {
+      e.preventDefault()
+      return setPane(pane === 'files' ? 'tasks' : 'files')
+    }
     if (view === 'agent' && (e.key === 't' || e.key === 'T')) return setPane(pane === 'terminal' ? 'tasks' : 'terminal')
+    if (e.key === 'n' && !e.shiftKey) {
+      // N: the first agent with unread messages (the selected project's first, then any).
+      const counts = board?.agents ?? {}
+      const next = [...agents, ...(sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell')].find((a) => (counts[a.id]?.unread ?? 0) > 0 && a.id !== route.s)
+      if (next) nav.agent(next.id)
+      else app.toast('Nothing unread')
+      return
+    }
     if (view !== 'board') return
     const keys = boardKeys(board, showDone, hidden, showQuiet)
     const i = focus ? keys.indexOf(focus) : -1
@@ -164,7 +194,16 @@ export function V3App() {
       if (m && q && c) pickChoice(m, q, c.label)
     } else if ((e.key === 'x' || e.key === 'X') && focus.startsWith('t:')) {
       const t = board?.tasks.find((x) => x.id === focus.slice(2))
-      if (t) v3.patchTask(t.id, { status: t.status === 'done' ? 'working' : 'done' }).then(reloadBoard).catch(app.error)
+      if (t) {
+        const was = t.status
+        v3.patchTask(t.id, { status: was === 'done' ? 'working' : 'done' })
+          .then(() => {
+            reloadBoard()
+            // Z (or the toast's Undo) puts the status back.
+            app.toast(was === 'done' ? `Reopened “${t.title}”` : `Done: “${t.title}”`, { action: 'Undo', undo: true, onAction: () => v3.patchTask(t.id, { status: was }).then(reloadBoard).catch(app.error) })
+          })
+          .catch(app.error)
+      }
     }
   }
   useEffect(() => {
@@ -200,7 +239,7 @@ export function V3App() {
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
-  else if (view === 'agents') main = <AgentsList agents={agents} counts={board?.agents ?? {}} onNew={() => openNew()} />
+  else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
   else
     main = (
       <BoardView
@@ -220,17 +259,48 @@ export function V3App() {
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
   const closeViewer = () => app.navigate({ f: null }, { push: false })
+  const zoom = useZoom()
+  const winW = useWindowWidth() / zoom
+  // Tablet: two panes. On a task or an agent the sidebar folds away (the rail's ☰ shows it again).
+  const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
+  const wide = view === 'agent' && pane !== 'tasks'
+  const hasSide = !isPhone && (view === 'agent' || view === 'task')
+  const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
+  const style = {
+    '--v-sb-w': sbW + 'px',
+    ...(layout.v3SideW ? { '--v-side-w': layout.v3SideW + 'px' } : {}),
+    ...(layout.v3WideW ? { '--v-wide-w': layout.v3WideW + 'px' } : {}),
+  } as React.CSSProperties
+  // The side pane's edge: on its left (on its right when the panes are swapped in Settings).
+  const swapped = !settings.swap_panes
+  const sideEl = () => document.querySelector<HTMLElement>('.v-main > .v-side')
+  const mainEl = () => document.querySelector<HTMLElement>('.v-main')
+  const dragSide = (dx: number, start: number) => {
+    const room = (mainEl()?.offsetWidth ?? winW) - 320
+    const w = clamp(start + (swapped ? dx : -dx) / zoom, 240, Math.max(240, room))
+    setLayout(wide ? { v3WideW: Math.round(w) } : { v3SideW: Math.round(w) })
+  }
+  const dragSidebar = (dx: number, start: number) => setLayout({ v3SidebarW: Math.round(clamp(start + dx / zoom, 200, Math.max(200, Math.min(480, winW - 56 - 360)))) })
+  const layoutKind = isPhone ? 'phone' : isTablet ? 'tablet' : 'desktop'
   return (
-    <div className="v-app" data-testid="v3-app" data-view={view}>
+    <div className="v-app" data-testid="v3-app" data-view={view} data-layout={layoutKind} data-pane={view === 'agent' ? pane : undefined} style={style}>
       {!isPhone && (
-        <div className="v-rail" style={{ width: 56, flex: 'none', borderRight: '1px solid var(--mb-line)' }}>
-          <ProjectRail narrow />
+        <div className="v-rail" style={{ width: 56, flex: 'none', borderRight: '1px solid var(--mb-line)', display: 'flex', flexDirection: 'column' }}>
+          {isTablet && !showSidebar && (
+            <button type="button" className="v-railbtn" data-testid="sidebar-toggle" aria-label="Show the sidebar" title="Board, Search and the agents" onClick={() => setSbOpen(true)}>
+              ☰
+            </button>
+          )}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ProjectRail narrow />
+          </div>
         </div>
       )}
-      {!isPhone && (
+      {showSidebar && (
         <nav className="v-sidebar" data-testid="sidebar">
           <ConnectionBanner />
           <PairRequestBanner />
+          <NotificationAsk />
           <div style={{ height: 8 }} />
           <button type="button" className={'v-sb-item' + (view === 'board' ? ' sel' : '')} data-testid="nav-board" onClick={nav.board}>
             ▤ Board <span className="v-cnt">{needs > 0 && <span className="v-badge w" data-testid="board-badge">{needs}</span>}</span>
@@ -241,27 +311,39 @@ export function V3App() {
               <span className="v-kbd">/</span>
             </span>
           </button>
+          <button type="button" className="v-sb-item" data-testid="open-palette" onClick={() => setOverlay({ kind: 'palette' })}>
+            ⌘ Quick actions{' '}
+            <span className="v-cnt">
+              <span className="v-kbd">{isMac() ? '⌘K' : 'Ctrl+K'}</span>
+            </span>
+          </button>
           <div className="v-sb-h">
             AGENTS <span title={project?.dir}>{project?.name ?? 'all projects'}</span>
           </div>
           <div className="v-agents" data-testid="agents">
-            {agents.map((a) => (
-              <AgentRow key={a.id} a={a} sel={view === 'agent' && route.s === a.id} counts={board?.agents[a.id]} />
-            ))}
-            {agents.length === 0 && <div className="v-empty">No agents yet. Start one with “New message”.</div>}
+            <AgentGroups agents={agents} shells={shells} sel={view === 'agent' ? route.s : null} counts={board?.agents ?? {}} grouped={!projectId} onRename={setRenaming} />
+            {agents.length === 0 && shells.length === 0 && <div className="v-empty">No agents yet. Start one with “New message” or “New agent”.</div>}
           </div>
           <button type="button" className="v-sb-new" data-testid="sidebar-new" onClick={() => openNew()}>
             New message… <span className="v-kbd">⇧N</span>
           </button>
+          <button type="button" className="v-sb-new" style={{ marginTop: -4 }} data-testid="sidebar-new-agent" title="New agent: choose its kind, folder and host" onClick={openNewAgent}>
+            ＋ New agent…
+          </button>
         </nav>
       )}
+      {showSidebar && <Resizer testid="sidebar-resizer" className="v-rz-sb" measure={() => document.querySelector<HTMLElement>('.v-sidebar')?.offsetWidth ?? sbW} onDrag={dragSidebar} />}
       {isPhone && (
         <>
           <ConnectionBanner />
           <PairRequestBanner />
+          <NotificationAsk />
         </>
       )}
-      <main className="v-main">{main}</main>
+      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '')}>
+        {main}
+        {hasSide && <Resizer testid="side-resizer" measure={() => sideEl()?.offsetWidth ?? 300} onDrag={dragSide} />}
+      </main>
       {isPhone && (
         <div className="v-tabs" data-testid="phone-tabs">
           {(
@@ -285,6 +367,8 @@ export function V3App() {
           ))}
         </div>
       )}
+      {overlay?.kind === 'palette' && <V3Palette ctx={paletteCtx} onClose={() => setOverlay(null)} />}
+      {renaming && <RenameAgentDialog session={renaming} onClose={() => setRenaming(null)} />}
       {overlay && (overlay as { kind: string }).kind === 'v3-new' && <NewMessageDialog agents={agents} initialTo={(overlay as { to?: string }).to} onClose={() => setOverlay(null)} />}
       {overlay && (overlay as { kind: string }).kind === 'v3-help' && <HelpDialog onClose={() => setOverlay(null)} />}
       {route.f && (
@@ -305,69 +389,128 @@ export function V3App() {
   )
 }
 
-function AgentRow({ a, sel, counts }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number } }) {
-  const nav = useNav()
-  const { sessions } = useApp()
-  const hint = agentHint(sessions ?? [], a)
-  const u = counts?.unread ?? 0
-  const waits = (counts?.open_questions ?? 0) > 0
+type Counts = Record<string, { unread: number; open_questions: number }>
+
+/** The agents (grouped by project when all projects are shown, as main's session list was), then the plain shells. */
+function AgentGroups({ agents, shells, sel, counts, grouped, onRename }: { agents: Session[]; shells: Session[]; sel: string | null; counts: Counts; grouped: boolean; onRename: (s: Session) => void }) {
+  const { projects } = useApp()
+  const groups = useMemo(() => {
+    if (!grouped) return [{ id: '', name: '', rows: agents }]
+    const by = new Map<string, Session[]>()
+    for (const a of agents) {
+      const k = a.project_id ?? ''
+      if (!by.has(k)) by.set(k, [])
+      by.get(k)!.push(a)
+    }
+    // A project with an agent that waits or has news first, then as the rail orders them.
+    const order = (projects ?? []).map((p) => p.id)
+    return [...by.entries()]
+      .sort(([a], [b]) => (order.indexOf(a) < 0 ? 1e9 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 1e9 : order.indexOf(b)))
+      .map(([id, rows]) => ({ id, name: projects?.find((p) => p.id === id)?.name ?? 'No project', rows }))
+  }, [agents, grouped, projects])
   return (
-    <button type="button" className={'v-ag' + (sel ? ' sel' : '')} data-testid="agent-row" data-session={a.id} onClick={() => nav.agent(a.id)}>
-      <span className={'v-dot ' + (a.status === 'working' ? 'd-work v-live' : waits ? 'd-wait' : a.status === 'ended' ? 'd-done' : 'd-idle')} />
-      <span className="v-nm">
-        {a.name}{' '}
-        <small>
-          {hint && !a.is_main ? hint + ' · ' : ''}
-          {a.is_main ? 'main · ' : ''}
-          {agentKindLabel(a.agent)}
-        </small>
-      </span>
-      {u > 0 ? (
-        <span className="v-badge u" data-testid="agent-unread">
-          {u}
-        </span>
-      ) : (
-        <span />
+    <>
+      {groups.map((g) => (
+        <div key={g.id} data-testid="agent-group" data-project={g.id}>
+          {grouped && groups.length > 1 && (
+            <div className="v-ag-proj" data-testid="agent-group-name">
+              <span className="v-proj-dot" style={projectHueStyle(g.id)} />
+              {g.name}
+            </div>
+          )}
+          {g.rows.map((a) => (
+            <AgentRow key={a.id} a={a} sel={sel === a.id} counts={counts[a.id]} onRename={onRename} />
+          ))}
+        </div>
+      ))}
+      {shells.length > 0 && (
+        <div data-testid="shell-group">
+          <div className="v-ag-proj">SHELLS</div>
+          {shells.map((a) => (
+            <AgentRow key={a.id} a={a} sel={sel === a.id} onRename={onRename} />
+          ))}
+        </div>
       )}
-      <span className="v-doing">
-        {a.status === 'working' ? 'working…' + (a.title ? ' · ' : '') : ''}
-        {a.title || (a.status === 'working' ? '' : a.status === 'ended' ? 'ended' : a.status === 'starting' ? 'starting' : 'idle')}
-      </span>
-    </button>
+    </>
   )
 }
 
-function AgentsList({ agents, counts, onNew }: { agents: Session[]; counts: Record<string, { unread: number; open_questions: number }>; onNew: () => void }) {
-  const { projects, navigate } = useApp()
+function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number }; onRename: (s: Session) => void }) {
+  const { sessions, navigate } = useApp()
+  const hint = agentHint(sessions ?? [], a)
+  const u = counts?.unread ?? 0
+  const waits = (counts?.open_questions ?? 0) > 0
+  // Right-click / long press / Shift+F10: the session menu (rename, set as main, restart, stop, archive, delete).
+  const menu = useContextMenu()
+  const shell = a.kind === 'shell'
+  return (
+    <>
+      <button
+        type="button"
+        className={'v-ag' + (sel ? ' sel' : '')}
+        data-testid="agent-row"
+        data-session={a.id}
+        data-kind={a.kind}
+        title={shell ? 'A plain shell: opens on its terminal' : 'Double-click to rename · right-click for actions'}
+        {...menu.props}
+        onClick={() => navigate({ view: 'agent', s: a.id, m: null, tab: shell ? 'terminal' : 'inbox' }, { push: true })}
+        onDoubleClick={() => onRename(a)}
+      >
+        <span className={'v-dot ' + (a.status === 'working' ? 'd-work v-live' : waits ? 'd-wait' : a.status === 'ended' ? 'd-done' : 'd-idle')} />
+        <span className="v-nm">
+          {a.name}{' '}
+          <small>
+            {hint && !a.is_main ? hint + ' · ' : ''}
+            {a.is_main ? 'main · ' : ''}
+            {shell ? 'shell' : agentKindLabel(a.agent)}
+            {a.host_name && a.host_id !== 'local' ? ' · ' + a.host_name : ''}
+          </small>
+        </span>
+        {u > 0 ? (
+          <span className="v-badge u" data-testid="agent-unread">
+            {u}
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="v-doing">
+          {a.status === 'working' ? 'working…' + (a.title ? ' · ' : '') : ''}
+          {a.title || (a.status === 'working' ? '' : a.status === 'ended' ? 'ended' : a.status === 'starting' ? 'starting' : 'idle')}
+        </span>
+      </button>
+      <SessionMenu s={a} anchor={null} at={menu.at} onClose={menu.close} onRename={() => onRename(a)} />
+    </>
+  )
+}
+
+function AgentsList({ agents, shells, counts, onNew, onNewAgent, onRename }: { agents: Session[]; shells: Session[]; counts: Counts; onNew: () => void; onNewAgent: () => void; onRename: (s: Session) => void }) {
+  const { navigate, setOverlay } = useApp()
   const { id } = useSelectedProject()
   return (
     <div className="v-col" data-testid="agents-view">
       <div className="v-head">
         <div className="v-r1">
           <h1>Agents</h1>
+          <button type="button" className="v-btn" data-testid="open-palette" aria-label="Quick actions" onClick={() => setOverlay({ kind: 'palette' })}>
+            ⌘
+          </button>
           <button type="button" className="v-btn" data-testid="open-settings-phone" onClick={() => navigate({ view: 'settings' }, { push: true })}>
             Settings
           </button>
+          <button type="button" className="v-btn" data-testid="agents-new-agent" onClick={onNewAgent}>
+            ＋ Agent
+          </button>
           <button type="button" className="v-btn" onClick={onNew}>
-            ＋ New
+            ＋ Message
           </button>
         </div>
         <div className="v-r2">
-          <select className="v-chip" aria-label="Project" value={id} onChange={(e) => selectProject(e.target.value)}>
-            <option value="">All projects</option>
-            {(projects ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <PhoneProjectButton />
         </div>
       </div>
       <div className="v-scroll" style={{ background: 'var(--mb-surface)' }}>
-        {agents.map((a) => (
-          <AgentRow key={a.id} a={a} sel={false} counts={counts[a.id]} />
-        ))}
-        {agents.length === 0 && <div className="v-empty">No agents yet. Tap ＋ New to start one.</div>}
+        <AgentGroups agents={agents} shells={shells} sel={null} counts={counts} grouped={!id} onRename={onRename} />
+        {agents.length === 0 && shells.length === 0 && <div className="v-empty">No agents yet. Tap ＋ Agent or ＋ Message to start one.</div>}
       </div>
     </div>
   )
@@ -435,6 +578,11 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
             <option value="new">New agent…</option>
           </select>
           {to === 'new' && <input type="text" aria-label="Agent name" placeholder="name (optional)" value={name} onChange={(e) => setName(e.target.value)} />}
+          {to === 'new' && (
+            <button type="button" className="v-link" data-testid="new-agent-options" title="Choose the agent's kind (Claude Code, Pi, OpenCode), folder and host" onClick={() => setOverlay({ kind: 'new-session', projectId: projectId || undefined })}>
+              Kind, folder, host…
+            </button>
+          )}
         </div>
         <ComposeFileTiles files={files} onRemove={remove} onPutBack={(f) => (f.pasted ? (setBody((b) => b + f.pasted!.text), remove(f.key)) : undefined)} />
         <div style={{ position: 'relative' }}>
@@ -508,8 +656,10 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
   }, [onClose])
+  const mod = isMac() ? '⌘' : 'Ctrl+'
   const rows: [string, string][] = [
     ['?', 'This help'],
+    [mod + 'K', 'Quick actions: go to a task, an agent or a project, or run an action (> actions · @ agents · # tasks · ! projects)'],
     ['⇧N', 'New message (to the main agent by default)'],
     ['/', 'Search'],
     ['g b · g a', 'Board · first agent'],
@@ -519,9 +669,13 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['1–9', 'Pick a choice of the focused question'],
     ['⌘↵', 'Send the picked answers (Board) · send the message'],
     ['X', 'Done / reopen the focused task'],
+    ['Z', 'Undo the last action (done, archive)'],
+    ['N', 'Next agent with unread messages'],
     ['R', 'Reply: quote the selected text, or focus the reply box'],
     ['T', 'Terminal of the agent'],
     ['Ctrl+`', 'Shell of the agent'],
+    ['⇧F', 'Files of the agent'],
+    ['⇧D', 'Decision mode (when on in Settings)'],
     ['Esc', 'Close / back to the Board'],
   ]
   return (

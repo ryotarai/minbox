@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { V3App } from './v3/V3App'
+import { V3Palette } from './v3/Palette'
 import { AppProvider, useApp } from './lib/app'
 import { useHotkeys } from './lib/hotkeys'
 import { IssuesScreen } from './components/Issues'
@@ -34,7 +35,9 @@ function Root() {
   }, [route.view, route.s, route.t, navigate])
 
 
+  // ⌘K everywhere (also inside a terminal or a text box): the quick actions.
   useHotkeys({
+    'mod+k': () => setOverlay(overlay?.kind === 'palette' ? null : { kind: 'palette' }),
     z: () => undoLast(),
     'shift+d': () => {
       if (!settings.decision_mode) return false
@@ -43,6 +46,12 @@ function Root() {
   })
 
   const close = () => setOverlay(null)
+  // Settings, My issues and Slack are not V3App's screens: the palette there has no agent of its own.
+  const outside = route.view === 'settings' || route.view === 'issues' || route.view === 'slack'
+  const toMain = (o: Parameters<typeof setOverlay>[0]) => {
+    navigate({ view: 'main' }, { push: true })
+    setOverlay(o)
+  }
   return (
     <>
       {route.view === 'settings' ? (
@@ -55,6 +64,20 @@ function Root() {
         <V3App />
       )}
       {route.view === 'review' && route.r && <GuidedReview attachmentId={route.r} />}
+      {overlay?.kind === 'palette' && outside && (
+        <V3Palette
+          onClose={close}
+          ctx={{
+            agent: undefined,
+            pane: 'tasks',
+            setPane: () => {},
+            openNew: (to) => toMain({ kind: 'v3-new', to }),
+            openNewAgent: () => setOverlay({ kind: 'new-session' }),
+            openHelp: () => toMain({ kind: 'v3-help' }),
+            rename: () => {},
+          }}
+        />
+      )}
       {overlay?.kind === 'shortcuts' && <Shortcuts onClose={close} />}
       {overlay?.kind === 'decide' && <DecisionMode onClose={close} />}
       {overlay?.kind === 'delete-session' && <DeleteSession session={overlay.session} onClose={close} />}

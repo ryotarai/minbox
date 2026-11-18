@@ -29,25 +29,22 @@ test('the dialog offers OpenCode; its session gets the plugin, a created session
   expect(sessions[0].claude_session_id).toMatch(/^ses_[0-9A-Za-z]{26}$/)
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('an OpenCode session reports status, its messages and replies flow, Send now steers, and the heartbeat shows', async ({ page, ocMinbox }) => {
+test('an OpenCode session reports status, its messages and replies flow, Send now steers, and the heartbeat shows', async ({ page, ocMinbox }) => {
   await page.goto(ocMinbox.url)
   await createSession(page, ocMinbox.dataDir, 'oc-flow', 'opencode')
   await expectTerminal(page, 'ready>')
 
+  // Its question waits on the Board; a message from its stream reaches it.
   await typeInTerminal(page, 'ask')
   await expectTerminal(page, /sent question in thr_/)
-  const row = page.getByTestId('thread-row').filter({ hasText: 'Pick a database' })
-  await expect(row).toBeVisible()
-  await row.click()
-  await page.getByTestId('question-card').first().getByTestId('accept-recommended').click()
-  await page.getByTestId('reply-box').fill('Go with it.')
-  await page.getByTestId('reply-send').click()
-  await expectTerminal(page, '<<< inbox [Pick a database]')
-  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
+  await expect(page.getByTestId('board-badge')).toHaveText('1')
+  await page.getByTestId('composer-text').fill('Go with it.')
+  await page.getByTestId('composer-send').click()
+  await expectTerminal(page, '<<< inbox')
+  await expectTerminal(page, 'Go with it.')
 
   await typeInTerminal(page, 'title Choose the database')
-  await expect(page.getByTestId('terminal-session-title')).toHaveText('Choose the database')
+  await expect(page.getByTestId('agent-row').filter({ hasText: 'oc-flow' })).toContainText('Choose the database')
 
   // Working: a plain reply waits; Send now makes it urgent and it goes into the running turn.
   await typeInTerminal(page, 'work')
@@ -83,8 +80,7 @@ test('a restarted OpenCode session opens the same OpenCode session', async ({ pa
   expect(after.claude_session_id).toBe(s.claude_session_id)
 })
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('with only OpenCode installed there is no picker and OpenCode is the default', async ({ page, ocOnlyMinbox }) => {
+test('with only OpenCode installed there is no picker and OpenCode is the default', async ({ page, ocOnlyMinbox }) => {
   const agents = await (await fetch(ocOnlyMinbox.url + '/api/agents')).json()
   expect(agents.default).toBe('opencode')
   expect(agents.agents.map((a: any) => [a.kind, a.installed])).toEqual([
@@ -94,7 +90,7 @@ test.skip('with only OpenCode installed there is no picker and OpenCode is the d
   ])
   await page.goto(ocOnlyMinbox.url)
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-  for (let i = 0; i < 30 && !(await form.isVisible()); i++) await page.getByTestId('new-session').click({ timeout: 500 }).catch(() => {})
+  await page.getByTestId('sidebar-new-agent').click()
   await expect(form).toBeVisible()
   await expect(page.getByTestId('new-session-start')).toContainText('Start OpenCode')
   await expect(page.getByTestId('new-session-agent')).toHaveCount(0)
