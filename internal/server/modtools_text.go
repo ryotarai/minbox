@@ -405,6 +405,7 @@ var taskDescription = map[string]string{
 		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete.",
 		"message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task).",
 		"title: rename it when the work's scope becomes clear or changes, not on every step.",
+		"A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only.",
 	}, " "),
 	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_id.",
 }
