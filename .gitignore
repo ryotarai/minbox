@@ -2,3 +2,4 @@
 .DS_Store
 plugin/minbox/.claude-plugin/types/
 docs/research/
+/dist/
