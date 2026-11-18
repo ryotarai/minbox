@@ -1,4 +1,4 @@
-/* minbox v3's app shell: dragged widths, the side pane's edge, swapped panes, the tablet's two panes,
+/* minbox v3's app shell: dragged widths, the side pane's edge, the tablet's two panes,
    the phone's full-screen terminal, project groups in the agent list. */
 .v-sidebar { width: var(--v-sb-w, 236px); }
 .v-side { width: var(--v-side-w, 300px); max-width: calc(100% - 320px); }
@@ -19,9 +19,6 @@
 .v-side.v-agside { max-width: none; min-width: 0; }
 /* A narrow stream beside them: its header keeps to the buttons' icons (their titles and keys say the rest). */
 .v-col.v-narrow .v-head .v-r1 .v-kbd, .v-col.v-narrow .v-head .v-r1 > .v-kind { display: none; }
-/* Settings › swap panes: the side panes (terminal, shell, files) on the left of the stream, mirrored. */
-.v-main.swapped { flex-direction: row-reverse; }
-.v-main.swapped > .v-side { border-left: 0; border-right: 1px solid var(--mb-line); }
 
 /* The agent's Tasks pane, between the agents list and the stream: its own width (dragged, kept), folded
    to a strip (⇧T). With no room beside the stream (the stream would get narrower than MIN_STREAM: a
