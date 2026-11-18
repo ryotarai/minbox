@@ -14,7 +14,7 @@ test('task view: its messages, show context, reply to the last agent about the t
   await agentReply(minbox, a, /adding this to/)
 
   await page.goto(minbox.url)
-  await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).dblclick()
+  await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).click()
   const view = page.getByTestId('task-view')
   await expect(view.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   // 4 messages about it (2 asks, 2 replies); the chat between them is folded into a gap.

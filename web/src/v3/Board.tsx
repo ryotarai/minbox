@@ -1,12 +1,12 @@
 // The Board (home): "what needs me, and what is moving?" NEEDS YOU first (compact question rows, then tasks
 // set to needs you), then GOALS with their tasks, WORKING (active in the last 3 days), BLOCKED, and,
 // folded, QUIET (open but quiet longer) and DONE (the last 2 days).
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { ago, currentStep, short, v3, type Board, type BoardTask, type V3Message } from './data'
 import type { Question } from '../api'
-import { Bar, MessageBodyClamp, StatusDot, Steps, agentName, openQuestions, statusLabel, toggled, useNav, useSessionsById } from './parts'
+import { Bar, StatusDot, agentName, openQuestions, useNav, useSessionsById } from './parts'
 
 export type BoardFocus = { key: string | null }
 
@@ -94,8 +94,6 @@ export function BoardView({
   reload,
   focus,
   setFocus,
-  expanded,
-  toggleExpanded,
   showDone,
   setShowDone,
   showQuiet,
@@ -106,8 +104,6 @@ export function BoardView({
   reload: () => void
   focus: string | null
   setFocus: (k: string | null) => void
-  expanded: Record<string, boolean>
-  toggleExpanded: (id: string) => void
   showDone: boolean
   setShowDone: (v: boolean) => void
   showQuiet: boolean
@@ -128,27 +124,25 @@ export function BoardView({
     v3.patchTask(t.id, { status }).then(reload).catch(error)
   }
   // A question waiting on the person: one compact row like the others (the ask, its task, progress,
-  // links, age). It is answered in the task (or the agent's stream), not here: a click or Space
-  // expands it, Enter or its button opens the task at the question.
+  // links, age). It is answered in the task (or the agent's stream): a click or Enter opens the task
+  // at the question.
   const qrow = (m: V3Message) => {
     const k = 'q:' + m.id
     const qs = openQuestions(m)
     if (!qs.length) return null
-    const open = expanded[m.id]
     const t = m.tasks.map((x) => board.tasks.find((bt) => bt.id === x.task_id)).find((x): x is BoardTask => !!x)
     const title = t?.title ?? m.tasks[0]?.title
     const live = byId.get(m.session_id)?.status === 'working'
     const pr = t?.links?.find((l) => l.kind === 'pr') ?? t?.links?.[0]
     const ask = askText(qs)
     return (
-      <div key={m.id} className={'v-row' + (focus === k ? ' focus' : '') + (open ? ' open' : '')} data-key={k} data-testid="question-card" data-message={m.id}>
+      <div key={m.id} className={'v-row' + (focus === k ? ' focus' : '')} data-key={k} data-testid="question-card" data-message={m.id}>
         <div
           className="v-line"
           onClick={() => {
             setFocus(k)
-            toggleExpanded(m.id)
+            openAsk(nav, m)
           }}
-          onDoubleClick={() => openAsk(nav, m)}
         >
           <div>
             <div className="v-ti">
@@ -183,13 +177,11 @@ export function BoardView({
             {ago(m.created_at)}
           </div>
         </div>
-        {open && (t ? <Expanded t={t} reload={reload} ask={m} /> : <AskExpanded m={m} />)}
       </div>
     )
   }
   const row = (t: BoardTask, child = false, needs = false) => {
     const k = 't:' + t.id
-    const open = expanded[t.id]
     const agents = t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s)
     const who = agents.map((a) => a.name).join(' + ') || agentName(byId, t.last_agent)
     const cur = currentStep(t.steps)
@@ -199,7 +191,7 @@ export function BoardView({
     return (
       <div key={t.id}>
         <div
-          className={'v-row' + (focus === k ? ' focus' : '') + (open ? ' open' : '') + (child ? ' child' : '')}
+          className={'v-row' + (focus === k ? ' focus' : '') + (child ? ' child' : '')}
           data-key={k}
           data-testid="task-row"
           data-task={t.id}
@@ -211,9 +203,8 @@ export function BoardView({
             className="v-line"
             onClick={() => {
               setFocus(k)
-              toggleExpanded(t.id)
+              nav.task(t.id)
             }}
-            onDoubleClick={() => nav.task(t.id)}
           >
             <div>
               <div className="v-ti">
@@ -258,7 +249,6 @@ export function BoardView({
               {ago(t.status === 'done' ? t.done_at : t.last_activity)}
             </div>
           </div>
-          {open && <Expanded t={t} reload={reload} />}
         </div>
         {kids.map((c) => row(c, true))}
       </div>
@@ -302,7 +292,7 @@ export function BoardView({
         <div className="v-r2 v-sum">
           {project?.name ?? 'All projects'} · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working{g.blocked.length ? ` · ${g.blocked.length} blocked` : ''} · {openN} open
           <span className="v-hide-phone" style={{ marginLeft: 'auto' }}>
-            J/K move · Space expand · ↵ open · X done
+            J/K move · ↵ open · X done
           </span>
         </div>
       </div>
@@ -383,142 +373,6 @@ export function GoalRun({ t, reload }: { t: BoardTask; reload: () => void }) {
       )}
     </span>
   )
-}
-
-/** The open questions of a message, read-only (the ask in full; they are answered in the task or the stream). */
-function AskList({ m }: { m: V3Message }) {
-  const qs = openQuestions(m)
-  const acts = qs.filter((q) => q.kind === 'action')
-  return (
-    <>
-      <div className="v-sec" style={{ color: 'var(--mb-wait)' }}>
-        WAITING ON YOU
-      </div>
-      <ul className="v-asks" data-testid="ask-list">
-        {qs
-          .filter((q) => q.kind !== 'action')
-          .map((q) => (
-            <li key={q.key}>
-              {q.prompt.trim() || (q.kind === 'text' ? 'an answer' : 'a choice')}
-              {(q.choices?.length ?? 0) > 0 && <span className="v-cnt2"> · {q.choices!.length} choices</span>}
-            </li>
-          ))}
-        {acts.map((q) => (
-          <li key={q.key}>☐ {q.prompt.trim() || 'a thing to do'}</li>
-        ))}
-      </ul>
-    </>
-  )
-}
-
-function AnswerButton({ m }: { m: V3Message }) {
-  const nav = useNav()
-  return (
-    <button type="button" className="v-btn pri sm" data-testid="answer-in-task" onClick={() => openAsk(nav, m)}>
-      {m.tasks[0] ? 'Answer in task ↵' : 'Answer ↵'}
-    </button>
-  )
-}
-
-/** A question with no task, expanded in place: the ask, the agent's message, and where to answer it. */
-function AskExpanded({ m }: { m: V3Message }) {
-  const byId = useSessionsById()
-  return (
-    <div className="v-detail" data-testid="task-expanded" onClick={(e) => e.stopPropagation()}>
-      <div>
-        <AskList m={m} />
-        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-          <AnswerButton m={m} />
-        </div>
-      </div>
-      <div>
-        <div className="v-sec">FROM {agentName(byId, m.session_id).toUpperCase()}</div>
-        {m.body.trim() ? <MessageBodyClamp text={m.body} lines={8} /> : <div className="v-cnt2">No text.</div>}
-      </div>
-    </div>
-  )
-}
-
-/** A row expanded in place: checklist (or criteria), last report, facts. With `ask`, the question it waits on first and Answer in task. */
-function Expanded({ t, reload, ask }: { t: BoardTask; reload: () => void; ask?: V3Message }) {
-  const { error } = useApp()
-  const byId = useSessionsById()
-  const nav = useNav()
-  const [detail, setDetail] = useState<Awaited<ReturnType<typeof v3.task>> | null>(null)
-  useEffect(() => {
-    v3.task(t.id).then(setDetail).catch(() => {})
-  }, [t.id, t.updated_at, t.message_count])
-  const lastReport = useMemo(() => {
-    if (t.report) return t.report
-    const ms = (detail?.messages ?? []).filter((m) => m.author === 'agent')
-    return ms.length ? ms[ms.length - 1]!.body : ''
-  }, [t.report, detail])
-  const ls = t.kind === 'goal' ? t.criteria : t.steps
-  const done = ls.filter((s) => s.done).length
-  const agents = t.agents.map((a) => agentName(byId, a.session_id))
-  return (
-    <div className="v-detail" data-testid="task-expanded" onClick={(e) => e.stopPropagation()}>
-      <div>
-        {ask && <AskList m={ask} />}
-        {ls.length > 0 && (
-          <>
-            <div className="v-sec">
-              {t.kind === 'goal' ? 'DONE WHEN' : 'CHECKLIST'}
-              <span className="v-x">{Math.round((100 * done) / ls.length)}%</span>
-            </div>
-            <Steps
-              t={t}
-              criteria={t.kind === 'goal'}
-              onToggle={(path) => v3.patchTask(t.id, t.kind === 'goal' ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
-            />
-          </>
-        )}
-        <div className="v-sec">{t.report ? 'LAST REPORT' : 'LATEST FROM THE AGENT'}</div>
-        {lastReport ? <MessageBodyClamp text={lastReport} lines={6} /> : <div className="v-cnt2">Nothing yet.</div>}
-        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-          {ask ? (
-            <AnswerButton m={ask} />
-          ) : (
-            <button type="button" className="v-btn pri sm" data-testid="open-task" onClick={() => nav.task(t.id)}>
-              Open {t.kind === 'goal' ? 'goal' : 'task'} ↵
-            </button>
-          )}
-          {t.last_agent && (
-            <button type="button" className="v-btn sm" onClick={() => nav.agent(t.last_agent)}>
-              Open {agentName(byId, t.last_agent)}
-            </button>
-          )}
-        </div>
-      </div>
-      <div>
-        <div className="v-sec">FACTS</div>
-        <dl className="v-facts" data-testid="facts">
-          {(t.links ?? []).map((l) => (
-            <Fragment key={l.url}>
-              <dt>{l.kind === 'pr' ? 'PR' : l.kind || 'Link'}</dt>
-              <dd>
-                <a href={l.url} target="_blank" rel="noreferrer" className="v-link">
-                  {l.label}
-                </a>
-                {l.state ? ` · ${l.state}` : ''}
-              </dd>
-            </Fragment>
-          ))}
-          <dt>Agents</dt>
-          <dd>{agents.join(' · ') || '—'}</dd>
-          <dt>Status</dt>
-          <dd>
-            {statusLabel(t)} · {t.status === 'done' ? 'done' : 'last activity'} {agoWords(t.status === 'done' ? t.done_at : t.last_activity)}
-          </dd>
-        </dl>
-      </div>
-    </div>
-  )
-}
-
-function agoWords(iso: string | null | undefined): string {
-  const a = ago(iso)
-  return a === 'now' ? 'just now' : a ? a + ' ago' : ''
 }
 
 export function useBoard(): [Board | null, () => void] {
