@@ -76,7 +76,7 @@ test('older threads are segments of the stream, with a divider', async ({ page, 
   await expect(stream.getByTestId('v3-message')).toHaveCount(3)
 })
 
-test('every message shows its task as a badge in its box, dimmed when the one before is in the same task', async ({ page, minbox }) => {
+test('every message shows its task as a badge in its box, quieter (no fill) when the one before is in the same task', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -91,7 +91,7 @@ test('every message shows its task as a badge in its box, dimmed when the one be
   const msgs = stream.getByTestId('v3-message')
   await expect(msgs).toHaveCount(6)
   // gauge (ask + reply), staging (ask + reply), gauge again (ask + reply): a badge in every box, the
-  // second of each pair (same task as the one before) dimmed.
+  // second of each pair (same task as the one before) without the pill's fill; its text never fades.
   const titles = [gauge.title, gauge.title, 'Is the staging server up', 'Is the staging server up', gauge.title, gauge.title]
   for (let i = 0; i < 6; i++) {
     const m = msgs.nth(i)
@@ -100,7 +100,11 @@ test('every message shows its task as a badge in its box, dimmed when the one be
     await expect(m.getByTestId('task-badge')).toHaveAttribute('data-task', (await m.getAttribute('data-task'))!)
     if (i % 2) await expect(m).toHaveClass(/\brep\b/)
     else await expect(m).not.toHaveClass(/\brep\b/)
+    await expect(m.getByTestId('task-badge')).toHaveCSS('opacity', '1')
   }
+  // The repeated badge has no fill; the first of a run has one.
+  await expect(msgs.nth(1).getByTestId('task-badge')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(msgs.nth(0).getByTestId('task-badge')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(stream.getByTestId('task-topic')).toHaveCount(0)
   // The new task the agent made: a small suffix beside the badge.
   await expect(msgs.nth(1).getByTestId('decision')).toHaveText('→ new task')
