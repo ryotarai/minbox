@@ -198,7 +198,7 @@ test('a long stream opens at the newest message; scrolled up, a new message show
   const all = (await stream(minbox, a)).messages.map((m: any) => m.id)
   await api(minbox, 'POST', '/api/v3/read', { message_ids: all })
   // The terminal closed first, then a fresh load: the stream opens at its final width.
-  await page.getByTestId('side-close').click()
+  await page.getByTestId('terminal-close').click()
   await open(page, minbox, a)
   await page.reload()
   await expect(page.getByTestId('composer-text')).toBeVisible()
@@ -254,11 +254,11 @@ test('fold all, the artifacts grid, O and ] [ open the files; a code comment goe
   await open(page, minbox, a)
   await typeInTerminal(page, 'kinds')
   await expectTerminal(page, /sent kinds in thr_\w+ 8/)
-  await page.getByTestId('side-close').click()
+  await page.getByTestId('terminal-close').click()
   await expect(page.getByTestId('attachment-card').first()).toBeVisible()
   // Fold all: one line per message but the last.
   await typeInTerminal(page, 'say and one more')
-  await page.getByTestId('side-close').click()
+  await page.getByTestId('terminal-close').click()
   await expect(page.locator('[data-testid="v3-message"]')).toHaveCount(2)
   await page.getByTestId('fold-all').click()
   await expect(page.getByTestId('v3-message-folded')).toHaveCount(1)

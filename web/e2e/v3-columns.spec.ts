@@ -1,6 +1,8 @@
-// Columns (#v=columns): the tasks checked in its list side by side, each with its messages and a reply
-// box to the agent last active on it. "All" is every open task (new ones too); the choice survives a
-// reload. A phone shows one column at a time, with a tab per checked task.
+// Task columns on an agent's page (the standalone Columns page is gone): each task in the agent's Tasks
+// pane has a checkbox, with a tri-state "All" (every open task of the agent, new ones too) on top. Checked
+// tasks show side by side in place of the stream, each with its messages and a reply box to its agent;
+// "Stream" shows the stream again (the checks stay), "Clear" unchecks them all. Kept per agent across a
+// reload. A tablet shows one column at a time with tabs; a phone keeps the stream.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -16,147 +18,248 @@ async function snap(page: Page, name: string) {
 }
 
 const col = (page: Page, id: string) => page.locator(`[data-testid="task-column"][data-task="${id}"]`)
-const pick = (page: Page, id: string) => page.locator(`[data-testid="columns-pick"][data-task="${id}"] input`)
+const check = (page: Page, id: string) => page.locator(`[data-testid="agent-task-check"][data-task="${id}"]`)
+const conv = (page: Page) => page.getByTestId('stream-view').getByTestId('conv-bar')
 
-test('columns: checkboxes and All pick the tasks; each column has its messages; a reply goes to its agent about its task; kept across a reload', async ({ page, minbox }) => {
+test('tasks pane checkboxes: All tri-state, columns in place of the stream, a reply from a column, kept per agent, back to the stream', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   const b = await startAgent(minbox, 'web')
   await say(minbox, a, 'please fix the gauge reading')
   const t1 = await taskNamed(minbox, /Fix the gauge reading/)
   await agentReply(minbox, a, /created a task/)
-  await say(minbox, b, 'please update the login screen copy')
-  const t2 = await taskNamed(minbox, /Update the login screen copy/)
-  await agentReply(minbox, b, /created a task/)
+  const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
 
-  // From the sidebar: nothing checked yet.
-  await page.goto(minbox.url)
-  await page.getByTestId('nav-columns').click()
-  await expect(page.getByTestId('columns-view')).toBeVisible()
-  await expect(page).toHaveURL(/v=columns/)
-  await expect(page.getByTestId('columns-empty')).toBeVisible()
-  await expect(page.getByTestId('task-column')).toHaveCount(0)
+  // Nothing checked: the stream, no bar.
+  await expect(conv(page)).toBeVisible()
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'off')
 
-  // All: every open task, side by side, each with its own messages and reply box.
-  await page.getByTestId('columns-all').check()
-  await expect(page.getByTestId('task-column')).toHaveCount(2)
+  // One: All turns partial, the stream gives way to its column.
+  await check(page, t1.id).check()
+  await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'some')
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+  await expect(conv(page)).toHaveCount(0)
   await expect(col(page, t1.id).getByTestId('column-title')).toHaveText('Fix the gauge reading')
   await expect(col(page, t1.id).getByTestId('v3-message').filter({ hasText: 'please fix the gauge reading' })).toBeVisible()
-  await expect(col(page, t2.id).getByTestId('v3-message').filter({ hasText: 'please update the login screen copy' })).toBeVisible()
-  await expect(col(page, t1.id).getByTestId('task-composer')).toBeVisible()
-  await expect(col(page, t2.id).getByTestId('composer-to')).toHaveValue(b.id)
-  // Equal widths, side by side.
+
+  // All: both, side by side, equal widths.
+  await page.getByTestId('agent-tasks-all').check()
+  await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'on')
+  await expect(page.getByTestId('task-column')).toHaveCount(2)
   const [w1, w2] = await Promise.all([col(page, t1.id).boundingBox(), col(page, t2.id).boundingBox()])
   expect(Math.abs(w1!.width - w2!.width)).toBeLessThan(2)
   expect(w2!.x).toBeGreaterThan(w1!.x + w1!.width - 2)
+  expect(w1!.width).toBeGreaterThanOrEqual(318)
+  await expect(col(page, t2.id).getByTestId('composer-to')).toHaveValue(a.id)
   await snap(page, 'columns-desktop')
 
-  // Unchecking one: All turns partial, its column goes.
-  await pick(page, t1.id).uncheck()
-  await expect(page.getByTestId('columns-all')).toHaveAttribute('data-state', 'some')
-  await expect(page.getByTestId('task-column')).toHaveCount(1)
-  await expect(col(page, t2.id)).toBeVisible()
+  // The folded strip counts the checked ones.
+  await page.getByTestId('tasks-pane-toggle').first().click()
+  await expect(page.getByTestId('tasks-strip-checked')).toHaveText('☑2')
+  await snap(page, 'columns-strip')
+  await page.getByTestId('tasks-pane-toggle').click()
 
-  // The choice is kept across a reload.
-  await page.reload()
-  await expect(page.getByTestId('task-column')).toHaveCount(1)
-  await expect(col(page, t2.id)).toBeVisible()
-  await expect(pick(page, t1.id)).not.toBeChecked()
-  await expect(page.getByTestId('columns-all')).toHaveAttribute('data-state', 'some')
-
-  // A reply from a column: to that task's agent, about that task; the column shows it (live).
-  const box = col(page, t2.id).getByTestId('composer-text')
-  await box.fill('use the shorter wording')
-  await col(page, t2.id).getByTestId('composer-send').click()
-  await expect(col(page, t2.id).getByTestId('v3-message').filter({ hasText: 'use the shorter wording' })).toBeVisible()
+  // A reply from a column: to the task's agent, about that task.
+  await col(page, t1.id).getByTestId('composer-text').fill('use the shorter wording')
+  await col(page, t1.id).getByTestId('composer-send').click()
+  await expect(col(page, t1.id).getByTestId('v3-message').filter({ hasText: 'use the shorter wording' })).toBeVisible()
   await expect
     .poll(async () => {
-      const s = await api(minbox, 'GET', `/api/v3/sessions/${b.id}/stream`)
+      const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
       const m = s.messages.find((x: any) => x.author === 'user' && x.words === 'use the shorter wording')
       return m ? m.tasks.map((x: any) => x.task_id) : null
     })
-    .toEqual([t2.id])
-  const sa = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
-  expect(sa.messages.some((x: any) => x.words === 'use the shorter wording')).toBe(false)
-  // The agent's answer arrives in the column (SSE).
-  await expect(col(page, t2.id).getByTestId('v3-message').filter({ hasText: /Noted for/ })).toBeVisible()
+    .toEqual([t1.id])
 
-  // Checking the last one makes it All again; then a new open task comes in by itself.
-  await pick(page, t1.id).check()
-  await expect(page.getByTestId('columns-all')).toHaveAttribute('data-state', 'on')
-  await expect(page.getByTestId('task-column')).toHaveCount(2)
-  const c = await startAgent(minbox, 'ops')
-  await say(minbox, c, 'please migrate the build cache')
-  const t3 = await taskNamed(minbox, /Migrate the build cache/)
-  await expect(col(page, t3.id)).toBeVisible()
-  await expect(page.getByTestId('task-column')).toHaveCount(3)
+  // Unchecking one of All: partial; kept across a reload.
+  await check(page, t2.id).uncheck()
+  await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'some')
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+  await page.reload()
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+  await expect(col(page, t1.id)).toBeVisible()
+  await expect(check(page, t2.id)).not.toBeChecked()
 
-  // ✕ on a column unchecks it; the title opens the full task view.
-  await col(page, t3.id).getByTestId('column-remove').click()
-  await expect(col(page, t3.id)).toHaveCount(0)
-  await expect(page.getByTestId('columns-all')).toHaveAttribute('data-state', 'some')
-  await col(page, t1.id).getByTestId('column-open').click()
-  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t1.id)
-  // All off clears them.
-  await page.goBack()
-  await page.getByTestId('columns-all').click()
-  await expect(page.getByTestId('columns-all')).toHaveAttribute('data-state', 'on')
-  await page.getByTestId('columns-all').click()
+  // Another agent has its own choice (none).
+  await page.goto(minbox.url + `/#v=agent&s=${b.id}`)
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', b.id)
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
   await expect(page.getByTestId('task-column')).toHaveCount(0)
+  await page.goBack()
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+
+  // Stream: the stream again, the checks kept; Columns brings them back.
+  await page.getByTestId('show-stream').click()
+  await expect(conv(page)).toBeVisible()
+  await expect(page.getByTestId('task-column')).toHaveCount(0)
+  await expect(check(page, t1.id)).toBeChecked()
+  await page.getByTestId('show-columns').click()
+  await expect(col(page, t1.id)).toBeVisible()
+
+  // ✕ on a column unchecks it; the last one gone, the stream.
+  await col(page, t1.id).getByTestId('column-remove').click()
+  await expect(conv(page)).toBeVisible()
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+
+  // Clear unchecks them all.
+  await page.getByTestId('agent-tasks-all').check()
+  await expect(page.getByTestId('task-column')).toHaveCount(2)
+  await page.getByTestId('columns-clear').click()
+  await expect(page.getByTestId('task-column')).toHaveCount(0)
+  await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'off')
+  await expect(conv(page)).toBeVisible()
+
+  // A column's title opens the task view.
+  await check(page, t2.id).check()
+  await col(page, t2.id).getByTestId('column-open').click()
+  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t2.id)
 })
 
-test('columns: many tasks scroll sideways at a minimum width; g c and the palette open the view', async ({ page, minbox }) => {
+test('a task title shows that task in the agent page, the Tasks pane kept and the task selected; routed, back to the stream; checkboxes switch to columns', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
-  for (const t of ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot']) await api(minbox, 'POST', '/api/v3/tasks', { title: 'Task ' + t, session_id: a.id })
+  await say(minbox, a, 'please fix the gauge reading')
+  const t1 = await taskNamed(minbox, /Fix the gauge reading/)
+  await agentReply(minbox, a, /created a task/)
+  const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
+  await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(minbox.url)
-  await expect(page.getByTestId('board')).toBeVisible()
-  await page.keyboard.press('g')
-  await page.keyboard.press('c')
-  await expect(page.getByTestId('columns-view')).toBeVisible()
-  await page.getByTestId('columns-all').check()
-  await expect(page.getByTestId('task-column')).toHaveCount(6)
+  await page.locator(`[data-testid="agents"] [data-session="${a.id}"], [data-testid="agents"] button:has-text("api")`).first().click()
+  await expect(conv(page)).toBeVisible()
+  const row = (id: string) => page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${id}"]`)
+  const detail = page.getByTestId('agent-task-detail')
+
+  // A title: that task (header, messages, reply box) in the page; the pane and the agents list stay.
+  await row(t1.id).click()
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${t1.id}`))
+  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(detail.getByTestId('v3-message').filter({ hasText: 'please fix the gauge reading' })).toBeVisible()
+  await expect(detail.getByTestId('task-composer')).toBeVisible()
+  await expect(conv(page)).toHaveCount(0)
+  await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
+  await expect(page.getByTestId('sidebar')).toBeVisible()
+  await expect(row(t1.id)).toHaveAttribute('aria-current', 'true')
+  await expect(row(t2.id)).not.toHaveAttribute('aria-current', 'true')
+  await snap(page, 'detail-desktop')
+
+  // A reply from it: to the agent, about the task.
+  await detail.getByTestId('composer-text').fill('check the second gauge too')
+  await detail.getByTestId('composer-send').click()
+  await expect
+    .poll(async () => {
+      const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
+      const m = s.messages.find((x: any) => x.author === 'user' && x.words === 'check the second gauge too')
+      return m ? m.tasks.map((x: any) => x.task_id) : null
+    })
+    .toEqual([t1.id])
+
+  // Another title replaces it; a reload keeps it; ‹ goes back to the stream.
+  await row(t2.id).click()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(row(t2.id)).toHaveAttribute('aria-current', 'true')
+  await page.reload()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(page.getByTestId('back')).toHaveAccessibleName(/Back to api/)
+  await page.getByTestId('back').click()
+  await expect(conv(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/k=/)
+  // Forward: the task again.
+  await page.goForward()
+  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  // ✕ also goes back to the stream.
+  await page.getByTestId('task-detail-close').click()
+  await expect(conv(page)).toBeVisible()
+
+  // A checkbox: the columns, leaving the one task; a title from there shows that one, ✕ back to the columns.
+  await row(t1.id).click()
+  await expect(detail).toBeVisible()
+  await check(page, t2.id).check()
+  await expect(detail).toHaveCount(0)
+  await expect(page).not.toHaveURL(/k=/)
+  await expect(page.getByTestId('task-column')).toHaveCount(1)
+  await expect(col(page, t2.id)).toBeVisible()
+  await row(t1.id).click()
+  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(page.getByTestId('columns-bar')).toHaveCount(0)
+  await page.getByTestId('task-detail-close').click()
+  await expect(col(page, t2.id)).toBeVisible()
+
+  // The Board (and Search, deep links) still open the full task view.
+  await page.getByTestId('nav-board').click()
+  await page.goto(minbox.url + `/#v=task&k=${t1.id}`)
+  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t1.id)
+  // From the task view, an agent opens on its stream (the task's k does not carry over).
+  await page.getByTestId('task-view').getByTestId('task-agent').first().click()
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  await expect(detail).toHaveCount(0)
+})
+
+test('many checked tasks scroll sideways at a minimum width; a new open task joins All', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  for (const t of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) await api(minbox, 'POST', '/api/v3/tasks', { title: 'Task ' + t, session_id: a.id })
+  await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+  await page.getByTestId('agent-tasks-all').check()
+  await expect(page.getByTestId('task-column')).toHaveCount(5)
   const strip = page.getByTestId('columns')
   expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
-  const w = (await page.getByTestId('task-column').first().boundingBox())!.width
-  expect(w).toBeGreaterThanOrEqual(318)
-  // The page itself does not scroll sideways.
+  expect((await page.getByTestId('task-column').first().boundingBox())!.width).toBeGreaterThanOrEqual(318)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
-  // Hide the list: more room for the columns.
-  await page.getByTestId('columns-list-toggle').click()
-  await expect(page.getByTestId('columns-picker')).toHaveCount(0)
   await snap(page, 'columns-many')
-  await page.getByTestId('columns-list-toggle').click()
-  // The palette.
-  await page.getByTestId('nav-board').click()
+  const t6 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Task foxtrot', session_id: a.id })
+  await expect(col(page, t6.id)).toBeVisible()
+  await expect(page.getByTestId('task-column')).toHaveCount(6)
+})
+
+test('the Columns page is gone: no sidebar item, Board button, g c or palette entry; an old link lands on the Board', async ({ page, minbox }) => {
+  await page.goto(minbox.url + '/#v=columns')
+  await expect(page.getByTestId('board')).toBeVisible()
+  await expect(page).not.toHaveURL(/v=columns/)
+  await expect(page.getByTestId('nav-columns')).toHaveCount(0)
+  await expect(page.getByTestId('open-columns')).toHaveCount(0)
+  await page.keyboard.press('g')
+  await page.keyboard.press('c')
+  await expect(page.getByTestId('board')).toBeVisible()
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('columns')
-  await page.keyboard.press('Enter')
-  await expect(page.getByTestId('columns-view')).toBeVisible()
+  await expect(page.getByTestId('palette')).not.toContainText('Open Columns')
+})
+
+test.describe('tablet', () => {
+  test.use({ viewport: { width: 900, height: 800 } })
+  test('one column at a time, a tab per checked task', async ({ page, minbox }) => {
+    const a = await startAgent(minbox, 'api')
+    const t1 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Fix the gauge reading', session_id: a.id })
+    const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+    await page.getByTestId('tasks-pane-toggle').click()
+    await page.getByTestId('agent-tasks-all').check()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('columns-tabs')).toBeVisible()
+    await expect(page.getByTestId('task-column')).toHaveCount(1)
+    await expect(col(page, t1.id)).toBeVisible()
+    await page.locator(`[data-testid="columns-tab"][data-task="${t2.id}"]`).click()
+    await expect(col(page, t2.id)).toBeVisible()
+    await expect(page.getByTestId('task-column')).toHaveCount(1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+    await snap(page, 'columns-tablet')
+  })
 })
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
-  test('columns on a phone: one column at a time, tabs between the checked tasks, the list behind Tasks', async ({ page, minbox }) => {
+  test('a phone keeps the stream and a plain Tasks list', async ({ page, minbox }) => {
     const a = await startAgent(minbox, 'api')
-    const b = await startAgent(minbox, 'web')
     await say(minbox, a, 'please fix the gauge reading')
     const t1 = await taskNamed(minbox, /Fix the gauge reading/)
-    await say(minbox, b, 'please update the login screen copy')
-    const t2 = await taskNamed(minbox, /Update the login screen copy/)
+    // Checked on a wider screen earlier: the phone still shows the stream.
     await page.goto(minbox.url)
-    await page.getByTestId('open-columns').tap()
-    await expect(page.getByTestId('columns-picker')).toBeVisible()
-    await page.getByTestId('columns-all').tap()
-    await expect(page.getByTestId('columns-tabs')).toBeVisible()
-    await expect(page.getByTestId('task-column')).toHaveCount(1)
-    await expect(col(page, t1.id)).toBeVisible()
-    await expect(col(page, t1.id).getByTestId('task-composer')).toBeVisible()
-    await page.locator(`[data-testid="columns-tab"][data-task="${t2.id}"]`).tap()
-    await expect(col(page, t2.id)).toBeVisible()
-    await expect(col(page, t2.id).getByTestId('v3-message').filter({ hasText: 'please update the login screen copy' })).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
-    await snap(page, 'columns-phone')
-    // Tasks: back to the list.
-    await page.getByTestId('columns-list-toggle').tap()
-    await expect(page.getByTestId('columns-picker')).toBeVisible()
+    await page.evaluate(([s, t]) => localStorage.setItem('minbox:v3-columns:' + s, JSON.stringify({ all: false, ids: [t], stream: false })), [a.id, t1.id])
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+    await expect(conv(page)).toBeVisible()
+    await expect(page.getByTestId('task-column')).toHaveCount(0)
+    await page.getByTestId('agent-sheet-open').tap()
+    await expect(page.locator(`[data-testid="agent-task"][data-task="${t1.id}"]`)).toBeVisible()
+    await expect(page.getByTestId('agent-task-check')).toHaveCount(0)
   })
 })
