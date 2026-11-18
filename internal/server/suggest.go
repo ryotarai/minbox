@@ -459,10 +459,24 @@ func runHelperEnv(ctx context.Context, name string, argv, env []string, prompt s
 	return out.Bytes(), nil
 }
 
+// helpMessages are the messages the reply help reads: minbox's own requests to the agent (to place
+// messages in tasks, "place"; a goal's run, "continue") are left out, so the agent's message before
+// them is still the one the person replies to.
+func helpMessages(ms []store.Message) []store.Message {
+	out := make([]store.Message, 0, len(ms))
+	for _, m := range ms {
+		if m.Kind == store.KindPlace || m.Kind == KindContinue {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 // GET /api/threads/{id}/suggestions: the helper's questions, and the latest shell command the agent
 // tried in this thread and was denied (reported by its integration, denied.go) as "!command". The
 // command never comes from the helper or the message text; it rides every answer, also when the
-// questions are off, not needed or failed.
+// questions are off, not needed or failed. In v3 the thread is an agent's stream.
 func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	th, err := s.store.GetThread(r.Context(), id)
@@ -470,7 +484,56 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	command := s.denied.offer(id)
+	th.Messages = helpMessages(th.Messages)
+	s.writeSuggestions(w, r, id, th, id)
+}
+
+// GET /api/v3/tasks/{id}/suggestions: the reply help of a task's view: the questions for the task's
+// latest agent message (the prompt holds the task's messages, from every agent), and the denied
+// command of that message's stream.
+func (s *Server) v3TaskSuggestions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	t, err := s.store.GetTask(ctx, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	ids, err := s.store.TaskMessageIDs(ctx, t.ID)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	// Only the newest ones are read (the prompt holds the last suggestMsgCount; notes are left out).
+	if len(ids) > 3*suggestMsgCount {
+		ids = ids[len(ids)-3*suggestMsgCount:]
+	}
+	var ms []store.Message
+	for _, mid := range ids {
+		m, err := s.store.GetMessage(ctx, mid)
+		if err != nil {
+			continue
+		}
+		ms = append(ms, *m)
+	}
+	ms = helpMessages(ms)
+	th := &store.Thread{ID: "task:" + t.ID, Subject: t.Title, Messages: ms}
+	cmdThread := ""
+	if n := len(ms); n > 0 && ms[n-1].Author == store.AuthorAgent {
+		cmdThread = ms[n-1].ThreadID
+		if st, err := s.store.GetThread(ctx, cmdThread); err == nil {
+			th.SessionID = st.SessionID
+		}
+	}
+	s.writeSuggestions(w, r, th.ID, th, cmdThread)
+}
+
+// writeSuggestions answers a suggestions request for th's messages (key: the cache's, per last
+// message), with the denied command of cmdThread.
+func (s *Server) writeSuggestions(w http.ResponseWriter, r *http.Request, key string, th *store.Thread, cmdThread string) {
+	command := ""
+	if cmdThread != "" {
+		command = s.denied.offer(cmdThread)
+	}
 	empty := func(res SuggestResult) {
 		if res.Questions == nil {
 			res.Questions = []ReplyQuestion{}
@@ -492,7 +555,7 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 		empty(SuggestResult{Reason: "not_needed"})
 		return
 	}
-	key := id + ":" + th.Messages[n-1].ID
+	key += ":" + th.Messages[n-1].ID
 	ctx, cancel := context.WithTimeout(r.Context(), suggestWait)
 	defer cancel()
 	res, fresh, err := s.suggest.get(ctx, key, buildSuggestPrompt(th))
@@ -506,7 +569,7 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fresh {
-		s.hub.publish(Event{Type: "suggestions", SessionID: th.SessionID, ThreadID: id})
+		s.hub.publish(Event{Type: "suggestions", SessionID: th.SessionID, ThreadID: th.ID})
 	}
 	empty(SuggestResult{Questions: res.Questions})
 }

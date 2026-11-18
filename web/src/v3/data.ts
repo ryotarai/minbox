@@ -1,7 +1,7 @@
 // minbox v3 data: the Board, a task's view, an agent's stream (docs/v3/api.md), and the hooks that
 // keep them live (the server's tasks / thread events arrive as window "minbox:v3" events).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { call, type Answer, type Message, type Question, type ReplyRequest } from '../api'
+import { call, type Answer, type Message, type Question, type ReplyRequest, type SuggestResult } from '../api'
 import type { StreamTaskEvent } from './StreamEvents'
 
 export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
@@ -90,6 +90,8 @@ const q = (o: Record<string, string | undefined>) => {
 export const v3 = {
   board: (project: string) => call<Board>('GET', '/api/v3/board' + q({ project })),
   task: (id: string) => call<TaskDetail>('GET', `/api/v3/tasks/${id}`),
+  /** The reply help of a task's view: questions for the task's latest agent message. */
+  taskSuggestions: (id: string) => call<SuggestResult>('GET', `/api/v3/tasks/${id}/suggestions`),
   patchTask: (id: string, body: Partial<Pick<Task, 'title' | 'status' | 'summary' | 'steps' | 'criteria' | 'parent_id'>>) => call<Task>('PATCH', `/api/v3/tasks/${id}`, body),
   createTask: (body: { project_id?: string; title: string; kind?: string; session_id?: string; message_ids?: string[] }) => call<Task>('POST', '/api/v3/tasks', body),
   auto: (id: string, action: 'start' | 'pause' | 'stop', session_id?: string) => call<Task>('POST', `/api/v3/tasks/${id}/auto`, { action, session_id }),
