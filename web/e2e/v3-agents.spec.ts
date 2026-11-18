@@ -17,6 +17,11 @@ test('the agent menu restarts a running agent (after a confirm); the new process
   // Declining the confirm leaves it as it is.
   page.once('dialog', (d) => void d.dismiss())
   await page.getByTestId('agent-menu').click()
+  // The agent's kind, folder and start are at the top of its menu (not in the Tasks pane).
+  const info = page.getByTestId('agent-info')
+  await expect(info).toContainText('Claude Code')
+  await expect(info).toContainText('Folder')
+  await expect(info).toContainText('Started')
   await page.getByTestId('menu-restart').click()
   await page.waitForTimeout(800)
   expect(minbox.log).not.toMatch(/spawn session=\S+ resume=true/)
