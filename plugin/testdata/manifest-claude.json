@@ -1,6 +1,6 @@
 {
   "protocol": 1,
-  "version": "9f385afbe9b8",
+  "version": "12fb492e5980",
   "tools": [
     {
       "name": "send_message",
@@ -271,7 +271,7 @@
     },
     {
       "name": "update_task",
-      "description": "Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. Keep summary current: one line on where it stands now, updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step.",
+      "description": "Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on where it stands now, updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
