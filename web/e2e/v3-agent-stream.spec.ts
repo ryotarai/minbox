@@ -39,6 +39,8 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await page.keyboard.type('#')
   await expect(page.getByTestId('task-picker')).toBeVisible()
   await page.keyboard.type('staging')
+  // The new task reaches the picker with the Board's next refresh.
+  await expect(page.getByTestId('task-option').filter({ hasText: 'Staging health' })).toBeVisible({ timeout: 15_000 })
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('composer').getByTestId('task-link')).toHaveAttribute('title', 'Staging health')
   await page.getByTestId('composer-text').fill('the staging check is green now')
