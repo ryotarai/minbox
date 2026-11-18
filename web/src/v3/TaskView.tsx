@@ -96,6 +96,8 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
       if (toSel === 'new') await v3.newMessage({ ...rest, to: 'new', project_id: t.project_id, words, task_ids: ids, uploads })
       else await v3.send(toSel, { ...rest, words, task_ids: ids, uploads })
       reload()
+      // The server has it now: the stand-in goes once the reload shows it (or the message was cancelled).
+      setTimeout(() => setPending((p) => p.filter((x) => x !== tmp)), 1500)
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
       error(e)

@@ -26,7 +26,8 @@ export function useFirstNew(key: string, messages: V3Message[] | null | undefine
  */
 export function useFollow(box: RefObject<HTMLElement | null>, key: string, messages: V3Message[], hold: boolean) {
   const atBottom = useRef(true)
-  const seen = useRef<{ key: string; n: number } | null>(null)
+  // The newest message seen (by time: a stream's window slides, so its length says nothing).
+  const seen = useRef<{ key: string; at: number; n: number } | null>(null)
   const [unseen, setUnseen] = useState(0)
   useEffect(() => {
     atBottom.current = true
@@ -35,20 +36,46 @@ export function useFollow(box: RefObject<HTMLElement | null>, key: string, messa
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
-    const prev = seen.current?.key === key ? seen.current.n : null
-    seen.current = { key, n: messages.length }
+    const at = (m: V3Message) => new Date(m.created_at).getTime()
+    const newest = messages.reduce((t, m) => Math.max(t, at(m)), 0)
+    const prev = seen.current?.key === key ? seen.current : null
+    seen.current = { key, at: Math.max(newest, prev?.at ?? 0), n: messages.length }
     if (hold) return
-    if (prev === null) {
+    if (!prev || prev.n === 0) {
       el.scrollTop = el.scrollHeight
       return
     }
-    if (messages.length <= prev) return
-    const added = messages.slice(prev)
+    const added = messages.filter((m) => at(m) > prev.at)
+    if (!added.length) return
     if (atBottom.current || added.every((m) => m.author === 'user')) {
       atBottom.current = true
       el.scrollTop = el.scrollHeight
     } else setUnseen((u) => u + added.filter((m) => m.author === 'agent').length)
   }, [box, key, messages, hold])
+  // The view shrinking (the reply box growing, the reply help appearing) or the messages growing late
+  // (code, diagrams, images): a view at the bottom stays at the bottom.
+  useEffect(() => {
+    const el = box.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    // Judged by the sizes before the change too: a scroll event of the same frame may already have
+    // read the shorter view (or the taller content) as "scrolled up".
+    let h = el.clientHeight
+    let sh = el.scrollHeight
+    const ro = new ResizeObserver(() => {
+      const was = atBottom.current || sh - el.scrollTop - h < 80
+      h = el.clientHeight
+      sh = el.scrollHeight
+      if (was && !hold) {
+        atBottom.current = true
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => ro.disconnect()
+    // box.current: the element may appear after the first render (the view waits for its agent).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [box, box.current, key, hold])
   const onScroll = () => {
     const el = box.current
     if (!el) return
