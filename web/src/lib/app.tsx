@@ -164,9 +164,14 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   /** Desktop: the Files pane (the session's folder as a tree) is shown (after the Tasks pane), and its width. */
   filesPane: boolean
   filesW: number
-  /** v3: the agent's side pane last shown (tasks, terminal, shell, files), kept across agents and reloads. */
+  /** v3 (older builds): the one side pane last shown. Read once as v3Panes when that is not set yet. */
   v3Pane?: 'tasks' | 'terminal' | 'shell' | 'files'
-  /** v3: widths dragged by the person: the sidebar, the narrow side pane (tasks), the wide one (terminal, shell, files). */
+  /** v3: the agent's side panes open (terminal, shell, files), oldest opened first; kept across agents and reloads. */
+  v3Panes?: ('terminal' | 'shell' | 'files')[]
+  /** v3: each side pane's dragged width. */
+  v3PaneW?: { terminal?: number; shell?: number; files?: number }
+  /** v3: widths dragged by the person: the sidebar, the narrow side pane (a task's), the wide one (older builds: the
+   *  terminal, shell or files; now the default width of the terminal and the shell, see v3PaneW). */
   v3SidebarW?: number
   v3SideW?: number
   v3WideW?: number
