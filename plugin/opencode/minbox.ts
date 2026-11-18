@@ -1,31 +1,32 @@
 /**
- * The minbox plugin for OpenCode 2.x ("V2" server plugins). minbox starts OpenCode as
+ * The minbox plugin for OpenCode 2.x ("V2" server plugins): a thin proxy between OpenCode and the
+ * minbox server (mod protocol 1, docs/mod-protocol.md). minbox starts OpenCode as
  * `opencode --standalone --auto --session <id>` with this folder in OPENCODE_CONFIG_CONTENT
  * ({"plugins":[{"package":"<this folder>"}]}) and the environment MINBOX_TOKEN (the session's bearer
  * token), MINBOX_SERVER_FILE (a JSON file holding the server's URL), MINBOX_OPENCODE_SESSION (the
- * OpenCode session minbox created for this minbox session) and MINBOX_OPENCODE_DIR (its folder). It is
- * the OpenCode counterpart of the Pi extension (plugin/pi/minbox.ts) and speaks the same /api/agent/*
- * protocol; the wording of tools and delivered messages is shared (../minbox/hooks/text.ts, nav.ts, tasks.ts).
+ * OpenCode session minbox created for this minbox session) and MINBOX_OPENCODE_DIR (its folder). The
+ * OpenCode counterpart of the Pi extension (plugin/pi/minbox.ts); it shares
+ * ../minbox/hooks/proxy.ts with the other integrations.
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
- *   the task tools (minbox_create_task, minbox_update_task, minbox_list_tasks; tasks.ts) and the
- *   read-only navigation tools as direct tools (codemode: false; OpenCode puts plugin
- *   tools behind its Code Mode `execute` tool otherwise).
- * - Adds minbox's instructions (from the hello answer) to the system prompt of every model request of
- *   the session (session hook "context"), so they survive compaction.
- * - Reports working / idle from session.execution.* events.
- * - Long-polls the server for the person's messages and, once the session has been idle for a moment,
- *   claims them, starts a turn with ctx.session.prompt and marks them delivered. An urgent one (Send now)
- *   goes into a running turn too (delivery "steer": OpenCode adds it at the next step).
- * - Denies shell commands that open a page on the host, and OpenCode's `question` tool in the main
- *   session (the person answers in minbox, not in the terminal), through the permission hook.
- * - Reports shell commands whose permission was rejected (session.tool.failed with error type
- *   permission.rejected: a config deny rule or a plugin's permission hook), and the later successful
- *   run of one; the reply area offers the latest as "Run yourself".
+ * The plugin holds no wording and makes no decisions about what the agent reads: the server does.
+ * - Tools: the tool set comes from GET /api/agent/tools and is added as direct tools (codemode: false;
+ *   OpenCode puts plugin tools behind its Code Mode `execute` tool otherwise) by a tool.transform
+ *   callback that reads the current set; every call goes to POST /api/agent/tool, whose text is the
+ *   result (a failure throws). A heartbeat answer naming another tools_version fetches the set again
+ *   and calls ctx.tool.reload(), which runs the transform callbacks again.
+ * - Adds the server's instructions (from the hello answer) to the system prompt of every model request
+ *   of the session (session hook "context"), so they survive compaction.
+ * - Reports turns from session.execution.* events (POST /api/agent/event turn.start / turn.complete).
+ * - Long-polls GET /api/agent/pending?proto=1 and, once the session has been idle for a moment, claims
+ *   the messages, starts a turn with the server's text (ctx.session.prompt) and marks them delivered.
+ *   An urgent one (Send now) goes into a running turn too (delivery "steer").
+ * - The server's guards deny host tool calls through the permission hook (a shell command that opens a
+ *   page on the host; OpenCode's `question` tool in the main session).
+ * - Shell outcomes (session.tool.failed / success) go to the server, which offers a rejected command
+ *   as "Run yourself" and withdraws it when it later runs.
  * - Creates the session if it is missing and moves it to MINBOX_OPENCODE_DIR when the project's folder
  *   changed (OpenCode sessions can move between folders).
- * - Follows a new top-level session the person starts in the TUI (/new) like Pi's extension does: the
- *   hello reports its id, so minbox resumes it later.
+ * - Follows a new top-level session the person starts in the TUI (/new): the hello reports its id.
  *
  * OpenCode loads a plugin once per location (folder) a server touches, so setup can run more than once in
  * one process: tools and hooks are registered per location, the delivery loop and the state are one per
@@ -35,41 +36,13 @@
  * (minbox.test.ts, `node --test`).
  */
 import { readFileSync, realpathSync } from 'node:fs'
-import { DENIED_MAX, normCommand, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
-import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
-import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from '../minbox/hooks/tasks.ts'
-import {
-  openDeny,
-  opensBrowser,
-  OPEN_DESCRIPTION,
-  OPEN_SCHEMA,
-  OPEN_TOOL,
-  READ_DESCRIPTION,
-  READ_SCHEMA,
-  READ_TOOL,
-  readPath,
-  SEND_DESCRIPTION,
-  SEND_SCHEMA,
-  sendRequest,
-  SEND_TOOL,
-  sentText,
-  serverUrlOf,
-  threadListText,
-  threadText,
-  TITLE_DESCRIPTION,
-  TITLE_SCHEMA,
-  TITLE_TOOL,
-  wakeText,
-  type Pending,
-  type Thread,
-} from '../minbox/hooks/text.ts'
+import { guardDeny, manifestOf, pendingOf, PROTOCOL, serverUrlOf, type Manifest, type PendingItem } from '../minbox/hooks/proxy.ts'
 
-export const EXT_VERSION = '0.1.0'
-/** OpenCode's names for the minbox tools (the server writes the instructions with the same prefix). */
-export const TOOL_PREFIX = 'minbox_'
+export const EXT_VERSION = '0.2.0'
 
 const POLL_WAIT_S = 20
 const CALL_TIMEOUT_MS = 8000
+const TOOL_TIMEOUT_MS = 60_000
 const POLL_TIMEOUT_MS = (POLL_WAIT_S + 10) * 1000
 /** The session counts as quiet (no turn runs, the person did not just submit) after this long idle. */
 const QUIET_MS = 2000
@@ -80,7 +53,7 @@ const HEARTBEAT_MS = 15_000
 
 const EXECUTION_EVENTS = ['session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']
 const ALIVE_EVENTS = ['session.step.started', 'session.step.ended', 'session.tool.input.started', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed']
-/** The tool events read for denied shell commands. */
+/** The tool events read for shell outcomes. */
 const TOOL_EVENTS = ['session.tool.input.started', 'session.tool.called', 'session.tool.success', 'session.tool.failed']
 
 /** What the plugin needs from the outside; replaced in tests. */
@@ -120,9 +93,6 @@ export function realDeps(): Deps {
 
 type ApiResult = { ok: boolean; status: number; json: any }
 
-/** Tool names in a shared description, as OpenCode sees them. */
-const ocNames = (text: string) => text.replace(/\b(read_thread|list_threads|send_message|create_task|update_task|list_tasks)\b/g, TOOL_PREFIX + '$1')
-
 /** The major version of OpenCode from ctx.app.version ("2.1.4"); 0 when unknown. */
 export function majorVersion(v: unknown): number {
   const m = /^v?(\d+)\./.exec(String(v ?? ''))
@@ -143,8 +113,11 @@ function notFound(err: unknown): boolean {
   return /NotFound/i.test(errorText(err))
 }
 
-/** One process's minbox state: the session, the delivery loop, the heartbeat. Shared by every location's setup. */
+/** One process's minbox state: the session, the tool set, the delivery loop, the heartbeat. Shared by every location's setup. */
 export type Core = ReturnType<typeof createCore>
+
+/** A tool as OpenCode's tool editor takes it. */
+export type OcTool = { name: string; description: string; input: object; execute: (input: any, context: any) => Promise<{ content: string }> }
 
 export function createCore(deps: Deps) {
   const token = deps.env.MINBOX_TOKEN
@@ -163,14 +136,9 @@ export function createCore(deps: Deps) {
   let typedAt = 0
   let instructions = ''
   let version = ''
+  let manifest: Manifest | null = null
+  let registering: Promise<void> | null = null
   const ctxs: any[] = []
-
-  const names = {
-    send: TOOL_PREFIX + SEND_TOOL,
-    read: TOOL_PREFIX + READ_TOOL,
-    title: TOOL_PREFIX + TITLE_TOOL,
-    open: TOOL_PREFIX + OPEN_TOOL,
-  }
 
   function readBaseUrl(force: boolean): string | null {
     if (baseUrl && !force) return baseUrl
@@ -236,34 +204,34 @@ export function createCore(deps: Deps) {
     }
     return res
   }
+  const event = (body: Record<string, unknown>) => api('POST', '/api/agent/event', body)
 
   /** Every 15 s (checked once per loop round): the server tells a live plugin from a silent one. See docs/mod-connection.md. */
   async function heartbeat(): Promise<void> {
     if (deps.now() - lastBeat < HEARTBEAT_MS) return
     lastBeat = deps.now()
-    await api('POST', '/api/agent/heartbeat', {
+    const res = await api('POST', '/api/agent/heartbeat', {
       seq: ++heartbeatSeq,
       agent: 'opencode',
       ext_version: EXT_VERSION,
+      protocol: PROTOCOL,
       state: busy ? 'working' : 'idle',
       last_poll_at: lastPollAt,
       last_delivery_at: lastDeliveryAt,
-      info: { fail_streak: failStreak, opencode_version: version, locations: ctxs.length, owner_prefix: owner.slice(0, 4) },
+      info: { fail_streak: failStreak, opencode_version: version, locations: ctxs.length, owner_prefix: owner.slice(0, 4), tools_version: manifest?.version ?? '' },
       events: events.slice(-25),
     })
-  }
-
-  const fail = (res: ApiResult): never => {
-    throw new Error(`minbox: ${res.json?.error ?? `HTTP ${res.status}`}`)
+    const want = res.ok ? res.json?.tools_version : undefined
+    if (typeof want === 'string' && want !== manifest?.version) await refreshTools()
   }
 
   function setBusy(value: boolean): void {
     if (value) {
       busyAt = deps.now()
-      if (!busy) void api('POST', '/api/agent/status', { status: 'working' })
+      if (!busy) void event({ type: 'turn.start' })
       busy = true
     } else {
-      if (busy) void api('POST', '/api/agent/status', { status: 'idle' })
+      if (busy) void event({ type: 'turn.complete' })
       busy = false
       idleSince = deps.now()
     }
@@ -280,10 +248,64 @@ export function createCore(deps: Deps) {
       agent_session_id: sessionID || undefined,
       ext_version: EXT_VERSION,
       opencode_version: version,
+      protocol: PROTOCOL,
       reason,
     })
     if (res.ok && typeof res.json?.instructions === 'string') instructions = res.json.instructions
     note('hello', `${reason} session=${sessionID}`)
+  }
+
+  // ---- tools (the server's) ----
+
+  /** Fetches the server's tool set; a changed one makes every location run its transform again. */
+  function refreshTools(): Promise<void> {
+    if (registering) return registering
+    registering = (async () => {
+      const res = await api('GET', '/api/agent/tools')
+      const m = res.ok ? manifestOf(res.json) : null
+      if (!m) {
+        note('tools-failed', `the tool set could not be fetched (${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status})`)
+        return
+      }
+      const changed = manifest?.version !== m.version
+      if (manifest && changed) note('tools-updated', `tool set ${manifest.version} -> ${m.version}`)
+      manifest = m
+      if (!changed) return
+      for (const c of ctxs) {
+        try {
+          await c.tool?.reload?.()
+        } catch (err) {
+          note('tools-reload-failed', errorText(err).slice(0, 120))
+        }
+      }
+    })().finally(() => {
+      registering = null
+    })
+    return registering
+  }
+
+  /** The tools to add now (the transform callback's view of the server's set). */
+  function tools(): OcTool[] {
+    return (manifest?.tools ?? []).map((t) => ({
+      name: t.name,
+      description: t.description,
+      input: t.input_schema,
+      execute: async (input: any) => {
+        const res = await api('POST', '/api/agent/tool', { tool: t.name, args: input ?? {} }, TOOL_TIMEOUT_MS)
+        if (!res.ok) throw new Error(`minbox: ${res.json?.error ?? `HTTP ${res.status}`}`)
+        if (res.json?.ok !== true) throw new Error(String(res.json?.error ?? 'minbox: the tool failed'))
+        // The server's effects for the host: OpenCode's own session list shows the same title.
+        const title = res.json.effects?.session_title
+        if (typeof title === 'string' && title) {
+          try {
+            await ctx()?.session.update({ sessionID, title })
+          } catch (err) {
+            note('title-update-failed', errorText(err).slice(0, 120))
+          }
+        }
+        return { content: String(res.json.text ?? '') }
+      },
+    }))
   }
 
   /** The session minbox chose exists (minbox creates it before the start; this is the fallback) and is in its folder. */
@@ -325,7 +347,7 @@ export function createCore(deps: Deps) {
     started = true
     await hello('startup')
     await ensureSession()
-    void api('POST', '/api/agent/status', { status: 'idle' })
+    void event({ type: 'turn.complete' }) // the session is idle
     idleSince = deps.now()
     if (!loopRunning) void loop()
   }
@@ -337,25 +359,19 @@ export function createCore(deps: Deps) {
     if (!sid || sid !== sessionID) return
     const type = String(ev.type ?? '')
     if (type === 'session.execution.started') setBusy(true)
-    else if (EXECUTION_EVENTS.includes(type)) {
-      setBusy(false)
-      turnThreads = []
-    } else if (busy) busyAt = deps.now()
+    else if (EXECUTION_EVENTS.includes(type)) setBusy(false)
+    else if (busy) busyAt = deps.now()
     if (TOOL_EVENTS.includes(type)) onToolEvent(type, ev.data)
   }
 
-  // ---- denied commands (../minbox/hooks/denied.ts) ----
-  // A shell call refused by a permission rule (`deny` in the config) or a plugin's permission hook ends
-  // as session.tool.failed with error.type "permission.rejected" (OpenCode's own mapping of a rejected
-  // permission). Its tool name comes with session.tool.input.started, its command with
-  // session.tool.called. Only the main session is followed (not subagent sessions).
+  // ---- shell outcomes ----
+  // A shell call refused by a permission rule or a plugin's permission hook ends as
+  // session.tool.failed with error.type "permission.rejected". Its tool name comes with
+  // session.tool.input.started, its command with session.tool.called. Only the main session is
+  // followed (not subagent sessions). The server decides what counts as a refusal.
 
   /** Tool calls of the session: name and shell command, by call id. */
   const toolCalls = new Map<string, { name?: string; command?: string }>()
-  /** Commands reported as denied: a later successful run clears them on the server. */
-  const deniedCommands = new Set<string>()
-  /** The threads of the messages delivered for the running execution. */
-  let turnThreads: string[] = []
 
   function onToolEvent(type: string, d: any): void {
     const id = typeof d?.id === 'string' ? d.id : ''
@@ -367,29 +383,22 @@ export function createCore(deps: Deps) {
       return
     }
     if (type === 'session.tool.called') {
-      const command = normCommand(d.input?.command)
-      if (command) call.command = command
+      if (typeof d.input?.command === 'string' && d.input.command.trim()) call.command = d.input.command
       toolCalls.set(id, call)
       return
     }
     toolCalls.delete(id)
     if (toolCalls.size > 500) toolCalls.clear() // calls whose end never came
     const shell = call.name === undefined || call.name === 'bash' || call.name === 'shell'
-    const command = call.command ?? ''
-    if (!shell || !command) return
-    if (type === 'session.tool.failed' && d.error?.type === 'permission.rejected') {
-      const reason = typeof d.error.message === 'string' ? d.error.message : 'permission rejected'
-      if (reason === openDeny(names.open) || command.length > DENIED_MAX) return // minbox's own refusal
-      deniedCommands.add(command)
-      note('denied-command', `a shell command was denied (${command.length} characters)`)
-      const body: DeniedReport = { command, reason: shortReason(reason), thread_id: turnThreads.length === 1 ? turnThreads[0] : undefined, at: new Date(deps.now()).toISOString() }
-      void api('POST', '/api/agent/denied-commands', body)
-    } else if (type === 'session.tool.success' && deniedCommands.delete(command)) {
-      void api('POST', '/api/agent/denied-commands/ran', { command })
+    if (!shell || !call.command) return
+    if (type === 'session.tool.failed') {
+      void event({ type: 'bash', phase: 'failed', id, command: call.command, error_type: d.error?.type, message: typeof d.error?.message === 'string' ? d.error.message : undefined })
+    } else if (type === 'session.tool.success') {
+      void event({ type: 'bash', phase: 'success', id, command: call.command })
     }
   }
 
-  /** session hook "context": minbox's instructions in the system prompt of every request of the session. */
+  /** session hook "context": the server's instructions in the system prompt of every request of the session. */
   function onContext(event: any): void {
     if (!instructions || event?.sessionID !== sessionID || !Array.isArray(event?.system)) return
     event.system.push({ type: 'text', text: instructions })
@@ -418,114 +427,20 @@ export function createCore(deps: Deps) {
     await hello('session-switched')
   }
 
-  /** permission hook "evaluate": no pages opened on the host, no TUI-only questions in the main session. */
+  /** permission hook "evaluate": the server's guards. */
   function onPermission(event: any): void {
     const action = String(event?.action ?? '')
-    const resources: unknown[] = Array.isArray(event?.resources) ? event.resources : []
-    if ((action === 'shell' || action === 'bash') && resources.some((r) => typeof r === 'string' && opensBrowser(r))) {
-      event.effect = 'deny'
-      event.message = openDeny(names.open)
-      note('denied-open', 'a shell command that opens a page on the host')
-      return
-    }
-    if (action === 'question' && event?.sessionID === sessionID) {
-      event.effect = 'deny'
-      event.message = `minbox: the person follows this session in the minbox inbox and does not see questions in the terminal. Ask with ${names.send} (a :::question block) instead.`
-    }
+    const resources: string[] = Array.isArray(event?.resources) ? event.resources.filter((r: unknown) => typeof r === 'string') : []
+    const deny = guardDeny(manifest?.guards, action, resources, event?.sessionID === sessionID)
+    if (deny === null) return
+    event.effect = 'deny'
+    event.message = deny
+    note('denied-guard', `a ${action} call refused by the server's guard`)
   }
 
   function onToolBefore(): void {
     if (busy) busyAt = deps.now()
   }
-
-  // ---- tools ----
-
-  type ToolDef = { name: string; description: string; input: object; execute: (input: any, context: any) => Promise<{ content: string }> }
-  const ok = (content: string) => ({ content })
-
-  const tools: ToolDef[] = [
-    {
-      name: names.send,
-      description: SEND_DESCRIPTION,
-      input: SEND_SCHEMA,
-      async execute(e: any) {
-        const req = sendRequest(e)
-        if ('error' in req) throw new Error(req.error)
-        const res = await api('POST', '/api/agent/messages', req.body)
-        if (!res.ok) fail(res)
-        return ok(sentText(res.json))
-      },
-    },
-    {
-      name: names.read,
-      description: ocNames(READ_DESCRIPTION),
-      input: READ_SCHEMA,
-      async execute(e: any) {
-        const id = typeof e?.thread_id === 'string' && e.thread_id ? e.thread_id : null
-        const res = await api('GET', readPath(e ?? {}))
-        if (!res.ok) fail(res)
-        return ok(id ? threadText(res.json as Thread, names.read) : threadListText(res.json as Thread[]))
-      },
-    },
-    ...TASK_TOOLS.map(
-      (tool): ToolDef => ({
-        name: TOOL_PREFIX + tool,
-        description: ocNames(TASK_DESCRIPTION[tool]),
-        input: TASK_SCHEMA[tool],
-        async execute(e: any) {
-          const req = taskRequest(tool, e ?? {}, turnThreads.length === 1 ? turnThreads[0] : undefined)
-          if ('error' in req) throw new Error(req.error)
-          const res = await api(req.method, req.path, req.body)
-          if (!res.ok) fail(res)
-          return ok(taskText(tool, res.json))
-        },
-      }),
-    ),
-    ...NAV_TOOLS.map(
-      (tool): ToolDef => ({
-        name: TOOL_PREFIX + tool,
-        description: ocNames(NAV_DESCRIPTION[tool]),
-        input: NAV_SCHEMA[tool],
-        async execute(e: any) {
-          const req = navPath(tool, e ?? {})
-          if ('error' in req) throw new Error(req.error)
-          const res = await api('GET', req.path)
-          if (!res.ok) fail(res)
-          return ok(navText(tool, res.json))
-        },
-      }),
-    ),
-    {
-      name: names.title,
-      description: TITLE_DESCRIPTION,
-      input: TITLE_SCHEMA,
-      async execute(e: any) {
-        const t = typeof e?.title === 'string' ? e.title.trim() : ''
-        if (!t) throw new Error('title is required.')
-        const res = await api('POST', '/api/agent/title', { title: t })
-        if (!res.ok) fail(res)
-        // OpenCode's own session list shows the same title.
-        try {
-          await ctx()?.session.update({ sessionID, title: t })
-        } catch (err) {
-          note('title-update-failed', errorText(err).slice(0, 120))
-        }
-        return ok(`Session title set: ${res.json?.title ?? t}`)
-      },
-    },
-    {
-      name: names.open,
-      description: OPEN_DESCRIPTION.replace('the machine Claude runs on', 'the machine you run on'),
-      input: OPEN_SCHEMA,
-      async execute(e: any) {
-        const url = typeof e?.url === 'string' ? e.url.trim() : ''
-        if (!url) throw new Error('url is required.')
-        const res = await api('POST', '/api/agent/open', { url })
-        if (!res.ok) fail(res)
-        return ok(`Opened ${res.json?.url ?? url} in the person's browser.`)
-      },
-    },
-  ]
 
   // ---- delivery of the person's messages ----
 
@@ -535,21 +450,22 @@ export function createCore(deps: Deps) {
       note('busy-stale', 'no execution event for 120 s: treated as idle')
       setBusy(false)
     }
+    if (!manifest) await refreshTools() // the server was not reachable at the start
     // Wait on the server only while idle; while busy, just look.
     const wait = busy ? 0 : POLL_WAIT_S
-    const res = await api('GET', `/api/agent/pending?owner=${encodeURIComponent(owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
+    const res = await api('GET', `/api/agent/pending?owner=${encodeURIComponent(owner)}&wait=${wait}&proto=${PROTOCOL}`, undefined, POLL_TIMEOUT_MS)
     if (stopped) return false
     if (!res.ok) return false
     lastPollAt = new Date(deps.now()).toISOString()
-    if (!Array.isArray(res.json) || res.json.length === 0) return wait > 0
-    const pending = res.json as Pending[]
+    const answer = pendingOf(res.json)
+    if (!answer || answer.items.length === 0) return wait > 0
     // Deliver only into a quiet session, so the person's own prompt goes first; an urgent message
     // (Send now, or one that waited long) goes in anyway, steered into the running turn.
     const now = deps.now()
     const quiet = !busy && now - idleSince >= QUIET_MS && now - typedAt >= QUIET_MS
-    const due = pending.filter((p) => quiet || p.urgent)
+    const due = answer.items.filter((p) => quiet || p.urgent)
     if (due.length === 0) return false
-    const claimed: Pending[] = []
+    const claimed: PendingItem[] = []
     for (const p of due) {
       const c = await api('POST', pendingPath(p.id, 'claim'))
       if (c.ok && c.json?.claimed) claimed.push(p)
@@ -566,14 +482,13 @@ export function createCore(deps: Deps) {
       if (!c) throw new Error('OpenCode is not ready')
       // "steer" is OpenCode's default: an idle session starts a turn, a running one takes the message at
       // its next step.
-      await c.session.prompt({ sessionID, text: wakeText(deliver, names.send, names.read), delivery: 'steer', metadata: { minbox: true } })
+      await c.session.prompt({ sessionID, text: deliver.map((p) => p.text).join(answer.joiner), delivery: 'steer', metadata: { minbox: true } })
     } catch (err) {
       for (const p of deliver) await api('POST', pendingPath(p.id, 'release'))
       note('submit-failed', errorText(err).slice(0, 150))
       return false
     }
     lastDeliveryAt = new Date(deps.now()).toISOString()
-    turnThreads = [...new Set([...(busy ? turnThreads : []), ...deliver.map((p) => p.thread_id)])]
     note('delivered', `submitted ${deliver.length} message(s): ${deliver.map((p) => p.id).join(',')}`)
     for (const p of deliver) await api('POST', pendingPath(p.id, 'delivered'))
     return true
@@ -604,7 +519,7 @@ export function createCore(deps: Deps) {
   return {
     enabled: !!token && !!serverFile,
     tools,
-    names,
+    refreshTools,
     attach(c: any, appVersion: string): void {
       version = appVersion
       ctxs.push(c)
@@ -624,7 +539,7 @@ export function createCore(deps: Deps) {
     stop(): void {
       stopped = true
     },
-    state: () => ({ sessionID, busy, instructions, stopped, typedAt }),
+    state: () => ({ sessionID, busy, instructions, stopped, typedAt, toolsVersion: manifest?.version ?? '' }),
   }
 }
 
@@ -660,9 +575,12 @@ export async function setupLocation(ctx: any, core: Core, log: (msg: string) => 
       log(`minbox: could not register ${what}: ${errorText(err)}`)
     }
   }
+  // The tool set is the server's: fetched before the first transform, and the callback reads the
+  // current set each time OpenCode runs it (again after ctx.tool.reload(), see refreshTools).
+  await core.refreshTools()
   await tryHook('tools', () =>
     ctx.tool.transform((editor: any) => {
-      for (const t of core.tools) {
+      for (const t of core.tools()) {
         editor.add({
           name: t.name,
           description: t.description,

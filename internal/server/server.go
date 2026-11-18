@@ -96,8 +96,13 @@ type Server struct {
 	modStaleAfter       time.Duration
 	modUndeliveredAfter time.Duration
 	clock               func() time.Time // nil: time.Now (tests inject one)
-	closing             chan struct{}
-	closeOnce           sync.Once
+	// The mod protocol (modproto.go): the in-process agent API and the sessions' turn state.
+	innerOnce sync.Once
+	inner     *http.ServeMux
+	proxyMu   sync.Mutex
+	proxy     map[string]*proxyState
+	closing   chan struct{}
+	closeOnce sync.Once
 
 	files *fileState
 
@@ -375,28 +380,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/fs/mkdir", s.makeDir)
 
 	// The Claude Code mod's API (bearer token per session).
-	mux.HandleFunc("POST /api/agent/hello", s.agent(s.agentHello))
-	mux.HandleFunc("POST /api/agent/status", s.agent(s.agentStatus))
-	mux.HandleFunc("POST /api/agent/heartbeat", s.agent(s.agentHeartbeat))
-	mux.HandleFunc("POST /api/agent/title", s.agent(s.agentTitle))
-	mux.HandleFunc("POST /api/agent/open", s.agent(s.agentOpen))
-	mux.HandleFunc("POST /api/agent/denied-commands", s.agent(s.agentDeniedCommand))
-	mux.HandleFunc("POST /api/agent/denied-commands/ran", s.agent(s.agentRanCommand))
-	mux.HandleFunc("GET /api/agent/tasks", s.agent(s.agentListTasks))
-	mux.HandleFunc("POST /api/agent/tasks", s.agent(s.agentCreateTask))
-	mux.HandleFunc("PATCH /api/agent/tasks/{id}", s.agent(s.agentUpdateTask))
-	mux.HandleFunc("POST /api/agent/messages", s.agent(s.agentSend))
-	mux.HandleFunc("GET /api/agent/threads", s.agent(s.agentListThreads))
-	mux.HandleFunc("GET /api/agent/threads/{id}", s.agent(s.agentReadThread))
-	mux.HandleFunc("GET /api/agent/inbox", s.agent(s.agentInbox))
-	mux.HandleFunc("GET /api/agent/projects", s.agent(s.agentListProjects))
-	mux.HandleFunc("GET /api/agent/projects/{id}", s.agent(s.agentGetProject))
-	mux.HandleFunc("GET /api/agent/sessions", s.agent(s.agentListSessions))
-	mux.HandleFunc("GET /api/agent/search", s.agent(s.agentSearch))
-	mux.HandleFunc("GET /api/agent/pending", s.agent(s.agentPending))
-	mux.HandleFunc("POST /api/agent/pending/{id}/claim", s.agent(s.agentClaim))
-	mux.HandleFunc("POST /api/agent/pending/{id}/release", s.agent(s.agentRelease))
-	mux.HandleFunc("POST /api/agent/pending/{id}/delivered", s.agent(s.agentDelivered))
+	for _, rt := range s.agentRoutes() {
+		mux.HandleFunc(rt.pattern, s.agent(rt.h))
+	}
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { httpError(w, 404, "not found") })
 	mux.Handle("/", s.static())

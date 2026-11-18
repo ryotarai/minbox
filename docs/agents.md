@@ -113,16 +113,15 @@ after the project moved (all go through `sessionManager.spawn`). Pi, OpenCode an
   the old conversation has a file, the session starts a fresh conversation in the new folder and the instructions say
   where the old session file is (`agent.pi.RelocationNote`). Resuming the old file across folders with
   `--session <path>` might work in Pi but is **not verified**; it would be better than a new conversation.
-* **Extension** (`plugin/pi/minbox.ts`, loaded by Pi's jiti, no build): tools `minbox_send_message`,
-  `minbox_read_thread`, `minbox_set_session_title`, `minbox_open_url`, the task tools `minbox_create_task`,
-  `minbox_update_task`, `minbox_list_tasks` (shared `tasks.ts`) and the read-only navigation tools
-  `minbox_list_projects`, `minbox_get_project`, `minbox_list_sessions`, `minbox_list_threads`, `minbox_search` (same descriptions
-  and schemas as the mod; shared `plugin/minbox/hooks/text.ts` and `nav.ts`); `tool_call` blocks Bash commands that open a page on the host;
-  `agent_start` / `agent_settled` set the session working / idle; a long poll on `/api/agent/pending`
+* **Extension** (`plugin/pi/minbox.ts`, loaded by Pi's jiti, no build): a thin proxy of mod protocol 1
+  (docs/mod-protocol.md). Its tools (`minbox_send_message`, `minbox_read_thread`, `minbox_set_session_title`,
+  `minbox_open_url`, the task tools and the read-only navigation tools) are the server's (`GET /api/agent/tools`,
+  calls through `POST /api/agent/tool`); `tool_call` applies the server's guards (Bash commands that open a page on the host);
+  `agent_start` / `agent_settled` go to the server as turn events (working / idle); a long poll on `/api/agent/pending?proto=1`
   claims the person's messages once Pi has been idle for 2 s and the person is not typing, delivers them with
   `pi.sendUserMessage` and marks them delivered (a failed delivery releases the claim); an urgent message
   (Send now) is delivered into a running turn with `deliverAs: "steer"`. A `bash` call another extension blocked
-  (`tool_execution_end` in error with no `durationMs`) is reported as a denied command ("Run yourself", docs/thread-commands.md).
+  (`tool_execution_end` in error with no `durationMs`) is forwarded and the server reports it as a denied command ("Run yourself", docs/thread-commands.md).
   Not in the Pi extension yet (planned Phase 2): the reminder when a turn asks the person only in the chat,
   the open-threads reminder after a compaction, mod-silent parity, completions. Remote hosts: see below.
 * **Instructions** reach Pi once, on the command line, because Pi keeps its system prompt through
@@ -235,7 +234,7 @@ Pi and OpenCode sessions run on remote hosts (`minbox host --listen` / `--tailsc
 ones. The design reuses what Claude Code's mod already had:
 
 * **The integration files come from the host's own binary.** At start `minbox host` extracts the mod, the Pi extensions
-  (`pi/minbox.ts`, `pi/subagent.ts`, `pi/agents/*.md`, with the shared `minbox/hooks/text.ts`, `nav.ts`) and the OpenCode plugin
+  (`pi/minbox.ts`, `pi/subagent.ts`, `pi/agents/*.md`, with the shared `minbox/hooks/proxy.ts`) and the OpenCode plugin
   into its data dir, each in a content-hash folder (`plugin/<hash>`, `pi-extension/<hash>`, `opencode-plugin/<hash>`;
   idempotent, an update gets a new folder). The server's spawn request carries placeholders (`{{MINBOX_PI_EXTENSION}}`,
   `{{MINBOX_PI_SUBAGENT}}`, `{{MINBOX_OPENCODE_PLUGIN}}`, next to the mod's `{{MINBOX_PLUGIN_DIR}}`) that the host fills in. So
@@ -277,9 +276,11 @@ session there, inbox through the relay, heartbeat). Not verified: a real second 
 
 1. Implement `agent.Agent` in `internal/agent/<name>.go`: `Kind`, `Label`, `Tools` (the prefix), `Caps`, `Argv`, `Env`,
    `NewConversationID`, `RelocationNote`, `Headless`; register the kind in `For` and `Kinds` (the order is the preference order).
-2. Write the integration (the thing loaded into the agent) against `/api/agent/*`: hello (`agent`, `agent_session_id`),
-   status, pending → claim → delivered/release, messages, title, open, threads. Reuse
-   `plugin/minbox/hooks/text.ts` for the wording; embed the files in `plugin/embed.go` like `ExtractPi`.
+2. Write the integration (the thing loaded into the agent) as a thin proxy of mod protocol 1 (docs/mod-protocol.md):
+   hello (`agent`, `agent_session_id`, `protocol`), `GET /api/agent/tools` and `POST /api/agent/tool` for the tools,
+   `POST /api/agent/event` for turns and shell outcomes, pending (`?proto=1`) → claim → delivered/release. Reuse
+   `plugin/minbox/hooks/proxy.ts`; the wording is the server's (`internal/server/modtext.go`, give the new agent its
+   tool set in `manifestFor`). Embed the files in `plugin/embed.go` like `ExtractPi`.
 3. Add its command to `Config`, `agent.Commands`, `cmd/minbox/main.go` (flag + env) and `sessionManager.argv`.
 4. If its conversations are stored per folder, teach `conversationExists` where they are (never read an agent's
    database directly: OpenCode's check goes through `opencode api --standalone`).

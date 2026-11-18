@@ -46,4 +46,22 @@ test('the badge shows connected, goes stale without heartbeats with the gap, and
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('minbox mod connection, session')
 })
 
+// Mod protocol (docs/mod-protocol.md): the fake claude speaks protocol 0, the integration of a session
+// started before protocol 1. It keeps working (this whole suite runs on it), and the header says the
+// session runs an old mod; an integration of the current protocol (the fake pi) is not flagged.
+test('a session whose mod speaks an older protocol says so next to the badge', async ({ page, connMinbox: minbox }) => {
+  await page.goto(minbox.url)
+  await createSession(page, minbox.dataDir, 'oldmod')
+  await expectTerminal(page, 'ready>')
+  const badge = page.getByTestId('agent-actions').getByTestId('mod-conn')
+  await expect(badge).toHaveAttribute('data-outdated', 'true')
+  await expect(badge).toHaveAttribute('title', /old mod — restart to update/)
+  await badge.click()
+  await expect(page.getByTestId('mod-outdated')).toContainText('old mod — restart to update. This session runs an older minbox mod (protocol 0; the server speaks 1).')
+  const sessions = (await (await fetch(minbox.url + '/api/sessions')).json()) as { mod_outdated?: boolean }[]
+  expect(sessions[0]!.mod_outdated).toBe(true)
+  const info = await (await fetch(`${minbox.url}/api/sessions/${(sessions[0] as any).id}/connection`)).json()
+  expect([info.mod_protocol, info.server_protocol]).toEqual([0, 1])
+})
+
 // The badge in v3's agent header, on a desktop and a phone: v3-agents.spec.ts.

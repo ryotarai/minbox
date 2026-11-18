@@ -25,7 +25,7 @@ func TestExtractOpenCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, shared := range []string{"text.ts", "nav.ts", "denied.ts"} {
+	for _, shared := range []string{"proxy.ts"} {
 		if !strings.Contains(string(src), "'../minbox/hooks/"+shared+"'") {
 			t.Fatalf("the plugin no longer imports ../minbox/hooks/%s: update openCodeSources", shared)
 		}
