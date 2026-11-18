@@ -8,8 +8,8 @@ import (
 	"github.com/ryotarai/minbox/internal/store"
 )
 
-// The older send_message contract (thread_id / thread_title / status), as agents started before v3
-// still call it: every message lands in the session's stream; an older thread's id says which task it
+// The older send_message contract (thread_id / thread_title), as agents started before v3 still call
+// it (its status is refused: TestSendMessageStatusRefused): every message lands in the session's stream; an older thread's id says which task it
 // is about; thread_title only finds an open task with that name; nothing gets renamed or created.
 func TestAgentLegacyThreadContract(t *testing.T) {
 	e := newEnv(t)
@@ -28,8 +28,7 @@ func TestAgentLegacyThreadContract(t *testing.T) {
 	if r2 := e.agentSays(sess, map[string]any{"body": "again", "subject": "Via alias"}); r2["thread_id"] != stream {
 		t.Fatalf("not the stream: %v", r2)
 	}
-	// An older thread with a task made from it: the message goes to the stream, about that task;
-	// status applies to it.
+	// An older thread with a task made from it: the message goes to the stream, about that task.
 	old, err := e.st.NewSegmentThread(ctx, sess.ID, "update readme")
 	if err != nil {
 		t.Fatal(err)
@@ -38,15 +37,12 @@ func TestAgentLegacyThreadContract(t *testing.T) {
 	if err := e.st.SetTaskOrigin(ctx, task.ID, "thread:"+old); err != nil {
 		t.Fatal(err)
 	}
-	r3 := e.agentSays(sess, map[string]any{"body": "Done with the readme.", "thread_id": old, "thread_title": "a reply", "status": "finished"})
+	r3 := e.agentSays(sess, map[string]any{"body": "Done with the readme.", "thread_id": old, "thread_title": "a reply"})
 	if r3["thread_id"] != stream {
 		t.Fatalf("legacy thread_id: went to %v, not the stream", r3["thread_id"])
 	}
 	if ids := r3["task_ids"].([]any); len(ids) != 1 || ids[0] != task.ID {
 		t.Fatalf("legacy thread_id → task: %v", r3)
-	}
-	if got, _ := e.st.GetTask(ctx, task.ID); got.Status != store.TaskDone {
-		t.Fatalf("status finished → %s", got.Status)
 	}
 	// thread_title = an open task's title: about it. Any other title: nothing (no task is made).
 	other, _ := e.st.CreateTask(ctx, sess.ProjectID, sess.ID, store.TaskFields{Title: ptrS("Fix the gauge")})

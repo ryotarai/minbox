@@ -133,7 +133,8 @@ var sendDescription = strings.Join([]string{
 	"It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.",
 	"It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids.",
 	"Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id).",
-	"`thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
+	"`thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
+	"It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused.",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
 }, " ")
 
@@ -178,11 +179,6 @@ func sendSchema() jobj {
 				"type":        "array",
 				"items":       jobj{"type": "string"},
 				"description": "Legacy: the older name of task_id, as a list of one id.",
-			},
-			"status": jobj{
-				"type":        "string",
-				"enum":        []string{"working", "needs_you", "blocked", "done"},
-				"description": "Optional: the new status of the task in task_id (update_task does the same).",
 			},
 			"thread_id": jobj{
 				"type":        "string",

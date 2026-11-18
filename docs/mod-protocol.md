@@ -69,6 +69,13 @@ sends it to `/api/agent/messages` as it always did); more than one id is refused
 tells the agent to pick one and send another message for another task. The pending text of the
 person's message names its task on one line, `Task: <id> "<title>"`.
 
+`send_message` has no `status` (it used to set the named task's status, which reopened done tasks by
+accident): a call that carries a non-empty `status` is refused and nothing is stored or delivered.
+Protocol 1 answers `{ok: false, error: "minbox: send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status."}`; protocol 0
+(`POST /api/agent/messages`) answers 400 with that text as `error`. An older integration whose schema
+still offers `status` gets the text and sends the message again without it. A task's status is set
+with `update_task`.
+
 ### `POST /api/agent/event {type, ...}`
 
 What happened in the agent; the answer says what to do.
