@@ -20,7 +20,7 @@ import { ProjectRail } from '../components/ProjectRail'
 import { AttachmentViewer } from '../components/AttachmentViewer'
 import { ConnectionBanner } from '../components/Banners'
 import { PairRequestBanner } from '../components/Devices'
-import { BoardView, boardKeys, useBoard } from './Board'
+import { BoardView, boardKeys, needsCount, useBoard } from './Board'
 import { TaskView } from './TaskView'
 import { StreamView } from './StreamView'
 import { SearchView } from './Search'
@@ -59,7 +59,8 @@ export function V3App() {
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const [pane, setPane] = useSidePane(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
-  const needs = board ? board.questions.filter((m) => !hidden.has(m.id)).length + board.tasks.filter((t) => t.status === 'needs_you' && !board.questions.some((m) => !hidden.has(m.id) && m.tasks.some((tg) => tg.task_id === t.id))).length : 0
+  // The Board's own count of NEEDS YOU, so the badge never counts an entry the Board does not show.
+  const needs = needsCount(board, hidden)
   const unread = board ? Object.values(board.agents).reduce((n, a) => n + a.unread, 0) : 0
   useEffect(() => {
     document.title = needs > 0 ? `(${needs}) minbox` : 'minbox'

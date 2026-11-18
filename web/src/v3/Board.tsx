@@ -26,8 +26,22 @@ export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string
   ]
 }
 
+/** What NEEDS YOU counts: its question cards and its rows, the very entries it shows (the Board's header, the sidebar badge, the tab title). */
+export function needsCount(b: Board | null, hidden: Set<string>): number {
+  if (!b) return 0
+  const g = groups(b, hidden)
+  return g.questions.length + g.explicit.length
+}
+
+/** What a task set to needs you without a question waits on: its report, else its summary, else the agent's last line. */
+export function needsWhat(t: BoardTask): string {
+  const l = (s: string) => s.trim().split('\n')[0]!.trim()
+  return l(t.report ?? '') || l(t.summary ?? '') || (t.last_line ?? '').trim() || 'Set to needs you — open it to see what it waits on'
+}
+
 export function groups(b: Board, hidden: Set<string>) {
-  const questions = b.questions.filter((m) => !hidden.has(m.id))
+  // A message counts as a card only while it has a question left to show (a card with none would be empty).
+  const questions = b.questions.filter((m) => !hidden.has(m.id) && openQuestions(m).length > 0)
   const open = b.tasks.filter((t) => t.status !== 'done')
   const goals = open.filter((t) => t.kind === 'goal')
   const goalIds = new Set(goals.map((g) => g.id))
@@ -43,7 +57,8 @@ export function groups(b: Board, hidden: Set<string>) {
   return {
     questions: questions.sort((a, z) => (a.created_at < z.created_at ? 1 : -1)),
     explicit,
-    goals: goals.sort(byActivity),
+    // A goal set to needs you is a row in NEEDS YOU (with its tasks), not again in GOALS.
+    goals: goals.filter((t) => !explicit.includes(t)).sort(byActivity),
     childrenOf: (id: string) => open.filter((t) => t.parent_id === id && t.kind !== 'goal').sort(byActivity),
     working: rest.filter((t) => (t.status === 'working' || t.status === 'needs_you') && !quietNow(t)).sort(byActivity),
     blocked: rest.filter((t) => t.status === 'blocked' && !quietNow(t)).sort(byActivity),
@@ -86,7 +101,7 @@ export function BoardView({
   const [dropping, setDropping] = useState<string | null>(null)
   if (!board) return <div className="v-col"><div className="v-empty">Loading…</div></div>
   const g = groups(board, hidden)
-  const needsN = g.questions.length + g.explicit.length
+  const needsN = needsCount(board, hidden)
   const openN = board.tasks.filter((t) => t.status !== 'done').length
 
   const setStatus = (t: BoardTask, status: BoardTask['status']) => {
@@ -105,7 +120,7 @@ export function BoardView({
             <div key={q.key} className="v-qq" data-testid="card-question">
               <div className="v-q">
                 {i === 0 && <b>you: </b>}
-                {q.prompt}
+                {q.prompt.trim() || (q.kind === 'text' ? 'an answer' : 'a choice')}
               </div>
               <QuickAnswer m={m} q={q} keys={focus === k && i === 0} />
             </div>
@@ -143,7 +158,7 @@ export function BoardView({
       </div>
     )
   }
-  const row = (t: BoardTask, child = false) => {
+  const row = (t: BoardTask, child = false, needs = false) => {
     const k = 't:' + t.id
     const open = expanded[t.id]
     const agents = t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s)
@@ -187,7 +202,11 @@ export function BoardView({
                   {live ? ' · working now' : ''}
                 </span>
                 <Bar t={t} />
-                {t.kind !== 'goal' && cur && t.status !== 'done' ? (
+                {needs ? (
+                  <span className="v-last" data-testid="needs-what" title={needsWhat(t)}>
+                    needs: {short(needsWhat(t), 120)}
+                  </span>
+                ) : t.kind !== 'goal' && cur && t.status !== 'done' ? (
                   <span className="v-last">now: {short(cur.text, 60)}</span>
                 ) : t.kind !== 'goal' && t.last_line ? (
                   <span className="v-last" data-testid="last-line">
@@ -266,7 +285,7 @@ export function BoardView({
           needsN,
           <>
             {g.questions.map(qcard)}
-            {g.explicit.map((t) => row(t))}
+            {g.explicit.map((t) => row(t, false, true))}
             {needsN === 0 && <div className="v-empty">Nothing needs you. New work: ⇧N.</div>}
           </>,
         )}

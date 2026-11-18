@@ -197,6 +197,12 @@ def turn(p, body):
         g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].replace("(manual)", "").strip(), "kind": "goal", "criteria": crit, "autonomous": "(manual)" not in lines[0]})
         say(f"Goal set: {g['task']['title']}. I will keep going until it is met.")
         return
+    if "NEEDYOU" in body:
+        # update_task with only a status: the task waits on the person, with no question asked.
+        named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
+        api("PATCH", "/api/agent/tasks/" + named[0], {"status": "needs_you"})
+        say("I need you to look at the gauge before I go on.", named[:1])
+        return
     if "ASK" in body:
         named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
         say("One decision first.\n\n:::question\nWhich region should it deploy to?\n- [ ] Tokyo\n- [ ] Oregon\nRecommended: Tokyo\n:::", named[:1])
