@@ -1,10 +1,10 @@
-// UC3 (give a new request without thinking where it goes): ⇧N writes to the main agent by default
-// (or to a new agent); the agent decides existing task / new task, and says so in its reply's header. Every
+// UC3 (give a new request without thinking where it goes): ⇧N writes to an agent minbox picks by default
+// (with a project selected the helper picks one of its agents, else a new agent; or a chosen agent or a new one); the agent decides existing task / new task, and says so in its reply's header. Every
 // message is about a task: chit-chat gets a small task of its own, done at once.
 import { test, expect } from './fixtures'
 import { agentReply, api, board, shot, startAgent, taskOn } from './v3'
 
-test('⇧N to the main agent: new work becomes a task, a follow-up is about it, chit-chat is a small done task', async ({ page, minbox }) => {
+test('⇧N to the default agent: new work becomes a task, a follow-up is about it, chit-chat is a small done task', async ({ page, minbox }) => {
   const main = await startAgent(minbox, 'api')
   await page.goto(minbox.url)
   await expect(page.getByTestId('board')).toBeVisible()
@@ -65,4 +65,24 @@ test('⇧N to a new agent starts a session and its stream gets the message', asy
   expect(sessions.map((s: any) => s.name).sort()).toEqual(['api', 'helper'])
   expect(sessions.find((s: any) => s.name === 'helper').id).not.toBe(main.id)
   await expect(page.getByTestId('agent-row')).toHaveCount(2)
+})
+
+test('⇧N with a project selected: "Let minbox choose" is the default; the helper picks the agent, or a new one', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api', 'api')
+  await page.goto(minbox.url)
+  await page.locator(`[data-testid="project-item"][data-project-id="${a.project_id}"]`).getByTestId('project-select').click()
+  await page.keyboard.press('Shift+N')
+  await expect(page.getByTestId('new-to')).toHaveValue('auto')
+  await page.getByTestId('new-body').fill('is the staging server up?')
+  await page.getByTestId('new-send').click()
+  // The fake helper picks the most recently active agent: the message lands in its stream.
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  // Asked for a new agent, the helper starts one in the project.
+  await page.getByTestId('nav-board').click()
+  await page.keyboard.press('Shift+N')
+  await expect(page.getByTestId('new-to')).toHaveValue('auto')
+  await page.getByTestId('new-body').fill('new agent please: look at the docs')
+  await page.getByTestId('new-send').click()
+  await expect(page.getByTestId('stream-view')).not.toHaveAttribute('data-session', a.id)
+  await expect.poll(async () => (await api(minbox, 'GET', '/api/sessions')).filter((s: any) => s.project_id === a.project_id).length).toBe(2)
 })

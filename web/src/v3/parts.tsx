@@ -105,12 +105,11 @@ export function agentName(byId: Map<string, Session>, id: string | undefined): s
 
 /**
  * How to tell same-named agents apart: "" for a name that is unique among the live agents, else what
- * differs (main, its title, or when it started).
+ * differs (when it started).
  */
 export function agentHint(all: Session[], a: Session): string {
   const same = all.filter((x) => x.name === a.name && !x.archived_at && x.kind !== 'shell')
   if (same.length < 2) return ''
-  if (a.is_main) return 'main'
   const d = new Date(a.created_at ?? '')
   return isNaN(d.getTime()) ? a.id.slice(-4) : 'since ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

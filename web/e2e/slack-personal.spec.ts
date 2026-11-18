@@ -203,14 +203,15 @@ test('desktop: list groups, detail, dismiss / snooze, cache, start a minbox thre
   await expect(page.getByTestId('slack-syncing')).toHaveCount(0)
   expect(sl.count('conversations.replies')).toBe(replies)
 
-  // Start a minbox thread: project auto-selected (named like the channel), the project's main session is the default.
+  // Start a minbox thread: project auto-selected (named like the channel), "Let minbox choose" is the default session.
   await row.click()
   await page.getByTestId('slack-start-thread').click()
   await expect(page.getByTestId('slack-thread-dialog')).toBeVisible()
   await expect(page.getByTestId('slack-pick-note')).toHaveAttribute('data-source', 'name')
   await expect(page.getByTestId('slack-pick-picking')).toHaveCount(0)
   const sess = page.getByTestId('slack-thread-session')
-  await expect(sess.locator('option:checked')).toContainText('Main session')
+  await expect(sess).toHaveValue('auto')
+  await expect(sess.locator('option:checked')).toContainText('Let minbox choose')
   const preview = page.getByTestId('slack-thread-preview')
   await expect(preview).toContainText('<slack_thread_handoff')
   await expect(preview).toContainText('channel: #eng')

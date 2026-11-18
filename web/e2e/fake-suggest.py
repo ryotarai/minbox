@@ -47,6 +47,15 @@ if prompt.startswith("Choose which project the Linear issue") or prompt.startswi
     print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"project_id": chosen}}))
     sys.exit(0)
 
+if prompt.startswith("Choose which coding agent"):
+    # The agent pick (new work in a project, no agent chosen): the first listed agent (the most
+    # recently active), or a new agent when the work says "new agent please".
+    ids = [line[len("- id: "):].split(" |", 1)[0] for line in prompt.splitlines() if line.startswith("- id: ")]
+    work = prompt.split("<work>", 1)[-1]
+    chosen = "new" if "new agent please" in work or not ids else ids[0]
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "{}", "structured_output": {"agent": chosen}}))
+    sys.exit(0)
+
 if prompt.startswith("Draft a Linear issue"):
     # The Create-Linear-issue dialog's guess. FAKE_LINEAR_DRAFT_HOLD: while that file exists the
     # answer is held back (tests use it to type while the draft is still "coming").
