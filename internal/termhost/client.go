@@ -258,7 +258,7 @@ func Ensure(ctx context.Context, socketPath string, opts EnsureOptions) (*Client
 	cancel()
 	started := false
 	if err == nil && !Compatible(v, opts.ServerVersion, opts.ServerRequiresHost) {
-		logf("terminal host protocol %d (requires server %d) is not compatible with server protocol %d (requires host %d): restarting it; its sessions end",
+		logf("terminal host protocol %d (requires server %d) is not compatible with server protocol %d (requires host %d): restarting it; its agents and shells end",
 			v.Protocol, v.RequiredServerVersion, opts.ServerVersion, opts.ServerRequiresHost)
 		if err := stopHost(ctx, c, v, logf); err != nil {
 			return nil, false, err

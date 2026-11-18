@@ -132,7 +132,7 @@ export function SessionMenu({
           hint={s.status !== 'ended' ? 'stop first' : undefined}
           onClick={act(async () => {
             await api.archiveSession(s.id)
-            toast(`Archived ${s.name} (session)`, { action: 'Undo', undo: true, onAction: () => api.unarchiveSession(s.id).then(reloadSessions).catch(error) })
+            toast(`Archived ${s.name} (agent)`, { action: 'Undo', undo: true, onAction: () => api.unarchiveSession(s.id).then(reloadSessions).catch(error) })
           })}
         >
           Archive
@@ -165,7 +165,7 @@ export function RenameRow({ s, onDone }: { s: Session; onDone: () => void }) {
     <div className="rounded-lg bg-sel px-2.5 py-2">
       <div className="flex items-center gap-2">
         <input
-          aria-label="Session name"
+          aria-label="Agent name"
           data-testid="rename-input"
           autoFocus
           value={name}

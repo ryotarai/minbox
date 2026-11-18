@@ -144,7 +144,7 @@ func (s *Server) replyCommand(w http.ResponseWriter, r *http.Request, th *store.
 		return
 	}
 	if s.sessions.remote(sess.HostID) {
-		httpError(w, 422, "commands run on the machine minbox runs on; this session is on another host")
+		httpError(w, 422, "commands run on the machine minbox runs on; this agent is on another host")
 		return
 	}
 	msg, err := s.store.CreateCommandMessage(ctx, th.ID, command, sess.Cwd)

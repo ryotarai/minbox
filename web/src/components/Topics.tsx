@@ -828,7 +828,7 @@ function TopicCompose({
         void send()
       }}
     >
-      {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Session ended: it waits until resumed</span>}
+      {session?.status === 'ended' && <span className="text-[11.5px] text-subtle">Agent ended: it waits until resumed</span>}
       <div className="flex items-end gap-2">
         <textarea
           ref={replyRef}

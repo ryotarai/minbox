@@ -139,9 +139,9 @@ export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; 
           <div className="flex flex-col gap-1.5">
             <span className="text-[12.5px] text-muted">Where</span>
             <div role="radiogroup" aria-label="Where" className="flex gap-2">
-              {radio('same', 'This session', sameOk ? 'shares its conversation' : 'not available (ended)', !sameOk)}
-              {radio('new', 'New session', 'clean start')}
-              {radio('other', 'Another session', 'an existing one', others.length === 0)}
+              {radio('same', 'This agent', sameOk ? 'shares its conversation' : 'not available (ended)', !sameOk)}
+              {radio('new', 'New agent', 'clean start')}
+              {radio('other', 'Another agent', 'an existing one', others.length === 0)}
             </div>
           </div>
           {dest === 'new' && (
@@ -179,7 +179,7 @@ export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; 
               )}
               <label className={label}>
                 <span>
-                  Session name <span className="text-subtle">(optional)</span>
+                  Agent name <span className="text-subtle">(optional)</span>
                 </span>
                 <input data-testid="fork-session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} className={cx(field, 'h-[38px] text-[13.5px]')} />
               </label>
@@ -187,7 +187,7 @@ export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; 
           )}
           {dest === 'other' && (
             <label className={label}>
-              Session
+              Agent
               <select data-testid="fork-session" value={otherId} onChange={(e) => setOtherId(e.target.value)} className={cx(field, 'h-[38px] text-[13px]')}>
                 {others.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -195,7 +195,7 @@ export function ForkDialog({ thread, message, seq, onClose }: { thread: Thread; 
                   </option>
                 ))}
               </select>
-              <span className="text-[11.5px] text-subtle">That session has one conversation across its threads: the new thread queues behind its current work.</span>
+              <span className="text-[11.5px] text-subtle">That agent has one conversation across its threads: the new thread queues behind its current work.</span>
             </label>
           )}
           <label className={label}>
