@@ -65,7 +65,8 @@ func (in slackInbound) NewThread(ctx context.Context, project, defaultProject, t
 		}
 		return "", notify.ErrNoTarget
 	}
-	if target.MainSessionID == "" {
+	if target.Dir == "" {
+		// The catch-all project has no folder to start an agent in.
 		return "", notify.ErrNoTarget
 	}
 	ups := in.storeFiles(ctx, files)
@@ -73,15 +74,20 @@ func (in slackInbound) NewThread(ctx context.Context, project, defaultProject, t
 	if subject == "" && len(ups) > 0 {
 		subject = ups[0].Name
 	}
-	th, msg, err := s.store.CreateThread(ctx, target.MainSessionID, subject, store.NewMessage{Author: store.AuthorUser, Body: text, Words: text})
+	// The helper picks one of the project's live agents, or a new one is started.
+	sess, _, err := s.agentFor(ctx, target.ID, "", "", text, "slack inbound")
+	if err != nil {
+		return "", err
+	}
+	th, msg, err := s.store.CreateThread(ctx, sess.ID, subject, store.NewMessage{Author: store.AuthorUser, Body: text, Words: text})
 	if err != nil {
 		return "", err
 	}
 	if err := s.attachUploads(ctx, ups, th.ID, msg.ID); err != nil {
 		return "", err
 	}
-	s.publishThread(target.MainSessionID, th.ID)
-	s.wakePending(target.MainSessionID)
+	s.publishThread(sess.ID, th.ID)
+	s.wakePending(sess.ID)
 	return th.ID, nil
 }
 

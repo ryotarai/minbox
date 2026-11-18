@@ -79,7 +79,7 @@ func (w *pollWorker) newThread(ctx context.Context, channel, threadTS, text stri
 		if !errors.Is(err, ErrUnknownProject) && !errors.Is(err, ErrNoTarget) {
 			return err
 		}
-		why = "the fallback project (the picked project has no session)"
+		why = "the fallback project (the picked project cannot take a thread)"
 	}
 	tid, err := w.p.In.NewThread(ctx, "", w.project, text, files)
 	if err == nil {
@@ -248,7 +248,7 @@ func (w *pollWorker) startPending(ctx context.Context, pd *store.SlackPending, r
 	}
 	tid, err := w.p.In.NewThread(ctx, project, w.project, pp.Orig, pp.Files)
 	if errors.Is(err, ErrUnknownProject) || errors.Is(err, ErrNoTarget) {
-		_, _ = w.post(ctx, pd.ChannelID, pd.ThreadTS, "I could not start a thread there (no project session). The message was dropped.")
+		_, _ = w.post(ctx, pd.ChannelID, pd.ThreadTS, "I could not start a thread there (no such project, or it has no folder for an agent). The message was dropped.")
 		return del()
 	}
 	if err != nil {

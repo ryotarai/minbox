@@ -96,7 +96,7 @@ func buildIssuePickPrompt(is linear.Issue, cands []pickCandidate) string {
 }
 
 // issuePickCandidates: the projects a thread can start in (not archived; with their folder and
-// the titles of recent threads of the main session).
+// the titles of their recent tasks).
 func (s *Server) issuePickCandidates(ctx context.Context, projects []store.Project) []pickCandidate {
 	var res []pickCandidate
 	for _, p := range projects {
@@ -104,18 +104,7 @@ func (s *Server) issuePickCandidates(ctx context.Context, projects []store.Proje
 			break
 		}
 		c := pickCandidate{id: p.ID, name: truncRunes(flattenWS(p.Name), pickNameLen), dir: p.Dir}
-		if p.MainSessionID != "" {
-			if ths, err := s.store.ListThreads(ctx, p.MainSessionID); err == nil {
-				for _, t := range ths {
-					if len(c.titles) == pickTitles {
-						break
-					}
-					if t := truncRunes(flattenWS(t.Subject), pickTitleLen); t != "" {
-						c.titles = append(c.titles, t)
-					}
-				}
-			}
-		}
+		c.titles = s.recentTaskTitles(ctx, p.ID)
 		res = append(res, c)
 	}
 	return res

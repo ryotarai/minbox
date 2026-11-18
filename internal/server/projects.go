@@ -93,8 +93,6 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 		Dir    *string `json:"dir"`
 		HostID *string `json:"host_id"`
 		Pinned *bool   `json:"pinned"`
-		// MainSession: a Claude Code session of the project to make its main one.
-		MainSession *string `json:"main_session_id"`
 		// DefaultAgent: "claude" or "pi" for new sessions of the project; "" follows the default_agent setting.
 		DefaultAgent *string `json:"default_agent"`
 	}
@@ -106,7 +104,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, "default_agent must be empty, claude or pi")
 		return
 	}
-	patch := store.ProjectPatch{Name: req.Name, HostID: req.HostID, Pinned: req.Pinned, MainSession: req.MainSession, DefaultAgent: req.DefaultAgent}
+	patch := store.ProjectPatch{Name: req.Name, HostID: req.HostID, Pinned: req.Pinned, DefaultAgent: req.DefaultAgent}
 	if req.Dir != nil || req.HostID != nil {
 		cur, err := s.store.GetProject(r.Context(), id)
 		if err != nil {
@@ -141,7 +139,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.publishProjects(patch.Name != nil || patch.MainSession != nil)
+	s.publishProjects(patch.Name != nil)
 	writeJSON(w, 200, s.projectJSON(r, *p)[0])
 }
 

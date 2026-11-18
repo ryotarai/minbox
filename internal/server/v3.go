@@ -468,8 +468,9 @@ func (s *Server) v3Send(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, r)
 }
 
-// POST /api/v3/new {to: <session id> | "new", project_id, agent?, name?, words, task_id?, uploads?}:
-// the composer's message: to an agent's stream, or to a new agent (session) started for it.
+// POST /api/v3/new {to: <session id> | "new" | "", project_id, agent?, name?, words, task_id?, uploads?}:
+// the composer's message: to an agent's stream, or to a new agent (session) started for it. Without
+// to, the helper picks one of the project's live agents for the words, else a new agent starts.
 func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req struct {
@@ -477,28 +478,34 @@ func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 		ProjectID string `json:"project_id"`
 		Agent     string `json:"agent"`
 		Name      string `json:"name"`
+		Words     string `json:"words"`
 	}
 	body, ok := peekJSON(w, r, &req)
 	if !ok {
 		return
 	}
 	to := req.To
-	if to == "" || to == "new" {
-		if to == "" {
-			// The project's main session.
-			if p, err := s.store.GetProject(ctx, req.ProjectID); err == nil && p.MainSessionID != "" {
-				to = p.MainSessionID
-			}
+	switch to {
+	case "":
+		pid := strings.TrimSpace(req.ProjectID)
+		if _, err := s.store.GetProject(ctx, pid); err != nil {
+			httpError(w, 400, "pick an agent, or a project for the message")
+			return
 		}
-		if to == "" || to == "new" {
-			sess, err := s.sessions.CreateAgent(ctx, store.KindClaude, strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), "", "", strings.TrimSpace(req.ProjectID))
-			if err != nil {
-				httpError(w, 400, err.Error())
-				return
-			}
-			to = sess.ID
-			s.hub.publish(Event{Type: "sessions"})
+		sess, _, err := s.agentFor(ctx, pid, strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), req.Words, "new message")
+		if err != nil {
+			httpError(w, 400, err.Error())
+			return
 		}
+		to = sess.ID
+	case "new":
+		sess, err := s.sessions.CreateAgent(ctx, store.KindClaude, strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), "", "", strings.TrimSpace(req.ProjectID))
+		if err != nil {
+			httpError(w, 400, err.Error())
+			return
+		}
+		to = sess.ID
+		s.hub.publish(Event{Type: "sessions"})
 	}
 	r.Body = body
 	r.SetPathValue("id", to)

@@ -187,8 +187,8 @@ func TestNavCallsAndText(t *testing.T) {
 		t.Fatalf("threads:\n%s", threads)
 	}
 	proj := navText("get_project", js(t, `{"id":"prj_1","name":"minbox","dir":"/w","host_name":"mac","default_agent":"claude","session_count":1,"live_sessions":1,"thread_count":2,"need_action":1,"unread":0,
-		"sessions":[{"id":"ses_1","name":"s","title":"Fix it","agent":"claude","status":"idle","is_main":true,"self":true,"cwd":"/w","waiting":2}]}`))
-	if proj != "- prj_1 \"minbox\" · /w on mac · default agent claude · 1 session (1 live) · 2 threads, 1 waiting on the person, 0 unread\nSessions:\n- ses_1 \"s\" (Fix it) · claude idle main (this session) · /w · 2 waiting" {
+		"sessions":[{"id":"ses_1","name":"s","title":"Fix it","agent":"claude","status":"idle","self":true,"cwd":"/w","waiting":2}]}`))
+	if proj != "- prj_1 \"minbox\" · /w on mac · default agent claude · 1 session (1 live) · 2 threads, 1 waiting on the person, 0 unread\nSessions:\n- ses_1 \"s\" (Fix it) · claude idle (this session) · /w · 2 waiting" {
 		t.Fatalf("project:\n%s", proj)
 	}
 	search := navText("search", js(t, `{"threads":[],"messages":[{"thread_id":"thr_1","subject":"A","session_name":"s","author":"user","created_at":"2026-11-10T01:02:03Z","snippet":"hello\nthere"}],"files":[{"thread_id":"thr_2","subject":"B","session_id":"ses_2","name":"a.md","archived":true,"created_at":"2026-11-11T00:00:00Z","snippet":"x"}]}`))
