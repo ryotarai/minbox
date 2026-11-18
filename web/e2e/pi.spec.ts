@@ -58,7 +58,7 @@ test('a Pi session reports status and its messages; the person’s messages from
 
 test('New agent offers the installed agents; picking Pi starts a Pi agent', async ({ page, piMinbox }) => {
   await page.goto(piMinbox.url)
-  await page.getByTestId('sidebar-new-agent').click()
+  await page.getByTestId('project-new-agent').or(page.getByTestId('first-agent')).first().click()
   await expect(page.getByTestId('new-session-agent-option')).toHaveCount(2)
   await page.getByTestId('new-session-cwd').fill(piMinbox.dataDir)
   await page.locator('[data-testid="new-session-agent-option"][data-agent="pi"]').click()
@@ -95,7 +95,7 @@ test('with only Pi installed there is no picker, Pi is the default, and nothing 
   await page.goto(piOnlyMinbox.url)
   // The dialog: no agent choice, and the button names the only agent.
   const form = page.getByTestId('new-session-cwd').or(page.getByTestId('new-session-project'))
-  await page.getByTestId('sidebar-new-agent').click()
+  await page.getByTestId('project-new-agent').or(page.getByTestId('first-agent')).first().click()
   await expect(form).toBeVisible()
   await expect(page.getByTestId('new-session-start')).toContainText('Start Pi')
   await expect(page.getByTestId('new-session-agent')).toHaveCount(0)

@@ -35,6 +35,7 @@ import { IconPaperclip } from '../components/icons'
 import IconTabBoard from 'lucide-react/icons/square-kanban'
 import IconTabAgents from 'lucide-react/icons/bot'
 import IconTabSearch from 'lucide-react/icons/search'
+import IconPlus from 'lucide-react/icons/plus'
 import './v3.css'
 import './shell.css'
 
@@ -116,6 +117,8 @@ export function V3App() {
   }, [view, route.s, sessions, projectId])
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
+  // The ＋ on a project's header in the agent list: the New agent dialog in that project.
+  const newAgentIn = useCallback((pid?: string) => setOverlay({ kind: 'new-session', projectId: pid || undefined }), [setOverlay])
   const paletteCtx: PaletteCtx = { agent: current, panes: shownPanes, togglePane, tasksPane: hasTasks ? { shown: tasksShown, show: showTasks } : undefined, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
 
   // A Board question row's open questions ignored (moot): gone at once, back on failure or Undo.
@@ -300,7 +303,7 @@ export function V3App() {
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
-  else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
+  else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNewAgent={newAgentIn} onRename={setRenaming} />
   else
     main = (
       <BoardView
@@ -394,17 +397,12 @@ export function V3App() {
           </button>
           <div className="v-sb-h">
             AGENTS <span title={project?.dir}>{project?.name ?? 'all projects'}</span>
+            {project && <NewAgentButton project={project} onNewAgent={newAgentIn} />}
           </div>
           <div className="v-agents" data-testid="agents">
-            <AgentGroups agents={agents} shells={shells} sel={view === 'agent' ? route.s : null} counts={board?.agents ?? {}} grouped={!projectId} onRename={setRenaming} />
-            {agents.length === 0 && shells.length === 0 && <div className="v-empty">No agents yet. Start one with “New message” or “New agent”.</div>}
+            <AgentGroups agents={agents} shells={shells} sel={view === 'agent' ? route.s : null} counts={board?.agents ?? {}} grouped={!projectId} onRename={setRenaming} onNewAgent={newAgentIn} />
+            {agents.length === 0 && shells.length === 0 && <NoAgents noProjects={!project && !app.projects?.length} onNewAgent={newAgentIn} />}
           </div>
-          <button type="button" className="v-sb-new" data-testid="sidebar-new" onClick={() => openNew()}>
-            New message… <span className="v-kbd">⇧N</span>
-          </button>
-          <button type="button" className="v-sb-new" style={{ marginTop: -4 }} data-testid="sidebar-new-agent" title="New agent: choose its kind, folder and host" onClick={openNewAgent}>
-            ＋ New agent…
-          </button>
         </nav>
       )}
       {showSidebar && <Resizer testid="sidebar-resizer" className="v-rz-sb" measure={() => document.querySelector<HTMLElement>('.v-sidebar')?.offsetWidth ?? sbW} onDrag={dragSidebar} />}
@@ -477,10 +475,34 @@ export function V3App() {
 type Counts = Record<string, { unread: number; open_questions: number }>
 
 /** The agents (grouped by project when all projects are shown, as main's session list was), then the plain shells. */
-function AgentGroups({ agents, shells, sel, counts, grouped, onRename }: { agents: Session[]; shells: Session[]; sel: string | null; counts: Counts; grouped: boolean; onRename: (s: Session) => void }) {
+/** The ＋ on a project's header in the agent list: a new agent in that project (its folder, host and default agent). */
+function NewAgentButton({ project, onNewAgent }: { project: { id: string; name: string }; onNewAgent: (projectId?: string) => void }) {
+  return (
+    <button
+      type="button"
+      className="v-proj-new"
+      data-testid="project-new-agent"
+      data-project={project.id}
+      aria-label={'New agent in ' + project.name}
+      title={'New agent in ' + project.name}
+      onClick={(e) => {
+        e.stopPropagation()
+        onNewAgent(project.id)
+      }}
+    >
+      <IconPlus size={14} strokeWidth={2} aria-hidden />
+    </button>
+  )
+}
+
+/** The agents, under their project's header (all projects; on the phone, one project's too). Each project's
+ *  header has a ＋ for a new agent in it; with no agents at all, every project is listed with its ＋. */
+function AgentGroups({ agents, shells, sel, counts, grouped, head, onRename, onNewAgent }: { agents: Session[]; shells: Session[]; sel: string | null; counts: Counts; grouped: boolean; head?: { id: string; name: string }; onRename: (s: Session) => void; onNewAgent: (projectId?: string) => void }) {
   const { projects } = useApp()
   const groups = useMemo(() => {
-    if (!grouped) return [{ id: '', name: '', rows: agents }]
+    if (!grouped) return [{ id: head?.id ?? '', name: head?.name ?? '', rows: agents }]
+    // No agents yet: each project, empty, so its ＋ starts the first one.
+    if (agents.length === 0) return (projects ?? []).map((p) => ({ id: p.id, name: p.name, rows: [] as Session[] }))
     const by = new Map<string, Session[]>()
     for (const a of agents) {
       const k = a.project_id ?? ''
@@ -492,15 +514,18 @@ function AgentGroups({ agents, shells, sel, counts, grouped, onRename }: { agent
     return [...by.entries()]
       .sort(([a], [b]) => (order.indexOf(a) < 0 ? 1e9 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 1e9 : order.indexOf(b)))
       .map(([id, rows]) => ({ id, name: projects?.find((p) => p.id === id)?.name ?? 'No project', rows }))
-  }, [agents, grouped, projects])
+  }, [agents, grouped, projects, head?.id, head?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {groups.map((g) => (
         <div key={g.id} data-testid="agent-group" data-project={g.id}>
-          {grouped && groups.length > 1 && (
-            <div className="v-ag-proj" data-testid="agent-group-name">
+          {(grouped || head) && (
+            <div className="v-ag-proj" data-testid="agent-group-head">
               <span className="v-proj-dot" style={projectHueStyle(g.id)} />
-              {g.name}
+              <span className="v-ag-proj-nm" data-testid="agent-group-name">
+                {g.name}
+              </span>
+              {g.id && <NewAgentButton project={g} onNewAgent={onNewAgent} />}
             </div>
           )}
           {g.rows.map((a) => (
@@ -568,9 +593,9 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
   )
 }
 
-function AgentsList({ agents, shells, counts, onNew, onNewAgent, onRename }: { agents: Session[]; shells: Session[]; counts: Counts; onNew: () => void; onNewAgent: () => void; onRename: (s: Session) => void }) {
-  const { navigate, setOverlay } = useApp()
-  const { id } = useSelectedProject()
+function AgentsList({ agents, shells, counts, onNewAgent, onRename }: { agents: Session[]; shells: Session[]; counts: Counts; onNewAgent: (projectId?: string) => void; onRename: (s: Session) => void }) {
+  const { navigate, setOverlay, projects } = useApp()
+  const { id, project } = useSelectedProject()
   return (
     <div className="v-col" data-testid="agents-view">
       <div className="v-head">
@@ -583,21 +608,28 @@ function AgentsList({ agents, shells, counts, onNew, onNewAgent, onRename }: { a
           <button type="button" className="v-btn" data-testid="open-settings-phone" onClick={() => navigate({ view: 'settings' }, { push: true })}>
             Settings
           </button>
-          <button type="button" className="v-btn" data-testid="agents-new-agent" onClick={onNewAgent}>
-            ＋ Agent
-          </button>
-          <button type="button" className="v-btn" onClick={onNew}>
-            ＋ Message
-          </button>
         </div>
         <div className="v-r2">
           <PhoneProjectButton />
         </div>
       </div>
       <div className="v-scroll" style={{ background: 'var(--mb-surface)' }}>
-        <AgentGroups agents={agents} shells={shells} sel={null} counts={counts} grouped={!id} onRename={onRename} />
-        {agents.length === 0 && shells.length === 0 && <div className="v-empty">No agents yet. Tap ＋ Agent or ＋ Message to start one.</div>}
+        <AgentGroups agents={agents} shells={shells} sel={null} counts={counts} grouped={!id} head={project ? { id: project.id, name: project.name } : undefined} onRename={onRename} onNewAgent={onNewAgent} />
+        {agents.length === 0 && shells.length === 0 && <NoAgents noProjects={!project && !projects?.length} onNewAgent={onNewAgent} />}
       </div>
+    </div>
+  )
+}
+
+/** No agents: a project's ＋ starts one; with no project at all yet, the New agent dialog (a folder) from here. */
+function NoAgents({ noProjects, onNewAgent }: { noProjects: boolean; onNewAgent: (projectId?: string) => void }) {
+  if (!noProjects) return <div className="v-empty">No agents yet. Start one with the ＋ beside its project.</div>
+  return (
+    <div className="v-empty">
+      No agents yet.{' '}
+      <button type="button" className="v-link" data-testid="first-agent" onClick={() => onNewAgent()}>
+        Start one in a folder…
+      </button>
     </div>
   )
 }
@@ -781,6 +813,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
             ))}
           </tbody>
         </table>
+        <p className="v-help-note">New agent: the ＋ beside a project&apos;s name in the agent list (or {mod}K › New agent).</p>
       </div>
     </div>
   )
