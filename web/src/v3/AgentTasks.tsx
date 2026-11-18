@@ -100,7 +100,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
           </div>
           {recent.map((t) => row(t,
             <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} data-recent-done="" title={`${t.title} · done ${ago(t.done_at ?? t.updated_at)}`} onClick={() => go(t.id)}>
-              <div className="v-a">
+              <div className={'v-a' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
                 <IconCheck size={12} className="v-rd-check" />
                 <span className="v-rd-t">{t.title}</span>
                 <span className="v-rd-ago">{ago(t.done_at ?? t.updated_at)}</span>
