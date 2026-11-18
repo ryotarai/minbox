@@ -35,10 +35,10 @@ is *about* one or more tasks (or none).
 ## UC3. Give a new request without thinking where it goes
 - **Entry**: `⇧N` anywhere (or "New message" in the sidebar / Board header / Agents tab).
 - **Shown first**: a composer: *To* = the project's main agent (changeable to any agent or **New agent**), the text box focused.
-- **Actions**: type, `⌘↵`. The view moves to that agent's stream; the agent decides: an open task (the message is about it), new work (creates a task) or no task. The reply shows the task it is about as a plain link (`in: <task>`); a note appears under it only when the agent created a task (`→ new task <task>`) or the person moved it — never a "no task" nag.
+- **Actions**: type, `⌘↵`. The view moves to that agent's stream; the agent decides: an open task (the message is about it) or new work (creates a task). Every message is about a task: chit-chat that fits no task gets a small task of its own, done at once (off the Board's open lists). The reply shows the task it is about as a plain link (`in: <task>`); a note appears under it only when the agent created a task (`→ new task <task>`) or the person moved it. A message the agent has not placed yet says "waiting for <agent> to place it in a task"; minbox asks the agent to place it after each turn that leaves it (a small "↻ Asked <agent> to put N messages in tasks" line in the stream) until it does.
 - **Must not be required**: picking or naming a task; choosing "send as task"; picking a thread.
 - **Attachments**: paste an image (⌘V), drop files, or the attach button (on a phone the photo / camera picker); tiles show progress and can be removed; the sent message shows them (thumbnail → viewer). Same in the stream's and the task view's reply box.
-- Spec: `v3-new-request.spec.ts` (main agent, new agent).
+- Spec: `v3-new-request.spec.ts` (main agent, new agent), `v3-place.spec.ts` (the agent ignores the request to place, is asked again after each turn, places them).
 
 ## UC4. Follow up on an existing piece of work
 - **Entry**: Board row → `Enter` (or click), or a task chip anywhere.
@@ -62,11 +62,11 @@ is *about* one or more tasks (or none).
 - Spec: `v3-agent-stream.spec.ts`.
 
 ## UC7. Move a message to the right task
-- **Entry**: a message's `⋯` menu: **Move to task…**, **Also about…**, **Not about a task**.
+- **Entry**: a message's `⋯` menu: **Move to another task…** (**Put in a task…** on one the agent has not placed yet), **Also about another task…**. There is no "Not about a task": every message is about at least one task, so a message's last task can only be replaced, not removed.
 - **Shown first**: the task picker: open tasks filtered as you type, "+ New task “…”" last.
 - **Actions**: type, `Enter`. On an agent reply, the person's message it answered moves with it; a task created by mistake that is left with no messages is removed.
 - **Must not be required**: moving two messages one by one; going to the task to delete it; knowing any word for the link ("tag").
-- Spec: `v3-retag.spec.ts`.
+- Spec: `v3-move.spec.ts`.
 
 ## UC8. Find something said last week
 - **Entry**: `/` anywhere (Search item / tab on phone).
