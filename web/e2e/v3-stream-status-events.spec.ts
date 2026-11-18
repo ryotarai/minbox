@@ -78,7 +78,7 @@ test("a done task's view: the person's message goes in the task, and the task st
   await agentReply(minbox, a, /created a task/)
   await api(minbox, 'PATCH', `/api/v3/tasks/${gauge.id}`, { status: 'done' })
 
-  await page.goto(`${minbox.url}/#v=task&k=${gauge.id}`)
+  await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${gauge.id}`)
   await expect(page.getByTestId('task-status')).toHaveValue('done')
   const box = page.getByTestId('task-composer')
   await box.getByTestId('composer-text').fill('thanks, the gauge looks right now')

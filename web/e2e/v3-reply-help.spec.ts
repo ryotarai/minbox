@@ -218,7 +218,7 @@ test('the setting turns the questions off', async ({ page, minbox }) => {
   await expect(page.getByTestId('composer-text')).toBeVisible()
   // Nor in a task's view.
   const t = await taskNamed(minbox, 'Typed in the terminal')
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.goto(`${minbox.url}/#s=${current!.a.id}&v=agent&k=${t.id}`)
   await expect(page.getByTestId('task-composer')).toBeVisible()
   await page.waitForTimeout(800)
   await expect(page.getByTestId('reply-qa')).toHaveCount(0)
@@ -228,7 +228,7 @@ test("a task's view: questions for the task's latest agent message; the answers 
   await page.goto(minbox.url)
   await seed(page, minbox) // "Finished the migration" is in the task "Typed in the terminal"
   const t = await taskNamed(minbox, 'Typed in the terminal')
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.goto(`${minbox.url}/#s=${current!.a.id}&v=agent&k=${t.id}`)
   const box = page.getByTestId('task-composer')
   const tq = (i: number) => box.locator(`[data-testid="reply-q"][data-index="${i}"]`)
   await expect(box.getByTestId('reply-q')).toHaveCount(3)
@@ -245,7 +245,7 @@ test("a task's view: questions for the task's latest agent message; the answers 
   await expect(page.getByTestId('reply-qa-toggle')).not.toContainText('answered')
 
   // Back in the task (and after a reload): the answers are still there.
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.goto(`${minbox.url}/#s=${current!.a.id}&v=agent&k=${t.id}`)
   await page.reload()
   await expect(box.getByTestId('reply-qa-toggle')).toContainText('2 answered')
   await expect(tq(2).getByTestId('reply-q-other-input')).toHaveValue('keep the old table')
@@ -305,7 +305,7 @@ test("an agent's page: a task opened from its Tasks pane has the questions for t
   const pane = await tasksPane(page)
   await pane.locator(`[data-testid="agent-task"][data-task="${t.id}"]`).click()
   const detail = page.getByTestId('agent-task-detail')
-  await expect(detail.getByTestId('column-title')).toHaveText(/Typed in the terminal/)
+  await expect(detail.getByTestId('task-title')).toHaveText(/Typed in the terminal/)
   await expect(detail.getByTestId('reply-q')).toHaveCount(3)
   await expectGapBelowHelp(detail)
   await expect(detail.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
@@ -316,7 +316,7 @@ test("phone: a task's view has the questions above its reply box", async ({ page
   await seed(page, minbox)
   const t = await taskNamed(minbox, 'Typed in the terminal')
   await page.setViewportSize({ width: 390, height: 800 })
-  await page.goto(`${minbox.url}/#v=task&k=${t.id}`)
+  await page.goto(`${minbox.url}/#s=${current!.a.id}&v=agent&k=${t.id}`)
   const box = page.getByTestId('task-composer')
   await expect(box.getByTestId('reply-q')).toHaveCount(3)
   const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }))

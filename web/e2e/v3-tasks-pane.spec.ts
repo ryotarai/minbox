@@ -107,7 +107,7 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
 
   // A task opens in the agent's page (the Tasks pane stays); back returns to the stream.
   await pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`).click()
-  await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
   await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
   await page.goBack()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
@@ -137,7 +137,7 @@ test('tablet 900px: the Tasks pane is beside the stream, folds and unfolds as th
 
   // A task opens beside the pane; the pane stays.
   await pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`).click()
-  await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
   await expect(pane).toHaveAttribute('data-shown', 'true')
   await page.goBack()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
@@ -189,7 +189,7 @@ test('tablet 768px with the terminal open: no room, the Tasks pane is a strip th
 
   await page.getByTestId('tasks-pane-toggle').click()
   await pane.locator(`[data-testid="agent-task"][data-task="${gauge.id}"]`).click()
-  await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+  await expect(page.getByTestId('agent-task-detail').getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
   await expect(pane).toHaveAttribute('data-shown', 'false')
   await page.goBack()
   await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'false')
@@ -214,7 +214,7 @@ test('the shown task clicked again closes it: back to the agent stream, no k, th
     await expect(card).not.toHaveAttribute('aria-current', /.*/)
 
     await card.click()
-    await expect(page.getByTestId('agent-task-detail').getByTestId('column-title')).toHaveText(/Fix the gauge reading/)
+    await expect(page.getByTestId('agent-task-detail').getByTestId('task-title')).toHaveText(/Fix the gauge reading/)
     await expect(page).toHaveURL(new RegExp(`[#&]k=${gauge.id}`))
     await expect(card).toHaveAttribute('aria-current', 'true')
     await expect(card).toHaveClass(/\bsel\b/)

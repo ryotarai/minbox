@@ -18,7 +18,7 @@ test('an answer next to its question shows the question over "↳ answer"', asyn
   const { a, t, q, key } = await ask(minbox)
   const ans = await api(minbox, 'POST', `/api/v3/sessions/${a.id}/messages`, { words: '', answers_for: q.id, answers: [{ key, selected: ['Oregon'] }] })
   await agentReply(minbox, a, /carrying on/)
-  for (const url of [`${minbox.url}/#v=task&k=${t.id}`, `${minbox.url}/#v=agent&s=${a.id}`]) {
+  for (const url of [`${minbox.url}/#s=${a.id}&v=agent&k=${t.id}`, `${minbox.url}/#v=agent&s=${a.id}`]) {
     await page.goto(url)
     const msg = page.locator(`[data-testid="v3-message"][data-message-id="${ans.id}"]`)
     const item = msg.getByTestId('sent-answers').getByTestId('sent-answer')
@@ -52,7 +52,7 @@ test('an answer moved to another task shows the question, the choice and the not
   await agentReply(minbox, a, /carrying on/)
   const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Make the status an error', session_id: a.id, message_ids: [ans.id] })
 
-  await page.goto(`${minbox.url}/#v=task&k=${t2.id}`)
+  await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t2.id}`)
   const msg = page.locator(`[data-testid="v3-message"][data-message-id="${ans.id}"]`)
   const c = msg.getByTestId('answer-content')
   await expect(c.getByTestId('answer-to')).toContainText('Answer to api: “One decision first.”')
@@ -75,7 +75,7 @@ test.describe('phone', () => {
     const ans = await api(minbox, 'POST', `/api/v3/sessions/${a.id}/messages`, { words: '', answers_for: q.id, answers: [{ key, selected: ['Tokyo'], note: 'cheaper' }] })
     await agentReply(minbox, a, /carrying on/)
     const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Deploy region', session_id: a.id, message_ids: [ans.id] })
-    await page.goto(`${minbox.url}/#v=task&k=${t2.id}`)
+    await page.goto(`${minbox.url}/#s=${a.id}&v=agent&k=${t2.id}`)
     const item = page.locator(`[data-testid="v3-message"][data-message-id="${ans.id}"]`).getByTestId('answer-item')
     await expect(item).toContainText('Which region should it deploy to?')
     await expect(item).toContainText('Tokyo')
