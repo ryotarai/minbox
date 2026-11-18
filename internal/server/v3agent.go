@@ -63,6 +63,10 @@ func (t *turns) end(sessionID string) {
 	delete(t.m, sessionID)
 }
 
+// sendStatusError is what send_message answers when it carries a status: it has none (a task's
+// status is set with update_task), and nothing is stored or delivered for that call.
+const sendStatusError = "send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status."
+
 // oneTaskError is what send_message answers when it names more than one task.
 const oneTaskError = "a message belongs to exactly one task: pass task_id with the one task this message is about (task_ids, its older name, takes one id). Pick the task it is mainly about; send another message for another task"
 
@@ -134,10 +138,10 @@ func replyTask(named string, created []string, turnTasks []string) (task, source
 }
 
 // v3AgentReply runs after an agent message was stored: it puts the message in its one task (see
-// replyTask), the turn's person's messages that are in no task yet in the same task, records the
-// decision and applies status to the named task. It returns the reply's task (nil when it is in
+// replyTask), the turn's person's messages that are in no task yet in the same task, and records the
+// decision. It returns the reply's task (nil when it is in
 // none) and the decision ("" when the reply carries none).
-func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageID string, taskIDs []string, status string) ([]string, string) {
+func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageID string, taskIDs []string) ([]string, string) {
 	cand, _ := s.store.TurnMessages(ctx, sess.ID)
 	st := v3Turns.get(sess.ID, cand)
 	untagged, tags := s.untaggedOf(ctx, cand)
@@ -170,14 +174,6 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 		}
 		st.Provisional = nil
 		_, _ = s.store.AddTaskAgent(ctx, task, sess.ID, store.RoleInvolved)
-	}
-	// Status (the legacy send_message status) applies to the task the agent named.
-	if status != "" && named != "" {
-		if ts, ok := store.NormalizeTaskStatus(status); ok {
-			if t, err := s.store.GetTask(ctx, named); err == nil && t.Status != ts {
-				_, _ = s.store.UpdateTask(ctx, named, sess.ID, store.TaskFields{Status: &ts})
-			}
-		}
 	}
 	decision := ""
 	if len(cand) > 0 && !st.Decided {

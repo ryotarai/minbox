@@ -89,7 +89,7 @@ for raw in sys.stdin:
         out(f"status {line}")
     elif line == "ask":
         r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {
-            "thread_title": "Pick a database", "status": "need_action",
+            "thread_title": "Pick a database",
             "body": "I need a decision.\n\n:::question\nWhich database should we use?\n\n- [ ] SQLite — simplest\n- [ ] Postgres — needs a server\n\nRecommended: SQLite\n:::",
         }})
         out(f"sent question: {r.get('text') or r.get('error')}")
