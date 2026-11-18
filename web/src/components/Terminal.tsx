@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { FitAddon, Ghostty, Terminal as GhosttyTerminal } from 'ghostty-web'
+import { joinWrappedRowsOnCopy } from './terminalSelection'
 import { ensureSession, uploadImage } from '../api'
 import { cx } from './ui'
 
@@ -267,6 +268,7 @@ export const TerminalView = forwardRef<TerminalHandle, Props>(function TerminalV
       const rend = (term as unknown as { renderer?: { renderScrollbar: () => void } }).renderer
       if (rend) rend.renderScrollbar = () => {}
       zoomAware(term)
+      joinWrappedRowsOnCopy(term)
       // Metrics are measured once: measure again, and repaint, when the font is there.
       document.fonts?.ready.then(() => !disposed && redraw(term))
       el.appendChild(ime)
