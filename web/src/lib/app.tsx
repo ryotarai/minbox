@@ -15,8 +15,8 @@ import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
 
-/** v3: main is the Board; task, agent (a stream), agents (the phone's list), search and columns (tasks side by side). */
-export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search' | 'columns'
+/** v3: main is the Board; task, agent (a stream), agents (the phone's list) and search. */
+export type View = 'main' | 'settings' | 'tasks' | 'review' | 'inbox' | 'issues' | 'slack' | 'task' | 'agent' | 'agents' | 'search'
 export type Route = {
   /** Selected session. */
   s: string | null
@@ -50,7 +50,7 @@ function readRoute(hash = location.hash): Route {
     s: p.get('s'),
     t: p.get('t'),
     f: p.get('f'),
-    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search', 'columns'].includes(view) ? view : 'main',
+    view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search'].includes(view) ? view : 'main',
     r: p.get('r'),
     tab: p.get('tab') === 'terminal' ? 'terminal' : p.get('tab') === 'tasks' ? 'tasks' : 'inbox',
     ss: p.get('ss') || 'general',
@@ -72,7 +72,8 @@ function routeHash(r: Route): string {
   if (r.view === 'settings' && r.ss !== 'general') p.set('ss', r.ss)
   if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
   if (r.view === 'slack' && r.slack) p.set('thread', r.slack)
-  if (r.view === 'task' && r.k) p.set('k', r.k)
+  // k on an agent: the task shown in its page (picked in its Tasks pane).
+  if ((r.view === 'task' || r.view === 'agent') && r.k) p.set('k', r.k)
   if (r.m && (r.view === 'task' || r.view === 'agent')) p.set('m', r.m)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
@@ -164,9 +165,14 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   /** Desktop: the Files pane (the session's folder as a tree) is shown (after the Tasks pane), and its width. */
   filesPane: boolean
   filesW: number
-  /** v3: the agent's side pane last shown (tasks, terminal, shell, files), kept across agents and reloads. */
+  /** v3 (older builds): the one side pane last shown. Read once as v3Panes when that is not set yet. */
   v3Pane?: 'tasks' | 'terminal' | 'shell' | 'files'
-  /** v3: widths dragged by the person: the sidebar, the narrow side pane (tasks), the wide one (terminal, shell, files). */
+  /** v3: the agent's side panes open (terminal, shell, files), oldest opened first; kept across agents and reloads. */
+  v3Panes?: ('terminal' | 'shell' | 'files')[]
+  /** v3: each side pane's dragged width. */
+  v3PaneW?: { terminal?: number; shell?: number; files?: number }
+  /** v3: widths dragged by the person: the sidebar, the narrow side pane (a task's), the wide one (older builds: the
+   *  terminal, shell or files; now the default width of the terminal and the shell, see v3PaneW). */
   v3SidebarW?: number
   v3SideW?: number
   v3WideW?: number
@@ -316,6 +322,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const next = { ...routeRef.current, ...patch }
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.t === undefined) next.t = null
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.f === undefined) next.f = null
+      // To an agent: its stream, unless a task of its page is named (a task view's k does not carry over).
+      if (patch.view === 'agent' && patch.k === undefined) next.k = null
       const h = routeHash(next)
       // Where we are now: a push to the same place makes no second entry.
       const here = location.hash || location.pathname

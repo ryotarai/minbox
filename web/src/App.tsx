@@ -69,8 +69,8 @@ function Root() {
           onClose={close}
           ctx={{
             agent: undefined,
-            pane: 'tasks',
-            setPane: () => {},
+            panes: [],
+            togglePane: () => {},
             openNew: (to) => toMain({ kind: 'v3-new', to }),
             openNewAgent: () => setOverlay({ kind: 'new-session' }),
             openHelp: () => toMain({ kind: 'v3-help' }),
