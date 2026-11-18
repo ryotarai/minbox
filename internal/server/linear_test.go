@@ -42,6 +42,7 @@ func eventually(t *testing.T, what string, fn func() bool) {
 func (e *linEnv) raw(method, path, host string, hdr map[string]string) (int, string, string) {
 	e.t.Helper()
 	req, _ := http.NewRequest(method, e.ts.URL+path, nil)
+	e.authUnless(req, hdr)
 	if host != "" {
 		req.Host = host
 	}
@@ -730,7 +731,7 @@ func TestLinearSecretsStayOnTheServer(t *testing.T) {
 	for _, path := range []string{"/api/integrations/linear", "/api/settings", "/api/threads/" + id, "/api/threads/" + id + "/linear", "/api/threads", "/api/about"} {
 		_, _, _ = e.do("GET", path, nil, nil)
 		req, _ := http.NewRequest("GET", e.ts.URL+path, nil)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, _ := http.DefaultClient.Do(e.auth(req))
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		for _, s := range secrets {

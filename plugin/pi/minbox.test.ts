@@ -108,6 +108,11 @@ test("the server's guards block bash commands that open a page on the host", asy
   const blocked = await h({ toolName: 'bash', input: { command: 'gh pr view --web' } })
   assert.equal(blocked.block, true)
   assert.equal(blocked.reason, MANIFEST.guards[0].deny)
+  // Accepting a pairing is the person's alone.
+  const pair = await h({ toolName: 'bash', input: { command: 'cd /tmp && ./bin/minbox pair accept 482-913' } })
+  assert.equal(pair.block, true)
+  assert.match(pair.reason, /minbox pair accept/)
+  assert.equal(await h({ toolName: 'bash', input: { command: 'minbox pair list' } }), undefined)
   assert.equal(await h({ toolName: 'bash', input: { command: 'ls -la' } }), undefined)
   assert.equal(await h({ toolName: 'read', input: { path: 'a' } }), undefined)
   t.ext!.stop()
