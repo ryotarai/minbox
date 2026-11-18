@@ -218,7 +218,7 @@ test.describe('phone', () => {
     await deepLink(page, minbox.url, t, true)
   })
 
-  test("an agent's sheet: its tasks (done ones folded), a task and back, the terminal and files; the task's details", async ({ page, minbox }) => {
+  test("an agent's sheet: its tasks (just-done ones muted), a task and back, the terminal and files; the task's details", async ({ page, minbox }) => {
     const { a, t } = await setup(minbox)
     await say(minbox, a, 'please add the dark mode toggle')
     const done = await taskNamed(minbox, /dark mode/i)
@@ -236,9 +236,9 @@ test.describe('phone', () => {
     await expect(page.getByTestId('pane-tasks')).toHaveClass(/on/)
     const tasksList = page.getByTestId('agent-tasks')
     await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${t.id}"]`)).toBeVisible()
-    await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeHidden() // folded
-    await tasksList.getByText('DONE THIS WEEK').tap()
-    await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeVisible()
+    // Just done: listed (muted) under RECENTLY DONE, not folded (see v3-recent-done).
+    await expect(tasksList.getByTestId('agent-tasks-recent').locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeVisible()
+    await expect(tasksList.getByText('DONE THIS WEEK')).toHaveCount(0)
     // Only tasks: the agent's kind / folder / start live in its ⋯ menu.
     await expect(tasksList).not.toContainText('Folder')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
