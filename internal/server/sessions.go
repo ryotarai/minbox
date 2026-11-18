@@ -693,7 +693,7 @@ When the person asks you to open, show or view a web page (a PR, an issue, a CI 
 - With gh, get the URL first (e.g. ` + "`gh pr view --json url -q .url`" + `), then pass it to the tool.
 
 # minbox: finding things
-To look up a project, session or earlier thread the person mentions, use the read-only tools mcp__minbox__list_projects, mcp__minbox__get_project, mcp__minbox__list_sessions, mcp__minbox__list_threads and mcp__minbox__search (they may be deferred: find them with ToolSearch), then mcp__minbox__read_thread with the thread_id (any thread; the newest messages first, older ones with before). Do not guess ids.`
+To look up a project, an agent, a task or an earlier conversation the person mentions, use mcp__minbox__list_tasks for tasks and the read-only tools mcp__minbox__list_projects, mcp__minbox__get_project, mcp__minbox__list_sessions (agents), mcp__minbox__list_threads (conversations: an agent's stream and its older segments) and mcp__minbox__search (they may be deferred: find them with ToolSearch), then mcp__minbox__read_thread with the conversation's thread_id (any agent's; the newest messages first, older ones with before). Do not guess ids.`
 
 // shellArgv starts the login shell of the machine that runs the terminal:
 // the host's own $SHELL (the host's environment, see InheritEnv), else the

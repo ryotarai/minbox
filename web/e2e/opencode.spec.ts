@@ -36,7 +36,7 @@ test('an OpenCode session reports status, its messages and replies flow, Send no
 
   // Its question waits on the Board; a message from its stream reaches it.
   await typeInTerminal(page, 'ask')
-  await expectTerminal(page, /sent question in thr_/)
+  await expectTerminal(page, 'sent question: Sent to the person in minbox asking 1 question.')
   await expect(page.getByTestId('board-badge')).toHaveText('1')
   await page.getByTestId('composer-text').fill('Go with it.')
   await page.getByTestId('composer-send').click()

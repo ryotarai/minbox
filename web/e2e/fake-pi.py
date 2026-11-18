@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A stand-in for `pi` in end-to-end tests: it takes the command line minbox gives Pi
 (`-e <extension> --session-id <id> --append-system-prompt <text>`), and talks to minbox's agent API
-the way plugin/pi/minbox.ts does (hello with agent_session_id, status, pending -> claim -> delivered),
+the way plugin/pi/minbox.ts does, in mod protocol 1 (hello with agent_session_id and protocol, the tool set,
+tool calls through /api/agent/tool, turn events, pending?proto=1 -> claim -> delivered),
 echoing what it receives to the terminal, without a model.
 
 Typed commands (one per line), the subset of fake-claude.py the Pi tests need:
@@ -55,7 +56,8 @@ def poll():
     global last_thread
     while True:
         try:
-            pending = api("GET", f"/api/agent/pending?owner={owner}&wait=20")
+            # Mod protocol 1: each item carries the server's text to inject (p["text"]).
+            pending = api("GET", f"/api/agent/pending?owner={owner}&wait=20&proto=1")["items"]
             for p in pending:
                 if busy and not p.get("urgent"):
                     continue
@@ -68,9 +70,11 @@ def poll():
 
 
 out(f"fake-pi session={session_id} cwd={os.getcwd()} extension={os.path.basename(extension)}")
-hello = api("POST", "/api/agent/hello", {"agent": "pi", "agent_session_id": session_id, "ext_version": "fake"})
+hello = api("POST", "/api/agent/hello", {"agent": "pi", "agent_session_id": session_id, "ext_version": "fake", "protocol": 1})
 out(f"hello agent={hello.get('agent')} orchestration={'yes' if 'orchestration' in hello.get('instructions', '') else 'no'} tools={'minbox_' if 'minbox_send_message' in hello.get('instructions', '') else 'other'}")
-api("POST", "/api/agent/status", {"status": "idle"})
+api("POST", "/api/agent/event", {"type": "turn.complete"})
+tool_set = api("GET", "/api/agent/tools")
+out(f"tool set {len(tool_set.get('tools', []))} tools, send={'yes' if any(t['name'] == 'minbox_send_message' for t in tool_set.get('tools', [])) else 'no'}")
 threading.Thread(target=poll, daemon=True).start()
 out("ready> ")
 
@@ -81,27 +85,20 @@ for raw in sys.stdin:
         sys.exit(0)
     elif line in ("work", "idle"):
         busy = line == "work"
-        api("POST", "/api/agent/status", {"status": "working" if busy else "idle"})
+        api("POST", "/api/agent/event", {"type": "turn.start" if busy else "turn.complete"})
         out(f"status {line}")
     elif line == "ask":
-        r = api("POST", "/api/agent/messages", {
+        r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {
             "thread_title": "Pick a database", "status": "need_action",
             "body": "I need a decision.\n\n:::question\nWhich database should we use?\n\n- [ ] SQLite — simplest\n- [ ] Postgres — needs a server\n\nRecommended: SQLite\n:::",
-        })
-        last_thread = r["thread_id"]
-        out(f"sent question in {r['thread_id']}")
+        }})
+        out(f"sent question: {r.get('text') or r.get('error')}")
     elif line.startswith("say "):
-        body = {"body": line[4:], "status": "working"}
-        if last_thread:
-            body["thread_id"] = last_thread
-        else:
-            body["thread_title"] = "Note"
-        r = api("POST", "/api/agent/messages", body)
-        last_thread = r["thread_id"]
-        out(f"sent in {r['thread_id']}")
+        r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {"body": line[4:]}})
+        out(f"sent: {r.get('text') or r.get('error')}")
     elif line.startswith("title "):
-        r = api("POST", "/api/agent/title", {"title": line[len("title "):]})
-        out(f"titled {r['title']}")
+        r = api("POST", "/api/agent/tool", {"tool": "minbox_set_session_title", "args": {"title": line[len("title "):]}})
+        out("titled " + (r.get("text") or "").removeprefix("Session title set: "))
     elif line == "args":
         out("args " + json.dumps(args))
     elif line == "paths":

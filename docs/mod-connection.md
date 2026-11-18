@@ -101,7 +101,8 @@ Every 15 s (`HEARTBEAT_MS`; Pi and OpenCode: once per loop round, at most every 
 ```
 { seq, agent: "claude"|"pi"|"opencode", ext_version, state: "idle"|"working",
   last_poll_at, last_delivery_at,            // the mod's own timestamps, "" before the first
-  info: { busy_ticks, idle_ticks, polling, poll_ticks, inflight, unacked, offline, fail_streak, owner_prefix },
+  protocol,                                  // the mod protocol (docs/mod-protocol.md); absent before protocol 1
+  info: { busy_ticks, idle_ticks, polling, poll_ticks, inflight, unacked, offline, fail_streak, owner_prefix, tools_version },
   events: [ { at, kind, msg } ... up to 25 ] } // the tail of the mod's own event log
 ```
 

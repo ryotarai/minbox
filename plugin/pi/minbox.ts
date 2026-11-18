@@ -1,74 +1,46 @@
 /**
- * The minbox extension for Pi (@earendil-works/pi-coding-agent 1.x). minbox starts Pi with
- * `-e <this file>` and the environment MINBOX_TOKEN (this session's bearer token) and
- * MINBOX_SERVER_FILE (a JSON file holding the server's current URL). It is the Pi counterpart of
- * the Claude Code mod (plugin/minbox/hooks/register.ts) and talks to the same /api/agent/* API;
- * the text of the tools and of the delivered replies is shared (../minbox/hooks/text.ts).
+ * The minbox extension for Pi (@earendil-works/pi-coding-agent 1.x): a thin proxy between Pi and the
+ * minbox server (mod protocol 1, docs/mod-protocol.md). minbox starts Pi with `-e <this file>` and
+ * the environment MINBOX_TOKEN (this session's bearer token) and MINBOX_SERVER_FILE (a JSON file
+ * holding the server's current URL). The Pi counterpart of the Claude Code mod
+ * (plugin/minbox/hooks/register.ts); it shares ../minbox/hooks/proxy.ts with it.
  *
- * - Registers minbox_send_message, minbox_read_thread, minbox_set_session_title, minbox_open_url,
- *   the task tools (minbox_create_task, minbox_update_task, minbox_list_tasks; tasks.ts) and the
- *   read-only navigation tools (minbox_list_projects, minbox_get_project,
- *   minbox_list_sessions, minbox_list_threads, minbox_search; nav.ts). A failing call throws (Pi turns that into a failed tool result).
- * - Reports whether Pi is working or idle (agent_start -> working, agent_settled -> idle).
- * - Long-polls the server for the person's messages. Once Pi has been idle for a moment each is
- *   claimed (so one instance delivers it), started as a user turn with pi.sendUserMessage, then
- *   acknowledged as delivered. An urgent one (Send now, or one that waited long) is delivered into
- *   a running turn too, as a steering message. A failed delivery releases the claim.
+ * The extension holds no wording and makes no decisions about what the agent reads: the server does.
+ * - Tools: the tool set (minbox_send_message, … with their descriptions and schemas) comes from GET
+ *   /api/agent/tools at session start and is registered as given; every call goes to POST
+ *   /api/agent/tool, whose text is the result (a failure throws: Pi turns that into a failed tool
+ *   result). A heartbeat answer naming another tools_version registers the set again (Pi replaces a
+ *   tool registered again under its name; one the server dropped is re-registered hidden).
+ * - Guards: the server's guards block bash commands (one that would open a page on the host).
+ * - Status: agent_start / agent_settled go to POST /api/agent/event (turn.start / turn.complete).
+ * - Delivery: long-polls GET /api/agent/pending?proto=1. Once Pi has been idle for a moment each
+ *   message is claimed (so one instance delivers it), its text (the server's) is started as a user
+ *   turn with pi.sendUserMessage, then acknowledged as delivered. An urgent one (Send now, or one that
+ *   waited long) goes into a running turn too, as a steering message. A failed delivery releases the
+ *   claim.
  * - A long minbox_subagent run (plugin/pi/subagent.ts) keeps the status working: its partial results
  *   are tool_execution_update events, and busy.ts is a marker the two extensions share.
- * - Refuses Bash commands that would open a page on the host machine.
- * - Reports bash commands another extension blocked (tool_execution_end in error without running),
- *   and the later successful run of one; the reply area offers the latest as "Run yourself".
- * - Reports the conversation id and file in a hello at every session start (also after /new or
- *   /resume, which restart the extension), so minbox resumes the right conversation later.
+ * - Bash outcomes (tool_execution_end) go to the server, which offers a blocked command as "Run
+ *   yourself" and withdraws it when it later runs.
+ * - The hello at every session start (also after /new or /resume, which restart the extension)
+ *   reports the conversation id and file, so minbox resumes the right conversation later.
  *
  * The instructions text arrives with the command line (--append-system-prompt), as Pi keeps the
- * system prompt across compactions; there is no re-injection here (unlike the Claude Code mod).
- * Not done yet (Phase 2 of docs/agents.md): the nudges for questions asked only in the chat, the
- * open-threads reminder after a compaction.
- *
- * Without MINBOX_TOKEN (Pi started by hand) the extension does nothing.
+ * system prompt across compactions. Without MINBOX_TOKEN (Pi started by hand) the extension does
+ * nothing.
  *
  * Everything below `install` is written against a small `Deps` interface so it can be tested
  * without Pi (minbox.test.ts, run with `node --test`); the default export wires the real thing.
  */
 import { readFileSync } from 'node:fs'
-import { DENIED_MAX, normCommand, piBlocked, shortReason, type DeniedReport } from '../minbox/hooks/denied.ts'
-import { NAV_DESCRIPTION, NAV_SCHEMA, NAV_TOOLS, navPath, navText } from '../minbox/hooks/nav.ts'
-import { TASK_DESCRIPTION, TASK_SCHEMA, TASK_TOOLS, taskRequest, taskText } from '../minbox/hooks/tasks.ts'
-import {
-  openDeny,
-  opensBrowser,
-  OPEN_DESCRIPTION,
-  OPEN_SCHEMA,
-  OPEN_TOOL,
-  READ_DESCRIPTION,
-  READ_SCHEMA,
-  READ_TOOL,
-  readPath,
-  SEND_DESCRIPTION,
-  SEND_SCHEMA,
-  sendRequest,
-  SEND_TOOL,
-  sentText,
-  serverUrlOf,
-  threadListText,
-  threadText,
-  TITLE_DESCRIPTION,
-  TITLE_SCHEMA,
-  TITLE_TOOL,
-  wakeText,
-  type Pending,
-  type Thread,
-} from '../minbox/hooks/text.ts'
+import { guardDeny, manifestOf, pendingOf, PROTOCOL, serverUrlOf, type Manifest, type PendingItem } from '../minbox/hooks/proxy.ts'
 import { busySeq } from './busy.ts'
 
-export const EXT_VERSION = '0.1.0'
-/** Pi's names for the minbox tools (the server writes the instructions with the same prefix). */
-export const TOOL_PREFIX = 'minbox_'
+export const EXT_VERSION = '0.2.0'
 
 const POLL_WAIT_S = 20
 const CALL_TIMEOUT_MS = 8000
+const TOOL_TIMEOUT_MS = 60_000
 const POLL_TIMEOUT_MS = (POLL_WAIT_S + 10) * 1000
 /** Pi counts as quiet (the person is not typing, no turn runs) after this long idle. */
 const QUIET_MS = 2000
@@ -106,9 +78,6 @@ export function realDeps(): Deps {
 
 type ApiResult = { ok: boolean; status: number; json: any }
 
-/** Tool names in a shared description, as Pi names them. */
-const piNames = (text: string) => text.replace(/\b(read_thread|list_threads|send_message|create_task|update_task|list_tasks)\b/g, TOOL_PREFIX + '$1')
-
 const textResult = (text: string) => ({ content: [{ type: 'text', text }], details: undefined })
 
 export default function (pi: any): void {
@@ -132,13 +101,9 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
   let idleSince = deps.now()
   /** The person typed: their turn goes first. */
   let typedAt = 0
-
-  const names = {
-    send: TOOL_PREFIX + SEND_TOOL,
-    read: TOOL_PREFIX + READ_TOOL,
-    title: TOOL_PREFIX + TITLE_TOOL,
-    open: TOOL_PREFIX + OPEN_TOOL,
-  }
+  /** The server's tool set as registered. */
+  let manifest: Manifest | null = null
+  let registering: Promise<void> | null = null
 
   function readBaseUrl(force: boolean): string | null {
     if (baseUrl && !force) return baseUrl
@@ -198,159 +163,103 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     }
     return res
   }
+  const event = (body: Record<string, unknown>) => api('POST', '/api/agent/event', body)
 
   /** Every 15 s (checked once per loop round): the server tells a live extension from a silent one. See docs/mod-connection.md. */
   async function heartbeat(): Promise<void> {
     if (deps.now() - lastBeat < 15_000) return
     lastBeat = deps.now()
-    await api('POST', '/api/agent/heartbeat', {
+    const res = await api('POST', '/api/agent/heartbeat', {
       seq: ++heartbeatSeq,
       agent: 'pi',
       ext_version: EXT_VERSION,
+      protocol: PROTOCOL,
       state: busy ? 'working' : 'idle',
       last_poll_at: lastPollAt,
       last_delivery_at: lastDeliveryAt,
-      info: { fail_streak: failStreak },
+      info: { fail_streak: failStreak, tools_version: manifest?.version ?? '' },
       events: events.slice(-25),
     })
-  }
-
-  const fail = (res: ApiResult): never => {
-    throw new Error(`minbox: ${res.json?.error ?? `HTTP ${res.status}`}`)
+    const want = res.ok ? res.json?.tools_version : undefined
+    if (typeof want === 'string' && want !== manifest?.version) await refreshTools()
   }
 
   function setBusy(value: boolean): void {
     if (value) {
       busyAt = deps.now()
-      if (!busy) void api('POST', '/api/agent/status', { status: 'working' })
+      if (!busy) void event({ type: 'turn.start' })
       busy = true
     } else {
-      void api('POST', '/api/agent/status', { status: 'idle' }) // idempotent on the server
+      void event({ type: 'turn.complete' }) // idempotent on the server
       busy = false
       idleSince = deps.now()
     }
   }
 
-  // ---- tools ----
+  // ---- tools (the server's) ----
 
-  pi.registerTool({
-    name: names.send,
-    label: 'minbox: send message',
-    description: SEND_DESCRIPTION,
-    parameters: SEND_SCHEMA,
-    async execute(_id: string, e: any) {
-      const req = sendRequest(e)
-      if ('error' in req) throw new Error(req.error)
-      const res = await api('POST', '/api/agent/messages', req.body)
-      if (!res.ok) fail(res)
-      return textResult(sentText(res.json))
-    },
-  })
-
-  pi.registerTool({
-    name: names.read,
-    label: 'minbox: read thread',
-    description: piNames(READ_DESCRIPTION),
-    parameters: READ_SCHEMA,
-    async execute(_id: string, e: any) {
-      const id = typeof e.thread_id === 'string' && e.thread_id ? e.thread_id : null
-      const res = await api('GET', readPath(e))
-      if (!res.ok) fail(res)
-      return textResult(id ? threadText(res.json as Thread, names.read) : threadListText(res.json as Thread[]))
-    },
-  })
-
-  for (const tool of NAV_TOOLS) {
-    pi.registerTool({
-      name: TOOL_PREFIX + tool,
-      label: `minbox: ${tool.replace('_', ' ')}`,
-      description: piNames(NAV_DESCRIPTION[tool]),
-      parameters: NAV_SCHEMA[tool],
-      async execute(_id: string, e: any) {
-        const req = navPath(tool, e ?? {})
-        if ('error' in req) throw new Error(req.error)
-        const res = await api('GET', req.path)
-        if (!res.ok) fail(res)
-        return textResult(navText(tool, res.json))
-      },
+  /** Fetches the server's tool set and registers it; tools it no longer has are withdrawn (hidden). */
+  function refreshTools(): Promise<void> {
+    if (registering) return registering
+    registering = (async () => {
+      const res = await api('GET', '/api/agent/tools')
+      const m = res.ok ? manifestOf(res.json) : null
+      if (!m) {
+        note('tools-failed', `the tool set could not be fetched (${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status})`)
+        return
+      }
+      const names = new Set(m.tools.map((t) => t.name))
+      for (const t of m.tools) {
+        pi.registerTool({
+          name: t.name,
+          label: t.label ?? t.name,
+          description: t.description,
+          parameters: t.input_schema,
+          execute: (_id: string, args: any) => callTool(t.name, args),
+        })
+      }
+      for (const old of manifest?.tools ?? []) {
+        if (!names.has(old.name)) pi.registerTool({ name: old.name, label: old.label ?? old.name, description: old.description, parameters: old.input_schema, exposure: 'hidden', execute: (_id: string, args: any) => callTool(old.name, args) })
+      }
+      if (manifest && manifest.version !== m.version) note('tools-updated', `tool set ${manifest.version} -> ${m.version}`)
+      manifest = m
+    })().finally(() => {
+      registering = null
     })
+    return registering
   }
 
-  // The Tasks board: the agent keeps its tasks itself (../minbox/hooks/tasks.ts).
-  for (const tool of TASK_TOOLS) {
-    pi.registerTool({
-      name: TOOL_PREFIX + tool,
-      label: `minbox: ${tool.replace('_', ' ')}`,
-      description: piNames(TASK_DESCRIPTION[tool]),
-      parameters: TASK_SCHEMA[tool],
-      async execute(_id: string, e: any) {
-        const req = taskRequest(tool, e ?? {}, turnThreads.length === 1 ? turnThreads[0] : undefined)
-        if ('error' in req) throw new Error(req.error)
-        const res = await api(req.method, req.path, req.body)
-        if (!res.ok) fail(res)
-        return textResult(taskText(tool, res.json))
-      },
-    })
+  async function callTool(name: string, args: unknown) {
+    const res = await api('POST', '/api/agent/tool', { tool: name, args: args ?? {} }, TOOL_TIMEOUT_MS)
+    if (!res.ok) throw new Error(`minbox: ${res.json?.error ?? `HTTP ${res.status}`}`)
+    if (res.json?.ok !== true) throw new Error(String(res.json?.error ?? 'minbox: the tool failed'))
+    return textResult(String(res.json.text ?? ''))
   }
 
-  pi.registerTool({
-    name: names.title,
-    label: 'minbox: set session title',
-    description: TITLE_DESCRIPTION,
-    parameters: TITLE_SCHEMA,
-    async execute(_id: string, e: any) {
-      const t = typeof e.title === 'string' ? e.title.trim() : ''
-      if (!t) throw new Error('title is required.')
-      const res = await api('POST', '/api/agent/title', { title: t })
-      if (!res.ok) fail(res)
-      return textResult(`Session title set: ${res.json?.title ?? t}`)
-    },
-  })
-
-  pi.registerTool({
-    name: names.open,
-    label: 'minbox: open url',
-    description: OPEN_DESCRIPTION.replace('the machine Claude runs on', 'the machine you run on'),
-    parameters: OPEN_SCHEMA,
-    async execute(_id: string, e: any) {
-      const url = typeof e.url === 'string' ? e.url.trim() : ''
-      if (!url) throw new Error('url is required.')
-      const res = await api('POST', '/api/agent/open', { url })
-      if (!res.ok) fail(res)
-      return textResult(`Opened ${res.json?.url ?? url} in the person's browser.`)
-    },
-  })
-
-  // Pages opened from bash would open on the host, not where the person is.
+  // The server's guards (a page opened on the host).
   pi.on('tool_call', async (e: any) => {
     if (busy) busyAt = deps.now()
-    if (e?.toolName === 'bash' && typeof e.input?.command === 'string' && opensBrowser(e.input.command)) {
+    const command = typeof e?.input?.command === 'string' ? e.input.command : ''
+    const reason = guardDeny(manifest?.guards, String(e?.toolName ?? ''), command)
+    if (reason !== null) {
       if (typeof e.toolCallId === 'string') ownBlocks.add(e.toolCallId)
-      return { block: true, reason: openDeny(names.open) }
+      return { block: true, reason }
     }
     return undefined
   })
 
-  // ---- denied commands (../minbox/hooks/denied.ts) ----
+  // ---- bash outcomes ----
   // Pi has no permission prompt of its own: a bash call is denied when an extension's tool_call
-  // handler blocks it. The first blocking handler ends the chain (later ones, maybe this one, never
-  // see the call), so the block is read from the call's end: tool_execution_end in error with no
-  // durationMs (the tool never ran). tool_execution_start carries the command.
+  // handler blocks it. tool_execution_start carries the command; tool_execution_end the outcome
+  // (no durationMs: it never ran). The server decides what counts as a block.
 
   /** bash commands of running calls, by call id. */
   const bashCalls = new Map<string, string>()
-  /** Calls this extension blocked itself (opening a page): not reported. */
+  /** Calls this extension blocked itself: not reported. */
   const ownBlocks = new Set<string>()
-  /** Commands reported as denied: a later successful run clears them on the server. */
-  const deniedCommands = new Set<string>()
-  /** The threads of the messages delivered for the running turn. */
-  let turnThreads: string[] = []
 
   function onToolStart(e: any): void {
-    if (e?.toolName === 'bash' && typeof e.toolCallId === 'string') {
-      const command = normCommand(e.args?.command)
-      if (command) bashCalls.set(e.toolCallId, command)
-    }
+    if (e?.toolName === 'bash' && typeof e.toolCallId === 'string' && typeof e.args?.command === 'string' && e.args.command.trim()) bashCalls.set(e.toolCallId, e.args.command)
   }
 
   function onToolEnd(e: any): void {
@@ -358,25 +267,25 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     const command = bashCalls.get(e.toolCallId) ?? ''
     bashCalls.delete(e.toolCallId)
     if (ownBlocks.delete(e.toolCallId) || !command) return
-    const reason = piBlocked(e)
-    if (reason !== null) {
-      if (command.length > DENIED_MAX) return
-      deniedCommands.add(command)
-      note('denied-command', `a bash command was blocked (${command.length} characters)`)
-      const body: DeniedReport = { command, reason: shortReason(reason), thread_id: turnThreads.length === 1 ? turnThreads[0] : undefined, at: new Date(deps.now()).toISOString() }
-      void api('POST', '/api/agent/denied-commands', body)
-    } else if (e.isError !== true && deniedCommands.delete(command)) {
-      void api('POST', '/api/agent/denied-commands/ran', { command })
-    }
+    const isError = e.isError === true
+    const ran = typeof e.durationMs === 'number'
+    const content = Array.isArray(e.result?.content) ? e.result.content : []
+    // Only a block's reason (an error that never ran) goes to the server, never a run's output.
+    const text =
+      isError && !ran
+        ? content
+            .filter((c: any) => c?.type === 'text' && typeof c.text === 'string')
+            .map((c: any) => c.text)
+            .join('\n')
+            .slice(0, 2000)
+        : undefined
+    void event({ type: 'bash', phase: 'end', id: e.toolCallId, command, is_error: isError, ran, text })
   }
 
   // ---- status ----
 
   pi.on('agent_start', async () => setBusy(true))
-  pi.on('agent_settled', async () => {
-    setBusy(false)
-    turnThreads = []
-  })
+  pi.on('agent_settled', async () => setBusy(false))
   const alive = async () => {
     if (busy) busyAt = deps.now()
   }
@@ -410,10 +319,12 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       agent_session_id: id,
       session_file: file,
       ext_version: EXT_VERSION,
+      protocol: PROTOCOL,
       reason: e?.reason,
     })
+    await refreshTools()
     // The server moves a starting session to idle on hello; tell it where Pi stands anyway.
-    void api('POST', '/api/agent/status', { status: 'idle' })
+    void event({ type: 'turn.complete' })
     idleSince = deps.now()
     if (!loopRunning && !stopped) void loop()
   })
@@ -442,21 +353,22 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       // No event for a long while: an agent_settled was missed. Treat Pi as idle again.
       setBusy(false)
     }
+    if (!manifest) await refreshTools() // the server was not reachable at the start
     // Wait on the server only while idle; while busy, just look.
     const wait = busy ? 0 : POLL_WAIT_S
-    const res = await api('GET', `/api/agent/pending?owner=${encodeURIComponent(owner)}&wait=${wait}`, undefined, POLL_TIMEOUT_MS)
+    const res = await api('GET', `/api/agent/pending?owner=${encodeURIComponent(owner)}&wait=${wait}&proto=${PROTOCOL}`, undefined, POLL_TIMEOUT_MS)
     if (stopped) return false
     if (!res.ok) return false
     lastPollAt = new Date(deps.now()).toISOString()
-    if (!Array.isArray(res.json) || res.json.length === 0) return wait > 0
-    const pending = res.json as Pending[]
+    const answer = pendingOf(res.json)
+    if (!answer || answer.items.length === 0) return wait > 0
     // Deliver only into a quiet session, so the person's own typing goes first; an urgent
     // message (Send now, or one that waited long) goes in anyway.
     const now = deps.now()
     const quiet = !busy && piIdle() && now - idleSince >= QUIET_MS && now - typedAt >= QUIET_MS
-    const due = pending.filter((p) => quiet || p.urgent)
+    const due = answer.items.filter((p) => quiet || p.urgent)
     if (due.length === 0) return false
-    const claimed: Pending[] = []
+    const claimed: PendingItem[] = []
     for (const p of due) {
       const c = await api('POST', pendingPath(p.id, 'claim'))
       if (c.ok && c.json?.claimed) claimed.push(p)
@@ -472,7 +384,7 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       if (deliver.length === 0) return false
     }
     try {
-      const text = wakeText(deliver, names.send, names.read)
+      const text = deliver.map((p) => p.text).join(answer.joiner)
       if (steer) pi.sendUserMessage(text, { deliverAs: 'steer' })
       else pi.sendUserMessage(text)
     } catch (err) {
@@ -485,7 +397,6 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
       return false
     }
     lastDeliveryAt = new Date(deps.now()).toISOString()
-    turnThreads = [...new Set([...(steer ? turnThreads : []), ...deliver.map((p) => p.thread_id)])]
     note('delivered', `submitted ${deliver.length} message(s): ${deliver.map((p) => p.id).join(',')}`)
     for (const p of deliver) await api('POST', pendingPath(p.id, 'delivered'))
     return true

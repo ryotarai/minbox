@@ -90,6 +90,8 @@ export type Session = {
   mod_conn?: 'connected' | 'stale' | 'connecting' | 'none'
   /** The last heartbeat (null: none since the server started). */
   mod_beat_at?: string | null
+  /** The session's integration speaks an older mod protocol: it works; a restart loads the current one (docs/mod-protocol.md). */
+  mod_outdated?: boolean
   last_activity?: string
   top_thread?: TopThread | null
   host_id?: string
@@ -102,6 +104,9 @@ export type Session = {
 
 /** GET /api/sessions/{id}/connection: the diagnostics of a session's mod connection. */
 export type ModConnectionInfo = {
+  /** The mod protocol the integration reported, and the server's (docs/mod-protocol.md). */
+  mod_protocol?: number
+  server_protocol?: number
   session_id: string
   state: 'connected' | 'stale' | 'connecting' | 'none'
   stale_after_s: number

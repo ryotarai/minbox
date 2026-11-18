@@ -1,0 +1,598 @@
+{
+  "protocol": 1,
+  "version": "c1fe071c2d45",
+  "tools": [
+    {
+      "name": "send_message",
+      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person's message). The person's messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves. Every message must be about a task: a quick answer goes in the task it is about. `thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "description": "Files to show the person beside your message, e.g. [\"docs/plan.md\", \"/tmp/checkout.png\", \"src/retry.mjs\"]: absolute (anywhere you can read) or relative to the session's folder. For something visual, a screenshot or image usually reads fastest; attach the HTML or source too when they should open or click through it. Any regular file, any size. Markdown, plain text, config and data files, Mermaid and Graphviz sources and HTML (its relative images and frames load from its folder) open in minbox's viewers; images (PNG, JPEG, GIF, WebP, SVG, AVIF, BMP, ICO) show in the message; videos (MP4, MOV, WebM) play beside it, and the person comments at moments (each comment comes back with its time and the paused frame's path); source code, scripts and other text open as code with line comments; PDFs and anything else are offered as a download. Folders and .env files are refused. The inbox keeps the version you sent and shows the file as it is now, saying when it changed. The person's annotations, including comments on images and code lines, come back in their reply. Each attachment's kind in the result is markdown, text, html, mermaid, graphviz, code, image, video, pdf or file; treat any other as file. A markdown link to an attached file in the body, e.g. [the mock](proto/admin.html), opens it beside the thread.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "body": {
+            "description": "The message, in Markdown. Lead with what you need from the person; they switch in cold, so say what it affects and what you know.\nAsk each decision as a block:\n:::question\nThe question, on the first line.\nOne to three short lines of context.\n- [ ] Choice A — why\n- [ ] Choice B — why\nRecommended: Choice A\n:::\n`:::question` picks one, `:::question-multi` any number, `:::question-text` asks for free text.\nOptional context lines: `Stopped: \u003cwhat waits\u003e` when your work is stopped on the answer; `Holds up: a; b` for what it blocks; `Replaces: \u003cearlier question\u003e` when you re-ask.\nAsk the person to do things by hand with an `:::actions` block of `- [ ] item` lines; they mark each Done or Can't do it.\nFenced blocks draw as pictures: ```mermaid and ```dot (Graphviz) as diagrams, ```svg (an inline \u003csvg\u003e) as an image, ```html as a sandboxed live page. Use them instead of ASCII art.\nThe person can also answer Other, add a note, or skip. Ask only what you cannot decide alone.\nAnswers come back under \"## Answers to your questions\".",
+            "type": "string"
+          },
+          "review": {
+            "description": "A guided review of your changes: minbox snapshots each file's diff, in the git repository or worktree that holds the file. Lead with the section the person should look at most. Working in a worktree or on a branch whose changes are committed: set cwd to the worktree and base to the branch you started from (e.g. main), or the review shows only uncommitted changes.",
+            "properties": {
+              "base": {
+                "description": "A branch or commit to diff from (from where your HEAD left it), so committed changes show as well as uncommitted ones, e.g. \"main\". Default: HEAD (uncommitted changes only).",
+                "type": "string"
+              },
+              "cwd": {
+                "description": "Where relative file paths resolve, e.g. the git worktree you work in (absolute, or relative to the session directory). Default: the session directory.",
+                "type": "string"
+              },
+              "sections": {
+                "items": {
+                  "properties": {
+                    "files": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "files"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "What changed and why, in two or three sentences.",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "sections"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Optional: the new status of the tasks in task_ids (update_task does the same).",
+            "enum": [
+              "working",
+              "needs_you",
+              "blocked",
+              "done"
+            ],
+            "type": "string"
+          },
+          "task_ids": {
+            "description": "The tasks this message is about (ids from create_task or list_tasks). The person's messages this reply answers get them too. Leave out for a quick answer that is about no task.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "thread_id": {
+            "description": "Legacy, not needed: the id of an older thread; the message goes to your conversation with the person, about that thread's task.",
+            "type": "string"
+          },
+          "thread_title": {
+            "description": "Legacy, not needed (ignored).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "read_thread",
+      "description": "Read the person's minbox inbox. With `thread_id` (the id every reply from the person carries, or one from list_threads / search): that thread's messages and the answers given. Any thread can be read, also one of another session (read-only). It returns the newest `limit` messages (default 30, at most 100), oldest first, and says how many exist; pass `before` (the message id the answer names) to page back to older ones. Long messages are cut and the whole answer is bounded, with a marker where text is missing. Without `thread_id`: the list of this session's threads (use list_threads for other sessions and filters).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "description": "A message id from an earlier answer (\"older messages: before \u003cid\u003e\"): returns the messages before it.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Most messages to return: the newest ones (default 30, at most 100).",
+            "type": "number"
+          },
+          "thread_id": {
+            "description": "The thread to read. Leave out to list this session's threads.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "set_session_title",
+      "description": "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "One line, about 3-8 words, about 80 characters or fewer (a guide, not a hard limit); plain text, in the language the person writes in.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "open_url",
+      "description": "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "An absolute http(s) URL, e.g. https://github.com/owner/repo/pull/12.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "create_task",
+      "description": "Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in. A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids puts earlier messages in it. The person's message that asked for it, and your replies in this turn, belong to it by themselves. If the result lists similar_tasks that are the same work, use that task (send_message task_ids) and do not create more. kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met. It returns the task id; keep the task current with update_task.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "autonomous": {
+            "description": "Goals only: minbox keeps continuing you until the criteria are met. Only when the person asked for it.",
+            "type": "boolean"
+          },
+          "criteria": {
+            "description": "A goal's \"done when\" criteria: checkable outcomes (e.g. \"CI is green on the PR\"). Replaces the current ones.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "detail": {
+            "description": "Optional: a few sentences (Markdown) on what it is about, what was decided, what is left.",
+            "type": "string"
+          },
+          "goal_id": {
+            "description": "The goal this task serves.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "task (default) or goal (an outcome pursued until its criteria are met).",
+            "enum": [
+              "task",
+              "goal"
+            ],
+            "type": "string"
+          },
+          "message_ids": {
+            "description": "Ids of earlier messages about it (the ones of this turn belong to it anyway).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
+            "enum": [
+              "working",
+              "needs_you",
+              "blocked",
+              "done"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "description": "The checklist: short imperative steps, in order, each with done (sub-steps nest one level). Replaces the current steps.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "steps": {
+                  "description": "Sub-steps (one level).",
+                  "items": {
+                    "properties": {
+                      "done": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "description": "One line on where it stands now.",
+            "type": "string"
+          },
+          "title": {
+            "description": "A short name for the work (2 to 8 words), in the person's language.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "update_task",
+      "description": "Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. report: a short \"where it stands\" the person reads on the Board. message_ids: earlier messages that are about this task.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "check_criteria": {
+            "description": "Numbers (from 1) of a goal's criteria that are now met.",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "check_steps": {
+            "description": "Numbers (from 1, in reading order) of steps that are now done.",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "criteria": {
+            "description": "A goal's \"done when\" criteria: checkable outcomes (e.g. \"CI is green on the PR\"). Replaces the current ones.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "detail": {
+            "description": "The fuller summary (Markdown); replaces the current one.",
+            "type": "string"
+          },
+          "goal_id": {
+            "description": "The goal this task serves.",
+            "type": "string"
+          },
+          "message_ids": {
+            "description": "Ids of more messages that are about this task.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "report": {
+            "description": "The latest report the person reads on the Board.",
+            "type": "string"
+          },
+          "status": {
+            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
+            "enum": [
+              "working",
+              "needs_you",
+              "blocked",
+              "done"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "description": "The checklist: short imperative steps, in order, each with done (sub-steps nest one level). Replaces the current steps.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "steps": {
+                  "description": "Sub-steps (one level).",
+                  "items": {
+                    "properties": {
+                      "done": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "description": "One line on where it stands now.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "The task or goal to update (from create_task or list_tasks).",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uncheck_steps": {
+            "description": "Numbers (from 1) of steps that are not done after all.",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "list_tasks",
+      "description": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "description": "Every open task of the project, not only yours.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": false
+    },
+    {
+      "name": "list_projects",
+      "description": "List the person's minbox projects (a project is a folder on a host): id, name, folder, host, default agent, session and thread counts, how many threads wait on the person, last activity. Read-only. Archived projects only with `archived`.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "description": "List archived projects instead of live ones.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "name": "get_project",
+      "description": "One minbox project by id (from list_projects): its folder, host, default agent, counts and its sessions (id, name, title, agent, status). Read-only.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "A project id from list_projects.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "name": "list_sessions",
+      "description": "List minbox sessions (one coding-agent session each, Claude Code or Pi): id, name, title, folder, agent, status, project, unread and waiting counts. Newest activity first. Filter by `project_id`, `status` or `agent`. Read-only; returns at most `limit` rows and says how many exist.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "enum": [
+              "claude",
+              "pi"
+            ],
+            "type": "string"
+          },
+          "archived": {
+            "description": "List archived sessions instead of live ones.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Most rows (default 50, at most 200).",
+            "type": "number"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "status": {
+            "description": "The session's state.",
+            "enum": [
+              "starting",
+              "working",
+              "idle",
+              "ended"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "name": "list_threads",
+      "description": "List minbox threads across ALL sessions and projects (read_thread without an id lists only this session's), newest first: id, subject, project, session, status, unread and open-question counts, who wrote last, the start of the last message. Filters: `project_id`, `session_id` (\"self\" = this session), `status`, `awaiting` (person = waits on the person, agent = the person wrote last), `unread`, `query` (words in the subject or last message), `archived`. Read a thread with read_thread. Read-only; returns at most `limit` rows and says how many exist.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "description": "List archived threads instead of live ones.",
+            "type": "boolean"
+          },
+          "awaiting": {
+            "description": "person: waits on the person (need_action or open questions); agent: the person wrote last and waits on the agent.",
+            "enum": [
+              "person",
+              "agent"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Most rows (default 50, at most 200).",
+            "type": "number"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "query": {
+            "description": "Words that must all appear in the subject, name or last message (case-insensitive). For full text use search.",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "A session id, or \"self\" for this session.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The thread's status.",
+            "enum": [
+              "working",
+              "need_action",
+              "blocked",
+              "finished"
+            ],
+            "type": "string"
+          },
+          "unread": {
+            "description": "Only threads with unread agent messages.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "name": "search",
+      "description": "Full-text search of minbox: thread titles, message bodies of the agent and of the person, and attachment names/text. Returns hits with thread id, session, a snippet and the date; open one with read_thread. Narrow it with `project_id`, `session_id` (\"self\" = this session) or `from` (agent | person). Read-only.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "Only messages written by the agent or by the person.",
+            "enum": [
+              "agent",
+              "person"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Most hits per kind (default 20, at most 50).",
+            "type": "number"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "query": {
+            "description": "Words that must all appear (case-insensitive).",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "A session id, or \"self\" for this session.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    }
+  ],
+  "guards": [
+    {
+      "tools": [
+        "Bash"
+      ],
+      "patterns": [
+        "(?:^|[;\u0026|(\\x60]|\\$\\()\\s*(?:open|xdg-open|gio\\s+open|sensible-browser|x-www-browser|wslview)\\s+(?:[^;\u0026|\\n]*?[\\s'\"])?['\"]?https?:\\/\\/",
+        "(?:^|[;\u0026|(\\x60]|\\$\\()\\s*gh\\s+(?:browse\\b|[^;\u0026|\\n]*\\s(?:--web|-w)(?=[\\s;\u0026|)]|$))"
+      ],
+      "deny": "minbox: this would open the page on the host machine, not in the person's browser. Call mcp__minbox__open_url with the page's URL instead (with gh, get it with e.g. `gh pr view --json url -q .url`)."
+    }
+  ]
+}
