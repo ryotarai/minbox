@@ -472,7 +472,7 @@ export function AnswerBar({ m, onSent, testid = 'answers-send' }: { m: V3Message
 
 // ---- a message ----
 
-type Menu = null | { mode: 'move' | 'also' }
+type Menu = null | { mode: 'move' }
 
 export function MessageView({
   m,
@@ -524,8 +524,9 @@ export function MessageView({
   const name = agentName(byId, m.session_id)
   const [menu, setMenu] = useState(false)
   const [pick, setPick] = useState<Menu>(null)
-  const [about, setAbout] = useState(m.tasks)
-  useEffect(() => setAbout(m.tasks), [m.tasks])
+  // A message belongs to exactly one task (none while the agent has not placed it yet).
+  const [about, setAbout] = useState(m.tasks.slice(0, 1))
+  useEffect(() => setAbout(m.tasks.slice(0, 1)), [m.tasks])
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -541,31 +542,20 @@ export function MessageView({
   }, [menu])
   const me = m.author === 'user'
   const taskOf = (id: string) => tasks.find((t) => t.id === id)
-  const unlink = (tid: string) => {
-    setAbout((ts) => ts.filter((t) => t.task_id !== tid))
-    v3.unlink(m.id, tid).then(onChanged).catch(error)
-  }
   const choose = async (r: PickResult) => {
-    const mode = pick?.mode
     setPick(null)
     try {
-      if (mode === 'move' && !me && ((m.turn_of?.length ?? 0) > 0 || m.decision)) {
+      if (!me && ((m.turn_of?.length ?? 0) > 0 || m.decision)) {
         // An agent reply moves together with the person's messages it answered.
-        const from = m.decision_task && m.tasks.some((t) => t.task_id === m.decision_task) ? m.decision_task : m.tasks[0]?.task_id
-        const res = await v3.move(m.id, { from, ...('task_id' in r ? { to: r.task_id } : { title: r.title }) })
+        const res = await v3.move(m.id, 'task_id' in r ? { to: r.task_id } : { title: r.title })
         if (res.removed_task) toast(`Removed the mistaken task “${res.removed_task}”`)
+      } else if ('task_id' in r) {
+        // The message moves: it leaves the task it was in.
+        const t = taskOf(r.task_id)
+        if (t) setAbout([{ task_id: t.id, title: t.title, status: t.status, source: 'person' }])
+        await v3.setTask(m.id, r.task_id)
       } else {
-        // A message is always about a task: put it in the new one first, then take it out of the others.
-        let to: string
-        if ('task_id' in r) {
-          const t = taskOf(r.task_id)
-          if (t) setAbout((ts) => [...(mode === 'move' ? [] : ts), { task_id: t.id, title: t.title, status: t.status, source: 'person' }])
-          await v3.link(m.id, r.task_id)
-          to = r.task_id
-        } else {
-          to = (await v3.createTask({ title: r.title, session_id: m.session_id, message_ids: [m.id] })).id
-        }
-        if (mode === 'move') for (const t of m.tasks) if (t.task_id !== to) await v3.unlink(m.id, t.task_id)
+        await v3.createTask({ title: r.title, session_id: m.session_id, message_ids: [m.id] })
       }
       onChanged()
     } catch (e) {
@@ -714,24 +704,14 @@ export function MessageView({
                 <button type="button" role="menuitem" data-testid="menu-move" onClick={() => (setMenu(false), setPick({ mode: 'move' }))}>
                   {about.length ? 'Move to another task…' : 'Put in a task…'}
                 </button>
-                {about.length > 0 && (
-                  <button type="button" role="menuitem" data-testid="menu-also" onClick={() => (setMenu(false), setPick({ mode: 'also' }))}>
-                    Also about another task…
-                  </button>
-                )}
-                {about.length > 1 && inTask && about.some((t) => t.task_id === inTask) && (
-                  <button type="button" role="menuitem" data-testid="menu-out" onClick={() => (setMenu(false), unlink(inTask))}>
-                    Take out of this task
-                  </button>
-                )}
               </div>
             )}
           </span>
           {pick && (
             <TaskPicker
               tasks={tasks}
-              exclude={pick.mode === 'also' ? about.map((t) => t.task_id) : []}
-              head={pick.mode === 'move' ? (me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…') : 'Also about…'}
+              exclude={about.map((t) => t.task_id)}
+              head={me || !(m.turn_of?.length || m.decision) ? 'Move this message to…' : 'Move this reply and your message to…'}
               onPick={(r) => void choose(r)}
               onClose={() => setPick(null)}
             />

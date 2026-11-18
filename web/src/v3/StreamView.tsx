@@ -132,7 +132,7 @@ export function StreamView({
     try {
       const { to: _to, tasks: tids, ...rest } = o
       void _to
-      await v3.send(id, { ...rest, task_ids: tids.length ? tids : undefined, uploads: o.uploads.length ? o.uploads : undefined })
+      await v3.send(id, { ...rest, task_id: tids[0], uploads: o.uploads.length ? o.uploads : undefined })
       reload()
       // The server has it now: the stand-in goes once the reload shows it (or the message was cancelled).
       setTimeout(() => setPending((p) => p.filter((x) => x !== tmp)), 1500)

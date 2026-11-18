@@ -131,7 +131,7 @@ var sendDescription = strings.Join([]string{
 	"Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal.",
 	"Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).",
 	"It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.",
-	"Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person's message). The person's messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves. Every message must be about a task: a quick answer goes in the task it is about.",
+	"Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id).",
 	"`thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
 }, " ")
@@ -169,15 +169,19 @@ func sendSchema() jobj {
 		"type": "object",
 		"properties": jobj{
 			"body": jobj{"type": "string", "description": questionGuide},
+			"task_id": jobj{
+				"type":        "string",
+				"description": "The one task this message is about (an id from create_task or list_tasks, or shown with the person's message). The person's messages this reply answers that are in no task yet go in it too.",
+			},
 			"task_ids": jobj{
 				"type":        "array",
 				"items":       jobj{"type": "string"},
-				"description": "The tasks this message is about (ids from create_task or list_tasks). The person's messages this reply answers get them too. Leave out for a quick answer that is about no task.",
+				"description": "Legacy: the older name of task_id, as a list of one id.",
 			},
 			"status": jobj{
 				"type":        "string",
 				"enum":        []string{"working", "needs_you", "blocked", "done"},
-				"description": "Optional: the new status of the tasks in task_ids (update_task does the same).",
+				"description": "Optional: the new status of the task in task_id (update_task does the same).",
 			},
 			"thread_id": jobj{
 				"type":        "string",
@@ -288,7 +292,7 @@ func questionDeny(sendTool string) string {
 
 const replyLine = "The person replied to you in the minbox inbox. Their reply follows as they wrote it: it is their answer to you."
 const newThreadLine = "The person started a new thread with you in the minbox inbox: a request of their own, not an answer to something you asked. It may be unrelated to what you were doing; say how you will handle it before you start."
-const streamLine = "Decide which task it is about: an open task (reply with send_message and its task_ids; prefer this when one fits), or new work the person asked for (create_task, then reply). Every message must be about a task: a quick question that fits none gets a small task of its own (create_task, status done once answered)."
+const streamLine = "Decide which task it is about: an open task (reply with send_message and its task_id; prefer this when one fits), or new work the person asked for (create_task, then reply). Every message must be about a task: a quick question that fits none gets a small task of its own (create_task, status done once answered)."
 
 // wakeJoiner separates the person's messages delivered in one turn.
 const wakeJoiner = "\n\n---\n\n"
@@ -309,19 +313,17 @@ func readHint(threadID, readTool string) string {
 	return "(Thread " + threadID + ". Earlier messages in this thread: call " + readTool + " with this thread_id.)"
 }
 
+// tasksLine names the task the person's message is about (a message belongs to one task).
 func tasksLine(p wakeMsg) string {
 	if len(p.Tasks) == 0 {
 		return ""
 	}
-	parts := make([]string, len(p.Tasks))
-	for i, t := range p.Tasks {
-		st := ""
-		if t.Status != "" && t.Status != "working" {
-			st = " (" + t.Status + ")"
-		}
-		parts[i] = t.ID + " \"" + squash(t.Title) + "\"" + st
+	t := p.Tasks[0]
+	st := ""
+	if t.Status != "" && t.Status != "working" {
+		st = " (" + t.Status + ")"
 	}
-	return "Tasks: " + strings.Join(parts, "; ")
+	return "Task: " + t.ID + " \"" + squash(t.Title) + "\"" + st
 }
 
 // wakeText is the turn text of one of the person's messages.
@@ -339,7 +341,7 @@ func wakeText(p wakeMsg, sendTool, readTool string) string {
 		}
 		lines := []string{"minbox: a message from the person (message " + p.ID + ")" + dot}
 		if tl != "" {
-			lines = append(lines, tl+" (they wrote it about these tasks).")
+			lines = append(lines, tl+" (they wrote it about this task; reply with its task_id).")
 		} else {
 			lines = append(lines, streamLine)
 		}

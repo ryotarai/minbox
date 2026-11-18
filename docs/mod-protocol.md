@@ -63,6 +63,12 @@ result) or `200 {ok: false, error}` (error is the refusal the agent reads, e.g. 
 list (OpenCode). An HTTP failure means the server could not be reached; the integration then says
 `minbox: <error or HTTP status>`.
 
+`send_message` names one task: `task_id` (a message belongs to exactly one task, docs/v3/redesign.md
+§13 revision 8). `task_ids`, its older name, is still accepted with one id (a protocol-0 integration
+sends it to `/api/agent/messages` as it always did); more than one id is refused with a text that
+tells the agent to pick one and send another message for another task. The pending text of the
+person's message names its task on one line, `Task: <id> "<title>"`.
+
 ### `POST /api/agent/event {type, ...}`
 
 What happened in the agent; the answer says what to do.

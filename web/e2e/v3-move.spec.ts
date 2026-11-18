@@ -54,4 +54,15 @@ test('move both messages to the right task and remove the mistaken one; put in a
   await last.getByTestId('msg-menu').click()
   await expect(page.getByTestId('menu-move')).toHaveText('Move to another task…')
   await expect(page.getByTestId('menu-none')).toHaveCount(0)
+  // A message belongs to exactly one task: no "Also about…", no "Take out of this task".
+  await expect(page.getByTestId('menu-also')).toHaveCount(0)
+  await expect(page.getByTestId('menu-out')).toHaveCount(0)
+  await expect(page.getByText('Also about another task…')).toHaveCount(0)
+  // Moving the person's message: it leaves its task, one "in" under it.
+  await page.getByTestId('menu-move').click()
+  await page.keyboard.type('Elsewhere')
+  await page.keyboard.press('Enter')
+  await expect(last.getByTestId('about').getByTestId('task-link')).toHaveCount(1)
+  await expect(last.getByTestId('about').getByTestId('task-link')).toContainText('Elsewhere')
+  await expect.poll(async () => (await board(minbox)).tasks.find((x: any) => x.id === gauge.id).message_count).toBe(5)
 })

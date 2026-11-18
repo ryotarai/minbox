@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// Every message is about at least one task (docs/v3/redesign.md §4.5, revision 7). The agent places
-// its messages and the person's: send_message task_ids, create_task, update_task message_ids. A
+// Every message belongs to exactly one task (docs/v3/redesign.md §4.5, revisions 7 and 8). The agent places
+// its messages and the person's: send_message task_id, create_task, update_task message_ids. A
 // message it has not placed yet is unplaced: minbox asks the agent to place it at the end of each turn
 // (KindPlace) until it does; the person's message not yet delivered is provisional (it is the next
-// turn's). The person moves messages between tasks but cannot take a message out of its last task.
+// turn's). The person moves messages between tasks but cannot take a message out of its task.
 
 // KindPlace marks minbox's request to the agent to place its unplaced messages in tasks (a message from
 // the person's side, delivered like theirs, shown as a small note). TurnOf lists the messages it asks
@@ -82,13 +82,6 @@ func (s *Store) OpenPlaceRequests(ctx context.Context, sessionID string) ([]Plac
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-// LinkCount is how many tasks a message is about.
-func (s *Store) LinkCount(ctx context.Context, messageID string) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM message_tasks WHERE message_id=?`, messageID).Scan(&n)
-	return n, err
 }
 
 // CountUnlinked is how many messages are in no task (all of them, provisional ones too).

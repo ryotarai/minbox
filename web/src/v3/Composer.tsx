@@ -51,14 +51,14 @@ export function Composer({
   toId: string
   toOptions: Session[]
   onTo?: (id: string) => void
-  /** The tasks the message is about from where it is written (a task's view): always. */
+  /** The task the message is about from where it is written (a task's view): always (one at most). */
   about: { task_id: string; title: string }[]
   placeholder: string
   onSend: (o: Outgoing) => Promise<void>
   /** Where the words and the attached files are kept until sent (the stream's thread / the task). */
   draftKey: string
   testid?: string
-  /** The tasks the person can say the message is about (# at the start, or the task button). */
+  /** The tasks the person can pick the message's one task from (the task button), where none is given. */
   tasks?: Task[]
   /** The conversation on screen: the picked answers to its questions go with Send. */
   messages?: V3Message[]
@@ -240,10 +240,10 @@ export function Composer({
             ))}
           </>
         )}
-        {tasks && (
+        {tasks && all.length === 0 && (
           <span style={{ position: 'relative' }}>
             <button type="button" className="v-addtask" data-testid="composer-task" title="Say which task this is about (#)" onClick={() => setPicking(true)}>
-              {all.length ? '＋' : '＋ about a task'}
+              ＋ about a task
             </button>
             {picking && (
               <TaskPicker
@@ -254,7 +254,7 @@ export function Composer({
                   setPicking(false)
                   if ('task_id' in r) {
                     const t = tasks.find((x) => x.id === r.task_id)
-                    if (t) setExtra((x) => [...x, { task_id: t.id, title: t.title }])
+                    if (t) setExtra([{ task_id: t.id, title: t.title }])
                   }
                 }}
               />

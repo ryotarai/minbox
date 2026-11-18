@@ -26,7 +26,7 @@ export async function startAgent(m: Minbox, name: string, dir = 'proj', extra: R
 
 /** The person writes to an agent (as the composer does). */
 export async function say(m: Minbox, a: Agent, words: string, taskIds?: string[]): Promise<any> {
-  return api(m, 'POST', `/api/v3/sessions/${a.id}/messages`, { words, task_ids: taskIds })
+  return api(m, 'POST', `/api/v3/sessions/${a.id}/messages`, { words, task_id: taskIds?.[0] })
 }
 
 export async function board(m: Minbox, project = ''): Promise<any> {
