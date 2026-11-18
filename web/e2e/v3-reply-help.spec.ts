@@ -51,10 +51,11 @@ async function streamThread(m: Minbox, a: Agent): Promise<string> {
 
 const q = (page: Page, i: number) => page.locator(`[data-testid="reply-q"][data-index="${i}"]`)
 
-/** The gap between the bottom of the reply help box and the top of the composer row that follows it
- *  ("to <agent> | + about a task"): the box must not sit on it. */
-async function expectGapBelowHelp(scope: Page | ReturnType<Page['getByTestId']>) {
-  const gap = await scope.getByTestId('reply-qa').evaluate((el) => {
+/** The gap between the bottom of the reply help box (`testid`: the questions, or the drafting row while
+ *  they are still coming) and the top of the composer row that follows it ("to <agent> | + about a
+ *  task"): the box must not sit on it. */
+async function expectGapBelowHelp(scope: Page | ReturnType<Page['getByTestId']>, testid = 'reply-qa') {
+  const gap = await scope.getByTestId(testid).evaluate((el) => {
     const next = el.nextElementSibling as HTMLElement | null
     return next ? next.getBoundingClientRect().top - el.getBoundingClientRect().bottom : null
   })
@@ -170,6 +171,24 @@ test('untouched questions refresh on a new agent message', async ({ page, minbox
   await expect(q(page, 1)).toContainText('What should it check? (3)')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
   await expect(page.getByText('What should it check? (2)')).toHaveCount(0)
+})
+
+test('while the questions are being drafted, the drafting row keeps the same gap above the composer row', async ({ page, minbox }) => {
+  // Hold the questions back until released, so the drafting state stays on screen.
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/suggestions', async (route) => {
+    await held
+    await route.continue().catch(() => {})
+  })
+  await page.goto(minbox.url)
+  await seed(page, minbox)
+  await expect(page.getByTestId('reply-qa-loading')).toBeVisible()
+  await expectGapBelowHelp(page, 'reply-qa-loading')
+  release()
+  await expect(page.getByTestId('reply-q')).toHaveCount(3)
+  await expect(page.getByTestId('reply-qa-loading')).toHaveCount(0)
+  await expectGapBelowHelp(page)
 })
 
 test('collapse and dismiss', async ({ page, minbox }) => {
