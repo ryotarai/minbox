@@ -6,7 +6,7 @@ import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
 import { ago, currentStep, short, v3, type Board, type BoardTask, type V3Message } from './data'
 import type { Question } from '../api'
-import { Bar, MessageBodyClamp, StatusDot, Steps, Timeline, agentName, openQuestions, statusLabel, toggled, useNav, useSessionsById } from './parts'
+import { Bar, MessageBodyClamp, StatusDot, Steps, agentName, openQuestions, statusLabel, toggled, useNav, useSessionsById } from './parts'
 
 export type BoardFocus = { key: string | null }
 
@@ -439,7 +439,7 @@ function AskExpanded({ m }: { m: V3Message }) {
   )
 }
 
-/** A row expanded in place: checklist (or criteria), last report, timeline, facts. With `ask`, the question it waits on first and Answer in task. */
+/** A row expanded in place: checklist (or criteria), last report, facts. With `ask`, the question it waits on first and Answer in task. */
 function Expanded({ t, reload, ask }: { t: BoardTask; reload: () => void; ask?: V3Message }) {
   const { error } = useApp()
   const byId = useSessionsById()
@@ -491,8 +491,6 @@ function Expanded({ t, reload, ask }: { t: BoardTask; reload: () => void; ask?: 
         </div>
       </div>
       <div>
-        <div className="v-sec">TIMELINE</div>
-        {detail ? <Timeline events={detail.events} messages={detail.messages} n={8} byId={byId} /> : <div className="v-cnt2">…</div>}
         <div className="v-sec">FACTS</div>
         <dl className="v-facts" data-testid="facts">
           {(t.links ?? []).map((l) => (

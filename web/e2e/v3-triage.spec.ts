@@ -47,7 +47,7 @@ test('triage on the Board: compact question rows, rows expand in place, Enter an
   await agentReply(minbox, api, /carrying on/)
   await expect.poll(async () => (await board(minbox)).questions.length).toBe(0)
 
-  // Back on the Board: the row is gone. J then Space expands the task row: checklist, last report, timeline.
+  // Back on the Board: the row is gone. J then Space expands the task row: checklist, last report, facts.
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('board')).toBeVisible()
   await expect(page.getByTestId('question-card')).toHaveCount(0)
@@ -56,7 +56,7 @@ test('triage on the Board: compact question rows, rows expand in place, Enter an
   const exp = page.getByTestId('task-expanded')
   await expect(exp).toBeVisible()
   await expect(exp.getByTestId('step')).toHaveCount(4)
-  await expect(exp.getByTestId('timeline')).toContainText('You:')
+  await expect(exp.getByTestId('timeline')).toHaveCount(0)
   await expect(exp.getByTestId('facts')).toContainText('Status')
   await shot(page, 'uc5-expanded', 'light')
 
@@ -95,13 +95,13 @@ test('NEEDS YOU rows are compact (nothing to answer on the Board) and expand on 
   await expect(needs.locator('input, textarea')).toHaveCount(0)
   for (const r of await rows.all()) expect((await r.boundingBox())!.height).toBeLessThan(70)
 
-  // A click expands it in place: the ask in full, the checklist, timeline and facts, and Answer in task.
+  // A click expands it in place: the ask in full, the checklist and facts (no timeline), and Answer in task.
   await ask.locator('.v-line').click()
   const exp = ask.getByTestId('task-expanded')
   await expect(exp).toBeVisible()
   await expect(exp.getByTestId('ask-list')).toContainText('Which region should it deploy to?')
   await expect(exp.getByTestId('step')).toHaveCount(4)
-  await expect(exp.getByTestId('timeline')).toBeVisible()
+  await expect(exp.getByTestId('timeline')).toHaveCount(0)
   await expect(exp.getByTestId('facts')).toContainText('last activity')
   await expect(exp.locator('input, textarea, [data-testid="choice"]')).toHaveCount(0)
   // Space folds it again (the row is focused by the click).
