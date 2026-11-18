@@ -203,16 +203,16 @@ func TestV3QuestionsOnBoardAndAnswerTags(t *testing.T) {
 	}
 }
 
-func TestV3NewMessageToMainAndNewSession(t *testing.T) {
+func TestV3NewMessageToTheProjectsAgentAndNewSession(t *testing.T) {
 	e := newEnv(t)
-	sess := e.createSession() // the project's first session is its main one
-	code, m, _ := e.do("POST", "/api/v3/new", map[string]any{"project_id": sess.ProjectID, "words": "hello main"}, nil)
+	sess := e.createSession() // the project's only live agent: the fallback when the helper has no answer
+	code, m, _ := e.do("POST", "/api/v3/new", map[string]any{"project_id": sess.ProjectID, "words": "hello there"}, nil)
 	if code != 201 {
-		t.Fatalf("to main: %d %v", code, m)
+		t.Fatalf("to the project: %d %v", code, m)
 	}
 	stream, _ := e.st.StreamThread(context.Background(), sess.ID)
 	if m["thread_id"] != stream {
-		t.Fatalf("not in the main stream: %v", m)
+		t.Fatalf("not in the agent's stream: %v", m)
 	}
 	code, m, _ = e.do("POST", "/api/v3/new", map[string]any{"project_id": sess.ProjectID, "to": "new", "name": "helper", "words": "hello new"}, nil)
 	if code != 201 {

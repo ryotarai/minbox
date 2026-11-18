@@ -48,7 +48,7 @@ type Inbound interface {
 	// DeliverReply adds the person's reply to a minbox thread (ErrGone when the thread is gone).
 	DeliverReply(ctx context.Context, threadID, text string, files []InFile) error
 	// NewThread starts a thread from a DM. project "" is the destination's default project;
-	// ErrUnknownProject when project names none, ErrNoTarget when there is no session to put it in.
+	// ErrUnknownProject when project names none, ErrNoTarget when there is no project to put it in.
 	NewThread(ctx context.Context, project, defaultProject, text string, files []InFile) (threadID string, err error)
 	// PickProject asks a model which project (id or name, as NewThread takes it) the text of a new
 	// DM belongs to. "" with no error: unsure. Any error: the caller falls back.
@@ -59,7 +59,7 @@ type Inbound interface {
 
 var (
 	ErrGone           = errors.New("thread is gone")
-	ErrNoTarget       = errors.New("no project session to start a thread in")
+	ErrNoTarget       = errors.New("no project to start a thread in")
 	ErrUnknownProject = errors.New("unknown project")
 )
 

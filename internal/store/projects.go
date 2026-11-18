@@ -16,9 +16,6 @@ var (
 	// ErrProjectBusy: the change would orphan or hide sessions (archive a project with live
 	// sessions, delete one with any, move one that has sessions).
 	ErrProjectBusy = errors.New("project has sessions")
-	// ErrSessionIsMain: the session is its project's main one and other Claude Code sessions exist;
-	// promote another first (or in the same request).
-	ErrSessionIsMain = errors.New("session is the project's main session")
 	// ErrProjectExists: there already is a project for this host and folder.
 	ErrProjectExists = errors.New("a project for this folder already exists")
 )
@@ -36,8 +33,6 @@ type Project struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	ArchivedAt *time.Time `json:"archived_at"`
 	PinnedAt   *time.Time `json:"pinned_at"`
-	// MainSessionID: the session a new thread goes to by default; '' until the project has a Claude Code session.
-	MainSessionID string `json:"main_session_id"`
 	// DefaultAgent: the coding agent new sessions of the project start with ("claude", "pi"); '' follows the default_agent setting.
 	DefaultAgent string `json:"default_agent"`
 	// Icon: an emoji or an uploaded image; nil when the project has none.
@@ -115,13 +110,13 @@ func uniqueProjectName(ctx context.Context, q querier, base, hostID string) (str
 	}
 }
 
-const projectCols = `id, name, dir, host_id, created_at, archived_at, pinned_at, COALESCE(main_session_id,''), default_agent`
+const projectCols = `id, name, dir, host_id, created_at, archived_at, pinned_at, default_agent`
 
 func scanProject(row interface{ Scan(...any) error }) (*Project, error) {
 	var p Project
 	var created int64
 	var archived, pinned sql.NullInt64
-	if err := row.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &p.DefaultAgent); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.DefaultAgent); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -261,7 +256,7 @@ func (s *Store) ListProjects(ctx context.Context, includeArchived bool) ([]Proje
 }
 
 func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, COALESCE(p.main_session_id,''), p.default_agent, p.icon_kind, p.icon_emoji, p.icon_updated_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.name, p.dir, p.host_id, p.created_at, p.archived_at, p.pinned_at, p.default_agent, p.icon_kind, p.icon_emoji, p.icon_updated_at,
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id),
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id AND s.archived_at IS NULL AND s.status!=?),
 	  (SELECT COALESCE(MAX(s.updated_at),0) FROM sessions s WHERE s.project_id=p.id),
@@ -277,7 +272,7 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 		var created, sUp, tUp, iconAt int64
 		var archived, pinned sql.NullInt64
 		var iconKind, iconEmoji string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.MainSessionID, &p.DefaultAgent, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.DefaultAgent, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = fromMs(created)
@@ -316,12 +311,10 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 
 // ProjectPatch is what UpdateProject changes; nil fields stay.
 type ProjectPatch struct {
-	// MainSession: promote this session (it must be a Claude Code session of the project).
-	MainSession *string
-	Name        *string
-	Dir         *string
-	HostID      *string
-	Pinned      *bool
+	Name   *string
+	Dir    *string
+	HostID *string
+	Pinned *bool
 	// DefaultAgent: "" clears it (follow the setting); the caller validates the kind.
 	DefaultAgent *string
 }
@@ -346,11 +339,6 @@ func (s *Store) UpdateProject(ctx context.Context, id string, patch ProjectPatch
 			return nil, err
 		}
 		p.Name = name
-	}
-	if patch.MainSession != nil {
-		if err := setMain(ctx, tx, id, *patch.MainSession); err != nil {
-			return nil, err
-		}
 	}
 	if patch.Pinned != nil {
 		if *patch.Pinned {
@@ -595,75 +583,5 @@ func migrateProjects(ctx context.Context, db *sql.DB) error {
 			}
 		}
 	}
-	if err := pickMains(ctx, tx); err != nil {
-		return err
-	}
 	return tx.Commit()
-}
-
-// setMain makes a session the main one of the project: it must belong to it and be a Claude Code session.
-func setMain(ctx context.Context, q querier, projectID, sessionID string) error {
-	var kind, proj string
-	err := q.QueryRowContext(ctx, `SELECT kind, COALESCE(project_id,'') FROM sessions WHERE id=?`, sessionID).Scan(&kind, &proj)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && proj != projectID) {
-		return errors.New("the main session must be a session of the project")
-	}
-	if err != nil {
-		return err
-	}
-	if kind != KindClaude {
-		return errors.New("the main session must be a Claude Code session, not a shell")
-	}
-	_, err = q.ExecContext(ctx, `UPDATE projects SET main_session_id=? WHERE id=?`, sessionID, projectID)
-	return err
-}
-
-// ReleaseMain is called before a main session is deleted or archived. If it is not main, nothing
-// happens. promote names another session to make main; without it the session may go only when
-// the project has no other live Claude Code session (then the project has no main until one is
-// started), else ErrSessionIsMain.
-func (s *Store) ReleaseMain(ctx context.Context, sessionID, promote string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var pid string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE main_session_id=?`, sessionID).Scan(&pid)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if promote != "" {
-		if promote == sessionID {
-			return ErrSessionIsMain
-		}
-		if err := setMain(ctx, tx, pid, promote); err != nil {
-			return err
-		}
-		return tx.Commit()
-	}
-	var others int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE project_id=? AND id!=? AND kind=? AND archived_at IS NULL`, pid, sessionID, KindClaude).Scan(&others); err != nil {
-		return err
-	}
-	if others > 0 {
-		return fmt.Errorf("%w: set another session as main first", ErrSessionIsMain)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE projects SET main_session_id=NULL WHERE id=?`, pid); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-// pickMains gives each project without a (valid) main session one: its most recently active
-// Claude Code session, a live one before an ended one before an archived one. Shell sessions never.
-func pickMains(ctx context.Context, q querier) error {
-	_, err := q.ExecContext(ctx, `UPDATE projects SET main_session_id=(
-	    SELECT s.id FROM sessions s WHERE s.project_id=projects.id AND s.kind=?
-	    ORDER BY s.archived_at IS NOT NULL, s.status=?, s.updated_at DESC, s.created_at DESC, s.rowid DESC LIMIT 1)
-	  WHERE main_session_id IS NULL OR main_session_id='' OR main_session_id NOT IN (SELECT id FROM sessions)`, KindClaude, StatusEnded)
-	return err
 }

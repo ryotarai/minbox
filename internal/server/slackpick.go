@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/ryotarai/minbox/internal/store"
 )
 
 // Choosing the project of a new thread that starts as a Slack DM: Claude Haiku picks one of the
@@ -42,34 +45,43 @@ func (s *Server) pickModel() string {
 	return defaultPickModel
 }
 
-// pickCandidates are the projects a thread can start in: not archived and with a main session.
+// pickCandidates are the projects a thread can start in: the ones not archived (the catch-all
+// "No project" has no folder for a new agent and is left out).
 func (s *Server) pickCandidates(ctx context.Context) ([]pickCandidate, error) {
 	projects, err := s.store.ListProjects(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	var res []pickCandidate
+	var ps []store.Project
 	for _, p := range projects {
-		if p.MainSessionID == "" {
-			continue
+		if p.Dir != "" {
+			ps = append(ps, p)
 		}
-		if len(res) == pickMaxProjects {
-			break
-		}
-		c := pickCandidate{id: p.ID, name: truncRunes(flattenWS(p.Name), pickNameLen)}
-		if ths, err := s.store.ListThreads(ctx, p.MainSessionID); err == nil {
-			for _, t := range ths {
-				if len(c.titles) == pickTitles {
-					break
-				}
-				if t := truncRunes(flattenWS(t.Subject), pickTitleLen); t != "" {
-					c.titles = append(c.titles, t)
-				}
-			}
-		}
-		res = append(res, c)
+	}
+	res := s.issuePickCandidates(ctx, ps)
+	for i := range res {
+		res[i].dir = "" // the Slack DM prompt names projects only
 	}
 	return res, nil
+}
+
+// recentTaskTitles: the titles of the project's most recently changed tasks, the hint of what it is about.
+func (s *Server) recentTaskTitles(ctx context.Context, projectID string) []string {
+	ts, err := s.store.ListTasks(ctx, store.TaskQuery{ProjectID: projectID, DoneSince: time.Now().Add(-30 * 24 * time.Hour), DoneLimit: pickTitles})
+	if err != nil {
+		return nil
+	}
+	sort.SliceStable(ts, func(i, j int) bool { return ts[i].UpdatedAt.After(ts[j].UpdatedAt) })
+	var out []string
+	for _, t := range ts {
+		if len(out) == pickTitles {
+			break
+		}
+		if t := truncRunes(flattenWS(t.Title), pickTitleLen); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func flattenWS(s string) string { return strings.Join(strings.Fields(s), " ") }
@@ -95,21 +107,9 @@ func buildPickPrompt(cands []pickCandidate, text string) string {
 
 // parsePick reads claude's `--output-format json` envelope and returns project_id ("" for null).
 func parsePick(out []byte) (string, error) {
-	var env struct {
-		IsError          bool            `json:"is_error"`
-		Subtype          string          `json:"subtype"`
-		Result           string          `json:"result"`
-		StructuredOutput json.RawMessage `json:"structured_output"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(out), &env); err != nil {
-		return "", errors.New("claude printed no JSON")
-	}
-	if env.IsError {
-		return "", errors.New("claude reported an error: " + truncRunes(firstNonEmpty(env.Result, env.Subtype), 120))
-	}
-	raw := []byte(env.StructuredOutput)
-	if len(raw) == 0 || string(raw) == "null" {
-		raw = []byte(env.Result)
+	raw, err := helperAnswer(out)
+	if err != nil {
+		return "", err
 	}
 	var body struct {
 		ProjectID *string `json:"project_id"`
@@ -121,6 +121,27 @@ func parsePick(out []byte) (string, error) {
 		return "", nil
 	}
 	return strings.TrimSpace(*body.ProjectID), nil
+}
+
+// helperAnswer is the structured answer in a helper's envelope (else its result text).
+func helperAnswer(out []byte) ([]byte, error) {
+	var env struct {
+		IsError          bool            `json:"is_error"`
+		Subtype          string          `json:"subtype"`
+		Result           string          `json:"result"`
+		StructuredOutput json.RawMessage `json:"structured_output"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out), &env); err != nil {
+		return nil, errors.New("claude printed no JSON")
+	}
+	if env.IsError {
+		return nil, errors.New("claude reported an error: " + truncRunes(firstNonEmpty(env.Result, env.Subtype), 120))
+	}
+	raw := []byte(env.StructuredOutput)
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = []byte(env.Result)
+	}
+	return raw, nil
 }
 
 // runPick runs the helper agent for the project pick; the prompt goes on stdin. With no coding
@@ -139,7 +160,7 @@ func (in slackInbound) PickProject(ctx context.Context, text string) (string, er
 		return "", err
 	}
 	if len(cands) == 0 {
-		log.Printf("slack inbound: project pick skipped: no project with a session")
+		log.Printf("slack inbound: project pick skipped: no project")
 		return "", nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, pickTimeout)
