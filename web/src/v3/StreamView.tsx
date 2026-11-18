@@ -303,7 +303,7 @@ export function StreamView({
                   const d = new Date(m.created_at).toDateString()
                   const out = []
                   for (const ev of linearEv.before.get(m.id) ?? []) out.push(<LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)
-                  for (const ev of taskEv.before.get(m.id) ?? []) out.push(<StreamTaskEventLine key={'t' + ev.id} ev={ev} />)
+                  for (const ev of taskEv.before.get(m.id) ?? []) out.push(<StreamTaskEventLine key={'te' + ev.id} ev={ev} />)
                   if (d !== day) {
                     day = d
                     topic = ''
@@ -350,7 +350,7 @@ export function StreamView({
                   return <Fragment key={m.id}>{out}</Fragment>
                 })}
               {!showArtifacts && linearEv.tail.map((ev) => <LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)}
-              {!showArtifacts && taskEv.tail.map((ev) => <StreamTaskEventLine key={'t' + ev.id} ev={ev} />)}
+              {!showArtifacts && taskEv.tail.map((ev) => <StreamTaskEventLine key={'te' + ev.id} ev={ev} />)}
               {sess.status === 'working' && <div className="v-typing">{sess.name} is working…</div>}
             </div>
           </div>
