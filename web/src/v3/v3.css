@@ -178,7 +178,8 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-attach { border: 0; background: none; color: var(--mb-subtle); display: inline-flex; gap: 5px; align-items: center; padding: 2px 4px; border-radius: 5px; font-size: 12px; }
 .v-attach:hover { color: var(--mb-fg); background: var(--mb-rowsel); }
 .v-composer [data-testid="compose-files"] { margin-bottom: 6px; }
-.v-composer > [data-testid="reply-qa"] { margin-bottom: 8px; }
+/* The reply help above the composer row, in every state (drafting, the questions, a command only). */
+.v-composer > [data-reply-help] { margin-bottom: 8px; }
 .v-dialog [data-testid="compose-files"] { margin-bottom: 6px; }
 .v-hint { font-size: 12px; font-weight: 400; color: var(--mb-subtle); }
 .v-nowon { display: inline-flex; gap: 5px; align-items: center; min-width: 0; }
