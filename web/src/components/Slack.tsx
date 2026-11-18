@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SlackItem, type SlackThreadDetail } from '../api'
-import { useApp } from '../lib/app'
+import { railWidth, useApp } from '../lib/app'
 import { fullTime, shortTime } from '../lib/format'
 import { GROUP_TITLES, matchesSlack, tomorrowMorning, useSlackThreads, type SlackState } from '../lib/slack'
 import { IconBack, IconRefresh, IconSearch, IconSlack } from './icons'
@@ -28,11 +28,10 @@ function useSlackScreen() {
 function SlackDesktop({ tablet }: { tablet: boolean }) {
   const { layout, goBack } = useApp()
   const c = useSlackScreen()
-  const narrow = tablet || (layout.projectsRail ?? window.innerWidth < 1400)
-  return (
+    return (
     <div className="flex h-full w-full overflow-hidden bg-bg" data-testid="slack-screen">
-      <div style={{ width: narrow ? 56 : 176 }} className="shrink-0 border-r border-line">
-        <ProjectRail narrow={narrow} />
+      <div style={{ width: railWidth(layout) }} className="shrink-0 border-r border-line" data-testid="rail-column">
+        <ProjectRail />
       </div>
       <div style={{ width: tablet ? 320 : 400 }} className="shrink-0 border-r border-line">
         <SlackList state={c.state} selected={c.selected} onSelect={c.select} onBack={() => goBack(undefined, { leave: true })} />

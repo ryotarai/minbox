@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Project } from '../api'
-import { useApp } from '../lib/app'
+import { railClosed, useApp } from '../lib/app'
 import { initials } from '../lib/format'
 import { projectHueStyle } from '../lib/projectColor'
 import { useLinearStatus } from '../lib/issues'
@@ -326,8 +326,8 @@ function RailGlobal({ tiles }: { tiles: boolean }) {
 }
 
 /** The far-left column: All projects, then the projects. 176 px with names, 56 px as tiles. */
-export function ProjectRail({ narrow }: { narrow: boolean }) {
-  const { projects, setOverlay, setLayout, route, navigate } = useApp()
+export function ProjectRail() {
+  const { projects, setOverlay, layout, setLayout, route, navigate } = useApp()
   const { id: selectedProject } = useSelectedProject()
   const linear = useLinearStatus()
   const slack = useSlackStatus()
@@ -345,7 +345,7 @@ export function ProjectRail({ narrow }: { narrow: boolean }) {
   const ctx = useContextMenu()
   const ctxProject = ctx.at ? projects?.find((p) => p.id === ctx.at!.el.dataset.projectId) : undefined
   const [renaming, setRenaming] = useState<Project | null>(null)
-  const tiles = narrow
+  const tiles = railClosed(layout)
   const all = stats.get('')
 
   return (

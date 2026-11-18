@@ -154,7 +154,7 @@ export const useIsTablet = () => useQuery(tabletQuery)
 /** In `threadVersion`: bumped when every open thread should load again. */
 export const ALL_THREADS = '*'
 
-/** projectsRail: the project column shows 56 px tiles instead of names. */
+/** projectsRail: the project column shows 56 px tiles instead of names (the rail is "closed"). */
 export type Layout = { sidebarW: number; inboxW: number; threadW: number; projectsRail?: boolean; inboxCollapsed: boolean; shellW: number; shellPane: boolean
   /** Desktop: the Claude Code terminal pane is shown (hidden by default: the threads are the way in). */
   terminalPane: boolean
@@ -171,6 +171,11 @@ export type Layout = { sidebarW: number; inboxW: number; threadW: number; projec
   v3SideW?: number
   v3WideW?: number
 }
+/** The project rail is closed (56 px tiles, no names): one preference for every screen (v3, My issues, Slack) and width
+ *  but the phone, kept in minbox:layout across reloads. Closed unless the person opened it. */
+export const railClosed = (l: Layout) => l.projectsRail ?? true
+/** The project rail's width: closed (tiles) or open (names). */
+export const railWidth = (l: Layout) => (railClosed(l) ? 56 : 176)
 function defaultLayout(): Layout {
   const w = window.innerWidth
   if (w >= 1680) return { sidebarW: 380, inboxW: 480, threadW: 620, inboxCollapsed: false, shellW: 560, shellPane: false, terminalPane: false, tasksPane: false, tasksW: 320, filesPane: false, filesW: 360 }
