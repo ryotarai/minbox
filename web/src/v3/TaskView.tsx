@@ -286,10 +286,11 @@ function writeFold(folded: boolean) {
 }
 
 /**
- * The task card's checklist: its progress (a bar of segments and "n/m") and its steps (a goal: its
- * "done when" criteria), each ticked by a click. A long list stays a short box (scrolled to the current
- * step) until "Show all". On a phone (the checklist under the summary) the progress row folds and
- * unfolds the steps, the choice kept for every task; with no choice yet a short list (up to
+ * The task card's checklist: just its steps (a goal: its "done when" criteria), each ticked by a click;
+ * no progress bar or count, the list says it. A long list stays a short box (scrolled to the current
+ * step) until "Show all". On a phone (the checklist under the summary) it folds to one row, the progress
+ * bar (segments, no count) with a chevron, that a tap unfolds; unfolded, a small chevron at the list's
+ * top right folds it again. The choice is kept for every task; with no choice yet a short list (up to
  * PHONE_OPEN_STEPS) shows open, a longer one folded, so the conversation keeps the screen.
  */
 function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
@@ -314,23 +315,21 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
   if (!n) return null
   return (
     <div className="v-taskcheck" data-testid="task-checklist" role="group" aria-label={goal ? 'Done when' : 'Checklist'}>
-      {/* No heading: the progress is the first row, level with the task's title. */}
-      {isPhone ? (
+      {/* No heading, bar or count: the first step is the first row, level with the task's title. On a
+          phone one toggle folds the list: folded, it is the row (the progress bar); open, a chevron at
+          the list's top right. */}
+      {isPhone && (
         <button
           type="button"
-          className="v-taskcheck-bar v-taskcheck-toggle"
-          data-testid="task-checklist-progress"
+          className={'v-taskcheck-toggle' + (folded ? ' row' : '')}
+          data-testid="task-checklist-toggle"
           aria-expanded={!folded}
           aria-label={`${folded ? 'Show' : 'Hide'} the ${goal ? 'criteria' : 'steps'}`}
           onClick={() => fold(!folded)}
         >
-          <Bar t={t} />
+          {folded && <Bar t={t} count={false} />}
           <IconChevronDown size={14} className="v-taskcheck-chev" aria-hidden />
         </button>
-      ) : (
-        <div className="v-taskcheck-bar" data-testid="task-checklist-progress">
-          <Bar t={t} />
-        </div>
       )}
       {!folded && (
       <div ref={box} className={'v-taskcheck-list' + (long && !all ? ' folded' : '')} data-testid="task-checklist-list">
