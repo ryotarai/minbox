@@ -27,8 +27,12 @@ export function useSidePane(current: Session | undefined): [SidePane, (p: SidePa
     setPaneState(initial())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.s, route.tab, known])
+  const cur = useRef(current)
+  cur.current = current
   const setPane = useCallback(
     (p: SidePane) => {
+      // A plain shell has only its terminal: it stays on it (and is not what other agents open with).
+      if (cur.current?.kind === 'shell') return setPaneState(fit(p, cur.current))
       setPaneState(p)
       if (!isPhone) setLayout({ v3Pane: p })
     },

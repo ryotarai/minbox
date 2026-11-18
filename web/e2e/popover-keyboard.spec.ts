@@ -1,5 +1,6 @@
 import { placePopover } from '../src/lib/popoverPlacement'
-import { createSession, expect, expectTerminal, test } from './fixtures'
+import { expect, test } from './fixtures'
+import { startAgent } from './v3'
 
 // The on-screen keyboard shrinks the visual viewport but not the layout viewport; popovers must stay inside
 // the visible part.
@@ -32,8 +33,7 @@ test('placePopover: flips and caps height inside the visible area', () => {
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
-  // v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-  test.skip('session picker stays inside the visual viewport when the keyboard shrinks it', async ({ page, minbox }) => {
+  test('a menu stays inside the visual viewport when the keyboard shrinks it; a re-press closes it', async ({ page, minbox }) => {
     test.setTimeout(120_000)
     // A fake visual viewport the test can shrink, like an overlaying keyboard does.
     await page.addInitScript(() => {
@@ -45,39 +45,35 @@ test.describe('phone', () => {
         t.dispatchEvent(new Event('resize'))
       }
     })
-    await page.goto(minbox.url)
-    await createSession(page, minbox.dataDir, 'kbd')
-    await expectTerminal(page, 'ready>')
-    await page.getByTestId('mobile-back').click()
-    const target = page.getByTestId('composer-target')
+    const a = await startAgent(minbox, 'kbd')
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+    // The agent menu in the stream header (a Popover, as main's session picker was).
+    const target = page.getByTestId('agent-menu')
     await expect(target).toBeVisible()
     await target.tap()
     const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
-    // Touch device: the search does not grab focus (no keyboard until the user taps it).
-    await expect(page.getByTestId('session-picker-search')).not.toBeFocused()
-    await page.screenshot({ path: '/private/tmp/claude-501/-Users-ryotarai-work-minbox/afc22bed-3c9b-41ed-870d-89183dd4cfab/scratchpad/picker-before.png' })
 
-    // The keyboard opens: only the top 330px stay visible.
-    await page.evaluate(() => (window as unknown as { __vv: (h: number) => void }).__vv(330))
+    // The keyboard opens: only the top 200px stay visible.
+    await page.evaluate(() => (window as unknown as { __vv: (h: number) => void }).__vv(200))
     await expect(async () => {
       const b = (await menu.boundingBox())!
       expect(b.y).toBeGreaterThanOrEqual(0)
-      expect(b.y + b.height).toBeLessThanOrEqual(330)
+      expect(b.y + b.height).toBeLessThanOrEqual(200)
     }).toPass()
-    // Its content scrolls inside (search stays reachable, list can be scrolled).
-    const scrolls = await menu.evaluate((el) => el.scrollHeight > el.clientHeight || el.querySelector('[data-testid="session-option"]') !== null)
-    expect(scrolls).toBe(true)
-    await page.screenshot({ path: '/private/tmp/claude-501/-Users-ryotarai-work-minbox/afc22bed-3c9b-41ed-870d-89183dd4cfab/scratchpad/picker-keyboard.png' })
-    // An option is tappable.
-    await page.getByTestId('session-option').first().tap()
+    // Its content scrolls inside.
+    expect(await menu.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+    // An item is tappable.
+    await page.getByTestId('menu-rename').tap()
     await expect(menu).toHaveCount(0)
+    await page.keyboard.press('Escape')
 
-    // Keyboard closes: reopening uses the full height again.
+    // Keyboard closes: reopening uses the full height again; pressing the button again closes it.
     await page.evaluate(() => (window as unknown as { __vv: (h: number) => void }).__vv(844))
     await target.tap()
     await expect(menu).toBeVisible()
-    await page.keyboard.press('Escape')
+    expect(await menu.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true)
+    await target.tap()
     await expect(menu).toHaveCount(0)
   })
 })
