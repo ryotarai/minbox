@@ -123,17 +123,17 @@ question shows on the Board under NEEDS YOU.
 minbox status              # running? its URL and log (exit code 3 when stopped)
 minbox restart             # stop, then start with the flags of the last `minbox start`
 minbox restart --host         # also restart the local terminal host: asks first (--yes/-y skips it);
-                              # sessions' claude stops and resumes (running turns are interrupted)
-minbox stop                # stop the server; sessions keep running in the terminal host
+                              # agents stop and resume (running turns are interrupted)
+minbox stop                # stop the server; agents keep running in the terminal host
 minbox start --foreground         # stay in the foreground, logs on stderr
-minbox host stop           # stop the terminal host too: every session's claude ends
+minbox host stop           # stop the terminal host too: every agent ends
 ```
 
 **Settings → Hosts** shows the local terminal host's version, pid and start time, and marks it
 **Outdated** when it runs another build than the server (after `make build` and a plain
 `minbox restart`). Its **Restart** button does what `minbox restart --host` does without stopping
-the server: it lists the sessions whose processes will end, then starts a new host from the current
-binary; the sessions resume (or, if you untick that, end).
+the server: it lists the agents and shells whose processes will end, then starts a new host from the current
+binary; the agents resume (or, if you untick that, end).
 
 `start` daemonizes. It returns once the server answers, and logs go to `<data-dir>/minbox.log`.
 
@@ -334,7 +334,7 @@ the server's machine. **Settings → Devices** lists the paired browsers; **Revo
 The browser keeps a device key (never sent) and signs in by itself afterwards.
 
 Why this machine's browser pairs too: any process here can reach 127.0.0.1, coding agents with a shell among them. A
-paired browser's key is what tells your browser from them; the agents' own API uses a per-session token.
+paired browser's key is what tells your browser from them; the agents' own API uses a per-agent token.
 `minbox pair accept` asks on an interactive terminal only (an agent's shell tool has none), and the mods refuse a
 shell command that runs it. A process running as your user can still read and write minbox's data folder
 (`~/.minbox`), so this keeps an agent from acting as you by accident or through a prompt injection; it is not a wall
@@ -415,7 +415,7 @@ minbox is heavily inspired by [Plannotator](https://github.com/backnotprop/plann
 Inbox by [backnotprop](https://github.com/backnotprop): the idea of an inbox for a coding agent,
 the `:::question` block syntax for asking the person a decision, the attachment handling and the
 Claude Code mod (hooks module) approach all come from there, and parts of the design and code are
-ported from it. Thank you. minbox adds terminals, sessions on several machines and a phone-friendly
+ported from it. Thank you. minbox adds terminals, agents on several machines and a phone-friendly
 screen, and does not depend on Plannotator at run time. Details of what was ported:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

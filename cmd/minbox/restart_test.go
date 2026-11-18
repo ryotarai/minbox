@@ -100,7 +100,7 @@ func TestRestartHostConfirm(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out, "3 sessions' claude will stop and resume") || !strings.Contains(out, "[y/N]") {
+		if !strings.Contains(out, "3 agents will stop and resume") || !strings.Contains(out, "[y/N]") {
 			t.Fatalf("prompt = %q", out)
 		}
 		if got := slices.Contains(f.calls, "stopHost"); got != tc.want {

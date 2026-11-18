@@ -16,15 +16,15 @@ turn with it. It works the same for every agent kind (Claude Code, Pi, OpenCode)
 | `!` or `!   ` (nothing after it) | a normal message with that text (nothing is lost; no error) |
 
 Only the first character counts and there is no extra setting. A command works in a reply inside an existing thread.
-It is refused (422) with answers to questions, markups, uploaded files or "forward to another session" in the same
+It is refused (422) with answers to questions, markups, uploaded files or "forward to another agent" in the same
 reply, and as the first message of a new thread (`\!` works there, as text). It needs the same sign-in as any reply.
 
 The composer shows "Runs as a command in <folder>" while the text starts with `!`, and the button says Run.
 
 ## Running
 
-- `sh -c '<command>'` in the session's folder (`cwd`; a pending project-folder change applies at the next start, as for
-  the agent). Sessions on another host are refused: commands run on the machine minbox runs on.
+- `sh -c '<command>'` in the agent's folder (`cwd`; a pending project-folder change applies at the next start, as for
+  the agent). Agents on another host are refused: commands run on the machine minbox runs on.
 - stdout and stderr share one stream, in order. stdin is empty. The environment is minbox's own.
 - 60 s limit. Then the whole process group is killed and the result says "timed out". Output is kept up to 64 KB, with
   a marker when more came. A server restart ends a running command ("interrupted").

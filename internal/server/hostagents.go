@@ -43,7 +43,7 @@ func (m *sessionManager) execOn(hostID string) (HostExec, error) {
 		return nil, fmt.Errorf("host %s is not connected", name)
 	}
 	if protocol < termhost.AgentsProtocol {
-		return nil, fmt.Errorf("the minbox on host %s is too old for Pi and OpenCode sessions (host protocol %d, needs %d): update minbox on that machine and restart `minbox host` there", name, protocol, termhost.AgentsProtocol)
+		return nil, fmt.Errorf("the minbox on host %s is too old for Pi and OpenCode agents (host protocol %d, needs %d): update minbox on that machine and restart `minbox host` there", name, protocol, termhost.AgentsProtocol)
 	}
 	x, ok := client.(HostExec)
 	if !ok {

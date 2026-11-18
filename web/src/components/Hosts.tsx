@@ -119,7 +119,7 @@ export function HostsSection() {
               <span className={cx('w-[170px] text-[12.5px]', on ? 'text-fg2' : h.status === 'pairing' ? 'text-wait' : 'text-danger')} data-testid="host-status">
                 {hostStatus(h)}
               </span>
-              <span className="w-[90px] text-[12.5px] text-muted">{h.sessions === 1 ? '1 session' : `${h.sessions} sessions`}</span>
+              <span className="w-[90px] text-[12.5px] text-muted">{h.sessions === 1 ? '1 agent' : `${h.sessions} agents`}</span>
               {h.status === 'offline' && (
                 <Button size="sm" onClick={() => api.retryHost(h.id).then(reloadHosts).catch(error)} data-testid="host-retry">
                   Retry
@@ -137,7 +137,7 @@ export function HostsSection() {
           )
         })}
       </div>
-      <span className="max-w-[860px] text-[12.5px] leading-[1.6] text-subtle">Removing a host also removes this server from that host. Its sessions stay as Ended; their threads stay readable.</span>
+      <span className="max-w-[860px] text-[12.5px] leading-[1.6] text-subtle">Removing a host also removes this server from that host. Its agents stay as Ended; their threads stay readable.</span>
 
       <Popover anchor={shown?.at ? null : (menu?.el ?? null)} at={shown?.at} open={!!shown} onClose={closeMenu} testid={shown?.at ? 'host-context-menu' : undefined}>
         {shown && (
@@ -176,7 +176,7 @@ export function HostsSection() {
           <h3 className="m-0 text-[16px] font-[650]">Remove {removing.name}?</h3>
           <p className="m-0 text-[13.5px] leading-[1.6] text-muted">
             This server is also removed from {removing.name}, so it has to be paired again to come back.
-            {removing.sessions > 0 ? ` Its ${removing.sessions === 1 ? 'session stays' : `${removing.sessions} sessions stay`} as Ended; the threads stay readable.` : ''}
+            {removing.sessions > 0 ? ` Its ${removing.sessions === 1 ? 'agent stays' : `${removing.sessions} agents stay`} as Ended; the threads stay readable.` : ''}
           </p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setRemoving(null)}>Cancel</Button>
@@ -217,7 +217,7 @@ function RestartHost({ host, onClose }: { host: Host; onClose: () => void }) {
       .restartHost(host.id, resume)
       .then((r) => {
         const n = r.sessions.length
-        const what = n === 0 ? '' : resume ? ` · ${n === 1 ? '1 session resumes' : `${n} sessions resume`}` : ` · ${n === 1 ? '1 session ended' : `${n} sessions ended`}`
+        const what = n === 0 ? '' : resume ? ` · ${n === 1 ? '1 agent resumes' : `${n} agents resume`}` : ` · ${n === 1 ? '1 agent ended' : `${n} agents ended`}`
         toast(`Restarted the terminal host${r.new_pid ? ` (pid ${r.new_pid})` : ''}${what}`)
         onClose()
       })
@@ -235,11 +235,11 @@ function RestartHost({ host, onClose }: { host: Host; onClose: () => void }) {
       <h3 className="m-0 text-[16px] font-[650]">Restart the terminal host?</h3>
       <p className="m-0 text-[13.5px] leading-[1.6] text-muted">
         A new host starts from the current minbox binary; the server keeps running. Every process in the host ends: the agents (running turns are interrupted), companion shells, and any agent
-        session that is working on minbox itself.
+        that is working on minbox itself.
       </p>
       {running.length > 0 ? (
         <div className="flex flex-col gap-1">
-          <span className="text-[12.5px] text-subtle">{running.length === 1 ? '1 running session stops:' : `${running.length} running sessions stop:`}</span>
+          <span className="text-[12.5px] text-subtle">{running.length === 1 ? '1 running agent or shell stops:' : `${running.length} running agents and shells stop:`}</span>
           <ul data-testid="host-restart-sessions" className="m-0 flex max-h-[200px] list-none flex-col gap-0.5 overflow-auto rounded-lg border border-line bg-sunken p-2">
             {running.map((s) => (
               <li key={s.id} data-testid="host-restart-session" className="flex items-center justify-between gap-3 text-[13px]">
@@ -251,13 +251,13 @@ function RestartHost({ host, onClose }: { host: Host; onClose: () => void }) {
         </div>
       ) : (
         <span className="text-[13px] text-subtle" data-testid="host-restart-none">
-          No session is running in it.
+          No agent or shell is running in it.
         </span>
       )}
       {running.length > 0 && (
         <label className="flex items-center gap-2 text-[13.5px]">
           <input type="checkbox" data-testid="host-restart-resume" checked={resume} onChange={(e) => setResume(e.target.checked)} />
-          Resume these sessions afterwards (their conversations carry on)
+          Resume these agents afterwards (their conversations carry on)
         </label>
       )}
       <div className="flex justify-end gap-2">
@@ -724,7 +724,7 @@ export function AddHostWizard({ repair, onClose }: { repair?: Host; onClose: () 
                 setOverlay({ kind: 'new-session' })
               }}
             >
-              New session on {hostName}
+              New agent on {hostName}
             </Button>,
           )}
         </>

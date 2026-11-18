@@ -118,7 +118,7 @@ function ModConnectionDetails({ session }: { session: Session }) {
       </div>
       {session.mod_outdated && (
         <div data-testid="mod-outdated" className="text-[12.5px] text-fg2">
-          <b>{OUTDATED}.</b> This session runs an older minbox mod (protocol {info.mod_protocol ?? 0}; the server speaks {info.server_protocol ?? '?'}). It keeps working; restart the session (agent menu → Restart) to load the current one.
+          <b>{OUTDATED}.</b> This agent runs an older minbox mod (protocol {info.mod_protocol ?? 0}; the server speaks {info.server_protocol ?? '?'}). It keeps working; restart the agent (agent menu → Restart) to load the current one.
         </div>
       )}
       {row('Heartbeat', info.heartbeat ? `yes (${info.beats} so far, seq ${info.seq})` : 'none yet (an old mod only makes calls)')}

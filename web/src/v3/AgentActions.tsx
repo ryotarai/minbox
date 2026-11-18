@@ -78,7 +78,7 @@ export function RenameAgentDialog({ session, onClose }: { session: Session; onCl
       <div className="mb-2 text-[14px] font-semibold">Rename agent</div>
       <input
         ref={input}
-        aria-label="Session name"
+        aria-label="Agent name"
         data-testid="rename-input"
         value={name}
         onChange={(e) => setName(e.target.value)}

@@ -450,7 +450,7 @@ func (s *Server) v3Send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess.Kind == store.KindShell {
-		httpError(w, 400, "a shell session has no stream")
+		httpError(w, 400, "a shell has no stream")
 		return
 	}
 	thread, err := s.store.StreamThread(ctx, sid)

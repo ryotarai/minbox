@@ -115,7 +115,7 @@ export function NewSessionDialog({
   const startLabel = mode === 'project' ? 'Create project' : mode === 'project-edit' ? 'Save' : `Start ${agentLabel(agentsInfo, agentKind)}`
   // A project fixes host and folder: the browser is only for a new folder or a project.
   const showFolder = !proj
-  const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New session'
+  const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New agent'
   const cwdRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -433,7 +433,7 @@ export function NewSessionDialog({
   const nameInput = (
     <label className={cx('flex flex-col gap-1.5 text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>
       <span>
-        {mode === 'session' ? 'Session name' : 'Project name'} <span className="text-subtle">(optional)</span>
+        {mode === 'session' ? 'Agent name' : 'Project name'} <span className="text-subtle">(optional)</span>
       </span>
       <input
         data-testid="new-session-name"
@@ -453,9 +453,9 @@ export function NewSessionDialog({
   const editNote =
     mode === 'project-edit' && editing && editing.session_count > 0 ? (
       <p data-testid="project-edit-note" className="m-0 text-[12.5px] leading-snug text-subtle">
-        This project has {editing.session_count} session{editing.session_count === 1 ? '' : 's'}. Each one starts in the new folder the next time it
-        starts (a restart, or after the server restarts); a running session is not interrupted. A coding agent ties a conversation to its folder, so the
-        session begins a fresh conversation there and is told the old folder and its session id, to read the earlier transcript if it needs to.
+        This project has {editing.session_count} agent{editing.session_count === 1 ? '' : 's'}. Each one starts in the new folder the next time it
+        starts (a restart, or after the server restarts); a running agent is not interrupted. A coding agent ties a conversation to its folder, so the
+        agent begins a fresh conversation there and is told the old folder and its session id, to read the earlier transcript if it needs to.
         The host cannot change.
       </p>
     ) : null

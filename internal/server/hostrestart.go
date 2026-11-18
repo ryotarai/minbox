@@ -120,7 +120,7 @@ func (s *Server) restartLocalHost(ctx context.Context, resume bool) (hostRestart
 	}
 	defer release()
 
-	log.Printf("restarting the terminal host (pid %d) from Settings; %d sessions", res.OldPID, len(res.Sessions))
+	log.Printf("restarting the terminal host (pid %d) from Settings; %d agents and shells", res.OldPID, len(res.Sessions))
 	pid, running, err := s.stopLocalHost(ctx)
 	if err != nil {
 		return res, fmt.Errorf("stop the terminal host: %w", err)

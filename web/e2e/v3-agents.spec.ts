@@ -128,7 +128,7 @@ test('all projects: the agents are grouped under their project; one project show
     await expect(plus).toHaveCSS('visibility', 'visible')
   }
   await plusWeb.click()
-  const dlg = page.getByRole('dialog', { name: 'New session' })
+  const dlg = page.getByRole('dialog', { name: 'New agent' })
   await expect(dlg).toBeVisible()
   await expect(page.getByTestId('new-session-project-name')).toHaveText('web')
   await page.keyboard.press('Escape')
@@ -153,7 +153,7 @@ test('New agent: the full dialog (folder, name) from the sidebar starts an agent
   await page.goto(minbox.url)
   // No project and no agent yet: the empty list offers the dialog (a folder).
   await page.getByTestId('first-agent').click()
-  const dlg = page.getByRole('dialog', { name: 'New session' })
+  const dlg = page.getByRole('dialog', { name: 'New agent' })
   await expect(dlg).toBeVisible()
   await page.getByTestId('new-session-cwd').fill(minbox.dataDir)
   await page.getByTestId('new-session-name').fill('fresh')
@@ -224,7 +224,7 @@ test.describe('phone', () => {
     await expect(plus).toHaveCount(1)
     await expect(plus).toHaveCSS('opacity', '1')
     await plus.tap()
-    await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'New agent' })).toBeVisible()
     await expect(page.getByTestId('new-session-project-name')).toHaveText('proj')
   })
 })

@@ -137,7 +137,7 @@ export function DeleteSession({ session, onClose }: { session: Session; onClose:
       if (session.status !== 'ended') await api.stopSession(session.id)
       await api.archiveSession(session.id)
       reloadSessions()
-      toast(`Archived ${session.name} (session)`, { action: 'Undo', undo: true, onAction: () => api.unarchiveSession(session.id).then(reloadSessions).catch(error) })
+      toast(`Archived ${session.name} (agent)`, { action: 'Undo', undo: true, onAction: () => api.unarchiveSession(session.id).then(reloadSessions).catch(error) })
     }
     run().catch(error)
   }
@@ -187,11 +187,11 @@ export function DeleteProject({ project, onClose }: { project: Project; onClose:
         <p className="m-0 text-[13.5px] leading-[1.6] text-muted">Checking what is in it…</p>
       ) : n === 0 ? (
         <p data-testid="project-delete-warning" className="m-0 text-[13.5px] leading-[1.6] text-muted">
-          The project has no sessions. The folder on disk is not touched.
+          The project has no agents. The folder on disk is not touched.
         </p>
       ) : (
         <p data-testid="project-delete-warning" className="m-0 text-[13.5px] leading-[1.6] text-danger">
-          This also deletes {plural(n, 'session')} and {plural(pre.threads, 'thread')} (all messages and attachments).{' '}
+          This also deletes {plural(n, 'agent')} and {plural(pre.threads, 'thread')} (all messages and attachments).{' '}
           {pre.running_sessions > 0 ? `${pre.running_sessions} ${pre.running_sessions === 1 ? 'is' : 'are'} running and will be stopped. ` : ''}
           The folder on disk is not touched. This cannot be undone.
         </p>
@@ -201,7 +201,7 @@ export function DeleteProject({ project, onClose }: { project: Project; onClose:
           Cancel
         </Button>
         <Button variant="danger" onClick={del} disabled={pre === null} data-testid="project-delete-confirm" autoFocus>
-          {n > 0 ? `Delete project and ${plural(n, 'session')}` : 'Delete project'}
+          {n > 0 ? `Delete project and ${plural(n, 'agent')}` : 'Delete project'}
         </Button>
       </div>
     </Modal>
@@ -353,7 +353,7 @@ export function DecisionMode({ onClose }: { onClose: () => void }) {
         <b className="font-[650] text-fg">Decide</b>
         {items && cur && (
           <span className="truncate">
-            · {cur.thread.subject} · {i + 1} of {items.length} · {plural(waitingSessions, 'session')} waiting
+            · {cur.thread.subject} · {i + 1} of {items.length} · {plural(waitingSessions, 'agent')} waiting
           </span>
         )}
         <span className="flex-1" />

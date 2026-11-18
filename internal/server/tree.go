@@ -31,7 +31,7 @@ func (s *Server) treeFS(w http.ResponseWriter, r *http.Request) (*store.Session,
 		return sess, nil, false
 	}
 	if sess.Cwd == "" {
-		httpError(w, 404, "the session has no folder")
+		httpError(w, 404, "the agent has no folder")
 		return sess, nil, false
 	}
 	fsys, err := s.sessions.fsOf(sess.HostID)
@@ -51,7 +51,7 @@ func (s *Server) sessionTree(w http.ResponseWriter, r *http.Request) {
 	t, err := fsys.ListTree(r.Context(), sess.Cwd, hostfs.TreeMaxPaths)
 	if err != nil {
 		if hostfs.IsNotExist(err) {
-			httpError(w, 404, "the session's folder is not there (or its host's minbox is too old to list it)")
+			httpError(w, 404, "the agent's folder is not there (or its host's minbox is too old to list it)")
 			return
 		}
 		httpError(w, 502, err.Error())
@@ -69,7 +69,7 @@ func (s *Server) sessionTreeStatus(w http.ResponseWriter, r *http.Request) {
 	st, err := fsys.TreeGitStatus(r.Context(), sess.Cwd)
 	if err != nil {
 		if hostfs.IsNotExist(err) {
-			httpError(w, 404, "the session's folder is not there (or its host's minbox is too old to list it)")
+			httpError(w, 404, "the agent's folder is not there (or its host's minbox is too old to list it)")
 			return
 		}
 		httpError(w, 502, err.Error())

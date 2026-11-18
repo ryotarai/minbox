@@ -35,7 +35,7 @@ export function TerminalPane({ session, onThreads, onClose }: { session: Session
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <IconTerminal size={36} className="text-faint" strokeWidth={1.2} />
-        <span className="text-[15px] font-semibold">Start a session to run Claude Code.</span>
+        <span className="text-[15px] font-semibold">Start an agent to run Claude Code.</span>
         <span className="text-[13px] text-muted">Use + New on the left; it starts in the last directory you used.</span>
       </div>
     )
@@ -59,7 +59,7 @@ export function TerminalPane({ session, onThreads, onClose }: { session: Session
         {renaming !== null ? (
           <input
             autoFocus
-            aria-label="Session name"
+            aria-label="Agent name"
             data-testid="rename-input"
             value={renaming}
             onChange={(e) => setRenaming(e.target.value)}
@@ -99,12 +99,12 @@ export function TerminalPane({ session, onThreads, onClose }: { session: Session
             {size.cols}×{size.rows}
           </span>
         )}
-        <IconButton aria-label="Session actions" title="Session actions" data-testid="session-menu" onClick={(e) => setMenu(e.currentTarget)} className="border border-line2">
+        <IconButton aria-label="Agent actions" title="Agent actions" data-testid="session-menu" onClick={(e) => setMenu(e.currentTarget)} className="border border-line2">
           <IconMore />
         </IconButton>
         <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(session.name)} />
         {onClose && (
-          <IconButton aria-label="Close terminal" title="Close terminal (the session keeps running)" data-testid="terminal-close" onClick={onClose}>
+          <IconButton aria-label="Close terminal" title="Close terminal (the agent keeps running)" data-testid="terminal-close" onClick={onClose}>
             <IconClose />
           </IconButton>
         )}
@@ -122,7 +122,7 @@ export function TerminalPane({ session, onThreads, onClose }: { session: Session
         {ended && (
           <div className="absolute inset-x-3 bottom-3 flex h-[52px] items-center gap-3 rounded-[10px] border border-line2 bg-raised pl-4 pr-2" data-testid="ended-bar">
             <span aria-hidden="true" className="box-border h-2 w-2 rounded-full border-[1.5px] border-subtle" />
-            <span className="flex-1 text-[13.5px] text-fg2">Session ended{session.exit_code !== null ? ` (exit ${session.exit_code})` : ''}.</span>
+            <span className="flex-1 text-[13.5px] text-fg2">Agent ended{session.exit_code !== null ? ` (exit ${session.exit_code})` : ''}.</span>
             {(session.undelivered ?? 0) > 0 && <span className="text-[12px] text-subtle">{session.undelivered} undelivered {session.undelivered === 1 ? 'reply goes' : 'replies go'} in after Resume</span>}
             <Button variant="primary" data-testid="resume" onClick={() => api.restartSession(session.id).catch(error)}>
               Resume

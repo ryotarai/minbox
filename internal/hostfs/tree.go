@@ -38,7 +38,7 @@ type GitStatusEntry struct {
 }
 
 // ErrOutside: a path leads out of the folder it must stay in.
-var ErrOutside = errors.New("the path leads outside the session's folder")
+var ErrOutside = errors.New("the path leads outside the agent's folder")
 
 // treeSkip are folders a walk outside git leaves out: generated or vendored
 // trees that would drown the files a person looks for.
