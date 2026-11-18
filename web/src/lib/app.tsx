@@ -148,6 +148,8 @@ function useQuery(q: MediaQueryList): boolean {
   )
 }
 export const useIsPhone = () => useQuery(phoneQuery)
+/** The phone width band now (outside React: a label that differs on a phone). */
+export const isPhoneWidth = () => phoneQuery.matches
 export const useIsTablet = () => useQuery(tabletQuery)
 
 // ---- layout preferences (this browser) ----

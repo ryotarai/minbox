@@ -252,6 +252,40 @@ test('from 1100px three columns: the sidebar stays beside an agent; resizing acr
   await expect(page.getByTestId('composer-text')).toHaveValue('half-written reply')
 })
 
+test("wider than a phone there is no Agents page beside the sidebar's agents: #v=agents shows the Board; narrowed to a phone it is the Agents tab again", async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'alpha')
+  await startAgent(minbox, 'beta')
+  // A link to the Agents page on a tablet and on a desktop: the Board, the agents listed once (the sidebar's).
+  for (const width of [900, 1400]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto(minbox.url + '/#v=agents')
+    await expect(page.getByTestId('board')).toBeVisible()
+    await expect(page.getByTestId('v3-app')).toHaveAttribute('data-view', 'board')
+    await expect(page.getByTestId('agents-view')).toHaveCount(0)
+    await expect(page.getByTestId('sidebar')).toBeVisible()
+    await expect(page.getByTestId('nav-board')).toHaveClass(/sel/)
+    await expect(page.getByTestId('agent-row')).toHaveCount(2)
+  }
+  // A phone (a foldable, folded): the Agents tab, then an agent.
+  await page.setViewportSize({ width: 390, height: 800 })
+  await page.goto(minbox.url)
+  await page.getByTestId('tab-agents').click()
+  await expect(page.getByTestId('agents-view')).toBeVisible()
+  await page.getByTestId('agent-row').filter({ hasText: 'alpha' }).click()
+  await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
+  // Unfolded to a tablet: ‹ names the Board and leads there, not to a second agents list.
+  await page.setViewportSize({ width: 900, height: 800 })
+  await expect(page.getByTestId('back')).toHaveAccessibleName('Back to Board')
+  await page.getByTestId('back').click()
+  await expect(page.getByTestId('board')).toBeVisible()
+  await expect(page.getByTestId('agents-view')).toHaveCount(0)
+  await expect(page.getByTestId('agent-row')).toHaveCount(2)
+  // Folded again: the same place is the phone's Agents tab.
+  await page.setViewportSize({ width: 390, height: 800 })
+  await expect(page.getByTestId('agents-view')).toBeVisible()
+  await expect(page.getByTestId('tab-agents')).toHaveClass(/on/)
+})
+
 test('the notification ask in the sidebar: Allow asks the browser once; × dismisses it for good', async ({ page, minbox }) => {
   await page.addInitScript(() => {
     let perm = 'default'

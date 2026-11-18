@@ -59,7 +59,10 @@ export function V3App() {
   }, [sessions, projectId])
   // Plain login shells an older build left (they can no longer be made): listed apart, they open on their terminal.
   const shells = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind === 'shell' && (!projectId || s.project_id === projectId)), [sessions, projectId])
-  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' ? 'agents' : route.view === 'search' ? 'search' : 'board'
+  // The Agents page is the phone's bottom tab. Wider, the sidebar lists the agents (☰ on a tablet), so
+  // #v=agents (a link, a back entry, a phone unfolded to a tablet) shows the Board; narrowed back to a
+  // phone it is the Agents page again.
+  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' && isPhone ? 'agents' : route.view === 'search' ? 'search' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const side = useSidePanes(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
