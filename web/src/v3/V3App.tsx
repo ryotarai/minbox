@@ -28,7 +28,7 @@ import { TasksPane } from './AgentTasks'
 import { SearchView } from './Search'
 import { ColumnsView } from './Columns'
 import { v3, type BoardTask, type V3Message } from './data'
-import { BackButton, rememberTaskTitles, agentHint, useNav, useSessionsById } from './parts'
+import { BackButton, rememberTaskTitles, agentHint, openQuestions, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconPaperclip } from '../components/icons'
@@ -92,6 +92,23 @@ export function V3App() {
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
   const paletteCtx: PaletteCtx = { agent: current, pane, setPane, tasksPane: hasTasks ? { shown: tasksShown, show: showTasks } : undefined, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
+
+  // A Board question row's open questions ignored (moot): gone at once, back on failure or Undo.
+  const ignoreAsk = (m: V3Message) => {
+    const keys = openQuestions(m).map((q) => q.key)
+    if (!keys.length) return
+    const show = () => setHidden((h) => { const n = new Set(h); n.delete(m.id); return n })
+    setHidden((h) => new Set(h).add(m.id))
+    v3.ignore(m.id, keys)
+      .then(() => {
+        reloadBoard()
+        app.toast('Ignored', { action: 'Undo', undo: true, onAction: () => v3.unignore(m.id, keys).then(reloadBoard).catch(app.error) })
+      })
+      .catch((e) => {
+        show()
+        app.error(e)
+      })
+  }
 
   // ---- keys ----
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -204,6 +221,13 @@ export function V3App() {
         const m = board?.questions.find((x) => x.id === id)
         if (m) m.tasks[0] ? nav.task(m.tasks[0].task_id, m.id) : nav.agent(m.session_id, m.id)
       }
+    } else if ((e.key === 'i' || e.key === 'I') && !e.shiftKey && focus.startsWith('q:')) {
+      const m = board?.questions.find((x) => x.id === focus.slice(2))
+      if (m) {
+        e.preventDefault()
+        move(keys[i + 1] ?? keys[i - 1])
+        ignoreAsk(m)
+      }
     } else if ((e.key === 'x' || e.key === 'X') && focus.startsWith('t:')) {
       const t = board?.tasks.find((x) => x.id === focus.slice(2))
       if (t) {
@@ -267,6 +291,7 @@ export function V3App() {
         setShowQuiet={setShowQuiet}
         hidden={hidden}
         onRename={setRenamingTask}
+        onIgnore={ignoreAsk}
       />
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
@@ -699,6 +724,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],
     ['⌘↵', 'Send the message (with any answers picked in the task or stream)'],
     ['X', 'Done / reopen the focused task'],
+    ['I', 'Ignore the focused question (no longer relevant; the agent is not told)'],
     ['E · F2', 'Rename the task (the open one, or the focused Board row)'],
     ['Z', 'Undo the last action (done, archive)'],
     ['N', 'Next agent with unread messages'],

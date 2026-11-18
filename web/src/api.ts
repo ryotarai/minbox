@@ -292,7 +292,7 @@ export type Annotation = {
   image_path?: string
 }
 
-export type ClosedReason = 'moved_on' | 'replaced' | 'marked_read' | 'archived'
+export type ClosedReason = 'moved_on' | 'replaced' | 'marked_read' | 'archived' | 'ignored'
 
 export type MessageCommand = {
   message_id: string
@@ -330,6 +330,8 @@ export type Message = {
   annotations?: Annotation[] | null
   urgent?: boolean
   closed?: Record<string, ClosedReason> | null
+  /** Questions the person ignored (by key), with when. */
+  ignored?: Record<string, string> | null
 }
 
 export type Thread = {

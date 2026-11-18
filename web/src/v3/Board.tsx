@@ -7,7 +7,7 @@ import { useSelectedProject } from '../lib/projects'
 import { ago, short, standing, v3, type Board, type BoardTask, type V3Message } from './data'
 import { TaskRowMenu } from './RenameTask'
 import { IconMore } from '../components/icons'
-import type { MenuAt } from '../components/ui'
+import { MenuItem, Popover, type MenuAt } from '../components/ui'
 import type { Question } from '../api'
 import { Bar, StatusDot, agentName, openQuestions, useNav, useSessionsById } from './parts'
 
@@ -104,6 +104,7 @@ export function BoardView({
   setShowQuiet,
   hidden,
   onRename,
+  onIgnore,
 }: {
   board: Board | null
   reload: () => void
@@ -116,6 +117,8 @@ export function BoardView({
   hidden: Set<string>
   /** Rename a task (its row menu): the dialog is the app's, as for E / F2 on the focused row. */
   onRename?: (t: BoardTask) => void
+  /** Ignore a question row's open questions (its menu, I on the focused row): the app's, with Undo. */
+  onIgnore?: (m: V3Message) => void
 }) {
   const { setOverlay, error } = useApp()
   const { project } = useSelectedProject()
@@ -123,6 +126,7 @@ export function BoardView({
   const nav = useNav()
   const [dropping, setDropping] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ t: BoardTask; at: MenuAt } | null>(null)
+  const [qmenu, setQmenu] = useState<{ m: V3Message; at: MenuAt } | null>(null)
   if (!board) return <div className="v-col"><div className="v-empty">Loading…</div></div>
   const g = groups(board, hidden)
   const needsN = needsCount(board, hidden)
@@ -144,7 +148,19 @@ export function BoardView({
     const pr = t?.links?.find((l) => l.kind === 'pr') ?? t?.links?.[0]
     const ask = askText(qs)
     return (
-      <div key={m.id} className={'v-row' + (focus === k ? ' focus' : '')} data-key={k} data-testid="question-card" data-message={m.id}>
+      <div
+        key={m.id}
+        className={'v-row' + (focus === k ? ' focus' : '')}
+        data-key={k}
+        data-testid="question-card"
+        data-message={m.id}
+        onContextMenu={(e) => {
+          if ((e.target as Element).closest('a[href], input, textarea, select') || e.defaultPrevented) return
+          e.preventDefault()
+          setFocus(k)
+          setQmenu({ m, at: { el: e.currentTarget, x: e.clientX, y: e.clientY } })
+        }}
+      >
         <div
           className="v-line"
           onClick={() => {
@@ -179,6 +195,22 @@ export function BoardView({
                 {pr.label}
                 {pr.state ? ` · ${pr.state}` : ''}
               </a>
+            )}
+            {onIgnore && (
+              <button
+                type="button"
+                className="v-more"
+                data-testid="question-row-more"
+                aria-label="Question actions"
+                title="Open, ignore (right-click)"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setFocus(k)
+                  setQmenu({ m, at: { el: e.currentTarget } })
+                }}
+              >
+                <IconMore size={14} />
+              </button>
             )}
           </div>
           <div className="v-age" title="asked">
@@ -322,7 +354,7 @@ export function BoardView({
         <div className="v-r2 v-sum">
           {project?.name ?? 'All projects'} · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working{g.blocked.length ? ` · ${g.blocked.length} blocked` : ''} · {openN} open
           <span className="v-hide-phone" style={{ marginLeft: 'auto' }}>
-            J/K move · ↵ open · X done
+            J/K move · ↵ open · X done · I ignore
           </span>
         </div>
       </div>
@@ -375,6 +407,30 @@ export function BoardView({
           onOpen={() => nav.task(menu.t.id)}
           onToggleDone={() => setStatus(menu.t, menu.t.status === 'done' ? 'working' : 'done')}
         />
+      )}
+      {qmenu && (
+        <Popover anchor={null} at={qmenu.at} open onClose={() => setQmenu(null)} testid="question-row-menu">
+          <MenuItem
+            testid="menu-open-question"
+            hint="↵"
+            onClick={() => {
+              setQmenu(null)
+              openAsk(nav, qmenu.m)
+            }}
+          >
+            Open
+          </MenuItem>
+          <MenuItem
+            testid="menu-ignore-question"
+            hint="I"
+            onClick={() => {
+              setQmenu(null)
+              onIgnore?.(qmenu.m)
+            }}
+          >
+            Ignore{openQuestions(qmenu.m).length > 1 ? ` (${openQuestions(qmenu.m).length} questions)` : ''}
+          </MenuItem>
+        </Popover>
       )}
     </div>
   )

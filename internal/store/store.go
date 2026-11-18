@@ -109,6 +109,9 @@ const (
 	ClosedReplaced   = "replaced"
 	ClosedMarkedRead = "marked_read"
 	ClosedArchived   = "archived"
+	// ClosedIgnored: the person ignored it (a moot question): no longer waiting on them. Nothing is
+	// sent to the agent; Unignore reopens it.
+	ClosedIgnored = "ignored"
 )
 
 // UrgentAfter: a message queued this long is delivered even into a busy session (for minbox's own
@@ -275,6 +278,8 @@ type Message struct {
 	Decision     string   `json:"decision,omitempty"`
 	DecisionTask string   `json:"decision_task,omitempty"`
 	TurnOf       []string `json:"turn_of,omitempty"`
+	// Ignored: on an agent message, the questions the person ignored (by key), with when.
+	Ignored map[string]time.Time `json:"ignored,omitempty"`
 
 	claimOwner string
 }
@@ -478,6 +483,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"messages", "decision", "TEXT NOT NULL DEFAULT ''"},      // v3: see Message.Decision
 	{"messages", "decision_task", "TEXT NOT NULL DEFAULT ''"}, // v3
 	{"messages", "turn_of", "TEXT NOT NULL DEFAULT '[]'"},     // v3
+	{"messages", "ignored", "TEXT NOT NULL DEFAULT '{}'"},     // JSON {question key: ms}: questions the person ignored
 	{"threads", "kind", "TEXT NOT NULL DEFAULT ''"},           // v3: 'stream' (one per session) or '' (an older thread: a segment of the stream)
 	{"attachments", "type", "TEXT NOT NULL DEFAULT ''"},
 	{"attachments", "author", "TEXT NOT NULL DEFAULT 'agent'"},
@@ -1021,14 +1027,14 @@ func (s *Store) AddMessage(ctx context.Context, threadID string, m NewMessage) (
 	return msg, nil
 }
 
-const messageCols = `id, thread_id, author, body, words, questions, answers, answers_for, created_at, read_at, claimed_at, claim_owner, delivered_at, kind, urgent, annotations, decision, decision_task, turn_of`
+const messageCols = `id, thread_id, author, body, words, questions, answers, answers_for, created_at, read_at, claimed_at, claim_owner, delivered_at, kind, urgent, annotations, decision, decision_task, turn_of, ignored`
 
 func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	var m Message
-	var qs, as, ann, turnOf string
+	var qs, as, ann, turnOf, ignored string
 	var created int64
 	var read, claimed, delivered sql.NullInt64
-	if err := row.Scan(&m.ID, &m.ThreadID, &m.Author, &m.Body, &m.Words, &qs, &as, &m.AnswersFor, &created, &read, &claimed, &m.claimOwner, &delivered, &m.Kind, &m.Urgent, &ann, &m.Decision, &m.DecisionTask, &turnOf); err != nil {
+	if err := row.Scan(&m.ID, &m.ThreadID, &m.Author, &m.Body, &m.Words, &qs, &as, &m.AnswersFor, &created, &read, &claimed, &m.claimOwner, &delivered, &m.Kind, &m.Urgent, &ann, &m.Decision, &m.DecisionTask, &turnOf, &ignored); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -1038,6 +1044,13 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	_ = json.Unmarshal([]byte(as), &m.Answers)
 	_ = json.Unmarshal([]byte(ann), &m.Annotations)
 	_ = json.Unmarshal([]byte(turnOf), &m.TurnOf)
+	var ign map[string]int64
+	if json.Unmarshal([]byte(ignored), &ign) == nil && len(ign) > 0 {
+		m.Ignored = make(map[string]time.Time, len(ign))
+		for k, v := range ign {
+			m.Ignored[k] = fromMs(v)
+		}
+	}
 	if len(m.TurnOf) == 0 {
 		m.TurnOf = nil
 	}
@@ -1200,7 +1213,10 @@ func derive(t *Thread, sessionStatus string, now time.Time) {
 				continue
 			}
 			reason := ""
+			_, ignored := m.Ignored[q.Key]
 			switch {
+			case ignored:
+				reason = ClosedIgnored
 			case replaced[normPrompt(q.Prompt)] && q.Replaces == "":
 				reason = ClosedReplaced
 			case i != lastAgent && t.Kind != ThreadStream:

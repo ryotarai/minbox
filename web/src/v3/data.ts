@@ -102,6 +102,10 @@ export const v3 = {
   /** An agent reply and the person's messages it answered move to another task (or a new one). */
   move: (msg: string, body: { to?: string; title?: string }) => call<{ ok: boolean; task_id: string; removed_task: string }>('POST', `/api/v3/messages/${msg}/move`, body),
   read: (ids: string[]) => call<{ marked: number }>('POST', '/api/v3/read', { message_ids: ids }),
+  /** Ignore a message's questions (keys; none: all of them): they stop waiting on the person. The agent is not told. */
+  ignore: (msg: string, keys?: string[]) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/ignore`, { keys: keys ?? [] }),
+  /** Reopen ignored questions (keys; none: all of them). */
+  unignore: (msg: string, keys?: string[]) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/unignore`, { keys: keys ?? [] }),
   search: (qs: string, project: string) => call<SearchResult>('GET', '/api/v3/search' + q({ q: qs, project })),
 }
 

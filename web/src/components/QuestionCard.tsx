@@ -9,7 +9,7 @@ export function answerIsEmpty(a?: Answer): boolean {
   return !a.selected?.length && !a.other?.trim() && !a.text?.trim() && !a.skipped && !a.note?.trim()
 }
 
-export type CardState = 'Open' | 'Draft' | 'Answered' | 'Skipped' | 'Closed'
+export type CardState = 'Open' | 'Draft' | 'Answered' | 'Skipped' | 'Closed' | 'Ignored'
 
 /** Closures that only note the question is old: it still takes answers. */
 export const SOFT_CLOSED: ReadonlySet<ClosedReason> = new Set<ClosedReason>(['moved_on', 'replaced'])
@@ -24,6 +24,7 @@ const CLOSED_NOTE: Record<ClosedReason, string> = {
   replaced: 'Closed: Claude Code replaced this question.',
   marked_read: 'Closed unanswered when you marked it read.',
   archived: 'Closed unanswered when you archived the thread.',
+  ignored: 'Ignored: it no longer waits on you (the agent was not told).',
 }
 
 type Props = {
@@ -40,6 +41,10 @@ type Props = {
   earlier?: ClosedReason | null
   compact?: boolean
   phone?: boolean
+  /** Ignore the (moot) question: it stops waiting on the person; nothing goes to the agent. */
+  onIgnore?: () => void
+  /** Reopen an ignored question. */
+  onUnignore?: () => void
 }
 
 /** Splits context into prose and the Stopped:/Holds up:/Replaces: lines shown on their own. */
@@ -53,7 +58,7 @@ function contextParts(ctx: string | undefined): { prose: string; meta: string[] 
   return { prose: prose.join('\n').trim(), meta }
 }
 
-export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, closed, earlier, phone }: Props) {
+export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, closed, earlier, phone, onIgnore, onUnignore }: Props) {
   const [noteOpen, setNoteOpen] = useState(!!draft?.note)
   const readOnly = !!sent || !!closed
   const a: Answer = sent ?? draft ?? { key: q.key }
@@ -69,7 +74,7 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
   const showRecommended = recommended.length > 0 && !isRecommendedPick
   const recommendedLabel = hasPick ? 'Switch to recommended' : 'Accept recommended'
   const useRecommended = () => update({ selected: recommendedPick, other: '' })
-  const state: CardState = sent ? (sent.skipped ? 'Skipped' : 'Answered') : closed ? 'Closed' : answerIsEmpty(draft) ? 'Open' : 'Draft'
+  const state: CardState = sent ? (sent.skipped ? 'Skipped' : 'Answered') : closed === 'ignored' ? 'Ignored' : closed ? 'Closed' : answerIsEmpty(draft) ? 'Open' : 'Draft'
   const { prose, meta } = contextParts(q.context)
 
   const toggle = (label: string) => {
@@ -90,6 +95,7 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
     Answered: 'border-sel bg-carddim',
     Skipped: 'border-sel bg-carddim',
     Closed: 'border-line bg-surface',
+    Ignored: 'border-line bg-surface',
   }[state]
   const chip = {
     Open: 'border border-wait text-wait',
@@ -97,8 +103,9 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
     Answered: 'bg-ok/14 text-ok',
     Skipped: 'border border-[#3f3f46] text-muted',
     Closed: 'bg-sel text-muted',
+    Ignored: 'bg-sel text-muted',
   }[state]
-  const dim = state === 'Skipped' || state === 'Closed'
+  const dim = state === 'Skipped' || state === 'Closed' || state === 'Ignored'
   const kindLabel = q.kind === 'multi' ? 'pick any' : q.kind === 'text' ? 'free text' : 'pick one'
   const answeredView = readOnly && !!sent && !sent.skipped
 
@@ -155,7 +162,7 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
                     className={cx(
                       'box-border shrink-0 rounded-full',
                       phone ? 'h-5 w-5' : 'h-4 w-4',
-                      on ? (state === 'Answered' ? 'border-[5px] border-ok' : 'border-[5px] border-wait') : state === 'Closed' ? 'border-[1.5px] border-dashed border-faint' : 'border-[1.5px] border-faint',
+                      on ? (state === 'Answered' ? 'border-[5px] border-ok' : 'border-[5px] border-wait') : state === 'Closed' || state === 'Ignored' ? 'border-[1.5px] border-dashed border-faint' : 'border-[1.5px] border-faint',
                     )}
                   />
                   <span className="flex min-w-0 flex-col gap-0.5">
@@ -254,12 +261,26 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
           <CardLink testid="skip-question" big={phone} onClick={() => onDraft({ key: q.key, skipped: !a.skipped, note: a.note })}>
             {a.skipped ? 'Unskip' : 'Skip'}
           </CardLink>
+          {onIgnore && (
+            <CardLink testid="ignore-question" big={phone} title="No longer relevant: stop waiting on it (the agent is not told)" onClick={onIgnore}>
+              Ignore
+            </CardLink>
+          )}
           {!phone && <span className="flex-1" />}
           {!phone && state === 'Draft' && pickedAt && <span className="text-[12px] text-subtle">Picked {hm(new Date(pickedAt))}, not sent</span>}
         </div>
       )}
       {a.skipped && !sent && <div className="text-[12px] text-subtle">Will be sent as skipped.</div>}
-      {state === 'Closed' && closed && <div className="text-[12px] leading-normal text-subtle">{CLOSED_NOTE[closed]}</div>}
+      {(state === 'Closed' || state === 'Ignored') && closed && (
+        <div className="flex items-center gap-1 text-[12px] leading-normal text-subtle" data-testid={state === 'Ignored' ? 'question-ignored' : undefined}>
+          <span className="flex-1">{CLOSED_NOTE[closed]}</span>
+          {state === 'Ignored' && onUnignore && (
+            <CardLink testid="unignore-question" big={phone} onClick={onUnignore}>
+              Reopen
+            </CardLink>
+          )}
+        </div>
+      )}
       {!readOnly && earlier && EARLIER_NOTE[earlier] && (
         <div data-testid="question-earlier" className="text-[12px] leading-normal text-subtle">
           {EARLIER_NOTE[earlier]}
@@ -269,11 +290,12 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
   )
 }
 
-function CardLink({ children, onClick, testid, big }: { children: React.ReactNode; onClick: () => void; testid?: string; big?: boolean }) {
+function CardLink({ children, onClick, testid, big, title }: { children: React.ReactNode; onClick: () => void; testid?: string; big?: boolean; title?: string }) {
   return (
     <button
       type="button"
       data-testid={testid}
+      title={title}
       onClick={onClick}
       className={cx('rounded-[6px] border-0 bg-transparent px-2 text-muted hover:bg-raised hover:text-fg', big ? 'h-11 px-4 text-[14px]' : 'h-[30px] text-[12.5px]')}
     >
