@@ -17,9 +17,12 @@ import (
 	"github.com/ryotarai/minbox/internal/hostauth"
 )
 
-// Browsers on other machines (through `minbox start --tailscale`, or any
-// proxy) must be paired devices; a browser straight on this machine's
-// loopback address is trusted as before.
+// Every browser must be a paired device, a browser on this machine's own
+// loopback address too: any local process (a coding agent with a shell among
+// them) can reach 127.0.0.1, so the address alone proves nothing about who is
+// asking. A browser pairs once (accepted on a paired browser, or with
+// `minbox pair accept <code>` in a terminal on this machine) and then signs in
+// with its key. The mods' API (/api/agent/*) has its own per-session token.
 
 const (
 	deviceCookie     = "minbox_device"
@@ -66,7 +69,7 @@ const deviceKey ctxKey = 1
 
 // trust is how a request is trusted.
 type trust struct {
-	via    string // "loopback" | "device" | ""
+	via    string // "device" | ""
 	device *devices.Device
 }
 
@@ -121,7 +124,7 @@ func (s *Server) allowedHost(hostport string) bool {
 	return false
 }
 
-// openRoute: what an unpaired remote browser may reach: the app itself and
+// openRoute: what an unpaired browser may reach: the app itself and
 // the pairing and sign-in routes.
 func openRoute(r *http.Request) bool {
 	p := r.URL.Path
@@ -230,8 +233,8 @@ func (s *Server) dropDevice(id string) {
 	a.mu.Unlock()
 }
 
-// guard checks every request: the Host, the Tailscale user, the device of a
-// remote browser, and that it is not a cross-site request.
+// guard checks every request: the Host, the Tailscale user, the browser's
+// paired device (on loopback too), and that it is not a cross-site request.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.allowedHost(r.Host) {
@@ -266,9 +269,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		t := trust{}
-		if !isRemote {
-			t.via = "loopback"
-		} else if d := s.deviceOf(r); d != nil {
+		if d := s.deviceOf(r); d != nil {
 			t = trust{via: "device", device: d}
 		}
 		// The mod's API has its own bearer token.
@@ -380,6 +381,16 @@ func (s *Server) devicePair(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		storeError(w, err)
 		return
+	}
+	// The same browser asking again (a reload of its pairing screen) keeps its code.
+	if _, der, err := devices.ParsePublicKey(req.PublicKey); err == nil {
+		fp := devices.Fingerprint(der)
+		for _, p := range pending {
+			if p.Fingerprint == fp {
+				writeJSON(w, 201, map[string]string{"request_id": p.ID, "code": p.Code, "fingerprint": p.Fingerprint})
+				return
+			}
+		}
 	}
 	mine := 0
 	for _, p := range pending {

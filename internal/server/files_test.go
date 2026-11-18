@@ -31,7 +31,7 @@ func TestSessionFilesForMentions(t *testing.T) {
 	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\ndb*\nserver-key\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\ndb*\nserver-key\ndevices.json\ndevice-pairing/\n"), 0o644)
 	mk(home, "notes.md", "proj/")
 
 	list := func(prefix string) []string {

@@ -48,7 +48,7 @@ func newRealHostEnv(t *testing.T) *realHostEnv {
 	srv := New(cfg, st, fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	e := &realHostEnv{env: &env{t: t, srv: srv, st: st, ts: ts, dir: dir}, sock: sock}
+	e := &realHostEnv{env: &env{t: t, srv: srv, st: st, ts: ts, dir: dir, cookie: pairedCookie(t, srv, "Test browser")}, sock: sock}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var hosts sync.WaitGroup

@@ -298,7 +298,11 @@ test("the permission hook applies the server's guards: pages opened on the host,
   perm(open)
   assert.equal(open.effect, 'deny')
   assert.equal(open.message, MANIFEST.guards[0].deny)
-  const ls = { sessionID: SES, action: 'shell', resources: ['ls -la'], effect: 'allow' }
+  const pair = { sessionID: SES, action: 'shell', resources: ['minbox pair accept 482913'], effect: 'allow' as string, message: undefined as string | undefined }
+  perm(pair)
+  assert.equal(pair.effect, 'deny')
+  assert.match(pair.message!, /minbox pair accept/)
+  const ls ={ sessionID: SES, action: 'shell', resources: ['ls -la'], effect: 'allow' }
   perm(ls)
   assert.equal(ls.effect, 'allow')
   const q = { sessionID: SES, action: 'question', resources: ['*'], effect: 'ask' as string, message: '' }

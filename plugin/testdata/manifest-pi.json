@@ -1,6 +1,6 @@
 {
   "protocol": 1,
-  "version": "6f0307777ff2",
+  "version": "d51d21da772a",
   "tools": [
     {
       "name": "minbox_send_message",
@@ -600,6 +600,15 @@
         "(?:^|[;\u0026|(\\x60]|\\$\\()\\s*gh\\s+(?:browse\\b|[^;\u0026|\\n]*\\s(?:--web|-w)(?=[\\s;\u0026|)]|$))"
       ],
       "deny": "minbox: this would open the page on the host machine, not in the person's browser. Call minbox_open_url with the page's URL instead (with gh, get it with e.g. `gh pr view --json url -q .url`)."
+    },
+    {
+      "tools": [
+        "bash"
+      ],
+      "patterns": [
+        "(?:^|[^\\w.-])minbox['\"]?\\s+(?:[^;\u0026|\\n]*\\s)?pair\\s+(?:[^;\u0026|\\n]*\\s)?accept\\b"
+      ],
+      "deny": "minbox: accepting a pairing lets a browser or a server act as the person, so only the person does it, in their own terminal (or in Settings › Devices on a paired browser). Do not run `minbox pair accept` yourself, in any form; if the person asked for it, tell them the command to run."
     }
   ]
 }

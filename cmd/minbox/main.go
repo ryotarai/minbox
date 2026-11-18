@@ -16,7 +16,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -31,7 +30,6 @@ import (
 	"time"
 
 	"github.com/ryotarai/minbox/internal/devices"
-	"github.com/ryotarai/minbox/internal/hostauth"
 	"github.com/ryotarai/minbox/internal/server"
 	"github.com/ryotarai/minbox/internal/store"
 	"github.com/ryotarai/minbox/internal/termhost"
@@ -64,7 +62,7 @@ func main() {
 	case "host":
 		err = hostCmd(args)
 	case "pair":
-		err = pairCmd(args, os.Stdout)
+		err = pairCmd(args, stdPairIO())
 	case "help":
 		fmt.Println(usage)
 	default:
@@ -107,8 +105,10 @@ const usage = `usage:
   minbox pair list [--data-dir <dir>]       servers waiting to be paired with this machine's host,
                                             and browsers waiting to be paired with this machine's server
   minbox pair accept <code> [--data-dir <dir>]
-                                            let that server use this machine's host (or that browser
-                                            use this machine's server)
+                                            let that browser use this machine's server (or that server
+                                            use this machine's host); every browser pairs once, one on
+                                            this machine too. Shows who asks and asks back: it needs an
+                                            interactive terminal (no flag skips that)
   minbox pair reject <code> [--data-dir <dir>]
                                             turn that server (or browser) down`
 
@@ -348,84 +348,6 @@ func tailscaleSelfName() string {
 	return strings.TrimSuffix(st.Self.DNSName, ".")
 }
 
-// pairCmd: `minbox pair list|accept|reject` on the host's (or server's) machine.
-func pairCmd(args []string, out io.Writer) error {
-	if len(args) == 0 {
-		return errors.New(usage)
-	}
-	sub := args[0]
-	fs := flag.NewFlagSet("pair "+sub, flag.ExitOnError)
-	dataDir := fs.String("data-dir", defaultDataDir(), "the host's data directory")
-	// The code may come before or after the flags.
-	rest := args[1:]
-	var code string
-	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		code, rest = rest[0], rest[1:]
-	}
-	_ = fs.Parse(rest)
-	if code == "" && fs.NArg() > 0 {
-		code = fs.Arg(0)
-	}
-	now := time.Now()
-	switch sub {
-	case "list":
-		ps, err := hostauth.ListPairings(*dataDir, now)
-		if err != nil {
-			return err
-		}
-		bs, err := devices.Pending(*dataDir, now)
-		if err != nil {
-			return err
-		}
-		if len(ps) == 0 && len(bs) == 0 {
-			fmt.Fprint(out, hostauth.FormatList(nil))
-			return nil
-		}
-		if len(ps) > 0 {
-			fmt.Fprint(out, hostauth.FormatList(ps))
-		}
-		fmt.Fprint(out, devices.FormatList(bs))
-		return nil
-	case "accept":
-		if code == "" {
-			return errors.New("usage: minbox pair accept <code>")
-		}
-		if devices.Exists(*dataDir, code) {
-			r, _, err := devices.Accept(*dataDir, code, now)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(out, "paired the browser %s (ecdsa-p256 %s): it can use this machine's minbox now\n", r.Name, r.Fingerprint)
-			return nil
-		}
-		p, err := hostauth.Accept(*dataDir, code, now)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "paired %s (ed25519 %s): it can use this machine's host now\n", p.ServerName, p.Fingerprint)
-		return nil
-	case "reject":
-		if code == "" {
-			return errors.New("usage: minbox pair reject <code>")
-		}
-		if devices.Exists(*dataDir, code) {
-			r, err := devices.Reject(*dataDir, code, now)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(out, "rejected the browser %s (ecdsa-p256 %s)\n", r.Name, r.Fingerprint)
-			return nil
-		}
-		p, err := hostauth.Reject(*dataDir, code, now)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "rejected %s (ed25519 %s)\n", p.ServerName, p.Fingerprint)
-		return nil
-	}
-	return fmt.Errorf("unknown pair command %q\n%s", sub, usage)
-}
-
 func hostCmd(args []string) error {
 	if len(args) > 0 && args[0] == "start" {
 		return hostStart(args[1:])
@@ -589,7 +511,7 @@ func serve(args []string) error {
 	}
 	url := "http://" + ln.Addr().String()
 	if listenAny {
-		// This machine's mods and browser use loopback (trusted, no pairing).
+		// This machine's mods and browser use loopback (the mods with their token, the browser paired).
 		h, p, _ := net.SplitHostPort(ln.Addr().String())
 		log.Printf("serving other machines on %s: their browsers must be paired (minbox pair accept <code>)", ln.Addr())
 		if ip := net.ParseIP(h); ip != nil && ip.IsUnspecified() {
@@ -636,6 +558,9 @@ func serve(args []string) error {
 		_ = hs.Shutdown(sctx)
 	}()
 	log.Printf("minbox listening on %s (data in %s)", url, *dataDir)
+	if list, err := devices.List(*dataDir); err == nil && len(list) == 0 {
+		log.Printf("no browser is paired yet: open %s, press Pair this browser, then run the command it shows (minbox pair accept <code>) in a terminal here", url)
+	}
 	if *tsServe {
 		_, port, _ := net.SplitHostPort(ln.Addr().String())
 		p, _ := strconv.Atoi(port)

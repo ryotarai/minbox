@@ -280,6 +280,17 @@ func openDeny(openTool string) string {
 	return "minbox: this would open the page on the host machine, not in the person's browser. Call " + openTool + " with the page's URL instead (with gh, get it with e.g. `gh pr view --json url -q .url`)."
 }
 
+// pairAcceptPatterns: a command that accepts a pairing (`minbox pair accept <code>`: a browser or a
+// server gets to act as the person). Anywhere in the command, quoted or not (`sh -c "minbox pair
+// accept …"`, ./bin/minbox, go run ./cmd/minbox): only the person accepts a pairing, in their own
+// terminal. A backstop: `minbox pair accept` also asks on an interactive terminal (see cmd/minbox).
+var pairAcceptPatterns = []string{
+	"(?:^|[^\\w.-])minbox['\"]?\\s+(?:[^;&|\\n]*\\s)?pair\\s+(?:[^;&|\\n]*\\s)?accept\\b",
+}
+
+// pairAcceptDeny is the refusal of a command that would accept a pairing.
+const pairAcceptDeny = "minbox: accepting a pairing lets a browser or a server act as the person, so only the person does it, in their own terminal (or in Settings › Devices on a paired browser). Do not run `minbox pair accept` yourself, in any form; if the person asked for it, tell them the command to run."
+
 // questionDeny refuses OpenCode's own question tool in the main session.
 func questionDeny(sendTool string) string {
 	return "minbox: the person follows this session in the minbox inbox and does not see questions in the terminal. Ask with " + sendTool + " (a :::question block) instead."

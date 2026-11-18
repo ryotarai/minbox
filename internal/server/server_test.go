@@ -75,6 +75,9 @@ type env struct {
 	host *fakeHost
 	ts   *httptest.Server
 	dir  string
+	// cookie is this machine's paired browser ("minbox_device=…"): e.do sends it with every
+	// request that names no Cookie of its own and does not come through a proxy.
+	cookie string
 }
 
 func newEnv(t *testing.T) *env {
@@ -91,8 +94,28 @@ func newEnv(t *testing.T) *env {
 	srv.sessions.setHost(host)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	return &env{t: t, srv: srv, st: st, host: host, ts: ts, dir: dir}
+	e := &env{t: t, srv: srv, st: st, host: host, ts: ts, dir: dir}
+	e.cookie = pairedCookie(t, srv, "Test browser")
+	return e
 }
+
+// auth adds this machine's paired browser's cookie to a request built by hand.
+func (e *env) auth(req *http.Request) *http.Request {
+	req.Header.Set("Cookie", e.cookie)
+	return req
+}
+
+// authUnless adds the cookie unless the headers name a Cookie of their own ("" for none) or
+// make the request come through a proxy (another machine's browser).
+func (e *env) authUnless(req *http.Request, header map[string]string) {
+	_, hasCookie := header["Cookie"]
+	if !hasCookie && header["X-Forwarded-For"] == "" && header["Tailscale-User-Login"] == "" {
+		e.auth(req)
+	}
+}
+
+// authHeader is the same as a header map (websocket.Dial, e.do callers).
+func (e *env) authHeader() http.Header { return http.Header{"Cookie": {e.cookie}} }
 
 func (e *env) do(method, path string, body any, header map[string]string) (int, map[string]any, []any) {
 	e.t.Helper()
@@ -102,6 +125,7 @@ func (e *env) do(method, path string, body any, header map[string]string) (int, 
 		rd = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, e.ts.URL+path, rd)
+	e.authUnless(req, header)
 	for k, v := range header {
 		req.Header.Set(k, v)
 	}
@@ -366,13 +390,13 @@ func TestUploadOnlyImages(t *testing.T) {
 	sess := e.createSession()
 	req, _ := http.NewRequest("POST", e.ts.URL+"/api/sessions/"+sess.ID+"/uploads", strings.NewReader("hello"))
 	req.Header.Set("Content-Type", "text/plain")
-	resp, _ := http.DefaultClient.Do(req)
+	resp, _ := http.DefaultClient.Do(e.auth(req))
 	if resp.StatusCode != 415 {
 		t.Fatalf("text upload: %d", resp.StatusCode)
 	}
 	req, _ = http.NewRequest("POST", e.ts.URL+"/api/sessions/"+sess.ID+"/uploads", strings.NewReader("\x89PNG...."))
 	req.Header.Set("Content-Type", "image/png")
-	resp, _ = http.DefaultClient.Do(req)
+	resp, _ = http.DefaultClient.Do(e.auth(req))
 	var out map[string]string
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	if resp.StatusCode != 201 || !strings.HasPrefix(out["path"], filepath.Join(e.dir, "scratch", sess.ID)) || !strings.HasSuffix(out["path"], ".png") {

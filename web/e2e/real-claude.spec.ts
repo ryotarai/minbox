@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
-import { terminalText } from './fixtures'
+import { pairTestDevice, terminalText, trustBrowser } from './fixtures'
 
 // Drives a REAL Claude Code (costs a little: Haiku) through minbox and its mod.
 // Run with: MINBOX_REAL_CLAUDE=1 npx playwright test real-claude
@@ -39,7 +39,7 @@ test.describe('real Claude Code', () => {
     proc.stderr!.on('data', (d) => (log += d))
     for (let i = 0; i < 100; i++) {
       try {
-        if ((await fetch(url + '/api/sessions')).ok) return
+        if ((await fetch(url + '/api/devices/me')).ok) return
       } catch {
         /* starting */
       }
@@ -50,6 +50,7 @@ test.describe('real Claude Code', () => {
 
   test.beforeAll(async () => {
     dataDir = mkdtempSync('/tmp/mbx-real-')
+    pairTestDevice(dataDir)
     await startServer()
   })
 
@@ -64,6 +65,7 @@ test.describe('real Claude Code', () => {
   }
 
   test('Claude asks in the inbox, the person answers, Claude gets the answer', async ({ page }) => {
+    await trustBrowser(page.context())
     await page.goto(url)
     await page.getByTestId('new-session-cwd').fill(ROOT)
     await page.getByTestId('new-session-name').fill('real')
@@ -107,6 +109,7 @@ test.describe('real Claude Code', () => {
   })
 
   test('after an OS restart the open session resumes its conversation', async ({ page }) => {
+    await trustBrowser(page.context())
     // Everything goes away: the server, the terminal host and Claude Code.
     const exited = new Promise((r) => proc.once('exit', r))
     proc.kill('SIGTERM')

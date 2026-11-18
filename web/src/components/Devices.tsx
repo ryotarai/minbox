@@ -6,9 +6,10 @@ import { shortTime } from '../lib/format'
 import { Button, cx } from './ui'
 import { Logo } from './Sidebar'
 
-// Browsers that reach minbox over the network pair first: this browser's
-// public key is accepted on a browser already trusted, or with
-// `minbox pair accept` on the server's machine.
+// Every browser pairs first, one on the server's own machine too (any local
+// process can reach 127.0.0.1, so the address proves nothing): this browser's
+// public key is accepted on a browser already paired, or with
+// `minbox pair accept <code>` in a terminal on the server's machine.
 
 type GateState = 'checking' | 'trusted' | 'pairing'
 
@@ -89,8 +90,8 @@ function PairScreen({ onPaired }: { onPaired: () => void }) {
         ) : status === 'idle' || status === 'error' ? (
           <>
             <p className="m-0 text-[13.5px] leading-[1.6] text-muted">
-              You reached minbox over the network. This browser makes a key pair and sends its public key; once it is accepted, this browser signs in with it. The private key never leaves this
-              browser.
+              Every browser pairs with minbox once, one on the server's own machine too. This browser makes a key pair and sends its public key; once you accept it, this browser signs in with it.
+              The private key never leaves this browser.
             </p>
             <label className="flex flex-col gap-1.5 text-[12.5px] text-muted">
               Name of this browser
@@ -103,15 +104,32 @@ function PairScreen({ onPaired }: { onPaired: () => void }) {
           </>
         ) : status === 'pending' && req ? (
           <>
-            <p className="m-0 text-[13.5px] leading-[1.6] text-fg2">Accept it in Settings › Devices on a browser already paired, or run this on the server's machine:</p>
             <div className="flex flex-col items-center gap-1 py-1">
               <span className="text-[12px] uppercase tracking-[0.06em] text-subtle">Code</span>
               <span className="mono text-[32px] font-bold tracking-[0.12em] text-waitfg" data-testid="device-code">
                 {req.code}
               </span>
+              <span className="mono break-all text-center text-[11.5px] text-subtle" data-testid="device-fingerprint">
+                ecdsa-p256 {req.fingerprint}
+              </span>
             </div>
-            <div className="mono rounded-lg border border-accent bg-sunken px-3 py-2.5 text-[13px]">minbox pair accept {req.code}</div>
-            <span className="mono break-all text-[11.5px] text-subtle">ecdsa-p256 {req.fingerprint}</span>
+            <p className="m-0 text-[13.5px] leading-[1.6] text-fg2">Accept it in either way:</p>
+            <div className="flex flex-col gap-1.5" data-testid="pair-by-command">
+              <span className="text-[13px] font-semibold">In a terminal on the server's machine</span>
+              <div className="mono flex items-start gap-2 rounded-lg border border-accent bg-sunken px-3 py-2.5 text-[13px] leading-[1.6]">
+                <span className="min-w-0 flex-1 break-all" data-testid="pair-command">
+                  minbox pair accept {req.code}
+                </span>
+                <Button size="sm" className="h-[26px] font-sans" data-testid="pair-command-copy" onClick={() => void navigator.clipboard?.writeText(`minbox pair accept ${req.code}`)}>
+                  Copy
+                </Button>
+              </div>
+              <span className="text-[12px] leading-[1.55] text-muted">It shows this code and key and asks before it pairs. Run it yourself, not through an agent: it needs an interactive terminal.</span>
+            </div>
+            <div className="flex flex-col gap-1.5" data-testid="pair-by-device">
+              <span className="text-[13px] font-semibold">Or on a browser already paired</span>
+              <span className="text-[12.5px] leading-[1.55] text-muted">Settings › Devices shows this request with its code: check the code and press Accept.</span>
+            </div>
             <div className="flex items-center gap-2 text-[12.5px] text-muted">
               <span aria-hidden="true" className="mb-pulse h-2 w-2 rounded-full bg-accent" />
               Waiting for accept
@@ -134,13 +152,8 @@ function PairScreen({ onPaired }: { onPaired: () => void }) {
 export function DevicesSection() {
   const { error, toast, devicesVersion } = useApp()
   const [data, setData] = useState<{ devices: Device[]; requests: PairRequest[] } | null>(null)
-  const [me, setMe] = useState<'loopback' | 'device' | null>(null)
   const load = useCallback(() => {
     api.devices().then(setData).catch(error)
-    api
-      .deviceMe()
-      .then((m) => setMe(m.via))
-      .catch(() => {})
   }, [error])
   useEffect(load, [load, devicesVersion])
   const act = (p: Promise<unknown>, msg: string) =>
@@ -153,9 +166,10 @@ export function DevicesSection() {
   return (
     <>
       <p className="m-0 max-w-[680px] text-[13.5px] leading-[1.6] text-muted">
-        Browsers that open minbox over the network (for example through <code className="mono rounded bg-chip px-[5px] text-[12.5px]">minbox start --tailscale</code>) pair first: their public
-        key is accepted here, or with <code className="mono rounded bg-chip px-[5px] text-[12.5px]">minbox pair accept</code> on this machine. A browser on this machine itself needs no pairing
-        {me === 'loopback' ? ' (like this one)' : ''}.
+        Every browser pairs once, one on this machine too, and one that opens minbox over the network (for example through{' '}
+        <code className="mono rounded bg-chip px-[5px] text-[12.5px]">minbox start --tailscale</code>): its public key is accepted here, or with{' '}
+        <code className="mono rounded bg-chip px-[5px] text-[12.5px]">minbox pair accept &lt;code&gt;</code> in a terminal on this machine. Check that the code matches the one the browser shows.
+        Revoke a browser to send it back to its pairing screen.
       </p>
       <section className="flex max-w-[860px] flex-col gap-2.5">
         <h2 className="m-0 text-[14px] font-[650] text-muted">Waiting for accept ({data?.requests.length ?? 0})</h2>

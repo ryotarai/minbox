@@ -30,6 +30,7 @@ func pngFile(t *testing.T, path string, w, h int) []byte {
 func (e *env) get(path string, header map[string]string) (int, http.Header, []byte) {
 	e.t.Helper()
 	req, _ := http.NewRequest("GET", e.ts.URL+path, nil)
+	e.authUnless(req, header)
 	for k, v := range header {
 		req.Header.Set(k, v)
 	}
@@ -45,6 +46,7 @@ func (e *env) get(path string, header map[string]string) (int, http.Header, []by
 func (e *env) raw(method, path, ctype string, body []byte) (int, map[string]any) {
 	e.t.Helper()
 	req, _ := http.NewRequest(method, e.ts.URL+path, bytes.NewReader(body))
+	e.auth(req)
 	req.Header.Set("Content-Type", ctype)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
