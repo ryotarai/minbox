@@ -18,7 +18,7 @@
 .v-main > .v-agside, .v-main > .v-rz-side { order: 2; }
 .v-side.v-agside { max-width: none; min-width: 0; }
 /* A narrow stream beside them: its header keeps to the buttons' icons (their titles and keys say the rest). */
-.v-col.v-narrow .v-head .v-r1 .v-term-label, .v-col.v-narrow .v-head .v-r1 .v-kbd, .v-col.v-narrow .v-head .v-r1 > .v-kind { display: none; }
+.v-col.v-narrow .v-head .v-r1 .v-kbd, .v-col.v-narrow .v-head .v-r1 > .v-kind { display: none; }
 /* Settings › swap panes: the side panes (terminal, shell, files) on the left of the stream, mirrored. */
 .v-main.swapped { flex-direction: row-reverse; }
 .v-main.swapped > .v-side { border-left: 0; border-right: 1px solid var(--mb-line); }
