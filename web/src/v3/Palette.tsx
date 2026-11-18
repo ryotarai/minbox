@@ -167,7 +167,6 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
         act('stop', 'Stop current agent', () => void api.stopSession(cur.id).catch(error), { keywords: `end kill quit session ${cur.name}` })
       }
     }
-    if (!isPhone) act('swap', 'Swap side pane and stream', () => saveSettings({ swap_panes: !settings.swap_panes }), { keywords: 'panes layout left right terminal' })
     act('theme-dark', 'Theme: Dark', () => saveSettings({ theme: 'dark' }), { keywords: 'appearance color mode night' })
     act('theme-light', 'Theme: Light', () => saveSettings({ theme: 'light' }), { keywords: 'appearance color mode day' })
     act('theme-system', 'Theme: Match system', () => saveSettings({ theme: 'system' }), { keywords: 'appearance color mode auto' })
@@ -177,7 +176,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     if (size !== 13) act('text-reset', 'Reset text size', () => saveSettings({ text_size: 13 }), { keywords: 'text font zoom default' })
     return list.map((a) => ({ ...a, shortcut: a.shortcut?.replace(/⌘/g, mod) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, ctx.panes.join(' '), ctx.togglePane, ctx.tasksPane?.shown, ctx.tasksPane?.show, isPhone, linear.available, slack.available, settings.decision_mode, settings.swap_panes, settings.text_size, mod])
+  }, [cur, ctx.panes.join(' '), ctx.togglePane, ctx.tasksPane?.shown, ctx.tasksPane?.show, isPhone, linear.available, slack.available, settings.decision_mode, settings.text_size, mod])
 
   const projectName = (id?: string) => projects?.find((p) => p.id === id)?.name ?? ''
 
