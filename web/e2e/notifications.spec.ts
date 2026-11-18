@@ -45,8 +45,7 @@ async function addSlack(page: Page, name: string, hook: string, opts: { full?: b
   await expect(page.getByTestId('notif-row').filter({ hasText: name })).toBeVisible()
 }
 
-// v3: drove the thread-centric UI (thread list / thread view / new-session dialog), which is gone; see docs/v3/usecases.md for its v3 counterpart.
-test.skip('add a Slack destination, send a test, and get a full agent message', async ({ page, minbox }) => {
+test('add a Slack destination, send a test, and get a full agent message', async ({ page, minbox }) => {
   const slack = await fakeSlack()
   try {
     await openNotifications(page, minbox.url)
@@ -93,7 +92,7 @@ test.skip('add a Slack destination, send a test, and get a full agent message', 
     const dir = join(minbox.dataDir, 'work', 'proj')
     mkdirSync(dir, { recursive: true })
     await page.goto(minbox.url)
-    await createSession(page, dir, 'alpha')
+    const sid = await createSession(page, dir, 'alpha')
     await expectTerminal(page, 'ready>')
     const before = slack.hits.length
     await typeInTerminal(page, 'say The **full** body: a < b & c, see [docs](https://x.io/d) end-of-message')
@@ -111,7 +110,7 @@ test.skip('add a Slack destination, send a test, and get a full agent message', 
     await page.getByTestId('notif-row').getByRole('switch', { name: 'Enable Team' }).click()
     await expect.poll(async () => (await (await fetch(minbox.url + '/api/notifications')).json()).destinations[0].enabled).toBe(false)
     const n = slack.hits.length
-    await page.goto(minbox.url)
+    await page.goto(`${minbox.url}/#v=agent&s=${sid}`)
     await typeInTerminal(page, 'say while disabled')
     await expectTerminal(page, 'while disabled')
     await page.waitForTimeout(800)
