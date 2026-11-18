@@ -108,6 +108,12 @@ select.v-chip { padding: 1px 4px; }
 .v-ans-to:hover .v-ans-lbl { text-decoration: underline; text-underline-offset: 2px; }
 .v-ans-q { border-left: 2px solid var(--mb-line2); padding-left: 8px; }
 .v-ans-p { color: var(--mb-subtle); font-size: 12px; }
+.v-ans-p, .v-sans-p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; cursor: pointer; white-space: pre-wrap; }
+.v-ans-p.open, .v-sans-p.open { display: block; -webkit-line-clamp: unset; line-clamp: none; }
+/* the person's answers next to the message with the questions: each question (muted) over "↳ answer" */
+.v-sans { display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; }
+.v-sans-p { color: var(--mb-subtle); font-size: 11.5px; line-height: 1.4; }
+.v-sans-a { color: var(--mb-fg2); font-size: 12.5px; white-space: pre-wrap; }
 .v-ans-a { color: var(--mb-fg); font-weight: 500; }
 .v-ans-n { color: var(--mb-fg2); white-space: pre-wrap; }
 .v-pill { font-size: 10.5px; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
