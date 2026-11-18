@@ -18,7 +18,7 @@ test('move both messages to the right task and remove the mistaken one; put in a
   await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
   const stream = page.getByTestId('stream-view')
   const reply = stream.locator(`[data-testid="v3-message"][data-message-id="${wrong.id}"]`)
-  await expect(reply.locator('[data-testid="decision"][data-decision="created"]')).toContainText('Update the needle color')
+  await expect(reply.locator('[data-testid="decision"][data-decision="created"]')).toHaveAttribute('title', 'Update the needle color')
   await reply.hover()
   await reply.getByTestId('msg-menu').click()
   await page.getByTestId('menu-move').click()
