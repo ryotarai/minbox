@@ -167,7 +167,7 @@ export function ReplyHelpPanel({
   const qs = help.questions
   if (!s.data && qs.length === 0)
     return (
-      <div data-testid="reply-qa-loading" className="flex items-center gap-2 text-[12px] text-subtle" aria-live="polite">
+      <div data-testid="reply-qa-loading" data-reply-help="" className="flex items-center gap-2 text-[12px] text-subtle" aria-live="polite">
         <IconSparkle size={14} />
         <span>Drafting questions to help you reply…</span>
         <span aria-hidden className="h-5 w-16 animate-pulse rounded-full bg-chip" />
@@ -213,7 +213,7 @@ export function ReplyHelpPanel({
   ) : null
 
   return (
-    <section data-testid="reply-qa" aria-label="Questions to help you reply" className="flex flex-col gap-1.5">
+    <section data-testid="reply-qa" data-reply-help="" aria-label="Questions to help you reply" className="flex flex-col gap-1.5">
       {commandChip && <div className="flex">{commandChip}</div>}
       {qs.length > 0 && (
         <div className={cx('flex flex-col rounded-lg border border-line bg-sunken/60', phone ? 'gap-2 px-2.5 py-2' : 'gap-2 px-3 py-2')}>
