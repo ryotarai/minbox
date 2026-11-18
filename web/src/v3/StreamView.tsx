@@ -27,6 +27,7 @@ import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
 import { AgentTaskList, agentTasks } from './AgentTasks'
+import { AgentColumns, ColumnsBar, useColumnPick } from './Columns'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 
 /** The agent's side pane: its terminal, shell or files. 'tasks' is none of them on a desktop or tablet (the
@@ -52,6 +53,10 @@ export function StreamView({
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
   const { error, isPhone, sessions, toast, route, navigate, goBack } = useApp()
+  // The tasks checked in the Tasks pane: shown side by side in place of the stream (not on a phone).
+  const mine = agentTasks(tasks, id)
+  const pick = useColumnPick(id, [...mine.open, ...mine.done])
+  const cols = !isPhone && pick.columns
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -97,7 +102,16 @@ export function StreamView({
   // Older messages arrive above: what the person reads stays where it is.
   useLayoutEffect(() => keep.after(), [older.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const files = threadArtifacts(msgs)
-  useConversationKeys(scroller, msgs, onOpenAttachment)
+  useConversationKeys(scroller, msgs, onOpenAttachment, !cols)
+  // Back from the columns: the stream at its newest message.
+  const wasCols = useRef(cols)
+  useLayoutEffect(() => {
+    if (wasCols.current && !cols && scroller.current) {
+      scroller.current.scrollTop = scroller.current.scrollHeight
+      follow.atBottom.current = true
+    }
+    wasCols.current = cols
+  })
   // E: mark the conversation read (it moves to Quiet; its questions close), back to the Board.
   useHotkeys(
     {
@@ -189,7 +203,7 @@ export function StreamView({
   const terminalish = pane !== 'tasks'
   return (
     <>
-      <div className="v-col" data-testid="stream-view" data-session={id}>
+      <div className="v-col" data-testid="stream-view" data-session={id} data-columns={cols || undefined}>
         <div className="v-head">
           <div className="v-r1">
             <BackButton tasks={tasks} />
@@ -260,6 +274,11 @@ export function StreamView({
             )}
           </div>
         </div>
+        {!isPhone && pick.selected.length > 0 && <ColumnsBar pick={pick} />}
+        {cols ? (
+          <AgentColumns pick={pick} tasks={tasks} onOpenAttachment={onOpenAttachment} />
+        ) : (
+        <>
         <div className="v-convwrap">
           <NewPill n={follow.unseen} onClick={follow.toBottom} />
           <div
@@ -383,6 +402,8 @@ export function StreamView({
           helpThread={s?.stream_thread_id || undefined}
         />
         <QuoteBubble box={scroller} />
+        </>
+        )}
       </div>
       {(terminalish || sheet) && (
         <aside className="v-side wide" data-testid="agent-side" data-sheet={sheet || undefined}>

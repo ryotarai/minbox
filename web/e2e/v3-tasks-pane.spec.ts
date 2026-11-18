@@ -106,10 +106,6 @@ test('desktop: agents | tasks | stream | terminal; the pane drags, folds (« · 
   await page.goBack()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
   await expect(page.getByTestId('tasks-pane')).toHaveAttribute('data-shown', 'true')
-
-  // The Columns view has no Tasks pane.
-  await page.getByTestId('nav-columns').click()
-  await expect(page.getByTestId('tasks-pane')).toHaveCount(0)
 })
 
 test('tablet 900px: the Tasks pane is a strip that unfolds over the stream; a task or Esc folds it', async ({ page, minbox }) => {
