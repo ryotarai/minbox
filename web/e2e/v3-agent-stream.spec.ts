@@ -19,7 +19,7 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await expect(stream.getByTestId('v3-message')).toHaveCount(4)
   // The agent's tasks are in their pane, between the agents list and the stream.
   await expect(page.getByTestId('tasks-pane')).toContainText('Fix the gauge reading')
-  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  await expect(page.locator('[data-side-pane]')).toHaveCount(0)
   await shot(page, 'uc6-stream', 'dark')
 
   // The header says what it is on now (one task), not a wall of every task.
@@ -54,11 +54,11 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await page.locator('body').click({ position: { x: 700, y: 30 } })
   await page.keyboard.press('t')
   await expect(page.getByTestId('terminal')).toBeVisible()
-  await expect(page.getByTestId('pane-terminal')).toHaveClass(/on/)
+  await expect(page.getByTestId('terminal-toggle')).toHaveAttribute('aria-pressed', 'true')
   await shot(page, 'uc6-terminal', 'light')
-  await page.getByTestId('side-close').click()
+  await page.getByTestId('terminal-close').click()
   await expect(page.getByTestId('terminal')).toHaveCount(0)
-  await expect(page.getByTestId('agent-side')).toHaveCount(0)
+  await expect(page.locator('[data-side-pane]')).toHaveCount(0)
 
   // A task link opens its task.
   await stream.locator('[data-testid="task-link"][title="Staging health"] button').first().click()

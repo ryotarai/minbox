@@ -41,7 +41,6 @@ export function useNav() {
     agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null, tab: 'inbox' }, { push: true }),
     agents: () => navigate({ view: 'agents', tab: 'inbox' }, { push: true }),
     search: () => navigate({ view: 'search', tab: 'inbox' }, { push: true }),
-    columns: () => navigate({ view: 'columns', k: null, s: null, m: null, tab: 'inbox' }, { push: true }),
   }
 }
 
@@ -63,8 +62,6 @@ export function routeLabel(r: Route | null, tasks: { id: string; title: string }
       return 'Agents'
     case 'search':
       return 'Search'
-    case 'columns':
-      return 'Columns'
     case 'settings':
       return 'Settings'
     case 'issues':
