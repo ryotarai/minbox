@@ -22,7 +22,7 @@ test('task view: double-click the title to rename, Esc cancels, E starts it agai
   await input.fill('Never mind')
   await input.press('Escape')
   await expect(page.getByTestId('task-title')).toHaveText('Look into login')
-  await expect(page.getByTestId('task-view')).toBeVisible()
+  await expect(page.getByTestId('agent-task-detail')).toBeVisible()
 
   // ↵ saves.
   await page.getByTestId('task-title').dblclick()

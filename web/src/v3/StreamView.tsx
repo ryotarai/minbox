@@ -12,7 +12,7 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { short, useLive, useMarkRead, v3, type BoardTask, type Stream, type V3Message } from './data'
-import { BackButton, MessageView, TaskChip, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById, WorkingLine } from './parts'
+import { BackButton, MessageView, agentHint, answersNearQuestions, msgTask, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -68,9 +68,9 @@ export function StreamView({
   // The tasks checked in the Tasks pane: shown side by side in place of the stream (not on a phone).
   const mine = agentTasks(tasks, id)
   const pick = useColumnPick(id, [...mine.open, ...mine.done])
-  // A task picked by its title in the Tasks pane (#v=agent&s=…&k=…): that one task in place of the
-  // stream, before the checked columns (desktop and tablet; a phone opens the task view).
-  const detail = !isPhone && route.view === 'agent' && route.k ? route.k : null
+  // A task picked by its title in the Tasks pane, or opened from anywhere else (#v=agent&s=…&k=…): that
+  // one task in place of the stream, before the checked columns (on a phone too).
+  const detail = route.view === 'agent' && route.k ? route.k : null
   const cols = !isPhone && pick.columns && !detail
   const byId = useSessionsById()
   const nav = useNav()
@@ -157,8 +157,7 @@ export function StreamView({
       </div>
     )
   const openTasks = agentTasks(tasks, id).open
-  // What it is on now: the open task of its newest message that is about one.
-  const nowOn = [...msgs].reverse().flatMap((m) => m.tasks).map((r) => openTasks.find((t) => t.id === r.task_id)).find((t) => !!t)
+  const state = sess.status === 'working' ? 'in a turn' : sess.status === 'ended' ? 'ended' : sess.status === 'starting' ? 'starting' : 'idle'
   const hint = agentHint(sessions ?? [], sess)
   const draftKey = 'v3:agent:' + id
   const send = async (o: Outgoing) => {
@@ -225,8 +224,8 @@ export function StreamView({
         <div className="v-head">
           <div className="v-r1">
             <BackButton tasks={tasks} fallback={detail ? { k: null } : undefined} />
-            <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
-            <h2 data-testid="agent-name" className="v-tline">
+            <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} data-testid="agent-state" data-state={state} title={state} aria-label={state} role="img" />
+            <h2 data-testid="agent-name" className="v-tline" title={sess.title || undefined}>
               <span>{sess.name}</span>
               {hint && <small className="v-hint">· {hint}</small>}
             </h2>
@@ -236,6 +235,11 @@ export function StreamView({
               {sess.host_name ? ' · ' + sess.host_name : ''}
             </span>
             <AgentActions session={sess} />
+            {isPhone && (
+              <button type="button" className="v-chip v-sheetbtn" data-testid="agent-sheet-open" aria-label={`Tasks (${openTasks.length} open), terminal, shell and files`} onClick={() => navigate({ tab: 'tasks' }, { push: true })}>
+                Tasks <b>{openTasks.length}</b> <IconChevronRight size={12} />
+              </button>
+            )}
             <button
               type="button"
               className={'v-btn' + (on('terminal') ? ' pri' : '')}
@@ -276,26 +280,11 @@ export function StreamView({
               <IconFiles size={14} />
             </button>
           </div>
-          <div className="v-r2">
-            <span data-testid="agent-state">{sess.status === 'working' ? 'in a turn' : sess.status === 'ended' ? 'ended' : sess.status === 'starting' ? 'starting' : 'idle'}</span>
-            {sess.title && <span className="v-doingnow">· {sess.title}</span>}
-            {nowOn && (
-              <span className="v-nowon" data-testid="now-on">
-                · on <TaskChip task={{ task_id: nowOn.id, title: nowOn.title }} goal={nowOn.kind === 'goal'} />
-              </span>
-            )}
-            {openTasks.length > 1 && <span className="v-hide-phone">· {openTasks.length} open tasks</span>}
-            {isPhone && (
-              <button type="button" className="v-chip v-sheetbtn" data-testid="agent-sheet-open" aria-label={`Tasks (${openTasks.length} open), terminal, shell and files`} onClick={() => navigate({ tab: 'tasks' }, { push: true })}>
-                Tasks <b>{openTasks.length}</b> <IconChevronRight size={12} />
-              </button>
-            )}
-          </div>
         </div>
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">
-              <TaskView key={detail} id={detail} highlight={null} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ onRemove: () => goBack({ k: null }), detail: pick.columns ? 'columns' : 'stream' }} />
+              <TaskView key={detail} id={detail} highlight={highlight} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ detail: true }} />
             </div>
           </div>
         ) : cols ? (
@@ -444,7 +433,7 @@ export function StreamView({
           </div>
           {pane === 'tasks' && sheet && (
             <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
-              <AgentTaskList tasks={tasks} sessionId={id} />
+              <AgentTaskList tasks={tasks} sessionId={id} selected={detail} onSelect={(k) => (side.only('tasks'), navigate({ k, m: null, tab: 'inbox' }, { push: true }))} />
             </div>
           )}
           {pane === 'terminal' && (

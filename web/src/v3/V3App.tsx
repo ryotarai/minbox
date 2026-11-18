@@ -1,5 +1,5 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
-// and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
+// and the Board / an agent's stream (a task: selected in its agent's page) / Search. On a phone: one column with bottom tabs
 // Board · Agents · Search. Keys: ⌘K J/K Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
@@ -21,13 +21,12 @@ import { AttachmentViewer } from '../components/AttachmentViewer'
 import { ConnectionBanner } from '../components/Banners'
 import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, needsCount, useBoard } from './Board'
-import { TaskView } from './TaskView'
 import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
 import { TasksPane } from './AgentTasks'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
-import { BackButton, rememberTaskTitles, agentHint, openQuestions, useNav, useSessionsById } from './parts'
+import { BackButton, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconSearch } from '../components/icons'
@@ -67,6 +66,8 @@ export function V3App() {
   // The Agents page is the phone's bottom tab. Wider, the sidebar lists the agents (☰ on a tablet), so
   // #v=agents (a link, a back entry, a phone unfolded to a tablet) shows the Board; narrowed back to a
   // phone it is the Agents page again.
+  // #v=task&k=… (the task page is gone: old links, bookmarks, notifications) is on its way to the task's
+  // agent (see the redirect below).
   const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' && isPhone ? 'agents' : route.view === 'search' ? 'search' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const side = useSidePanes(current)
@@ -109,6 +110,38 @@ export function V3App() {
   useEffect(() => {
     document.title = needs > 0 ? `(${needs}) minbox` : 'minbox'
   }, [needs])
+  // The task page is gone: #v=task&k=<task> becomes its agent's page with the task selected
+  // (#s=<agent>&v=agent&k=<task>, replacing the entry). With no agent for it (see taskOwner): the Board,
+  // its row focused.
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+  const boardRef = useRef(board)
+  boardRef.current = board
+  useEffect(() => {
+    if (route.view !== 'task' || !route.k || sessions === null) return
+    const k = route.k
+    const m = route.m
+    let gone = false
+    const go = (t: BoardTask | undefined) => {
+      if (gone) return
+      const s = t ? taskOwner(t, sessionsRef.current ?? []) : null
+      if (s) return app.navigate({ view: 'agent', s, k, m, tab: 'inbox' }, { push: false })
+      app.navigate({ view: 'main', s: null, k: null, m: null, tab: 'inbox' }, { push: false })
+      if (!t) return app.toast('That task is gone')
+      if (t.status === 'done') setShowDone(true)
+      setFocus('t:' + k)
+      requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector(`[data-key="t:${k}"]`)?.scrollIntoView({ block: 'nearest' })))
+    }
+    const known = boardRef.current?.tasks.find((x) => x.id === k)
+    if (known) go(known)
+    else
+      v3.task(k)
+        .then((d) => go(d.task))
+        .catch(() => go(undefined))
+    return () => {
+      gone = true
+    }
+  }, [route.view, route.k, sessions === null]) // eslint-disable-line react-hooks/exhaustive-deps
   // The agent of a route in another project: follow it, once when the route opens it. Not again when
   // the person picks another project (the rail, the palette) with the agent still open: that would
   // snap the selection back to the agent's project.
@@ -158,14 +191,14 @@ export function V3App() {
       // Back to where the person came from (as the header's ‹ does), else the Board.
       if (view !== 'board') {
         e.preventDefault()
-        app.goBack()
+        app.goBack(view === 'agent' && route.k ? { k: null } : undefined)
       }
       return
     }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return
     // E / F2: rename the open task (in place) or the focused Board row (a dialog).
     if (e.key === 'F2' || ((e.key === 'e' || e.key === 'E') && settings.single_key)) {
-      if (view === 'task') {
+      if (view === 'agent' && route.k) {
         e.preventDefault()
         window.dispatchEvent(new Event(RENAME_TASK_EVENT))
         return
@@ -297,7 +330,7 @@ export function V3App() {
   }, [])
 
   const tasks = board?.tasks ?? []
-  rememberTaskTitles(tasks)
+  rememberTasks(tasks)
   const onOpenAttachment = (a: Attachment, m: V3Message) => {
     setViewerSession(m.session_id)
     if (a.kind === 'review') app.navigate({ view: 'review', r: a.id }, { push: true })
@@ -306,7 +339,7 @@ export function V3App() {
   }
   const byId = useSessionsById()
   let main: React.ReactNode
-  if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
+  if (view === 'task') main = <div className="v-empty" data-testid="task-redirect">Opening the task…</div>
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNewAgent={newAgentIn} onRename={setRenaming} />
@@ -334,7 +367,6 @@ export function V3App() {
   // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
   const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
   const wide = view === 'agent' && (shownPanes.length > 0 || sheet)
-  const hasSide = !isPhone && view === 'task'
   const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
   const style = {
     '--v-sb-w': sbW + 'px',
@@ -342,15 +374,8 @@ export function V3App() {
     ...(layout.v3SideW ? { '--v-side-w': layout.v3SideW + 'px' } : {}),
     ...(layout.v3WideW ? { '--v-wide-w': layout.v3WideW + 'px' } : {}),
   } as React.CSSProperties
-  // The side pane's edge: on its left (on its right when the panes are swapped in Settings).
+  // The side panes' edges: on their left (on their right when the panes are swapped in Settings).
   const swapped = !settings.swap_panes
-  const sideEl = () => document.querySelector<HTMLElement>('.v-main > .v-side')
-  const mainEl = () => document.querySelector<HTMLElement>('.v-main')
-  const dragSide = (dx: number, start: number) => {
-    const room = (mainEl()?.offsetWidth ?? winW) - 320
-    const w = clamp(start + (swapped ? dx : -dx) / zoom, 240, Math.max(240, room))
-    setLayout({ v3SideW: Math.round(w) })
-  }
   // An agent's side pane's edge (on the stream's side of it): up to as wide as leaves the stream MIN_STREAM.
   // (A declaration: StreamView above gets it.)
   function dragPane(p: PaneKind) {
@@ -421,9 +446,8 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + ((view === 'agent' && !wide) || view === 'task' ? ' conv' : '')}>
+      <main className={'v-main' + (swapped && !isPhone ? ' swapped' : '') + (wide ? ' wide' : '') + (view === 'agent' && !wide ? ' conv' : '')}>
         {main}
-        {hasSide && <Resizer testid="side-resizer" measure={() => sideEl()?.offsetWidth ?? 300} onDrag={dragSide} />}
       </main>
       {isPhone && (
         <div className="v-tabs" data-testid="phone-tabs">

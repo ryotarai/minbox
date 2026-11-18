@@ -7,7 +7,7 @@ import { backTarget, isPhoneWidth, useApp, type Route } from '../lib/app'
 import { ContextMenu, useContextMenu } from '../components/ContextMenu'
 import { ForkDialog } from '../components/ForkDialog'
 import { Kbd, MenuItem } from '../components/ui'
-import { proseOf, renderMarkdown, splitQuestions } from '../lib/markdown'
+import { proseOf, splitQuestions } from '../lib/markdown'
 import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
@@ -34,30 +34,52 @@ import {
 } from './data'
 
 export function useNav() {
-  const { navigate } = useApp()
+  const { navigate, sessions } = useApp()
   return {
     board: () => navigate({ view: 'main', k: null, s: null, m: null, tab: 'inbox' }, { push: true }),
-    task: (id: string, m?: string) => navigate({ view: 'task', k: id, m: m ?? null, tab: 'inbox' }, { push: true }),
+    // A task opens in its agent's page, selected there (see taskOwner). A task the Board has not listed
+    // goes by #v=task&k=…, which V3App looks up and replaces with the agent's page.
+    task: (id: string, m?: string) => {
+      const t = knownTasks.get(id)
+      const s = t && sessions ? taskOwner(t, sessions) : null
+      navigate(s ? { view: 'agent', s, k: id, m: m ?? null, tab: 'inbox' } : { view: 'task', k: id, m: m ?? null, tab: 'inbox' }, { push: true })
+    },
     agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null, tab: 'inbox' }, { push: true }),
     agents: () => navigate({ view: 'agents', tab: 'inbox' }, { push: true }),
     search: () => navigate({ view: 'search', tab: 'inbox' }, { push: true }),
   }
 }
 
-/** Task titles the Board last listed: ‹ names a task also from Search or Settings. */
-const taskTitles = new Map<string, string>()
-export function rememberTaskTitles(tasks: { id: string; title: string }[]) {
-  for (const t of tasks) taskTitles.set(t.id, t.title)
+/** The tasks the Board last listed: a link to one opens its agent at once; ‹ names one also from Search or Settings. */
+const knownTasks = new Map<string, OwnedTask>()
+export function rememberTasks(tasks: BoardTask[]) {
+  for (const t of tasks) knownTasks.set(t.id, t)
+}
+
+type OwnedTask = Pick<BoardTask, 'agents' | 'project_id' | 'title'> & { last_agent?: string }
+
+/**
+ * The agent whose page shows a task (#v=agent&s=<it>&k=<task>): the agent it is assigned to, else the
+ * one last active on it, else any agent involved, a live one before an archived one. A task no agent
+ * has touched yet: the main agent of its project (a message from its card hands it over). null: no
+ * agent at all (the Board shows it instead).
+ */
+export function taskOwner(t: OwnedTask, sessions: Session[]): string | null {
+  const byId = new Map(sessions.map((s) => [s.id, s]))
+  const ids = [...t.agents.filter((a) => a.role === 'assigned').map((a) => a.session_id), t.last_agent ?? '', ...t.agents.map((a) => a.session_id)].filter((id) => byId.has(id))
+  const live = ids.find((id) => !byId.get(id)!.archived_at)
+  if (live ?? ids[0]) return live ?? ids[0]!
+  const main = sessions.find((s) => s.is_main && !s.archived_at && s.kind !== 'shell' && (!t.project_id || s.project_id === t.project_id))
+  return main?.id ?? null
 }
 
 /** A route's name, for the ‹ back control ("‹ Board", "‹ Fix the gauge", "‹ api"). */
 export function routeLabel(r: Route | null, tasks: { id: string; title: string }[], byId: Map<string, Session>): string {
   if (!r) return 'Board'
   switch (r.view) {
-    case 'task':
-      return (r.k && (tasks.find((t) => t.id === r.k)?.title ?? taskTitles.get(r.k))) || 'Task'
     case 'agent':
-      return (r.s && byId.get(r.s)?.name) || 'Agent'
+      // A task selected in the agent's page: the task's title.
+      return (r.k && (tasks.find((t) => t.id === r.k)?.title ?? knownTasks.get(r.k)?.title)) || (r.s && byId.get(r.s)?.name) || 'Agent'
     case 'agents':
       // The Agents page is the phone's tab; wider, #v=agents shows the Board (the sidebar lists the agents).
       return isPhoneWidth() ? 'Agents' : 'Board'
@@ -82,11 +104,11 @@ export function routeLabel(r: Route | null, tasks: { id: string; title: string }
 export function BackButton({ tasks = [], fallback }: { tasks?: { id: string; title: string }[]; fallback?: Partial<Route> }) {
   const { goBack, route } = useApp()
   const byId = useSessionsById()
-  void route // re-read history.state when the route changes
+  // route: re-read history.state when it changes; with a fallback (opened directly), where that leads.
   const to = backTarget()
-  const label = fallback && !to ? 'Back' : routeLabel(to, tasks, byId)
+  const label = fallback && !to ? routeLabel({ ...route, ...fallback }, tasks, byId) : routeLabel(to, tasks, byId)
   return (
-    <button type="button" className="v-back" data-testid="back" data-to={to ? to.view : 'board'} aria-label={`Back to ${label}`} title={`Back to ${label} (Esc)`} onClick={() => goBack(fallback)}>
+    <button type="button" className="v-back" data-testid="back" data-to={to ? to.view : fallback ? (fallback.view ?? route.view) : 'board'} aria-label={`Back to ${label}`} title={`Back to ${label} (Esc)`} onClick={() => goBack(fallback)}>
       <IconBack size={16} />
       <span className="v-back-l">{label}</span>
     </button>
@@ -838,23 +860,3 @@ export function TaskLinks({ tasks }: { tasks: TaskRef[] }) {
   )
 }
 
-/**
- * A report (the task's, else the agent's latest message about it) as rendered markdown, folded to a
- * few lines with "more" (question blocks shown as their prompts).
- */
-export function MessageBodyClamp({ text, lines = 8, testid }: { text: string; lines?: number; testid?: string }) {
-  const [open, setOpen] = useState(false)
-  const src = text.replace(/:::(question|question-multi|question-text|actions)[^\n]*\n([^\n]*)[\s\S]*?\n:::/g, (_x, _k, first) => '> ? ' + String(first).trim())
-  const html = useMemo(() => renderMarkdown(src), [src])
-  const long = src.split('\n').length > lines || src.length > lines * 90
-  return (
-    <div className="v-report" data-testid={testid}>
-      <div className={'md' + (open || !long ? '' : ' v-clamp')} style={{ ['--l' as string]: lines }} dangerouslySetInnerHTML={{ __html: html }} />
-      {long && (
-        <button type="button" className="v-link" onClick={() => setOpen(!open)}>
-          {open ? 'less' : 'more'}
-        </button>
-      )}
-    </div>
-  )
-}

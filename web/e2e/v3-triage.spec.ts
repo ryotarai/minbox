@@ -38,7 +38,7 @@ test('triage on the Board: compact question rows, Enter answers in the task, a c
   await page.waitForTimeout(300)
   expect((await board(minbox)).questions).toHaveLength(1)
   await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${gauge.id}`))
   const msg = page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)
   await expect(msg).toHaveClass(/\bhl\b/)
   await msg.getByTestId('question').getByText('Oregon', { exact: true }).click()
@@ -52,7 +52,7 @@ test('triage on the Board: compact question rows, Enter answers in the task, a c
   await expect(page.getByTestId('board')).toBeVisible()
   await expect(page.getByTestId('question-card')).toHaveCount(0)
   await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).click()
-  await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${gauge.id}`))
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading on the dashboard')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('board')).toBeVisible()
@@ -100,6 +100,6 @@ test('NEEDS YOU rows are compact (nothing to answer on the Board) and open the t
 
   // A click opens the task at the question (nothing unfolds on the Board).
   await ask.locator('.v-line').click()
-  await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
+  await expect(page).toHaveURL(new RegExp(`v=agent.*k=${gauge.id}`))
   await expect(page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)).toHaveClass(/\bhl\b/)
 })

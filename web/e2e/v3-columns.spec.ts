@@ -107,10 +107,12 @@ test('tasks pane checkboxes: All tri-state, columns in place of the stream, a re
   await expect(page.getByTestId('agent-tasks-all')).toHaveAttribute('data-state', 'off')
   await expect(conv(page)).toBeVisible()
 
-  // A column's title opens the task view.
+  // A column's title shows that task in the agent's page (no Open link any more).
   await check(page, t2.id).check()
-  await col(page, t2.id).getByTestId('column-open').click()
-  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t2.id)
+  await expect(col(page, t2.id).getByTestId('column-open')).toHaveCount(0)
+  await col(page, t2.id).getByTestId('column-title').click()
+  await expect(page.getByTestId('agent-task-detail').getByTestId('task-column')).toHaveAttribute('data-task', t2.id)
+  await expect(page).toHaveURL(new RegExp(`s=${a.id}.*v=agent.*k=${t2.id}`))
 })
 
 test('a task title shows that task in the agent page, the Tasks pane kept and the task selected; routed, back to the stream; checkboxes switch to columns', async ({ page, minbox }) => {
@@ -129,7 +131,7 @@ test('a task title shows that task in the agent page, the Tasks pane kept and th
   // A title: that task (header, messages, reply box) in the page; the pane and the agents list stay.
   await row(t1.id).click()
   await expect(page).toHaveURL(new RegExp(`v=agent.*k=${t1.id}`))
-  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(detail.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   await expect(detail.getByTestId('v3-message').filter({ hasText: 'please fix the gauge reading' })).toBeVisible()
   await expect(detail.getByTestId('task-composer')).toBeVisible()
   await expect(conv(page)).toHaveCount(0)
@@ -152,22 +154,23 @@ test('a task title shows that task in the agent page, the Tasks pane kept and th
 
   // Another title replaces it; a reload keeps it; ‹ goes back to the stream.
   await row(t2.id).click()
-  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(detail.getByTestId('task-title')).toHaveText('Update the login screen copy')
   await expect(row(t2.id)).toHaveAttribute('aria-current', 'true')
   await page.reload()
-  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
+  await expect(detail.getByTestId('task-title')).toHaveText('Update the login screen copy')
   await expect(page.getByTestId('back')).toHaveAccessibleName(/Back to api/)
   await page.getByTestId('back').click()
   await expect(conv(page)).toBeVisible()
   await expect(page).not.toHaveURL(/k=/)
   // Forward: the task again.
   await page.goForward()
-  await expect(detail.getByTestId('column-title')).toHaveText('Update the login screen copy')
-  // ✕ also goes back to the stream.
-  await page.getByTestId('task-detail-close').click()
+  await expect(detail.getByTestId('task-title')).toHaveText('Update the login screen copy')
+  // No ✕ on the card: its row in the Tasks pane, clicked again, goes back to the stream.
+  await expect(detail.getByTestId('task-detail-close')).toHaveCount(0)
+  await row(t2.id).click()
   await expect(conv(page)).toBeVisible()
 
-  // A checkbox: the columns, leaving the one task; a title from there shows that one, ✕ back to the columns.
+  // A checkbox: the columns, leaving the one task; a title from there shows that one, again back to the columns.
   await row(t1.id).click()
   await expect(detail).toBeVisible()
   await check(page, t2.id).check()
@@ -176,17 +179,18 @@ test('a task title shows that task in the agent page, the Tasks pane kept and th
   await expect(page.getByTestId('task-column')).toHaveCount(1)
   await expect(col(page, t2.id)).toBeVisible()
   await row(t1.id).click()
-  await expect(detail.getByTestId('column-title')).toHaveText('Fix the gauge reading')
+  await expect(detail.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   await expect(page.getByTestId('columns-bar')).toHaveCount(0)
-  await page.getByTestId('task-detail-close').click()
+  await row(t1.id).click()
   await expect(col(page, t2.id)).toBeVisible()
 
-  // The Board (and Search, deep links) still open the full task view.
+  // The Board (and Search, old #v=task deep links) open the same: the agent's page with the task.
   await page.getByTestId('nav-board').click()
   await page.goto(minbox.url + `/#v=task&k=${t1.id}`)
-  await expect(page.getByTestId('task-view')).toHaveAttribute('data-task', t1.id)
-  // From the task view, an agent opens on its stream (the task's k does not carry over).
-  await page.getByTestId('task-view').getByTestId('task-agent').first().click()
+  await expect(detail.getByTestId('task-column')).toHaveAttribute('data-task', t1.id)
+  await expect(page).toHaveURL(new RegExp(`s=${a.id}.*v=agent.*k=${t1.id}`))
+  // From the task's card, an agent opens on its stream (the task's k does not carry over).
+  await detail.getByTestId('task-agent').first().click()
   await expect(page.getByTestId('stream-view')).toHaveAttribute('data-session', a.id)
   await expect(detail).toHaveCount(0)
 })
@@ -235,7 +239,7 @@ test('the Tasks pane message box: to the agent itself while columns or one task 
 
   // The draft is the stream's: words left in the pane's box are in the stream's box once it shows.
   await box.getByTestId('composer-text').fill('half a thought')
-  await page.getByTestId('task-detail-close').click()
+  await page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${t1.id}"]`).click()
   await expect(page.getByTestId('task-column')).toHaveCount(2)
   await page.getByTestId('tasks-clear').click()
   await expect(conv(page)).toBeVisible()

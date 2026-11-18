@@ -1,18 +1,21 @@
-// A task (or goal): "where is this work?" Its tagged messages from every agent's stream in time order
-// with the events between them; "show context" opens the untagged messages around them. The reply
-// goes to the agent most recently active on it (switchable) and carries the task's tag.
+// A task's (or goal's) conversation inside an agent's page: its tagged messages from every agent's stream
+// in time order with the events between them; "show context" opens the untagged messages around them.
+// The reply goes to the agent most recently active on it (switchable) and carries the task's tag.
+// Two shapes: a column among the tasks checked in the agent's Tasks pane (a short header), or the one
+// task picked in the agent's page (#v=agent&s=…&k=…): a card with its title, status, agents and checklist.
+// (There is no task page of its own any more: every link to a task opens its agent's page with it.)
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
-import { ago, hhmm, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
+import { leaves, standing, useLive, useMarkRead, v3, hhmm, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById, WorkingLine } from './parts'
+import { Bar, MessageView, StatusDot, Steps, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
 import { DeliveryLine } from '../components/ThreadView'
-import { IconClose, IconExternal, IconGoal } from '../components/icons'
+import { IconClose, IconGoal } from '../components/icons'
 
 export function TaskView({
   id,
@@ -25,19 +28,18 @@ export function TaskView({
   highlight: string | null
   tasks: BoardTask[]
   onOpenAttachment: (a: Attachment, m: V3Message) => void
-  /** The columns on an agent's page: one of several tasks side by side (a short header, no details pane,
-   *  no conversation keys). detail: the one task picked in the agent's Tasks pane; ✕ goes back to its
-   *  stream (or its columns). */
-  column?: { onRemove: () => void; detail?: 'stream' | 'columns' }
+  /** onRemove: a column among the checked ones (✕ unchecks it). detail: the one task picked in the
+   *  agent's page (its card; the Tasks pane's row, clicked again, closes it). */
+  column: { onRemove?: () => void; detail?: boolean }
 }) {
-  const { error, sessions, isPhone, toast } = useApp()
+  const { error, sessions, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
+  const detail = !!column.detail
   const [d, reload, setD] = useLive<TaskDetail>(id, () => v3.task(id))
   const [ctx, setCtx] = useState<Record<string, V3Message[] | 'loading'>>({})
   const [to, setTo] = useState<string | null>(null)
   const [pending, setPending] = useState<V3Message[]>([])
-  const [sideOpen, setSideOpen] = useState(!isPhone && !column)
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     setTo(null)
@@ -47,7 +49,7 @@ export function TaskView({
   useMarkRead(d?.messages)
   const msgs = d?.messages ?? []
   const firstNew = useFirstNew(id, d?.messages)
-  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight && !column)
+  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight && detail)
   const landed = useRef<string | null>(null)
   useLayoutEffect(() => {
     if (!d || landed.current === id || highlight) return
@@ -55,26 +57,16 @@ export function TaskView({
     const box = scroller.current
     const el = box?.querySelector('[data-new-divider]')
     if (el && box) {
-      // A column scrolls only itself (scrollIntoView would also move the row of columns sideways).
-      if (column) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
-      else el.scrollIntoView({ block: 'start' })
+      // It scrolls only itself (scrollIntoView would also move the row of columns sideways).
+      box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
       follow.atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 60
     }
   })
-  useConversationKeys(scroller, msgs, onOpenAttachment, !column)
+  useConversationKeys(scroller, msgs, onOpenAttachment, detail)
   const live = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell'), [sessions])
   if (!d)
-    return column ? (
-      <div className="v-col v-column" data-testid="task-column" data-task={id}>
-        <div className="v-empty">Loading…</div>
-      </div>
-    ) : (
-      <div className="v-col">
-        <div className="v-head">
-          <div className="v-r1">
-            <BackButton tasks={tasks} />
-          </div>
-        </div>
+    return (
+      <div className="v-col v-column" data-testid="task-column" data-task={id} data-detail={detail || undefined}>
         <div className="v-empty">Loading…</div>
       </div>
     )
@@ -105,8 +97,6 @@ export function TaskView({
   const nearQ = answersNearQuestions(items.flatMap((it) => ('m' in it ? [it.m] : [])))
   const lastBy: Record<string, V3Message> = {}
   const typing = t.agents.map((a) => byId.get(a.session_id)).filter((s) => s?.status === 'working')
-  const lastAgentMsg = [...d.messages].reverse().find((m) => m.author === 'agent')
-  const lastReport = t.report || lastAgentMsg?.body || ''
   const markUnread = (m: V3Message) =>
     markUnreadFrom(d.messages, m)
       .then(() => {
@@ -137,215 +127,120 @@ export function TaskView({
       throw e
     }
   }
-  const side = (
-    <aside className="v-side" data-testid="task-side">
-      {t.kind === 'goal' && (
-        <>
-          <div className="v-sec">
-            DONE WHEN <span className="v-x">{t.criteria_done}/{t.criteria.length}</span>
-          </div>
-          <Steps t={t} criteria onToggle={(path) => v3.patchTask(t.id, { criteria: toggled(t.criteria, path) }).then(reload).catch(error)} />
-          <div className="v-sec">AUTONOMOUS RUN</div>
-          <GoalRun t={t} reload={reload} />
-          {t.auto?.reason && <div className="v-cnt2" style={{ marginTop: 4 }}>{t.auto.state === 'stopped' ? 'Ended' : 'Paused'}: {t.auto.reason}</div>}
-          <div className="v-sec">
-            TASKS <span className="v-x">{d.tasks.length}</span>
-          </div>
-          {d.tasks.map((c) => (
-            <button type="button" key={c.id} className="v-mt" onClick={() => nav.task(c.id)}>
-              <div className="v-a">
-                <StatusDot t={c} />
-                {c.title}
-              </div>
-              <div className="v-b">
-                <Bar t={c} />
-                <span className="v-cnt2">{STATUS_LABEL[c.status]}</span>
-              </div>
-            </button>
-          ))}
-          {!d.tasks.length && <div className="v-cnt2">No tasks serve it yet.</div>}
-        </>
-      )}
-      {t.kind !== 'goal' && t.steps.length > 0 && (
-        <>
-          <div className="v-sec">CHECKLIST</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-            <Bar t={t} />
-          </div>
-          <Steps t={t} onToggle={(path) => v3.patchTask(t.id, { steps: toggled(t.steps, path) }).then(reload).catch(error)} />
-        </>
-      )}
-      <div className="v-sec">{t.report ? 'LAST REPORT' : 'LATEST FROM THE AGENT'}</div>
-      {lastReport ? <MessageBodyClamp text={lastReport} lines={10} testid="last-report" /> : <div className="v-cnt2" data-testid="last-report">Nothing yet.</div>}
-      <div className="v-sec">FACTS</div>
-      <dl className="v-facts">
-        <dt>Agents</dt>
-        <dd>{t.agents.map((a) => agentName(byId, a.session_id) + (a.role === 'assigned' ? '' : ' (involved)')).join(' · ') || '—'}</dd>
-        {d.goal && (
-          <>
-            <dt>Goal</dt>
-            <dd>
-              <TaskChip task={{ task_id: d.goal.id, title: d.goal.title }} goal />
-            </dd>
-          </>
-        )}
-        <dt>Links</dt>
-        <dd>
-          {t.links.length
-            ? t.links.map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="v-link" style={{ marginRight: 6 }}>
-                  {l.label}
-                </a>
-              ))
-            : '—'}
-        </dd>
-        <dt>Started</dt>
-        <dd>
-          {hhmm(t.created_at)} · {ago(t.created_at)} ago
-        </dd>
-        <dt>Fresh</dt>
-        <dd>last activity {ago(t.last_activity)} ago</dd>
-      </dl>
-      {t.summary && (
-        <>
-          <div className="v-sec">SUMMARY</div>
-          <div style={{ fontSize: 12.5 }}>{t.summary}</div>
-        </>
-      )}
-    </aside>
+  const st = standing(t)
+  const working = typing.length > 0
+  const agentChips = t.agents.map((a) => (
+    <button type="button" key={a.session_id} className="v-chip" data-testid="task-agent" onClick={() => nav.agent(a.session_id)}>
+      <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
+      {agentName(byId, a.session_id)}
+    </button>
+  ))
+  const sub = st && (
+    <div className="v-colsub" data-testid="column-subtitle" data-from={st.from} title={st.text}>
+      {st.from === 'step' ? 'now: ' : ''}
+      {st.text}
+    </div>
   )
-  const st = column ? standing(t) : null
-  const head = column ? (
+  // A column: a short header (its title shows the task in the agent's page; ✕ unchecks it). The one
+  // task picked in the agent's page: a card with its title (renamed in place), where it stands, its
+  // status (set here), its agents, and its checklist beside them (below them when narrow).
+  const head = detail ? (
+    <div className="v-head v-colhead v-taskcard" data-testid="task-card">
+      <div className="v-taskcard-main">
+        <div className="v-r1">
+          <StatusDot t={t} live={working} />
+          <TaskTitle t={t} goal={t.kind === 'goal'} onShow={(title) => setD((x) => (x ? { ...x, task: { ...x.task, title } } : x))} onSaved={reload} />
+        </div>
+        {sub}
+        <div className="v-r2">
+          <select className="v-chip" aria-label="Status" data-testid="task-status" value={t.status} onChange={(e) => v3.patchTask(t.id, { status: e.target.value as TaskStatus }).then(reload).catch(error)}>
+            {(['working', 'needs_you', 'blocked', 'done'] as const).map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          {agentChips}
+          {t.kind === 'goal' && <GoalRun t={t} reload={reload} />}
+        </div>
+      </div>
+      <TaskChecklist t={t} reload={reload} />
+    </div>
+  ) : (
     <div className="v-head v-colhead">
       <div className="v-r1">
-        <StatusDot t={t} live={typing.length > 0} />
+        <StatusDot t={t} live={working} />
         <h2 data-testid="column-title" title={t.title}>
-          <button type="button" className="v-coltitle" title="Open the task" onClick={() => nav.task(t.id)}>
+          <button type="button" className="v-coltitle" title="Show this task in the agent's page" onClick={() => nav.task(t.id)}>
             {t.kind === 'goal' && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
             {t.title}
           </button>
         </h2>
-        <button
-          type="button"
-          className="v-btn v-colx"
-          data-testid={column.detail ? 'task-detail-close' : 'column-remove'}
-          aria-label={column.detail ? `Back to the ${column.detail}` : `Remove “${t.title}” from the columns`}
-          title={column.detail ? `Back to the ${column.detail} (Esc)` : 'Remove from the columns'}
-          onClick={column.onRemove}
-        >
-          <IconClose size={14} />
-        </button>
+        {column.onRemove && (
+          <button type="button" className="v-btn v-colx" data-testid="column-remove" aria-label={`Remove “${t.title}” from the columns`} title="Remove from the columns" onClick={column.onRemove}>
+            <IconClose size={14} />
+          </button>
+        )}
       </div>
-      {st && (
-        <div className="v-colsub" data-testid="column-subtitle" data-from={st.from} title={st.text}>
-          {st.from === 'step' ? 'now: ' : ''}
-          {st.text}
-        </div>
-      )}
+      {sub}
       <div className="v-r2">
         <span className="v-cnt2">{STATUS_LABEL[t.status]}</span>
-        {t.agents.map((a) => (
-          <button type="button" key={a.session_id} className="v-chip" data-testid="task-agent" onClick={() => nav.agent(a.session_id)}>
-            <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
-            {agentName(byId, a.session_id)}
-          </button>
-        ))}
-        <button type="button" className="v-link" data-testid="column-open" style={{ marginLeft: 'auto' }} onClick={() => nav.task(t.id)}>
-          Open <IconExternal size={12} />
-        </button>
+        {agentChips}
       </div>
     </div>
-  ) : null
+  )
   return (
     <>
-      <div className={'v-col' + (column ? ' v-column' : '')} data-testid={column ? 'task-column' : 'task-view'} data-task={t.id} data-quote-scope={column ? '' : undefined}>
-        {head ?? (
-        <div className="v-head">
-          <div className="v-r1">
-            <BackButton tasks={tasks} />
-            <StatusDot t={t} live={typing.length > 0} />
-            <TaskTitle t={t} goal={t.kind === 'goal'} onShow={(title) => setD((x) => (x ? { ...x, task: { ...x.task, title } } : x))} onSaved={reload} />
-            <select
-              className="v-chip"
-              aria-label="Status"
-              data-testid="task-status"
-              value={t.status}
-              onChange={(e) => v3.patchTask(t.id, { status: e.target.value as TaskStatus }).then(reload).catch(error)}
-            >
-              {(['working', 'needs_you', 'blocked', 'done'] as const).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-            <button type="button" className="v-btn v-ph-only" onClick={() => setSideOpen(!sideOpen)}>
-              {sideOpen ? 'Hide details' : 'Details'}
-            </button>
-          </div>
-          <div className="v-r2">
-            {t.agents.map((a) => (
-              <button type="button" key={a.session_id} className="v-chip" data-testid="task-agent" onClick={() => nav.agent(a.session_id)}>
-                <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
-                {agentName(byId, a.session_id)}
-                {byId.get(a.session_id) && agentHint(sessions ?? [], byId.get(a.session_id)!) ? ` (${agentHint(sessions ?? [], byId.get(a.session_id)!)})` : ''}
-              </button>
-            ))}
-            {t.kind === 'goal' && <GoalRun t={t} reload={reload} />}
-            <span style={{ marginLeft: 'auto' }}>
-              {d.messages.length} message{d.messages.length === 1 ? '' : 's'}
-            </span>
-          </div>
-        </div>
-        )}
-        {isPhone && sideOpen && !column && side}
+      <div className="v-col v-column" data-testid="task-column" data-task={t.id} data-detail={detail || undefined} data-quote-scope="">
+        {head}
         <div className="v-convwrap">
-        <NewPill n={follow.unseen} onClick={follow.toBottom} />
-        <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>
-          <div className="v-conv">
-            {items.length === 0 && <div className="v-empty">No messages about this task yet. Write to an agent below: your message is about this task.</div>}
-            {items.map((it) => {
-              if ('e' in it) {
+          <NewPill n={follow.unseen} onClick={follow.toBottom} />
+          <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>
+            <div className="v-conv">
+              {items.length === 0 && <div className="v-empty">No messages about this task yet. Write to an agent below: your message is about this task.</div>}
+              {items.map((it) => {
+                if ('e' in it) {
+                  return (
+                    <div key={it.e.id} className="v-ev" data-testid="event">
+                      <span className="v-tm">{hhmm(it.e.at)}</span>
+                      <span className="v-m" />
+                      <span>{it.e.text}</span>
+                    </div>
+                  )
+                }
+                const m = it.m
+                const prev = lastBy[m.session_id]
+                lastBy[m.session_id] = m
+                const c = ctx[m.id]
                 return (
-                  <div key={it.e.id} className="v-ev" data-testid="event">
-                    <span className="v-tm">{hhmm(it.e.at)}</span>
-                    <span className="v-m" />
-                    <span>{it.e.text}</span>
+                  <div key={m.id} style={{ display: 'contents' }}>
+                    {!!m.gap && prev && (
+                      <button type="button" className="v-gap" data-testid="show-context" onClick={() => showCtx(m, prev)}>
+                        <span>
+                          {agentName(byId, m.session_id)} · {m.gap} other message{m.gap > 1 ? 's' : ''} · <b>{c ? 'hide' : 'show'} context</b>
+                        </span>
+                      </button>
+                    )}
+                    {Array.isArray(c) && c.map((x) => <MessageView key={x.id} m={x} tasks={tasks} ctx onOpenAttachment={onOpenAttachment} onChanged={reload} />)}
+                    {m.id === firstNew && (
+                      <div className="v-new" data-new-divider data-testid="new-divider">
+                        New
+                      </div>
+                    )}
+                    <MessageView m={m} tasks={tasks} inTask={t.id} latest={m === lastUser} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
+                    {m === lastUser && byId.get(m.session_id) && (
+                      <div className="v-delivery">
+                        <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} compact />
+                      </div>
+                    )}
                   </div>
                 )
-              }
-              const m = it.m
-              const prev = lastBy[m.session_id]
-              lastBy[m.session_id] = m
-              const c = ctx[m.id]
-              return (
-                <div key={m.id} style={{ display: 'contents' }}>
-                  {!!m.gap && prev && (
-                    <button type="button" className="v-gap" data-testid="show-context" onClick={() => showCtx(m, prev)}>
-                      <span>
-                        {agentName(byId, m.session_id)} · {m.gap} other message{m.gap > 1 ? 's' : ''} · <b>{c ? 'hide' : 'show'} context</b>
-                      </span>
-                    </button>
-                  )}
-                  {Array.isArray(c) && c.map((x) => <MessageView key={x.id} m={x} tasks={tasks} ctx onOpenAttachment={onOpenAttachment} onChanged={reload} />)}
-                  {m.id === firstNew && (
-                    <div className="v-new" data-new-divider data-testid="new-divider">
-                      New
-                    </div>
-                  )}
-                  <MessageView m={m} tasks={tasks} inTask={t.id} latest={m === lastUser} questionNear={nearQ.has(m.id)} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />
-                  {m === lastUser && byId.get(m.session_id) && (
-                    <div className="v-delivery">
-                      <DeliveryLine m={m} session={byId.get(m.session_id)!} draftKey={'v3:task:' + t.id} compact />
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            {typing.map((s) => (
-              <WorkingLine key={s!.id} name={s!.name} />
-            ))}
+              })}
+              {typing.map((s) => (
+                <WorkingLine key={s!.id} name={s!.name} />
+              ))}
+            </div>
           </div>
-        </div>
         </div>
         <Composer
           testid="task-composer"
@@ -363,7 +258,52 @@ export function TaskView({
         />
       </div>
       <QuoteBubble box={scroller} />
-      {!isPhone && !column && side}
     </>
+  )
+}
+
+/** Up to this many steps show before "Show all" (the rest scroll in the box until then). */
+const FOLDED_STEPS = 5
+
+/**
+ * The task card's checklist: its progress (a bar of segments and "n/m") and its steps (a goal: its
+ * "done when" criteria), each ticked by a click. A long list stays a short box (scrolled to the current
+ * step) until "Show all".
+ */
+function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
+  const { error } = useApp()
+  const goal = t.kind === 'goal'
+  const n = goal ? t.criteria.length : leaves(t.steps).length
+  const [all, setAll] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const long = n > FOLDED_STEPS
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el || all || !long) return
+    const cur = el.querySelector<HTMLElement>('.v-st.doing')
+    if (cur) el.scrollTop = Math.max(0, cur.offsetTop - el.offsetTop - 24)
+  }, [t.id, all, long])
+  if (!n) return null
+  return (
+    <div className="v-taskcheck" data-testid="task-checklist">
+      <div className="v-sec">
+        {goal ? 'DONE WHEN' : 'CHECKLIST'}
+        <span className="v-taskcheck-bar">
+          <Bar t={t} />
+        </span>
+      </div>
+      <div ref={box} className={'v-taskcheck-list' + (long && !all ? ' folded' : '')} data-testid="task-checklist-list">
+        <Steps
+          t={t}
+          criteria={goal}
+          onToggle={(path) => v3.patchTask(t.id, goal ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
+        />
+      </div>
+      {long && (
+        <button type="button" className="v-link v-taskcheck-more" data-testid="task-checklist-more" onClick={() => setAll(!all)}>
+          {all ? 'Show less' : `Show all ${n}`}
+        </button>
+      )}
+    </div>
   )
 }
