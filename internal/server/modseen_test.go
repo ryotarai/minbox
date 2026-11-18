@@ -59,14 +59,15 @@ func TestModSeenAndSilent(t *testing.T) {
 	}
 }
 
-func TestSendNowMakesPendingUrgentAndCloseEndsPolls(t *testing.T) {
+func TestRepliesAreUrgentAndCloseEndsPolls(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "done", "subject": "S"}, bearer(sess))
 	thread := sent["thread_id"].(string)
 	_, msg, _ := e.do("POST", "/api/threads/"+thread+"/reply", map[string]any{"words": "hello"}, nil)
+	// The person's reply is urgent by default; Send now (an old page) still answers and keeps it so.
 	_, _, pending := e.do("GET", "/api/agent/pending?owner=o", nil, bearer(sess))
-	if len(pending) != 1 || pending[0].(map[string]any)["urgent"] == true {
+	if len(pending) != 1 || pending[0].(map[string]any)["urgent"] != true {
 		t.Fatalf("pending = %v", pending)
 	}
 	if code, _, _ := e.do("POST", "/api/messages/"+msg["id"].(string)+"/send-now", nil, nil); code != 200 {
