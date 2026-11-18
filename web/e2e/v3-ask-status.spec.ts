@@ -1,4 +1,4 @@
-// "Ask for status" beside a working task's "<agent> is working on this…" line: it sends "このタスクの状況は？"
+// "Ask for status" beside a working task's "<agent> is working on this…" line: it sends "What's the status of this task?"
 // to the agent about the task (as the task composer sends), shows "Sent" for a while (disabled), and leaves
 // the composer's draft alone. Not shown when the task is not Working.
 import { mkdirSync } from 'node:fs'
@@ -6,7 +6,7 @@ import { dirname } from 'node:path'
 import { expect, test } from './fixtures'
 import { agentReply, api, say, startAgent, taskNamed } from './v3'
 
-test('a working task: Ask for status sends "このタスクの状況は？" to its agent about the task; the draft stays', async ({ page, minbox }) => {
+test(`a working task: Ask for status sends "What's the status of this task?" to its agent about the task; the draft stays`, async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const t = await taskNamed(minbox, /Fix the gauge reading/)
@@ -30,13 +30,13 @@ test('a working task: Ask for status sends "このタスクの状況は？" to i
   await expect(tbox).toHaveValue('half-written thought')
 
   // In the task's conversation, as the person's message; on the server, to the agent, about the task.
-  const mine = page.getByTestId('task-column').locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'このタスクの状況は？' })
+  const mine = page.getByTestId('task-column').locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: "What's the status of this task?" })
   await expect(mine).toHaveCount(1)
   let sent: any = null
   await expect
     .poll(async () => {
       const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
-      sent = s.messages.find((m: any) => m.author === 'user' && m.words === 'このタスクの状況は？')
+      sent = s.messages.find((m: any) => m.author === 'user' && m.words === "What's the status of this task?")
       return sent?.delivered_at ? 'delivered' : sent ? 'sent' : 'none'
     }, { timeout: 15_000 })
     .toBe('delivered')
@@ -69,5 +69,5 @@ test('phone: the button sits on the working line too', async ({ page, minbox }) 
   await expect(ask).toBeVisible()
   await ask.click()
   await expect(ask).toHaveText('Sent')
-  await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).messages.some((m: any) => m.words === 'このタスクの状況は？')).toBe(true)
+  await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).messages.some((m: any) => m.words === "What's the status of this task?")).toBe(true)
 })

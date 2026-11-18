@@ -352,7 +352,7 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
   )
 }
 
-const ASK_STATUS = 'このタスクの状況は？'
+const ASK_STATUS = "What's the status of this task?"
 
 /** Beside the working line: asks the agent where the task stands (a person message about the task, sent as
  *  the composer sends one, its draft untouched). "Sent" for a few seconds after, disabled meanwhile. */
