@@ -640,7 +640,7 @@ func (m *sessionManager) orchestratorPrompt(ctx context.Context) bool {
 // subagent per task. It is part of the instructions text (see instructions).
 const OrchestratorPrompt = `# minbox: orchestration
 You are the main agent of this session and only orchestrate. ALWAYS start one subagent per task, whether the change is large or tiny; never do a task's work yourself and never judge a task too small for a subagent. Unless the person says otherwise, this holds for every task and message.
-Your job: split the work, brief each subagent fully (goal, files, constraints, how to verify), track progress, review and verify what comes back, merge it, and report to the person (send_message with the task_ids).
+Your job: split the work, brief each subagent fully (goal, files, constraints, how to verify), track progress, review and verify what comes back, merge it, and report to the person (send_message with the task_id).
 Run independent subagents in parallel; do not hold work back for fear of merge conflicts: you resolve them when you merge.
 A subagent that changes anything other than reading (edit files, build, commit) works in its own git worktree when the working directory is in a git repository; read-only investigation needs no worktree. If the directory is not a git repository this does not apply.`
 
@@ -650,14 +650,14 @@ const PiSubagentPrompt = `# minbox: subagents
 minbox_subagent runs up to 8 tasks (4 at a time) in separate Pi processes with their own context; use it to investigate, review or implement pieces in parallel. Brief each task fully (goal, files, constraints, how to verify): a child sees nothing of this conversation.
 - Default children are read-only (read, grep, find, ls). role picks a prepared prompt: scout (recon), planner, reviewer, worker.
 - Set write: true only for a task that must change files. That child works in its own git worktree on a new branch minbox-sub/<id> (the folder must be inside a git repository), and the result names the branch and path. Review the diff and merge the branch yourself; a child never touches your own checkout.
-- Several minbox tasks: the person's messages can be about different tasks. When the work for different tasks is independent, do not do it serially yourself: give each task's work its own minbox_subagent task, run them in parallel, and name the task id in each task. You stay the coordinator: when a task returns, review it and report it with minbox_send_message with that task's task_ids. Use write: true only for a task that needs edits.
+- Several minbox tasks: the person's messages can be about different tasks. When the work for different tasks is independent, do not do it serially yourself: give each task's work its own minbox_subagent task, run them in parallel, and name the task id in each task. You stay the coordinator: when a task returns, review it and report it with minbox_send_message with that task's task_id. Use write: true only for a task that needs edits.
 - Children cannot use minbox_* tools; report to the person yourself.`
 
 // OpenCodeSubagentPrompt tells OpenCode how the orchestration above maps onto its own subagents (the
 // subagent tool with the built-in general and explore agents). It is added for OpenCode only.
 const OpenCodeSubagentPrompt = `# minbox: subagents in OpenCode
 Subagents here are OpenCode's subagent tool: agent "general" (can edit files and run commands) or "explore" (read-only search). Give each task a full brief (goal, files, constraints, how to verify): a subagent sees nothing of this conversation.
-- Several minbox tasks: the person's messages can be about different tasks. When the work for different tasks is independent, start one subagent per task with background: true so they run in parallel, and name the task id in each brief. You stay the coordinator: when a subagent reports back, review its result and report it with minbox_send_message with that task's task_ids.
+- Several minbox tasks: the person's messages can be about different tasks. When the work for different tasks is independent, start one subagent per task with background: true so they run in parallel, and name the task id in each brief. You stay the coordinator: when a subagent reports back, review its result and report it with minbox_send_message with that task's task_id.
 - A subagent that changes files works in its own git worktree when the folder is in a git repository: create one first (Code Mode: execute with tools.opencode.worktree_create) and tell the subagent to work only there; review and merge its branch yourself. Read-only investigation needs no worktree.
 - Subagents do not message the person; you report with minbox_send_message.`
 
@@ -673,7 +673,7 @@ The person follows this session in minbox (your conversation with them, and a Bo
 
 # minbox: replying to the person's messages (important)
 A message that arrives as "minbox: a message from the person …" comes from minbox, not from the terminal. Always answer it with mcp__minbox__send_message: every answer, confirmation, status, "done" and question back, however short. Text you only write in the terminal is not shown to them.
-For each such message decide which task it is about: an open task (reply with its task_ids; prefer this when one fits), or new work (mcp__minbox__create_task, then reply: the message and your reply belong to it). Every message, theirs and yours, must be about a task; there is no "no task". A quick question or chat that fits no open task gets a small task of its own (create_task with a short title and status done once answered). Messages a turn leaves in no task, minbox asks you to place after the turn (update_task message_ids or create_task message_ids). thread_id, thread_title and status on send_message are not needed.
+For each such message decide which task it is about: an open task (reply with its task_id; prefer this when one fits), or new work (mcp__minbox__create_task, then reply: the message and your reply belong to it). Every message, theirs and yours, belongs to exactly one task; there is no "no task" and no second task (about two tasks, send one message per task). A quick question or chat that fits no open task gets a small task of its own (create_task with a short title and status done once answered). Messages a turn leaves in no task, minbox asks you to place after the turn (update_task message_ids or create_task message_ids). thread_id, thread_title and status on send_message are not needed.
 
 # minbox: session title
 The person sees this session in minbox's session list under a title you set with mcp__minbox__set_session_title. Keep it current:

@@ -12,9 +12,12 @@ and `usecases.md` for what the screens do with them.
   created_by, manual_status/manual_at, kind ('' | 'goal'), parent_id (the goal it serves),
   criteria [{text, done}] (a goal's "done when"), auto {state: ''|running|paused|stopped, session_id,
   max_turns, turns, until, reason, last_at}`.
-- **A message's tasks** (`message_tasks`, formerly `message_tags`): a message is *about* zero or more
-  tasks (many to many). `source: agent | auto | person` says how the link was made (the agent named
-  the task, a rule such as an answer inheriting its question's tasks, or the person).
+- **A message's task** (`message_tasks`, formerly `message_tags`): a message is *about* exactly one
+  task (none only while the agent has not placed it yet); a unique index on `message_id` holds it to
+  one row (since the `v3_one_task` migration, which logged the links it dropped in
+  `message_tasks_dropped`). `source: agent | auto | person` says how the link was made (the agent named
+  the task, a rule such as an answer inheriting its question's task, or the person). V3Message keeps
+  `tasks` as a list of at most one.
 - **Task agents** (`task_agents`): `role: assigned | involved`.
 - **Task events** (`task_events`): the timeline (`created, status, step, criterion, link, unlink,
   handoff, report, answer, auto, title, goal`).
@@ -32,11 +35,11 @@ and `usecases.md` for what the screens do with them.
 | POST | `/api/v3/tasks` | `{project_id?, title, kind?, session_id?, message_ids?}`: the task picker's "New task" (the messages become about it). |
 | POST | `/api/v3/tasks/{id}/auto` | `{action: start|pause|stop, session_id?, max_turns?}`: a goal's autonomous run. |
 | GET | `/api/v3/sessions/{id}/stream?limit=&before=&after=` | `{messages: [V3Message], has_more, tasks, stream_thread_id}`. V3Message = Message + `session_id, tasks [{task_id, title, status, source}], segment?, open`. |
-| POST | `/api/v3/sessions/{id}/messages[?thread=<older thread>]` | The reply body (`words, answers_for, answers, uploads, annotations, urgent, resume`) + `task_ids` (the tasks the message is about). Goes to the stream (an answer to an older thread's question: `?thread=`). Answers are about their question's tasks; task_ids reopen a done task and put the session on it (a hand-off event when it is new there). `uploads`: ids from `POST /api/uploads` (the composer's attachments). |
+| POST | `/api/v3/sessions/{id}/messages[?thread=<older thread>]` | The reply body (`words, answers_for, answers, uploads, annotations, urgent, resume`) + `task_id` (the task the message is about; `task_ids`, the older name, counts its first id). Goes to the stream (an answer to an older thread's question: `?thread=`). Answers are about their question's task; task_id reopens a done task and put the session on it (a hand-off event when it is new there). `uploads`: ids from `POST /api/uploads` (the composer's attachments). |
 | POST | `/api/v3/new` | `{to: session id | "new" | "" (the project's main session), project_id, agent?, name?, ...reply body}`. |
-| POST | `/api/v3/messages/{id}/tasks` | `{task_id}`: the person says the message is (also) about that task. |
-| DELETE | `/api/v3/messages/{id}/tasks/{task}` | The message is not about that task. **409** when it is the message's only task: every message is about a task (move it instead). |
-| POST | `/api/v3/messages/{id}/move` | `{from?, to? | title}`: "Move to task…" under an agent reply — moves the reply and its `turn_of` messages from task `from` (or from no task, when the agent has not placed them yet) to `to` (linked there first, then taken out of `from`), or to a new task named `title`; a task created in that turn left with no messages is deleted (`removed_task`). |
+| PUT | `/api/v3/messages/{id}/task` | `{task_id}`: the person moves the message to that task (it leaves the one it was in; both timelines say so) → `{ok, added, task_id, from}`. `POST /api/v3/messages/{id}/tasks` is the older name of the same call. |
+| DELETE | `/api/v3/messages/{id}/tasks/{task}` | Kept for older clients: **409** when it is the message's task (a message is always in exactly one task: move it instead); otherwise a no-op. |
+| POST | `/api/v3/messages/{id}/move` | `{to? | title}` (`from` is accepted and ignored): "Move to another task…" under an agent reply — moves the reply, and its `turn_of` messages that were in the reply's task or in none, to `to` or to a new task named `title`; a task created in that turn left with no messages is deleted (`removed_task`). |
 | POST | `/api/v3/read` | `{message_ids}` → `{marked}`. |
 | POST | `/api/v3/unread` | `{message_ids}` → `{marked}`: "Mark unread from here" (agent messages count as new again). |
 | GET | `/api/v3/search?q=&project=` | `{tasks, messages: [{id, session_id, thread_id, author, text, created_at, tasks}]}`. |
@@ -65,7 +68,7 @@ tiles with remove and upload progress; they go as `uploads`.
 
 | Call | v3 |
 | --- | --- |
-| `POST /api/agent/messages` | `{body, task_ids?, attachments?, review?}`; `thread_id` / `thread_title` / `status` are accepted but not needed (legacy). Every message goes to the stream; a legacy `thread_id` of an older thread makes the message about that thread's task (when the migration made one), `thread_title` is ignored. `task_ids` are the tasks the reply is about, **and the turn's person's messages that are about no task yet** become about them too; tasks created in the turn count too; the tasks of the turn's (task-view) messages are inherited. `status` applies to the named tasks. Answer adds `task_ids`, `decision` and `note`: when the message went in no task, `note` says so and how to place it and the turn's person's messages (update_task / create_task `message_ids`). |
+| `POST /api/agent/messages` | `{body, task_id?, attachments?, review?}`; `task_ids` is the older name of `task_id` (one id; **400** with a "pick one task" text for more); `thread_id` / `thread_title` / `status` are accepted but not needed (legacy). Every message goes to the stream and belongs to one task: the named one; else, only when the turn points at one task, the single task created in the turn, else the task of the turn's person's messages (when they are all in one); else none (minbox asks the agent to place it after the turn). A legacy `thread_id` of an older thread names that thread's task only when no task is named; `thread_title` is ignored. **The turn's person's messages that are in no task yet** go in the reply's task; those the turn's first `create_task` put in its task move to the reply's task when the reply names another. `status` applies to the named task. Answer adds `task_id`, `task_ids` (at most one), `decision` and `note`: when the message went in no task, `note` says so and how to place it and the turn's person's messages (update_task / create_task `message_ids`, which move messages). |
 | `POST /api/agent/tasks` | `{title, kind?: "goal", goal_id?, summary?, detail?, status?, steps?, criteria?, autonomous?, max_turns?, message_ids?}` → `{task_id, task, tagged_messages, similar_tasks?, note?}`. The turn's person's messages about no task, and later replies in the turn, are about it; so are `message_ids` (an agent reply brings its turn's messages in no task). `status: "done"` makes a quick exchange's small task, closed at once. `similar_tasks` ([{id, title, status}]) and `note` name open tasks with a similar title: the agent should keep using one of them rather than creating more. |
 | `PATCH /api/agent/tasks/{id}` | `{title?, summary?, detail?, status?, report?, steps?, check_steps?, uncheck_steps?, criteria?, check_criteria?, goal_id?, links?, message_ids?, autonomous?}`. Any task of the project; the agent becomes involved. `message_ids`: earlier messages that are about it (an agent reply brings the person's messages it answered that are in no task). All criteria met (or done) ends a goal's run. |
 | `GET /api/agent/tasks[?all=1]` | `{tasks}`: the caller's (or the project's open) tasks and goals. |

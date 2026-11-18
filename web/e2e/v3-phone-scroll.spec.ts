@@ -135,7 +135,7 @@ test('phone: a task opens at its newest message from the Board, with late images
     await fetch(`${minbox.url}/api/v3/sessions/${a.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: `the gauge reading is off by one (${i})`, task_ids: [t.id], uploads }),
+      body: JSON.stringify({ words: `the gauge reading is off by one (${i})`, task_id: t.id, uploads }),
     })
     await agentReplies(minbox, a, i + 2)
   }

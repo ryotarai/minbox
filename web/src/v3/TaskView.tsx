@@ -97,14 +97,13 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
     const tmp: V3Message = { id: 'tmp-' + Date.now(), thread_id: '', author: 'user', body: words, words, created_at: new Date().toISOString(), read_at: null, claimed_at: null, delivered_at: null, session_id: toSel, tasks: [{ task_id: t.id, title: t.title, status: t.status, source: 'person' }], open: 0, pending: true }
     setPending((p) => [...p, tmp])
     try {
-      const ids = [t.id, ...o.tasks]
       const uploads = o.uploads.length ? o.uploads : undefined
       const { to: _to, tasks: _tasks, ...rest } = o
       void _to
       void _tasks
       follow.atBottom.current = true
-      if (toSel === 'new') await v3.newMessage({ ...rest, to: 'new', project_id: t.project_id, words, task_ids: ids, uploads })
-      else await v3.send(toSel, { ...rest, words, task_ids: ids, uploads })
+      if (toSel === 'new') await v3.newMessage({ ...rest, to: 'new', project_id: t.project_id, words, task_id: t.id, uploads })
+      else await v3.send(toSel, { ...rest, words, task_id: t.id, uploads })
       reload()
       // The server has it now: the stand-in goes once the reload shows it (or the message was cancelled).
       setTimeout(() => setPending((p) => p.filter((x) => x !== tmp)), 1500)

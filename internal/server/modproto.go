@@ -277,8 +277,13 @@ func (s *Server) runTool(ctx context.Context, sess *store.Session, names toolNam
 			return "", nil, "body is required."
 		}
 		req := jobj{"body": body}
+		if v, ok := e["task_id"].(string); ok && strings.TrimSpace(v) != "" {
+			req["task_id"] = v
+		}
 		if v := argStrs(e["task_ids"]); v != nil {
-			req["task_ids"] = v
+			req["task_ids"] = v // the older name of task_id (one element)
+		} else if v, ok := e["task_ids"].(string); ok && strings.TrimSpace(v) != "" {
+			req["task_ids"] = []any{v}
 		}
 		for _, k := range []string{"status", "thread_id"} {
 			if v, ok := e[k].(string); ok && strings.TrimSpace(v) != "" {

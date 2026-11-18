@@ -273,7 +273,7 @@ func TestInstructionsCarryTheOrchestration(t *testing.T) {
 			t.Errorf("%s hello: missing %q", kind, want)
 		}
 		// v3 terms in the finding-things section (agents, tasks, conversations), and no "no task" option.
-		for _, want := range []string{"an agent, a task or an earlier conversation the person mentions", "Every message, theirs and yours, must be about a task"} {
+		for _, want := range []string{"an agent, a task or an earlier conversation the person mentions", "Every message, theirs and yours, belongs to exactly one task"} {
 			if !strings.Contains(hello["instructions"].(string), want) {
 				t.Errorf("%s: missing %q", kind, want)
 			}

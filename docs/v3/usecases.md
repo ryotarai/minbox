@@ -62,7 +62,7 @@ is *about* one or more tasks (or none).
 - Spec: `v3-agent-stream.spec.ts`.
 
 ## UC7. Move a message to the right task
-- **Entry**: a message's `⋯` menu: **Move to another task…** (**Put in a task…** on one the agent has not placed yet), **Also about another task…**. There is no "Not about a task": every message is about at least one task, so a message's last task can only be replaced, not removed.
+- **Entry**: a message's `⋯` menu: **Move to another task…** (**Put in a task…** on one the agent has not placed yet). Every message belongs to exactly one task: there is no "Not about a task" and no "Also about another task"; a message's task can only be replaced, not removed or added to.
 - **Shown first**: the task picker: open tasks filtered as you type, "+ New task “…”" last.
 - **Actions**: type, `Enter`. On an agent reply, the person's message it answered moves with it; a task created by mistake that is left with no messages is removed.
 - **Must not be required**: moving two messages one by one; going to the task to delete it; knowing any word for the link ("tag").

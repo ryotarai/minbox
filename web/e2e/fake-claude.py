@@ -17,9 +17,9 @@ Typed commands (one per line):
 
 v3 (docs/v3): a message the person writes in an agent's stream is answered by itself, deciding like
 the prototype's fake agent (see decide()): written from a task -> a note in that task; names an open
-task's keyword -> tagged with that task (task_ids); asks for work -> create_task, then a reply; else a
+task's keyword -> in that task (task_ids, the one-id legacy form a protocol-0 mod sends); asks for work -> create_task, then a reply; else a
 quick exchange: a small task of its own, done (create_task status done), then a plain reply. Every
-message is about a task. "GOAL: <title>" + "- <criterion>" lines -> a goal with an autonomous run;
+message belongs to exactly one task. "GOAL: <title>" + "- <criterion>" lines -> a goal with an autonomous run;
 "ASK" -> a question; a goal's continuation -> progress, and on the second one the criteria are met.
 minbox's request to place messages in tasks (kind "place") -> put them in the newest open task, else a
 done "Quick questions" task. "IGNORE" -> a plain reply in no task, and the next two requests to place

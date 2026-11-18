@@ -390,9 +390,9 @@ func criteriaSchema() jobj {
 var taskDescription = map[string]string{
 	"create_task": strings.Join([]string{
 		"Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in.",
-		"A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids puts earlier messages in it.",
-		"The person's message that asked for it, and your replies in this turn, belong to it by themselves.",
-		"If the result lists similar_tasks that are the same work, use that task (send_message task_ids) and do not create more.",
+		"A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids moves earlier messages to it (a message belongs to exactly one task).",
+		"The person's message that asked for it goes in it by itself, and so does your reply in this turn when it names no other task (send_message task_id).",
+		"If the result lists similar_tasks that are the same work, use that task (send_message task_id) and do not create more.",
 		"kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.",
 		"It returns the task id; keep the task current with update_task.",
 	}, " "),
@@ -400,9 +400,9 @@ var taskDescription = map[string]string{
 		"Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.",
 		"Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.",
 		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped. report: a short \"where it stands\" the person reads on the Board.",
-		"message_ids: earlier messages that are about this task.",
+		"message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task).",
 	}, " "),
-	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_ids.",
+	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_id.",
 }
 
 func taskSchema(tool string) jobj {
@@ -641,7 +641,7 @@ func taskText(tool string, v any) string {
 			if len(tm) > 1 {
 				s = "s"
 			}
-			linked = " The person's message" + s + " of this turn and your replies in it belong to it."
+			linked = " The person's message" + s + " of this turn went in it; your reply goes in it too unless it names another task (task_id)."
 		}
 		lines := []string{kind + " created (task_id " + jtext(jget(t, "id")) + ")." + linked + " Keep it current with update_task."}
 		if sim := jarr(jget(v, "similar_tasks")); len(sim) > 0 {
@@ -657,7 +657,7 @@ func taskText(tool string, v any) string {
 				}
 				parts[i] = jtext(jget(x, "id")) + " \"" + squashAny(jget(x, "title")) + "\"" + st
 			}
-			lines = append(lines, note+"Similar open tasks: "+strings.Join(parts, "; ")+". If one is the same work, keep using it (send_message task_ids) and do not create more.")
+			lines = append(lines, note+"Similar open tasks: "+strings.Join(parts, "; ")+". If one is the same work, keep using it (send_message task_id) and do not create more.")
 		}
 		return strings.Join(append(lines, taskLines(t)...), "\n")
 	case "update_task":

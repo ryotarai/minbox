@@ -13,7 +13,7 @@ import (
 	"github.com/ryotarai/minbox/internal/store"
 )
 
-// Every message is about a task (docs/v3/redesign.md §4.5). The agent places its messages and the
+// Every message belongs to exactly one task (docs/v3/redesign.md §4.5). The agent places its messages and the
 // person's; minbox never picks a task for it. When a turn ends with messages of the session in no
 // task, minbox asks the agent to place them: a request delivered like the person's messages (so every
 // integration, an old one too, takes it as a turn), after each turn that leaves some, for as long as
@@ -188,7 +188,7 @@ func (s *Server) sessionAsking(ctx context.Context, sessionID string) bool {
 // placePrompt is the request the agent gets: the messages, its open tasks, and how to place them.
 func (s *Server) placePrompt(ctx context.Context, sess *store.Session, unplaced []store.Unplaced) string {
 	var b strings.Builder
-	b.WriteString("minbox: these messages of your conversation with the person are in no task yet. Every message must be about at least one task (the person follows the work by task), so put each of them in one now:\n")
+	b.WriteString("minbox: these messages of your conversation with the person are in no task yet. Every message belongs to exactly one task (the person follows the work by task), so put each of them in one now:\n")
 	for i, u := range unplaced {
 		if i == 20 {
 			fmt.Fprintf(&b, "- … and %d more (list_threads / read_thread show them)\n", len(unplaced)-20)
@@ -216,12 +216,12 @@ func (s *Server) placePrompt(ctx context.Context, sess *store.Session, unplaced 
 	} else {
 		b.WriteString("\nYou have no open tasks. (list_tasks with all: true lists every open task of the project.)\n")
 	}
-	b.WriteString("\nFor each message: if it is about an existing task, call update_task with that task_id and message_ids; if it is new work, or fits no task, call create_task with message_ids (a quick exchange that is already over: create_task with status done and a short title). One call can take several messages. Nothing needs to be sent to the person for this; if you do write to them, pass task_ids.")
+	b.WriteString("\nFor each message: if it is about an existing task, call update_task with that task_id and message_ids; if it is new work, or fits no task, call create_task with message_ids (a quick exchange that is already over: create_task with status done and a short title). One call can take several messages. Nothing needs to be sent to the person for this; if you do write to them, pass task_id.")
 	return b.String()
 }
 
-// settlePlaceRequests: a request to place messages belongs to the tasks they were put in, once they
-// all are in one.
+// settlePlaceRequests: a request to place messages belongs, once they all are in tasks, to the task
+// of the newest of them (a message belongs to one task).
 func (s *Server) settlePlaceRequests(ctx context.Context, sessionID string) {
 	reqs, err := s.store.OpenPlaceRequests(ctx, sessionID)
 	if err != nil || len(reqs) == 0 {
@@ -232,7 +232,7 @@ func (s *Server) settlePlaceRequests(ctx context.Context, sessionID string) {
 		if err != nil {
 			continue
 		}
-		var tasks []string
+		task := ""
 		all := len(r.Targets) > 0
 		for _, id := range r.Targets {
 			if len(tags[id]) == 0 {
@@ -241,16 +241,12 @@ func (s *Server) settlePlaceRequests(ctx context.Context, sessionID string) {
 				}
 				continue
 			}
-			for _, tg := range tags[id] {
-				tasks = appendNew(tasks, tg.TaskID)
-			}
+			task = tags[id][0].TaskID
 		}
-		if !all || len(tasks) == 0 {
+		if !all || task == "" {
 			continue
 		}
-		for _, t := range tasks {
-			_, _ = s.store.LinkMessages(ctx, t, []string{r.ID}, store.LinkAuto)
-		}
+		_, _ = s.store.PlaceMessages(ctx, task, []string{r.ID}, store.LinkAuto)
 	}
 }
 
@@ -273,5 +269,5 @@ func (s *Server) withTurns(ctx context.Context, ids []string) []string {
 
 // unplacedNote is what send_message answers when the message went in no task.
 func unplacedNote(ids []string) string {
-	return "This message is in no task yet, nor are the person's messages it answers (" + strings.Join(ids, ", ") + "). Every message must be about a task: put them in one now with update_task (task_id, message_ids) or create_task (message_ids; status done for a quick exchange that is over), and pass task_ids on your next send_message."
+	return "This message is in no task yet, nor are the person's messages it answers (" + strings.Join(ids, ", ") + "). Every message must be about a task: put them in one now with update_task (task_id, message_ids) or create_task (message_ids; status done for a quick exchange that is over), and pass task_id on your next send_message."
 }

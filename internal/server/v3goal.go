@@ -314,6 +314,6 @@ func goalPrompt(g *store.Task, turn, max int) string {
 			fmt.Fprintf(&b, "%d. [%s] %s\n", i+1, box, c.Text)
 		}
 	}
-	b.WriteString("\nDo the next useful step now. When a criterion is met, tick it (update_task with check_criteria); when all are met, or the goal cannot be reached, set the goal's status to done and report with send_message. If you need the person, ask with a :::question block: the run waits for their answer. Report progress with send_message (task_ids: the goal or its task).")
+	b.WriteString("\nDo the next useful step now. When a criterion is met, tick it (update_task with check_criteria); when all are met, or the goal cannot be reached, set the goal's status to done and report with send_message. If you need the person, ask with a :::question block: the run waits for their answer. Report progress with send_message (task_id: the goal or its task).")
 	return b.String()
 }
