@@ -1,10 +1,10 @@
 // UC1 (morning triage), UC5 (progress inline), UC10 (close done work): the Board answers "what
-// needs me, and what is moving?" without opening anything. A question is a compact row there; it is
-// answered in its task (Enter, or the row's Answer in task button).
+// needs me, and what is moving?" at a glance. A question is a compact row there; it is answered in its
+// task (a click or Enter opens the task at the question). Any row opens its task on a click.
 import { test, expect } from './fixtures'
 import { agentReply, board, say, shot, startAgent, taskNamed } from './v3'
 
-test('triage on the Board: compact question rows, rows expand in place, Enter answers in the task, X closes', async ({ page, minbox }) => {
+test('triage on the Board: compact question rows, Enter answers in the task, a click opens a row’s task, X closes', async ({ page, minbox }) => {
   const api = await startAgent(minbox, 'api')
   await say(minbox, api, 'please fix the gauge reading on the dashboard')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -47,18 +47,21 @@ test('triage on the Board: compact question rows, rows expand in place, Enter an
   await agentReply(minbox, api, /carrying on/)
   await expect.poll(async () => (await board(minbox)).questions.length).toBe(0)
 
-  // Back on the Board: the row is gone. J then Space expands the task row: checklist, last report, facts.
+  // Back on the Board: the row is gone. A click on the task row opens the task; Esc comes back.
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('board')).toBeVisible()
   await expect(page.getByTestId('question-card')).toHaveCount(0)
-  await page.keyboard.press('j')
+  await page.locator(`[data-testid="task-row"][data-task="${gauge.id}"] .v-line`).click()
+  await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
+  await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading on the dashboard')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('board')).toBeVisible()
+  await expect(page.getByTestId('task-expanded')).toHaveCount(0)
+  // The clicked row keeps the focus (Space no longer unfolds anything on the Board).
+  await expect(page.locator(`[data-testid="task-row"][data-task="${gauge.id}"]`)).toHaveClass(/focus/)
   await page.keyboard.press(' ')
-  const exp = page.getByTestId('task-expanded')
-  await expect(exp).toBeVisible()
-  await expect(exp.getByTestId('step')).toHaveCount(4)
-  await expect(exp.getByTestId('timeline')).toHaveCount(0)
-  await expect(exp.getByTestId('facts')).toContainText('Status')
-  await shot(page, 'uc5-expanded', 'light')
+  await expect(page.getByTestId('task-expanded')).toHaveCount(0)
+  await expect(page.getByTestId('board')).toBeVisible()
 
   // X marks it done; it leaves WORKING for DONE.
   await page.keyboard.press('x')
@@ -68,7 +71,7 @@ test('triage on the Board: compact question rows, rows expand in place, Enter an
   await expect(page.getByTestId('group-done').locator(`[data-testid="task-row"][data-task="${gauge.id}"]`)).toHaveCount(1)
 })
 
-test('NEEDS YOU rows are compact (nothing to answer on the Board) and expand on click', async ({ page, minbox }) => {
+test('NEEDS YOU rows are compact (nothing to answer on the Board) and open the task at the question on click', async ({ page, minbox }) => {
   const api = await startAgent(minbox, 'api')
   await say(minbox, api, 'please fix the gauge reading on the dashboard')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -95,20 +98,8 @@ test('NEEDS YOU rows are compact (nothing to answer on the Board) and expand on 
   await expect(needs.locator('input, textarea')).toHaveCount(0)
   for (const r of await rows.all()) expect((await r.boundingBox())!.height).toBeLessThan(70)
 
-  // A click expands it in place: the ask in full, the checklist and facts (no timeline), and Answer in task.
+  // A click opens the task at the question (nothing unfolds on the Board).
   await ask.locator('.v-line').click()
-  const exp = ask.getByTestId('task-expanded')
-  await expect(exp).toBeVisible()
-  await expect(exp.getByTestId('ask-list')).toContainText('Which region should it deploy to?')
-  await expect(exp.getByTestId('step')).toHaveCount(4)
-  await expect(exp.getByTestId('timeline')).toHaveCount(0)
-  await expect(exp.getByTestId('facts')).toContainText('last activity')
-  await expect(exp.locator('input, textarea, [data-testid="choice"]')).toHaveCount(0)
-  // Space folds it again (the row is focused by the click).
-  await page.keyboard.press(' ')
-  await expect(exp).toHaveCount(0)
-  await ask.locator('.v-line').click()
-  await exp.getByTestId('answer-in-task').click()
   await expect(page).toHaveURL(new RegExp(`v=task.*k=${gauge.id}`))
   await expect(page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)).toHaveClass(/\bhl\b/)
 })
