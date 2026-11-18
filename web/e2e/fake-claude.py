@@ -8,7 +8,8 @@ old integrations keep working; fake-pi.py and fake-opencode.py speak protocol 1 
 Typed commands (one per line):
   ask        send a message with a question block
   say <text> send a plain message
-  mark <status> [text]  send a message that sets the thread's status (working|need_action|finished)
+  mark <status> [text]  set the typed task's status with update_task (working|needs_you|blocked|done),
+             then send a plain message about it (send_message has no status: minbox refuses one)
   work       status working: queued messages wait (idle ends it)
   nobeat     stop the heartbeat (beat starts it again); the poll carries on
   tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
@@ -432,16 +433,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         r = api("POST", "/api/agent/messages", {"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
         out(f"retitled {r['thread_id']}")
     elif line.startswith("mark "):
-        # mark <status> [text]: a message in the last thread (or a new one) that sets the thread's status
+        # mark <status> [text]: the typed task's status (update_task), then a message about it
         status, _, text = line[5:].partition(" ")
-        body = {"body": text or f"Marked {status}", "status": status}
-        if last_thread:
-            body["thread_id"] = last_thread
-        else:
-            body["subject"] = "Status note"
-        r = api("POST", "/api/agent/messages", body)
+        task = typed_task()[0]
+        api("PATCH", "/api/agent/tasks/" + task, {"status": status})
+        r = api("POST", "/api/agent/messages", {"body": text or f"Marked {status}", "task_id": task})
         last_thread = r["thread_id"]
-        out(f"marked {r['thread_id']}")
+        out(f"marked {task}")
     elif line.startswith("burst "):
         _, count, text = line.split(" ", 2)
         for i in range(int(count)):

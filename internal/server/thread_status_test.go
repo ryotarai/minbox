@@ -13,24 +13,13 @@ func TestThreadStatusAPI(t *testing.T) {
 		_, obj, _ := e.do("GET", "/api/threads/"+id, nil, nil)
 		return obj["status"].(string)
 	}
-	code, obj := send(map[string]any{"body": "hello", "status": "working"})
+	code, obj := send(map[string]any{"body": "hello"})
 	if code != 201 {
 		t.Fatalf("send: %d", code)
 	}
 	id := obj["thread_id"].(string)
-	if status(id) != "working" {
-		t.Fatalf("status = %s", status(id))
-	}
-	if code, _ := send(map[string]any{"body": "x", "thread_id": id, "status": "bogus"}); code != 400 {
-		t.Fatalf("bogus status: %d", code)
-	}
-	send(map[string]any{"body": "x", "thread_id": id}) // no status: finished
-	if status(id) != "finished" {
+	if status(id) != "finished" { // an agent message without a question: finished
 		t.Fatalf("no status = %s", status(id))
-	}
-	send(map[string]any{"body": "x", "thread_id": id, "status": "done"}) // alias
-	if status(id) != "finished" {
-		t.Fatalf("alias = %s", status(id))
 	}
 	send(map[string]any{"body": ":::question\nA or B?\n- [ ] A\n- [ ] B\n:::", "thread_id": id})
 	if status(id) != "need_action" {

@@ -207,7 +207,7 @@ system prompt に足すのは 1 文: 「人のメッセージには、既存タ�
 
 | ツール | A での形 | 今との差 |
 | --- | --- | --- |
-| `send_message` | `{body, task_ids?: string[], attachments?, review?}` | `thread_id` / `thread_title` / `status` が**不要**（受け付けるが、`thread_id` は無視、`status` は付いたタスクへ適用）。宛先を選ぶ手間が消える。**`task_ids` は、このターンが答えている人のメッセージ（まだタグが無いもの）にも付く**（§4.5） |
+| `send_message` | `{body, task_ids?: string[], attachments?, review?}` | `thread_id` / `thread_title` が**不要**（受け付けるが、`thread_id` は無視）。`status` は**拒否**（エラーで何も保存しない。タスクの状態は update_task で設定する。以前は付いたタスクへ適用していたが、done のタスクを誤って再オープンしたため廃止）。宛先を選ぶ手間が消える。**`task_ids` は、このターンが答えている人のメッセージ（まだタグが無いもの）にも付く**（§4.5） |
 | `create_task` | `{title, summary?, steps?, status?, parent_id?}` → `task_id`。作ったセッションが担当になり、同じターンのメッセージに自動でタグが付く | スレッドへの所属が無くなる |
 | `update_task` | `{task_id, title?, summary?, steps?(入れ子), check_steps?, status?, report?, links?, message_ids?}` | `message_ids` = 過去メッセージへのタグ追加 |
 | `list_tasks` | 担当または関与しているタスク（未完了 + 直近の完了） | スレッド別ではなく一覧 |
