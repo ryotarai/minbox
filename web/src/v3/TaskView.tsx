@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
-import { ago, hhmm, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
+import { ago, hhmm, standing, unreadCls, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
 import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
@@ -153,7 +153,7 @@ export function TaskView({
           </div>
           {d.tasks.map((c) => (
             <button type="button" key={c.id} className="v-mt" onClick={() => nav.task(c.id)}>
-              <div className="v-a">
+              <div className={'v-a' + unreadCls(c)} data-unread={(c.unread ?? 0) > 0 || undefined}>
                 <StatusDot t={c} />
                 {c.title}
               </div>
