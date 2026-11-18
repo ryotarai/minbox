@@ -36,11 +36,11 @@ import {
 export function useNav() {
   const { navigate } = useApp()
   return {
-    board: () => navigate({ view: 'main', k: null, s: null, m: null }, { push: true }),
-    task: (id: string, m?: string) => navigate({ view: 'task', k: id, m: m ?? null }, { push: true }),
-    agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null }, { push: true }),
-    agents: () => navigate({ view: 'agents' }, { push: true }),
-    search: () => navigate({ view: 'search' }, { push: true }),
+    board: () => navigate({ view: 'main', k: null, s: null, m: null, tab: 'inbox' }, { push: true }),
+    task: (id: string, m?: string) => navigate({ view: 'task', k: id, m: m ?? null, tab: 'inbox' }, { push: true }),
+    agent: (id: string, m?: string) => navigate({ view: 'agent', s: id, m: m ?? null, tab: 'inbox' }, { push: true }),
+    agents: () => navigate({ view: 'agents', tab: 'inbox' }, { push: true }),
+    search: () => navigate({ view: 'search', tab: 'inbox' }, { push: true }),
   }
 }
 

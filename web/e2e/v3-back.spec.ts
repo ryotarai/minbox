@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
-import { say, startAgent, taskNamed, type Agent } from './v3'
+import { api, say, startAgent, taskNamed, type Agent } from './v3'
 
 const SHOTS = process.env.BACK_SHOTS // a folder: screenshots of the headers (light and dark)
 async function snap(page: Page, name: string) {
@@ -217,5 +217,69 @@ test.describe('phone', () => {
     await expect(view(page)).toHaveAttribute('data-view', 'board')
 
     await deepLink(page, minbox.url, t, true)
+  })
+
+  test("an agent's sheet: its tasks (done ones folded), a task and back, the terminal and files; the task's details", async ({ page, minbox }) => {
+    const { a, t } = await setup(minbox)
+    await say(minbox, a, 'please add the dark mode toggle')
+    const done = await taskNamed(minbox, /dark mode/i)
+    await api(minbox, 'PATCH', `/api/v3/tasks/${done.id}`, { status: 'done' })
+    await page.goto(minbox.url)
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}`)
+    await expect(page.getByTestId('composer-text')).toBeVisible()
+    await expect(page.getByTestId('agent-side')).toHaveCount(0)
+    const open = page.getByTestId('agent-sheet-open')
+    await expect(open).toContainText('Tasks 1')
+    await open.tap()
+    // The sheet takes the screen: Tasks first, the stream and its reply box hidden.
+    await expect(page.getByTestId('agent-side')).toHaveAttribute('data-sheet', 'true')
+    await expect(page.getByTestId('composer-text')).toBeHidden()
+    await expect(page.getByTestId('pane-tasks')).toHaveClass(/on/)
+    const tasksList = page.getByTestId('agent-tasks')
+    await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${t.id}"]`)).toBeVisible()
+    await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeHidden() // folded
+    await tasksList.getByText('DONE THIS WEEK').tap()
+    await expect(tasksList.locator(`[data-testid="agent-task"][data-task="${done.id}"]`)).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+    await snap(page, 'phone-agent-sheet')
+
+    // A task from the sheet; ‹ comes back to the agent with its sheet.
+    await tasksList.locator(`[data-testid="agent-task"][data-task="${t.id}"]`).tap()
+    await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
+    await expect(back(page)).toHaveAccessibleName('Back to api')
+    // The task's details (checklist, latest from the agent, facts) behind Details.
+    await expect(page.getByTestId('task-side')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Details' }).tap()
+    await expect(page.getByTestId('task-side')).toBeVisible()
+    await expect(page.getByTestId('task-side').getByTestId('step')).toHaveCount(4)
+    await expect(page.getByTestId('task-side')).toContainText('LATEST FROM THE AGENT')
+    await expect(page.getByTestId('task-side')).toContainText('FACTS')
+    await back(page).tap()
+    await expect(page.getByTestId('agent-side')).toHaveAttribute('data-sheet', 'true')
+    await expect(page.getByTestId('agent-tasks')).toBeVisible()
+
+    // Terminal and Files as tabs of the sheet.
+    await page.getByTestId('pane-terminal').tap()
+    await expect(page.getByTestId('terminal')).toBeVisible()
+    await page.getByTestId('pane-files').tap()
+    await expect(page.getByTestId('files-pane')).toBeVisible()
+    await page.getByTestId('pane-tasks').tap()
+    await expect(page.getByTestId('agent-tasks')).toBeVisible()
+    // ‹ (or the browser's back) closes the sheet: the stream again.
+    await page.getByTestId('agent-sheet-close').tap()
+    await expect(page.getByTestId('agent-side')).toHaveCount(0)
+    await expect(page.getByTestId('composer-text')).toBeVisible()
+    await open.tap()
+    await expect(page.getByTestId('agent-tasks')).toBeVisible()
+    await page.goBack()
+    await expect(page.getByTestId('agent-side')).toHaveCount(0)
+    await expect(page.getByTestId('composer-text')).toBeVisible()
+
+    // A link straight to the sheet: closing it replaces the entry with the stream.
+    await page.goto(minbox.url + `/#v=agent&s=${a.id}&tab=tasks`)
+    await expect(page.getByTestId('agent-tasks')).toBeVisible()
+    await page.getByTestId('agent-sheet-close').tap()
+    await expect(page.getByTestId('composer-text')).toBeVisible()
+    expect(new URL(page.url()).hash).not.toContain('tab=tasks')
   })
 })

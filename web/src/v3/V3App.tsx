@@ -239,7 +239,7 @@ export function V3App() {
   const byId = useSessionsById()
   let main: React.ReactNode
   if (view === 'task') main = <TaskView id={route.k!} highlight={route.m} tasks={tasks} onOpenAttachment={onOpenAttachment} />
-  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} onOpenAttachment={onOpenAttachment} />
+  else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} pane={pane} setPane={setPane} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNew={() => openNew()} onNewAgent={openNewAgent} onRename={setRenaming} />
   else
@@ -266,7 +266,9 @@ export function V3App() {
   const winW = useWindowWidth() / zoom
   // Tablet: two panes. On a task or an agent the sidebar folds away (the rail's ☰ shows it again).
   const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
-  const wide = view === 'agent' && pane !== 'tasks'
+  // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
+  const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
+  const wide = view === 'agent' && (pane !== 'tasks' || sheet)
   const hasSide = !isPhone && (view === 'agent' || view === 'task')
   const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
   const style = {

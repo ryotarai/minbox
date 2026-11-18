@@ -27,8 +27,8 @@ export type Route = {
   view: View
   /** Guided review: the attachment shown full screen. */
   r: string | null
-  /** Phone and tablet: the session screen's tab ('terminal' = the terminal view). */
-  tab: 'inbox' | 'terminal'
+  /** Phone and tablet: the session screen's tab ('terminal' = the terminal view; 'tasks' = v3's phone sheet of the agent's tasks, terminal, shell and files). */
+  tab: 'inbox' | 'terminal' | 'tasks'
   /** Settings section. */
   ss: string
   /** My issues: the selected issue's identifier (ENG-123). */
@@ -52,7 +52,7 @@ function readRoute(hash = location.hash): Route {
     f: p.get('f'),
     view: ['main', 'settings', 'tasks', 'review', 'inbox', 'issues', 'slack', 'task', 'agent', 'agents', 'search'].includes(view) ? view : 'main',
     r: p.get('r'),
-    tab: p.get('tab') === 'terminal' ? 'terminal' : 'inbox',
+    tab: p.get('tab') === 'terminal' ? 'terminal' : p.get('tab') === 'tasks' ? 'tasks' : 'inbox',
     ss: p.get('ss') || 'general',
     issue: p.get('issue'),
     slack: p.get('thread'),
