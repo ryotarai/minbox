@@ -264,8 +264,9 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-ph-only { display: initial; }
   .v-tabs { display: flex; border-top: 1px solid var(--mb-line); background: var(--mb-surface); padding: 4px 0 calc(8px + env(safe-area-inset-bottom)); flex: none; }
   .v-tabs button { flex: 1; border: 0; background: none; font-size: 11px; color: var(--mb-subtle); display: flex; flex-direction: column; align-items: center; gap: 1px; position: relative; padding: 4px 0; }
-  .v-tabs button b { font-size: 17px; font-weight: 500; }
+  .v-tabs button svg { display: block; margin-bottom: 2px; }
   .v-tabs button.on { color: var(--mb-fg); }
+  .v-tabs button.on svg { stroke-width: 2.25; }
   .v-tabs .v-badge { position: absolute; top: 0; left: calc(50% + 6px); }
   .v-dots { opacity: 1; }
   .v-row .v-sub .v-bar { width: 60px; }

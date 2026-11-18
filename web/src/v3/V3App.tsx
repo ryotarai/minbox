@@ -31,6 +31,10 @@ import { BackButton, rememberTaskTitles, agentHint, openQuestions, useNav, useSe
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconPaperclip } from '../components/icons'
+// The phone's bottom tabs: Lucide icons, one module each (not the barrel), so only these three ship.
+import IconTabBoard from 'lucide-react/icons/square-kanban'
+import IconTabAgents from 'lucide-react/icons/bot'
+import IconTabSearch from 'lucide-react/icons/search'
 import './v3.css'
 import './shell.css'
 
@@ -421,11 +425,11 @@ export function V3App() {
         <div className="v-tabs" data-testid="phone-tabs">
           {(
             [
-              ['board', '▤', 'Board', needs, 'w'],
-              ['agents', '☺', 'Agents', unread, 'u'],
-              ['search', '⌕', 'Search', 0, ''],
+              ['board', IconTabBoard, 'Board', needs, 'w'],
+              ['agents', IconTabAgents, 'Agents', unread, 'u'],
+              ['search', IconTabSearch, 'Search', 0, ''],
             ] as const
-          ).map(([v, i, l, c, k]) => (
+          ).map(([v, I, l, c, k]) => (
             <button
               type="button"
               key={v}
@@ -433,7 +437,7 @@ export function V3App() {
               className={view === v || (v === 'agents' && view === 'agent') || (v === 'board' && view === 'task') ? 'on' : ''}
               onClick={() => (v === 'board' ? nav.board() : v === 'agents' ? nav.agents() : nav.search())}
             >
-              <b>{i}</b>
+              <I size={22} strokeWidth={1.75} aria-hidden />
               {l}
               {c > 0 && <span className={'v-badge ' + k}>{c}</span>}
             </button>
