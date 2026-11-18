@@ -203,7 +203,7 @@ test('a reply: edit the drawing before sending, cancel adds nothing, then send',
 
   await page.getByTestId('composer-text').fill('Like this?')
   await page.getByTestId('composer-send').click()
-  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
+  await expect(page.getByTestId('delivery')).toHaveAttribute('data-delivery', 'delivered')
   await expect(page.getByTestId('compose-file')).toHaveCount(0)
   const img = await sentImage(page)
   expect(img.type).toBe('image/png')
@@ -259,7 +259,7 @@ test('draw on an attached image; the tile becomes the annotated PNG', async ({ p
 
   await page.getByTestId('composer-text').fill('Here')
   await page.getByTestId('composer-send').click()
-  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered')
+  await expect(page.getByTestId('delivery')).toHaveAttribute('data-delivery', 'delivered')
   const img = await sentImage(page)
   expect(img.type).toBe('image/png')
   expect([img.w, img.h]).toEqual([400, 300])

@@ -111,18 +111,33 @@ test('delivery: a busy agent gets messages in its running turn, in order; a queu
   await page.getByTestId('composer-send').click()
   await box(page).fill('mid-turn two')
   await page.getByTestId('composer-send').click()
+  // Delivery belongs to the person's bubble: its header says sending → ✓ delivered (the latest message only),
+  // and no separate line repeats it.
   const line = page.getByTestId('delivery-line')
-  await expect(line).toHaveAttribute('data-delivery', 'delivered', { timeout: 15_000 })
-  await expect(line).toContainText('Delivered to Claude Code')
+  const lastStatus = userMsgs(page).last().getByTestId('delivery')
+  await expect(lastStatus).toHaveAttribute('data-delivery', 'delivered', { timeout: 15_000 })
+  await expect(lastStatus).toHaveText('✓ delivered')
+  await expect(lastStatus).toHaveAttribute('title', /Delivered to api, /)
+  await expect(page.getByTestId('delivery')).toHaveCount(1)
+  await expect(line).toHaveCount(0)
   await expectTerminal(page, /mid-turn one[\s\S]*mid-turn two/)
   await expect(page.getByTestId('send-now')).toHaveCount(0)
   await expect(page.getByText(/Queued|turn ends/)).toHaveCount(0)
-  // The integration does not take it (not polling): it waits and can be cancelled; its words come back.
+  // The integration does not take it (not polling): the header says sending; after a moment a small line under
+  // the bubble, right-aligned with it, says it is waiting and offers Cancel; its words come back.
   await typeInTerminal(page, 'deaf')
   await expectTerminal(page, 'status deaf')
   await box(page).fill('first try')
   await page.getByTestId('composer-send').click()
+  await expect(userMsgs(page).last().getByTestId('delivery')).toHaveText('sending')
   await expect(line).toHaveAttribute('data-delivery', 'queued')
+  await expect(line).toContainText('Waiting for Claude Code…')
+  await expect(line).not.toContainText('Sending')
+  const bubble = await userMsgs(page).last().boundingBox()
+  const lineBox = await line.boundingBox()
+  expect(Math.abs(bubble!.x + bubble!.width - (lineBox!.x + lineBox!.width))).toBeLessThan(2) // its right edge is the bubble's
+  expect(lineBox!.y).toBeGreaterThanOrEqual(bubble!.y + bubble!.height - 1) // under it
+  expect(lineBox!.y).toBeLessThan(bubble!.y + bubble!.height + 12) // right under it
   await expect(line.getByTestId('send-now')).toHaveCount(0)
   await line.getByTestId('cancel-message').click()
   await expect(box(page)).toHaveValue('first try')
@@ -130,7 +145,8 @@ test('delivery: a busy agent gets messages in its running turn, in order; a queu
   await page.getByTestId('composer-send').click()
   await expect(line).toHaveAttribute('data-delivery', 'queued')
   await typeInTerminal(page, 'listen')
-  await expect(line).toHaveAttribute('data-delivery', 'delivered', { timeout: 25_000 })
+  await expect(userMsgs(page).last().getByTestId('delivery')).toHaveAttribute('data-delivery', 'delivered', { timeout: 25_000 })
+  await expect(line).toHaveCount(0)
 })
 
 test('an ended agent: Send asks where the reply goes; Resume delivers it, or it goes to another agent', async ({ page, minbox }) => {
@@ -147,7 +163,7 @@ test('an ended agent: Send asks where the reply goes; Resume delivers it, or it 
   await box(page).fill('please carry on')
   await page.getByTestId('composer-send').click()
   await page.getByTestId('where-resume').click()
-  await expect(page.getByTestId('delivery-line')).toHaveAttribute('data-delivery', 'delivered', { timeout: 30_000 })
+  await expect(userMsgs(page).last().getByTestId('delivery')).toHaveAttribute('data-delivery', 'delivered', { timeout: 30_000 })
 })
 
 test('new since you looked: a divider, N jumps to it; mark unread from a message', async ({ page, minbox }) => {
@@ -303,7 +319,7 @@ test('Q goes to the open question; a pick and typed words go in one message on S
   expect(ans.words).toBe('and use the blue build')
 })
 
-test('task view: a pick and words go together to the agent, about the task; its delivery line shows', async ({ page, minbox }) => {
+test('task view: a pick and words go together to the agent, about the task; its delivery status shows on the bubble', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const t = await taskNamed(minbox, /Fix the gauge reading/)
@@ -321,7 +337,7 @@ test('task view: a pick and words go together to the agent, about the task; its 
   const ans = s.messages.find((m: any) => m.answers_for === q.id)
   expect(ans.words).toBe('ship it today')
   expect(ans.tasks.map((x: any) => x.task_id)).toEqual([t.id])
-  await expect(page.getByTestId('delivery-line')).toBeVisible()
+  await expect(userMsgs(page).last().getByTestId('delivery')).toBeVisible()
 })
 
 test('the conversation menu: snooze shows a notice with Unsnooze', async ({ page, minbox }) => {
