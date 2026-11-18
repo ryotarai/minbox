@@ -50,13 +50,16 @@ type modConn struct {
 	lastPoll    string // the mod's own timestamps, passed through
 	lastDeliver string
 	modInfo     map[string]any // the rest of the mod's self-report (ticks, poll state, ...)
-	stale       bool
-	staleSince  time.Time
-	reconnects  int
-	lastGap     time.Duration
-	modEvents   []ModEvent // the tail the mod sent last
-	events      []ModEvent // the server's log for this session
-	timer       *time.Timer
+	// protocol: the mod protocol the integration reported (hello, heartbeat); protoKnown: it reported.
+	protocol   int
+	protoKnown bool
+	stale      bool
+	staleSince time.Time
+	reconnects int
+	lastGap    time.Duration
+	modEvents  []ModEvent // the tail the mod sent last
+	events     []ModEvent // the server's log for this session
+	timer      *time.Timer
 	// Rate limits for log lines.
 	pendingKey string
 	pendingAt  time.Time
@@ -209,6 +212,19 @@ func (s *Server) modForget(id, why string) {
 	}
 }
 
+// modProtocolSeen records the mod protocol an integration reported in its hello.
+func (s *Server) modProtocolSeen(id string, protocol int) {
+	now := s.nowFn()
+	s.modMu.Lock()
+	c := s.connLocked(id, now)
+	changed := !c.protoKnown || c.protocol != protocol
+	c.protocol, c.protoKnown = protocol, true
+	if changed && protocol < ModProtocol {
+		s.modLogLocked(id, now, "old-protocol", "the integration speaks mod protocol %d, the server %d: it keeps working; a restart of the session loads the current one", protocol, ModProtocol)
+	}
+	s.modMu.Unlock()
+}
+
 // ---- heartbeat ----
 
 type heartbeatReq struct {
@@ -220,7 +236,9 @@ type heartbeatReq struct {
 	LastPollAt     string         `json:"last_poll_at"`
 	LastDeliveryAt string         `json:"last_delivery_at"`
 	Info           map[string]any `json:"info"`
-	Events         []struct {
+	// Protocol: the integration's mod protocol (0, absent, before protocol 1).
+	Protocol int `json:"protocol"`
+	Events   []struct {
 		At   string `json:"at"`
 		Kind string `json:"kind"`
 		Msg  string `json:"msg"`
@@ -243,6 +261,7 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *st
 	}
 	c.beats++
 	c.seq = req.Seq
+	c.protocol, c.protoKnown = req.Protocol, true
 	c.agent, c.version = truncate(req.Agent, 20), truncate(req.ExtVersion, 40)
 	if req.State == store.StatusWorking || req.State == store.StatusIdle {
 		c.modState = req.State
@@ -278,7 +297,8 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *st
 		s.hub.publish(Event{Type: "sessions"})
 	}
 	s.modQueueCheck(sess.ID)
-	writeJSON(w, 200, map[string]any{"ok": true, "server_time": now.UTC().Format(time.RFC3339Nano)})
+	writeJSON(w, 200, map[string]any{"ok": true, "server_time": now.UTC().Format(time.RFC3339Nano),
+		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version})
 }
 
 // modQueueCheck logs, once per message, a queued message that has waited long while the mod
@@ -388,6 +408,10 @@ func (s *Server) withModConn(sess *store.Session) {
 		t := c.lastBeat
 		sess.ModBeatAt = &t
 	}
+	// An integration of an older protocol keeps working, but a restart loads the current one.
+	if c := s.modConns[sess.ID]; c != nil && c.protoKnown && sess.ModConn != "none" {
+		sess.ModOutdated = c.protocol < ModProtocol
+	}
 }
 
 // getConnection answers GET /api/sessions/{id}/connection: the diagnostics of the mod connection.
@@ -431,6 +455,8 @@ func (s *Server) getConnection(w http.ResponseWriter, r *http.Request) {
 		out["seq"] = c.seq
 		out["agent"] = c.agent
 		out["mod_version"] = c.version
+		out["mod_protocol"] = c.protocol
+		out["server_protocol"] = ModProtocol
 		out["mod_state"] = c.modState
 		out["last_poll_at"] = c.lastPoll
 		out["last_delivery_at"] = c.lastDeliver
