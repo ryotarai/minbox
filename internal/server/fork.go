@@ -295,22 +295,22 @@ func (s *Server) planFork(ctx context.Context, parentID string, req forkReq) (*f
 		}
 		sess, err := s.store.GetSession(ctx, sid)
 		if err != nil {
-			return nil, fe(400, "no such session")
+			return nil, fe(400, "no such agent")
 		}
 		if sess.Kind != store.KindClaude {
-			return nil, fe(400, "that session cannot take threads")
+			return nil, fe(400, "that agent cannot take threads")
 		}
 		if sess.ArchivedAt != nil {
-			return nil, fe(400, "that session is archived; unarchive it or pick another")
+			return nil, fe(400, "that agent is archived; unarchive it or pick another")
 		}
 		if sess.Status == store.StatusEnded {
-			return nil, fe(400, "that session has ended; restart it or start a new session")
+			return nil, fe(400, "that agent has ended; restart it or start a new agent")
 		}
 		p.targetSess, p.agentKind, p.sameSession = sess, sess.Agent, sess.ID == parent.SessionID
 	case "new_session":
 		proj, err := s.store.GetProject(ctx, t.ProjectID)
 		if err != nil {
-			return nil, fe(400, "pick a project for the new session")
+			return nil, fe(400, "pick a project for the new agent")
 		}
 		ak := strings.TrimSpace(t.Agent)
 		if ak == "" {
@@ -390,7 +390,7 @@ func (s *Server) planFork(ctx context.Context, parentID string, req forkReq) (*f
 		p.warnings = append(p.warnings, "This content goes to an agent in another project.")
 	}
 	if p.targetSess != nil && !p.sameSession {
-		p.warnings = append(p.warnings, "That session's agent shares one conversation across its threads: the new thread queues behind its current work.")
+		p.warnings = append(p.warnings, "That agent shares one conversation across its threads: the new thread queues behind its current work.")
 	}
 	if len(p.text()) > forkBlockBytes {
 		p.warnings = append(p.warnings, "The carried context is long; the new agent can read the rest with read_thread.")

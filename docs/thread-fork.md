@@ -8,8 +8,8 @@ context** (the quoted message, the id of the source thread, how to read the rest
 
 - **Entry points**: the fork icon in a message's header (shows on hover or keyboard focus), and the "…" menu of
   the message (always there; on the phone the only one) with *Start new thread from here*.
-- **Dialog** (`ForkDialog`): where (*This session* is the default; *New session* with a project picker, an agent
-  picker when both agents are installed and an optional session name; *Another session* picks an existing one),
+- **Dialog** (`ForkDialog`): where (*This agent* is the default; *New agent* with a project picker, an agent
+  picker when both agents are installed and an optional agent name; *Another agent* picks an existing one),
   the title (prefilled with the message's first line), *Also carry the 3 messages before it* (off by default; the
   default carry-over is the selected message only), and *Your request* (optional). On the right is a **live
   preview** of exactly what the new agent receives first, composed by the server
@@ -17,8 +17,8 @@ context** (the quoted message, the id of the source thread, how to read the rest
 - **The new thread** shows `Forked from <subject> · message #N · <project>` in its header (and under the title in
   the phone header; "(deleted)" without a link when the source is gone) and a collapsed *Handoff context* card with
   the same text the agent received. Its first message is the person's request (or a one-line default naming the source).
-- **The source thread** gets a marker under the message: `Started thread "<title>" from here · same session /
-  project / session · working|needs you|finished`, with a jump link. It is derived from the link table and is
+- **The source thread** gets a marker under the message: `Started thread "<title>" from here · same agent /
+  project / agent · working|needs you|finished`, with a jump link. It is derived from the link table and is
   **not a message**: `message_count`, unread, ordering and Slack notifications do not change. The thread list marks
   the new thread with a fork icon and the source with `<fork icon> N`.
 

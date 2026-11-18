@@ -220,7 +220,7 @@ func (s *Server) modProtocolSeen(id string, protocol int) {
 	changed := !c.protoKnown || c.protocol != protocol
 	c.protocol, c.protoKnown = protocol, true
 	if changed && protocol < ModProtocol {
-		s.modLogLocked(id, now, "old-protocol", "the integration speaks mod protocol %d, the server %d: it keeps working; a restart of the session loads the current one", protocol, ModProtocol)
+		s.modLogLocked(id, now, "old-protocol", "the integration speaks mod protocol %d, the server %d: it keeps working; a restart of the agent loads the current one", protocol, ModProtocol)
 	}
 	s.modMu.Unlock()
 }

@@ -67,7 +67,7 @@ export function NewThreadDialog({
           </div>
         )}
         <label className="flex flex-col gap-1.5 text-[12.5px] text-muted">
-          Session
+          Agent
           <select
             data-testid="new-thread-session"
             value={to}
@@ -77,7 +77,7 @@ export function NewThreadDialog({
             {targets.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
-                {s.id === session.id ? ' (this session)' : ''}
+                {s.id === session.id ? ' (this agent)' : ''}
               </option>
             ))}
           </select>

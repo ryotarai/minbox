@@ -92,7 +92,7 @@ export function ShellButton({ session }: { session: Session }) {
     <IconButton
       data-testid="shell-toggle"
       aria-label={open ? 'Hide shell' : 'Open shell'}
-      title={open ? 'Hide the shell (Ctrl+`)' : 'Open shell: a shell in this session\'s folder (Ctrl+`)'}
+      title={open ? 'Hide the shell (Ctrl+`)' : 'Open shell: a shell in this agent\'s folder (Ctrl+`)'}
       aria-pressed={open}
       onClick={() => setLayout({ shellPane: !open })}
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
@@ -140,7 +140,7 @@ export function FilesButton() {
     <IconButton
       data-testid="files-toggle"
       aria-label={open ? 'Hide files' : 'Show files'}
-      title={open ? 'Hide files (⇧F)' : "Show files: this session's folder (⇧F)"}
+      title={open ? 'Hide files (⇧F)' : "Show files: this agent's folder (⇧F)"}
       aria-pressed={open}
       onClick={toggle}
       className={open ? 'bg-raised! text-wait! hover:text-wait!' : undefined}
@@ -1219,7 +1219,7 @@ export function ForkMarker({ f }: { f: ForkChild }) {
         from here
       </span>
       <span className="text-subtle">
-        · {f.same_session ? 'same session' : `${f.project_name ? `${f.project_name} / ` : ''}${f.session_name}`} · {label}
+        · {f.same_session ? 'same agent' : `${f.project_name ? `${f.project_name} / ` : ''}${f.session_name}`} · {label}
         {f.archived_at ? ' · archived' : ''}
       </span>
     </div>
@@ -1332,7 +1332,7 @@ export function DeliveryLine({
   if (d === 'delivered') text = `Delivered to ${agent}, ${hm(m.delivered_at ?? m.created_at)}`
   else if (d === 'sending') text = `Sending to ${agent}…`
   else if (d === 'undelivered') {
-    text = 'Not delivered. That session stopped. Resume to deliver.'
+    text = 'Not delivered. That agent stopped. Resume to deliver.'
     resume = true
   } else {
     const waitedMs = Date.now() - new Date(m.created_at).getTime()
@@ -1372,7 +1372,7 @@ export function DeliveryLine({
             }}
             className={cx(btn, 'border-line text-fg2')}
           >
-            Restart session
+            Restart agent
           </button>
         )}
         {cancel && (
@@ -1382,7 +1382,7 @@ export function DeliveryLine({
         )}
         {resume && (
           <button type="button" data-testid="resume-deliver" onClick={() => api.restartSession(session.id).catch(error)} className={cx(btn, 'border-danger font-semibold text-danger')}>
-            Resume session to deliver
+            Resume agent to deliver
           </button>
         )}
       </div>
@@ -1401,7 +1401,7 @@ export function DeliveryLine({
           }}
           className="h-7 rounded-[6px] border border-line bg-transparent px-2.5 text-[12px] text-fg2"
         >
-          Restart session
+          Restart agent
         </button>
       )}
       {cancel && (
@@ -1416,7 +1416,7 @@ export function DeliveryLine({
           onClick={() => api.restartSession(session.id).catch(error)}
           className="h-7 rounded-[6px] border border-danger bg-transparent px-2.5 text-[12px] font-semibold text-danger"
         >
-          Resume session to deliver
+          Resume agent to deliver
         </button>
       )}
     </div>
@@ -1563,7 +1563,7 @@ function ReplyBox({
       if (full) onToggleFull()
       if (opts.forward_to) {
         const to = sessions.find((s) => s.id === opts.forward_to)
-        toast(`Sent to Claude Code · in ${to?.name ?? 'the other session'}`)
+        toast(`Sent to Claude Code · in ${to?.name ?? 'the other agent'}`)
         void res
       }
     } catch (err) {
@@ -1574,7 +1574,7 @@ function ReplyBox({
   }
 
   const idleOthers = sessions.filter((s) => s.id !== session.id && s.status !== 'ended' && !s.archived_at)
-  const placeholder = session.status === 'ended' ? 'Session ended — resume it to deliver your reply' : phone ? 'Reply to Claude…' : `Reply to Claude Code… (R)`
+  const placeholder = session.status === 'ended' ? 'Agent ended — resume it to deliver your reply' : phone ? 'Reply to Claude…' : `Reply to Claude Code… (R)`
 
   const actionKeys = new Set((target?.questions ?? []).filter((q) => q.kind === 'action').map((q) => q.key))
   const qTotal = openCount - [...actionKeys].filter((k) => openKeysOf(target).has(k)).length

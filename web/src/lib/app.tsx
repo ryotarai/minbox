@@ -550,7 +550,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             () => navigate({ s: s.id, t: s.top_thread?.id ?? null }),
           )
         } else {
-          notify(`${waiting} waiting in ${live.filter((s) => attentionOf(s) > 0).length} sessions`, grew.map((s) => s.name).join(', '))
+          notify(`${waiting} waiting in ${live.filter((s) => attentionOf(s) > 0).length} agents`, grew.map((s) => s.name).join(', '))
         }
       }
       if (settings.sound) dingDong()

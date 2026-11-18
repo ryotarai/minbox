@@ -36,7 +36,7 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess.Status != store.StatusEnded {
-		httpError(w, 409, "only an ended session can be archived; stop it first")
+		httpError(w, 409, "only an ended agent can be archived; stop it first")
 		return
 	}
 	if err := s.store.SetSessionArchived(ctx, id, true); err != nil {

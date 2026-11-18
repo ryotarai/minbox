@@ -82,10 +82,10 @@ const usage = `usage:
   minbox start [flags]                      start the server in the background (and the terminal host,
                                             if none runs); logs go to <data-dir>/minbox.log
   minbox start --foreground [flags]         run it in the foreground instead (logs on stderr)
-  minbox stop [--data-dir <dir>]            stop the server; sessions keep running in the terminal host
+  minbox stop [--data-dir <dir>]            stop the server; agents keep running in the terminal host
   minbox restart [flags]                    stop it and start it again, with the flags of the last
                                             minbox start unless others are given
-  minbox restart --host [--yes|-y] [flags]  also stop the local terminal host (every session's claude ends;
+  minbox restart --host [--yes|-y] [flags]  also stop the local terminal host (every agent ends;
                                             the new server starts a fresh host and resumes them); asks
                                             first, unless --yes (refuses with exit 2 when stdin is no terminal)
   minbox status [--data-dir <dir>]          whether the server runs (exit 3 if not), its URL and log
@@ -101,7 +101,7 @@ const usage = `usage:
   minbox host --tailscale [--tailscale-user-login <login>] [--port 4849] [--tailscale-port 14849] [--data-dir <dir>]
                                             the same, through tailscale serve (HTTPS on the tailnet);
                                             listens on 127.0.0.1 only and answers only that Tailscale user
-  minbox host stop [--data-dir <dir>]       stop the terminal host; every session's claude ends
+  minbox host stop [--data-dir <dir>]       stop the terminal host; every agent ends
   minbox pair list [--data-dir <dir>]       servers waiting to be paired with this machine's host,
                                             and browsers waiting to be paired with this machine's server
   minbox pair accept <code> [--data-dir <dir>]
@@ -370,7 +370,7 @@ func hostCmd(args []string) error {
 		fmt.Printf("no terminal host is running on %s\n", sock)
 		return nil
 	}
-	fmt.Printf("stopped the terminal host (pid %d); the next minbox resumes the open sessions\n", pid)
+	fmt.Printf("stopped the terminal host (pid %d); the next minbox resumes the open agents\n", pid)
 	return nil
 }
 
@@ -452,7 +452,7 @@ func serve(args []string) error {
 	piExt, err := plugin.ExtractPi(filepath.Join(*dataDir, "pi-extension"))
 	if err != nil {
 		// Pi is optional: without its extension Pi is simply not offered.
-		log.Printf("extract the Pi extension: %v (Pi sessions are unavailable)", err)
+		log.Printf("extract the Pi extension: %v (Pi agents are unavailable)", err)
 		piCommand, piExt = nil, ""
 	} else {
 		piSub = plugin.PiSubagentPath(piExt)
@@ -461,7 +461,7 @@ func serve(args []string) error {
 	ocPlugin, err := plugin.ExtractOpenCode(filepath.Join(*dataDir, "opencode-plugin"))
 	if err != nil {
 		// OpenCode is optional: without its plugin OpenCode is simply not offered.
-		log.Printf("extract the OpenCode plugin: %v (OpenCode sessions are unavailable)", err)
+		log.Printf("extract the OpenCode plugin: %v (OpenCode agents are unavailable)", err)
 		ocCommand, ocPlugin = nil, ""
 	}
 
