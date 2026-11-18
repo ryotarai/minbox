@@ -23,7 +23,8 @@ type StreamTaskEvent struct {
 	Reopened bool   `json:"reopened,omitempty"`
 	// ByYou: the person made the change (else the agent did).
 	ByYou bool `json:"by_you,omitempty"`
-	// NewTitle: the title a rename set.
+	// OldTitle, NewTitle: a rename's titles (OldTitle is "" for a rename stored before it was kept).
+	OldTitle string `json:"old_title,omitempty"`
 	NewTitle string `json:"new_title,omitempty"`
 }
 
@@ -76,7 +77,12 @@ WHERE e.kind IN ('created', 'status', 'title') AND (e.task_id IN (SELECT task_id
 		case "created":
 			e.ByYou = strings.Contains(text, "by you")
 		case "title":
-			e.NewTitle = strings.TrimSuffix(strings.TrimPrefix(text, "Renamed to “"), "”")
+			if r, ok := strings.CutPrefix(text, "Renamed: "); ok {
+				// "Renamed: old → new" (a title is one line; an arrow in it reads at the first one).
+				e.OldTitle, e.NewTitle, _ = strings.Cut(r, " → ")
+			} else {
+				e.NewTitle = strings.TrimSuffix(strings.TrimPrefix(text, "Renamed to “"), "”")
+			}
 			e.ByYou = by == ""
 		case "status":
 			st, you := statusOfEventText(text)

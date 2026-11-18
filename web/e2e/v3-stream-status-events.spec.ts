@@ -11,7 +11,7 @@ async function order(stream: Locator): Promise<string[]> {
     els.map((e) => {
       const el = e as HTMLElement
       if (el.dataset.testid === 'stream-event') return `ev:${el.dataset.kind}:${el.dataset.status ?? ''}`
-      return `${el.dataset.author}:${(el.querySelector('.v-bd')?.textContent ?? el.textContent ?? '').trim().slice(0, 16).trim()}`
+      return `${el.dataset.author}:${(el.querySelector('.v-bd .md')?.textContent ?? el.textContent ?? '').trim().slice(0, 16).trim()}`
     }),
   )
 }
@@ -82,4 +82,7 @@ test('agent stream: "show earlier" brings the task lines of the earlier messages
   expect(all.task_events.every((e: any) => e.task_id === gauge.id)).toBe(true)
   await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
   await expect(page.getByTestId('stream-view').getByTestId('stream-event')).toHaveCount(2)
+  // A rename is a line too, live: old → new.
+  await api(minbox, 'PATCH', `/api/v3/tasks/${gauge.id}`, { title: 'Gauge fix' })
+  await expect(page.locator('[data-testid="stream-event"][data-kind="title"]')).toHaveText(/Renamed “Fix the gauge reading” → Gauge fix · by you/)
 })
