@@ -395,7 +395,8 @@ func (s *Server) v3Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream, _ := s.store.StreamThread(ctx, sid)
-	writeJSON(w, 200, map[string]any{"messages": msgs, "has_more": start > 0 && q.Get("after") == "", "tasks": tasks, "stream_thread_id": stream})
+	evs := s.v3StreamTaskEvents(ctx, sid, v.msgs, start, end, q.Get("after") != "")
+	writeJSON(w, 200, map[string]any{"messages": msgs, "has_more": start > 0 && q.Get("after") == "", "tasks": tasks, "stream_thread_id": stream, "task_events": evs})
 }
 
 // POST /api/v3/sessions/{id}/messages: the person writes to the agent (in its stream). The body is

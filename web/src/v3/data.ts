@@ -2,6 +2,7 @@
 // keep them live (the server's tasks / thread events arrive as window "minbox:v3" events).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { call, type Answer, type Message, type ReplyRequest } from '../api'
+import type { StreamTaskEvent } from './StreamEvents'
 
 export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
 export const STATUS_LABEL: Record<TaskStatus, string> = { working: 'Working', needs_you: 'Needs you', blocked: 'Blocked', done: 'Done' }
@@ -69,7 +70,7 @@ export type TaskEvent = { id: string; task_id: string; at: string; kind: string;
 
 export type Board = { tasks: BoardTask[]; questions: V3Message[]; agents: Record<string, { unread: number; open_questions: number }> }
 export type TaskDetail = { task: BoardTask; messages: V3Message[]; events: TaskEvent[]; tasks: BoardTask[]; goal: Task | null }
-export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string }
+export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string; task_events?: StreamTaskEvent[] }
 export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tasks: TaskRef[] }[] }
 
 /** task_id: the one task the message is about (a message belongs to exactly one task). */
