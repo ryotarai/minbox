@@ -105,6 +105,9 @@ func TestSlackInboundRoutesToAPickedAgent(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	a, b := twoAgents(t, e)
+	// Activity is kept in milliseconds: a's first thread must come strictly after b's last update,
+	// or the fallback below sees a tie.
+	time.Sleep(5 * time.Millisecond)
 	in := slackInbound{e.srv}
 	threadSession := func(id string) string {
 		th, err := e.st.GetThread(ctx, id)

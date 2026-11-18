@@ -42,10 +42,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The tests must not depend on which coding agents (claude, pi, opencode) the machine has: they
+      # run once with the runner's PATH and once with a PATH that holds only go and the system tools.
       - name: Vet and test
         run: |
           go vet ./...
           go test ./...
+          env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test -count=1 ./...
 
       - name: Build the archives
         env:

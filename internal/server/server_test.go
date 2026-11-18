@@ -81,8 +81,27 @@ type env struct {
 	cookie string
 }
 
+// claudeAbsentIn records the tests that called claudeAbsent: newEnv puts no fake `claude` on their PATH.
+var claudeAbsentIn sync.Map // *testing.T -> struct{}
+
+// fakeClaudeOnPath makes the test's `claude` a fake that fails at once: PATH starts with a folder
+// that holds only it. Tests must not depend on whether the machine has Claude Code, Pi or OpenCode,
+// nor run a real one (Pi and OpenCode stay unconfigured unless a test gives them a fake).
+func fakeClaudeOnPath(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho 'fake claude of the minbox tests' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	if _, absent := claudeAbsentIn.Load(t); !absent {
+		fakeClaudeOnPath(t)
+	}
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db"))
 	if err != nil {

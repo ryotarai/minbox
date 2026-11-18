@@ -35,10 +35,13 @@ func withPi(e *env, script string) string {
 }
 
 // claudeAbsent makes `claude` unavailable: PATH holds nothing, and the configured command is the
-// bare name, as on a machine with only Pi.
+// bare name, as on a machine with only Pi. Call it before newEnv (which otherwise puts a fake
+// `claude` on PATH).
 func claudeAbsent(t *testing.T) {
 	t.Helper()
 	t.Setenv("PATH", t.TempDir())
+	claudeAbsentIn.Store(t, struct{}{})
+	t.Cleanup(func() { claudeAbsentIn.Delete(t) })
 }
 
 func (e *env) createAgentSession(agentKind string) (*store.Session, int, map[string]any) {
