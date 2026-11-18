@@ -5,12 +5,12 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { agentKindLabel } from '../lib/agents'
-import { IconAgentKind, IconShell } from '../components/icons'
+import { IconAgentKind, IconBack, IconShell } from '../components/icons'
 import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -34,6 +34,7 @@ export function StreamView({
   tasks,
   pane,
   setPane,
+  sheet = false,
   onOpenAttachment,
 }: {
   id: string
@@ -41,9 +42,11 @@ export function StreamView({
   tasks: BoardTask[]
   pane: SidePane
   setPane: (p: SidePane) => void
+  /** Phone: the side pane as a full-screen sheet (its Tasks tab first). */
+  sheet?: boolean
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
-  const { error, isPhone, sessions, toast, route } = useApp()
+  const { error, isPhone, sessions, toast, route, navigate, goBack } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -104,7 +107,17 @@ export function StreamView({
     },
     !route.f,
   )
-  if (!sess) return <div className="v-col"><div className="v-empty">This agent is gone. Pick another one on the left.</div></div>
+  if (!sess)
+    return (
+      <div className="v-col">
+        <div className="v-head">
+          <div className="v-r1">
+            <BackButton tasks={tasks} />
+          </div>
+        </div>
+        <div className="v-empty">This agent is gone. Pick another one on the left.</div>
+      </div>
+    )
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
   const doneTasks = mine.filter((t) => t.status === 'done')
@@ -169,12 +182,13 @@ export function StreamView({
       <div className="v-col" data-testid="stream-view" data-session={id}>
         <div className="v-head">
           <div className="v-r1">
+            <BackButton tasks={tasks} />
             <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
             <h2 data-testid="agent-name">
               {sess.name}
               {hint && <small className="v-hint"> · {hint}</small>}
             </h2>
-            <span className="v-hide-phone" style={{ color: 'var(--mb-subtle)', fontSize: 12 }}>
+            <span className="v-hide-phone v-kind" style={{ color: 'var(--mb-subtle)', fontSize: 12 }} title={[agentKindLabel(sess.agent), sess.is_main ? 'main' : '', sess.host_name].filter(Boolean).join(' · ')}>
               {agentKindLabel(sess.agent)}
               {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
@@ -217,6 +231,11 @@ export function StreamView({
               </span>
             )}
             {openTasks.length > 1 && <span className="v-hide-phone">· {openTasks.length} open tasks</span>}
+            {isPhone && (
+              <button type="button" className="v-chip v-sheetbtn" data-testid="agent-sheet-open" aria-label={`Tasks (${openTasks.length} open), terminal, shell and files`} onClick={() => navigate({ tab: 'tasks' }, { push: true })}>
+                Tasks <b>{openTasks.length}</b> ›
+              </button>
+            )}
           </div>
         </div>
         <div className="v-convwrap">
@@ -333,22 +352,27 @@ export function StreamView({
         />
         <QuoteBubble box={scroller} />
       </div>
-      {(!isPhone || terminalish) && (
-        <aside className={'v-side' + (terminalish ? ' wide' : '')} data-testid="agent-side">
+      {(!isPhone || terminalish || sheet) && (
+        <aside className={'v-side' + (terminalish || sheet ? ' wide' : '')} data-testid="agent-side" data-sheet={sheet || undefined}>
           <div className="v-tabs2">
+            {sheet && (
+              <button type="button" className="v-sheetx" data-testid="agent-sheet-close" aria-label={`Back to ${sess.name}`} title="Back to the stream" onClick={() => (setPane('tasks'), goBack({ tab: 'inbox' }))}>
+                <IconBack size={18} />
+              </button>
+            )}
             {(['tasks', 'terminal', 'shell', 'files'] as const).map((p) => (
-              <button type="button" key={p} className={pane === p ? 'on' : ''} data-testid={'pane-' + p} onClick={() => setPane(p)} disabled={(p === 'shell' || p === 'terminal') && sess.kind === 'shell' && p === 'shell'}>
+              <button type="button" key={p} className={pane === p ? 'on' : ''} data-testid={'pane-' + p} onClick={() => (setPane(p), isPhone && p === 'tasks' && !sheet ? navigate({ tab: 'tasks' }, { push: true }) : undefined)} disabled={(p === 'shell' || p === 'terminal') && sess.kind === 'shell' && p === 'shell'}>
                 {p === 'tasks' ? 'Tasks' : p === 'terminal' ? 'Terminal' : p === 'shell' ? 'Shell' : 'Files'}
               </button>
             ))}
           </div>
           {pane === 'tasks' && (
-            <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
+            <div style={{ padding: '0 16px 16px', overflow: 'auto' }} data-testid="agent-tasks">
               <div className="v-sec">
                 OPEN TASKS <span className="v-x">{openTasks.length}</span>
               </div>
               {openTasks.map((t) => (
-                <button type="button" key={t.id} className="v-mt" onClick={() => nav.task(t.id)}>
+                <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => nav.task(t.id)}>
                   <div className="v-a">
                     <StatusDot t={t} />
                     {t.kind === 'goal' ? '◎ ' : ''}
@@ -368,7 +392,7 @@ export function StreamView({
                 <details className="v-donelist">
                   <summary className="v-sec">DONE THIS WEEK <span className="v-x">{doneTasks.length}</span></summary>
                   {doneTasks.map((t) => (
-                    <button type="button" key={t.id} className="v-mt" onClick={() => nav.task(t.id)}>
+                    <button type="button" key={t.id} className="v-mt" data-testid="agent-task" data-task={t.id} onClick={() => nav.task(t.id)}>
                       <div className="v-a">
                         <StatusDot t={t} />
                         {t.title}

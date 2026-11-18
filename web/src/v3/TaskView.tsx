@@ -6,7 +6,7 @@ import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { ago, hhmm, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageBodyClamp, MessageView, StatusDot, Steps, TaskChip, agentHint, agentName, shownEvent, toggled, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
@@ -44,7 +44,17 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
   })
   useConversationKeys(scroller, msgs, onOpenAttachment)
   const live = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell'), [sessions])
-  if (!d) return <div className="v-col"><div className="v-empty">Loading…</div></div>
+  if (!d)
+    return (
+      <div className="v-col">
+        <div className="v-head">
+          <div className="v-r1">
+            <BackButton tasks={tasks} />
+          </div>
+        </div>
+        <div className="v-empty">Loading…</div>
+      </div>
+    )
   const t = d.task
   const toId = to ?? t.last_agent ?? live.find((s) => s.is_main && s.project_id === t.project_id)?.id ?? live[0]?.id ?? ''
   const opts = [...t.agents.map((a) => byId.get(a.session_id)).filter((s): s is NonNullable<typeof s> => !!s && !s.archived_at), ...live.filter((s) => !t.agents.some((a) => a.session_id === s.id) && (!t.project_id || s.project_id === t.project_id))]
@@ -186,6 +196,7 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
       <div className="v-col" data-testid="task-view" data-task={t.id}>
         <div className="v-head">
           <div className="v-r1">
+            <BackButton tasks={tasks} />
             <StatusDot t={t} live={typing.length > 0} />
             <h2 data-testid="task-title">
               {t.kind === 'goal' && <span style={{ color: 'var(--mb-purple)' }}>◎ </span>}
@@ -207,13 +218,10 @@ export function TaskView({ id, highlight, tasks, onOpenAttachment }: { id: strin
             <button type="button" className="v-btn v-ph-only" onClick={() => setSideOpen(!sideOpen)}>
               {sideOpen ? 'Hide details' : 'Details'}
             </button>
-            <button type="button" className="v-btn v-hide-phone" onClick={nav.board}>
-              Esc · Board
-            </button>
           </div>
           <div className="v-r2">
             {t.agents.map((a) => (
-              <button type="button" key={a.session_id} className="v-chip" onClick={() => nav.agent(a.session_id)}>
+              <button type="button" key={a.session_id} className="v-chip" data-testid="task-agent" onClick={() => nav.agent(a.session_id)}>
                 <span className={'v-dot ' + (byId.get(a.session_id)?.status === 'working' ? 'd-work v-live' : 'd-idle')} />
                 {agentName(byId, a.session_id)}
                 {byId.get(a.session_id) && agentHint(sessions ?? [], byId.get(a.session_id)!) ? ` (${agentHint(sessions ?? [], byId.get(a.session_id)!)})` : ''}

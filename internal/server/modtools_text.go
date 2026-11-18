@@ -390,7 +390,7 @@ func criteriaSchema() jobj {
 var taskDescription = map[string]string{
 	"create_task": strings.Join([]string{
 		"Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in.",
-		"A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question, a status check or a quick answer.",
+		"A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids puts earlier messages in it.",
 		"The person's message that asked for it, and your replies in this turn, belong to it by themselves.",
 		"If the result lists similar_tasks that are the same work, use that task (send_message task_ids) and do not create more.",
 		"kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.",

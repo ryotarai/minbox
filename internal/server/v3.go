@@ -175,7 +175,7 @@ func (v *v3View) boardTask(t store.Task, tasks []store.Task) BoardTask {
 				break
 			}
 		}
-		if !has {
+		if !has || m.Kind == store.KindPlace {
 			continue
 		}
 		b.MessageCount++
@@ -578,6 +578,11 @@ func (s *Server) v3LinkTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) v3UnlinkTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mid, tid := r.PathValue("id"), r.PathValue("task")
+	// Every message is about a task: its last one goes only by moving it to another.
+	if tags, err := s.store.TasksOf(ctx, []string{mid}); err == nil && len(tags[mid]) == 1 && tags[mid][0].TaskID == tid {
+		httpError(w, 409, "a message is always about a task: move it to another task instead")
+		return
+	}
 	ok, err := s.store.UnlinkMessage(ctx, mid, tid)
 	if err != nil {
 		storeError(w, err)
@@ -633,14 +638,14 @@ func (s *Server) v3Move(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ids := append([]string{m.ID}, m.TurnOf...)
+	if _, err := s.store.LinkMessages(ctx, to, ids, store.LinkPerson); err != nil {
+		storeError(w, err)
+		return
+	}
 	if body.From != "" && body.From != to {
 		for _, id := range ids {
 			_, _ = s.store.UnlinkMessage(ctx, id, body.From)
 		}
-	}
-	if _, err := s.store.LinkMessages(ctx, to, ids, store.LinkPerson); err != nil {
-		storeError(w, err)
-		return
 	}
 	removed := ""
 	if body.From != "" && body.From != to {

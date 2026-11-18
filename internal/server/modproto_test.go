@@ -367,3 +367,34 @@ func TestOldProtocolIsFlagged(t *testing.T) {
 		t.Fatal(conn)
 	}
 }
+
+// minbox's request to place messages in tasks reaches a protocol-1 integration as its own words, its
+// turn is not taken for an answer to the person (no "you did not reply" reminder), and the
+// send_message result names what is still in no task.
+func TestPlaceRequestOverProtocol1(t *testing.T) {
+	shortPlace(t)
+	p := newProto(t)
+	u := p.personSays(p.sess, "thanks!")
+	p.event(map[string]any{"type": "turn.start"})
+	o := p.tool("send_message", map[string]any{"body": "You're welcome."})
+	p.event(map[string]any{"type": "turn.complete", "reason": "answer", "answer": "Done."})
+	if text := o["text"].(string); !strings.Contains(text, "in no task") || !strings.Contains(text, u) {
+		t.Fatalf("send_message text = %q", text)
+	}
+	p.idle(p.sess)
+	_, pend, _ := p.do("GET", "/api/agent/pending?owner=o&proto=1", nil, bearer(p.sess))
+	items := pend["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %v", items)
+	}
+	it := items[0].(map[string]any)
+	if it["kind"] != store.KindPlace || it["text"] != strings.TrimSpace(it["body"].(string)) || !strings.Contains(it["text"].(string), u) {
+		t.Fatalf("place item = %v", it)
+	}
+	p.do("POST", "/api/agent/pending/"+it["id"].(string)+"/claim?owner=o", nil, bearer(p.sess))
+	p.do("POST", "/api/agent/pending/"+it["id"].(string)+"/delivered?owner=o", nil, bearer(p.sess))
+	p.event(map[string]any{"type": "turn.start"})
+	if o := p.event(map[string]any{"type": "turn.complete", "reason": "answer", "answer": "Placed them."}); o["submit_when_idle"] != nil {
+		t.Fatalf("a place request's turn was reminded: %v", o)
+	}
+}

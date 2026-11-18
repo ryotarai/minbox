@@ -222,7 +222,10 @@ func renameMessageTags(db *sql.DB) error {
 func migrateV3(ctx context.Context, db *sql.DB) error {
 	var done string
 	if err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='v3_migrated'`).Scan(&done); err == nil {
-		return migrateV3Fix(ctx, db)
+		if err := migrateV3Fix(ctx, db); err != nil {
+			return err
+		}
+		return migrateV3Place(ctx, db)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -327,7 +330,10 @@ func migrateV3(ctx context.Context, db *sql.DB) error {
 	if err := settingSet(ctx, tx, "v3_migrated_2"); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return migrateV3Place(ctx, db)
 }
 
 // migrateLinearLinks: Linear links of threads → the tasks made from them.

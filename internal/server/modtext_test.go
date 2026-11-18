@@ -54,6 +54,13 @@ func TestWakeTextOfAStreamMessage(t *testing.T) {
 	if cont != "minbox goal (autonomous run, turn 1 of 20): go" {
 		t.Fatalf("continue = %q", cont)
 	}
+	if !strings.Contains(plain, "Every message must be about a task") || strings.Contains(plain, "nothing that needs a task") {
+		t.Fatalf("every message is about a task:\n%s", plain)
+	}
+	place := wakeText(wakeMsg{ID: "m4", Kind: "place", Stream: true, Body: "minbox: these messages of your conversation with the person are in no task yet.\n"}, "s", "r")
+	if place != "minbox: these messages of your conversation with the person are in no task yet." {
+		t.Fatalf("place = %q", place)
+	}
 }
 
 func TestSentText(t *testing.T) {
@@ -74,6 +81,9 @@ func TestSentText(t *testing.T) {
 	}
 	if got := sentText(js(t, `{"thread_id":"t","task_ids":["tsk_1"]}`)); !strings.HasPrefix(got, "Sent to the person in minbox. About task tsk_1.") {
 		t.Fatalf("tasks: %s", got)
+	}
+	if got := sentText(js(t, `{"thread_id":"t","task_ids":[],"note":"This message is in no task yet."}`)); !strings.HasSuffix(got, " This message is in no task yet.") {
+		t.Fatalf("note: %s", got)
 	}
 	if got := sentText(js(t, `{"task_ids":["a","b"],"questions":[{"prompt":"x"},{"prompt":"y"}]}`)); !strings.HasPrefix(got, "Sent to the person in minbox asking 2 questions. About tasks a, b.") {
 		t.Fatalf("plural: %s", got)

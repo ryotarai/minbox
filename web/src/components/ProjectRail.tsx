@@ -283,9 +283,9 @@ export type GlobalEntry = { id: string; testid: string; label: string; title: st
 
 /** Settings always; Decide when it is turned on. */
 export function useGlobalEntries(): GlobalEntry[] {
-  const { settings, setOverlay, navigate, route } = useApp()
+  const { settings, setOverlay, navigate, goBack, route } = useApp()
   const out: GlobalEntry[] = [
-    { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => navigate({ view: route.view === 'settings' ? 'main' : 'settings' }) },
+    { id: 'settings', testid: 'open-settings', label: 'Settings', title: 'Settings', icon: IconSettings, active: route.view === 'settings', run: () => (route.view === 'settings' ? goBack() : navigate({ view: 'settings' }, { push: true })) },
   ]
   if (settings.decision_mode) out.push({ id: 'decide', testid: 'open-decide', label: 'Decide', title: 'Decide (Shift+D)', icon: IconBolt, active: false, run: () => setOverlay({ kind: 'decide' }) })
   return out

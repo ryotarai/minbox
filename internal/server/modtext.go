@@ -131,7 +131,7 @@ var sendDescription = strings.Join([]string{
 	"Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal.",
 	"Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).",
 	"It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.",
-	"Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person's message). The person's messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves; a quick answer needs none.",
+	"Pass `task_ids`: the tasks this message is about (from create_task / list_tasks, or the tasks shown with the person's message). The person's messages it answers then belong to them too, so the person sees the exchange in those tasks. Tasks you created in this turn are added by themselves. Every message must be about a task: a quick answer goes in the task it is about.",
 	"`thread_id`, `thread_title` and `status` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
 }, " ")
@@ -288,7 +288,7 @@ func questionDeny(sendTool string) string {
 
 const replyLine = "The person replied to you in the minbox inbox. Their reply follows as they wrote it: it is their answer to you."
 const newThreadLine = "The person started a new thread with you in the minbox inbox: a request of their own, not an answer to something you asked. It may be unrelated to what you were doing; say how you will handle it before you start."
-const streamLine = "Decide what it is about: an open task (reply with send_message and its task_ids; prefer this when one fits), new work the person asked for (create_task, then reply), or nothing that needs a task (just reply)."
+const streamLine = "Decide which task it is about: an open task (reply with send_message and its task_ids; prefer this when one fits), or new work the person asked for (create_task, then reply). Every message must be about a task: a quick question that fits none gets a small task of its own (create_task, status done once answered)."
 
 // wakeJoiner separates the person's messages delivered in one turn.
 const wakeJoiner = "\n\n---\n\n"
@@ -327,7 +327,9 @@ func tasksLine(p wakeMsg) string {
 // wakeText is the turn text of one of the person's messages.
 func wakeText(p wakeMsg, sendTool, readTool string) string {
 	if p.Stream {
-		if p.Kind == "continue" {
+		// A goal's run ("continue") and minbox's request to place messages in tasks ("place", v3place.go)
+		// are minbox's own words: as they are.
+		if p.Kind == "continue" || p.Kind == "place" {
 			return strings.TrimSpace(p.Body)
 		}
 		tl := tasksLine(p)
@@ -521,6 +523,10 @@ func sentText(r any) string {
 		} else {
 			lines = append(lines, "The message was sent, but this image will not show: "+jtext(jget(n, "ref"))+" ("+jtext(jget(n, "reason"))+"). Copy the image to a plain folder and link that path, or attach it with attachments.")
 		}
+	}
+	// The messages of the turn still in no task (agentSend's unplacedNote).
+	if note := jstr(jget(r, "note")); note != "" {
+		lines = append(lines, note)
 	}
 	return strings.Join(lines, " ")
 }
