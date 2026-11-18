@@ -122,18 +122,21 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
    "You" on the person's messages, so the name and time stay at the bubble's edge). */
 .v-msg .v-slot { display: inline-flex; gap: 6px; align-items: center; position: relative; min-width: 0; color: var(--mb-faint); }
 .v-msg.me .v-w .v-slot { order: -1; }
-/* The message's task: a quiet pill at the top of its box (status dot + title), the ⋮ beside it. A
-   message in the same task as the one before dims it, so a run reads as one. */
-.v-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; min-width: 0; margin: -2px 0 -3px; font-size: 11.5px; color: var(--mb-faint); }
-.v-tags .v-k { color: var(--mb-faint); }
-.v-tbadge { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 0 8px 0 7px; border: 1px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--mb-fg) 6%, transparent); color: var(--mb-subtle); font-size: 11.5px; line-height: 18px; transition: opacity .15s; }
+/* The message's task: a quiet pill at the top of its box (status dot + title), the ⋮ beside it. Text
+   is --mb-muted: at least 5.4:1 (WCAG AA) on the pill over either bubble, light and dark. A message in
+   the same task as the one before drops the pill's fill (same text colour, outline only), so a run
+   reads as one without fading the text. */
+.v-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; min-width: 0; margin: -2px 0 -3px; font-size: 11.5px; color: var(--mb-muted); }
+.v-tags .v-k { color: var(--mb-muted); }
+.v-tags .v-dots { color: var(--mb-subtle); }
+.v-tbadge { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 0 8px 0 7px; border: 1px solid color-mix(in srgb, var(--mb-fg) 10%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--mb-fg) 8%, transparent); color: var(--mb-muted); font-size: 11.5px; line-height: 18px; }
 .v-tbadge .v-dot { width: 6px; height: 6px; }
 .v-tbadge .v-task { font-size: 11.5px; max-width: min(420px, 62vw); }
 .v-tbadge .v-task .v-task-t { color: inherit; text-decoration: none; }
 .v-tbadge .v-task .v-task-t:hover { color: var(--mb-fg); text-decoration: underline; }
-.v-tbadge.wait { background: transparent; border-style: dashed; border-color: var(--mb-line2); color: var(--mb-faint); }
-.v-msg.rep .v-tags .v-tbadge { opacity: .5; }
-.v-msg.rep:hover .v-tags .v-tbadge, .v-msg.rep .v-tbadge:focus-within { opacity: 1; }
+.v-tbadge.wait { background: transparent; border-style: dashed; border-color: color-mix(in srgb, var(--mb-fg) 28%, transparent); color: var(--mb-muted); }
+.v-msg.rep .v-tags .v-tbadge { background: transparent; }
+.v-msg.rep .v-tags .v-tbadge .v-dot { opacity: .75; }
 .v-more { position: relative; display: inline-flex; }
 /* In the box the ⋮ menu and the task picker hang from the whole row: on the person's bubble they open
    leftwards from its right edge, on the agent's rightwards from its left, so they stay on screen. */
