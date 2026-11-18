@@ -285,12 +285,10 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
   }, [t.id, all, long])
   if (!n) return null
   return (
-    <div className="v-taskcheck" data-testid="task-checklist">
-      <div className="v-sec">
-        {goal ? 'DONE WHEN' : 'CHECKLIST'}
-        <span className="v-taskcheck-bar">
-          <Bar t={t} />
-        </span>
+    <div className="v-taskcheck" data-testid="task-checklist" role="group" aria-label={goal ? 'Done when' : 'Checklist'}>
+      {/* No heading: the progress is the first row, level with the task's title. */}
+      <div className="v-taskcheck-bar" data-testid="task-checklist-progress">
+        <Bar t={t} />
       </div>
       <div ref={box} className={'v-taskcheck-list' + (long && !all ? ' folded' : '')} data-testid="task-checklist-list">
         <Steps
