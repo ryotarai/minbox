@@ -35,7 +35,7 @@ test('in the task view a pick selects, Send sends; the answer is about the task'
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
-  test('a question on the Board: a compact row; tap expands, Answer opens where to answer, tap a choice, then Send', async ({ page, minbox }) => {
+  test('a question on the Board: a compact row; a tap opens where to answer, tap a choice, then Send', async ({ page, minbox }) => {
     const a = await startAgent(minbox, 'api')
     await say(minbox, a, 'ASK about the deploy')
     const q = await agentReply(minbox, a, /One decision first/)
@@ -44,8 +44,6 @@ test.describe('phone', () => {
     await expect(card.getByTestId('ask')).toHaveText('you: Which region should it deploy to?')
     await expect(card.getByTestId('choice')).toHaveCount(0)
     await card.locator('.v-line').tap()
-    await expect(card.getByTestId('task-expanded')).toBeVisible()
-    await card.getByTestId('answer-in-task').tap()
     const msg = page.locator(`[data-testid="v3-message"][data-message-id="${q.id}"]`)
     await expect(msg).toHaveClass(/\bhl\b/)
     await msg.getByTestId('question').getByText('Tokyo', { exact: true }).tap()

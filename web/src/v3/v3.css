@@ -71,11 +71,9 @@ select.v-chip { padding: 1px 4px; }
 .v-empty { padding: 10px 18px; color: var(--mb-faint); font-size: 12px; }
 .v-row { border-bottom: 1px solid var(--mb-line); }
 .v-row .v-you { color: var(--mb-wait); font-weight: 600; }
-.v-asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--mb-fg); overflow-wrap: anywhere; }
 .v-row .v-line { display: grid; grid-template-columns: minmax(0, 1fr) auto 48px; gap: 14px; padding: 9px 18px; cursor: pointer; align-items: center; }
 .v-row:hover .v-line { background: var(--mb-rowsel); }
 .v-row.focus .v-line { box-shadow: inset 3px 0 0 var(--mb-accent); background: var(--mb-rowsel); }
-.v-row.open { background: var(--mb-card); }
 .v-row.child .v-line { padding-left: 38px; }
 .v-row .v-ti { color: var(--mb-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 8px; align-items: center; }
 .v-row .v-ti .v-t { overflow: hidden; text-overflow: ellipsis; }
@@ -94,7 +92,6 @@ select.v-chip { padding: 1px 4px; }
 .v-cnt2 { color: var(--mb-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .v-pill { font-size: 10.5px; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
 .v-pill.run { color: var(--mb-purple); } .v-pill.pause { color: var(--mb-wait); }
-.v-detail { max-width: 760px; padding: 2px 18px 14px 34px; }
 .v-sec { font-size: 11px; letter-spacing: .08em; font-weight: 600; color: var(--mb-subtle); margin: 12px 0 7px; display: flex; gap: 8px; align-items: center; }
 .v-sec .v-x { margin-left: auto; letter-spacing: 0; font-weight: 500; color: var(--mb-faint); }
 .v-report { background: var(--mb-sunken); border: 1px solid var(--mb-line); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; overflow-wrap: anywhere; }
@@ -223,7 +220,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-side, .v-side.wide { width: auto; border-left: 0; border-top: 1px solid var(--mb-line); overflow: visible; }
   .v-row .v-line { grid-template-columns: minmax(0, 1fr) 44px; }
   .v-row .v-ext { display: none; }
-  .v-detail { padding-left: 18px; }
   .v-hide-phone { display: none !important; }
   .v-ph-only { display: initial; }
   .v-tabs { display: flex; border-top: 1px solid var(--mb-line); background: var(--mb-surface); padding: 4px 0 calc(8px + env(safe-area-inset-bottom)); flex: none; }

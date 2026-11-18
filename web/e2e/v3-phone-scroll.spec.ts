@@ -142,7 +142,6 @@ test('phone: a task opens at its newest message from the Board, with late images
   await slowImages(page)
   await page.goto(minbox.url)
   await page.locator(`[data-testid="task-row"][data-task="${t.id}"] .v-line`).tap()
-  await page.getByTestId('open-task').tap()
   await expect(page.getByTestId('task-view')).toBeVisible()
   await page.waitForTimeout(1800)
   expect(await gapToBottom(page, 'task-view')).toBeLessThan(4)

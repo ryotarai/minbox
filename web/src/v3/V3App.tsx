@@ -1,6 +1,6 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / a task / an agent's stream / Search. On a phone: one column with bottom tabs
-// Board · Agents · Search. Keys: ⌘K J/K Space Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
+// Board · Agents · Search. Keys: ⌘K J/K Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
@@ -39,7 +39,6 @@ export function V3App() {
   const [board, reloadBoard] = useBoard()
   const nav = useNav()
   const [focus, setFocus] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [showDone, setShowDone] = useState(false)
   const [showQuiet, setShowQuiet] = useState(false)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
@@ -158,12 +157,7 @@ export function V3App() {
       e.preventDefault()
       move(keys[Math.max(0, i - 1)])
     } else if (!focus) return
-    else if (e.key === ' ') {
-      e.preventDefault()
-      // A task row or a question row (keyed by its message) opens in place.
-      const id = focus.slice(2)
-      setExpanded((x) => ({ ...x, [id]: !x[id] }))
-    } else if (e.key === 'Enter') {
+    else if (e.key === 'Enter') {
       const [k, id] = focus.split(':') as [string, string]
       if (k === 't') nav.task(id)
       else {
@@ -226,8 +220,6 @@ export function V3App() {
         reload={reloadBoard}
         focus={focus}
         setFocus={setFocus}
-        expanded={expanded}
-        toggleExpanded={(id) => setExpanded((x) => ({ ...x, [id]: !x[id] }))}
         showDone={showDone}
         setShowDone={setShowDone}
         showQuiet={showQuiet}
@@ -646,7 +638,6 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['/', 'Search'],
     ['g b · g a', 'Board · first agent'],
     ['J / K', 'Move on the Board'],
-    ['Space', 'Expand / collapse a row on the Board'],
     ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],
     ['⌘↵', 'Send the message (with any answers picked in the task or stream)'],
     ['X', 'Done / reopen the focused task'],

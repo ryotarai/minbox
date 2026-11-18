@@ -22,9 +22,8 @@ test('phone: tabs, a task with its details folded, an agent stream, no horizonta
   const noHScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)
   expect(await noHScroll()).toBe(true)
 
-  // A row opens the task: details folded behind a button, messages, the reply at the bottom.
+  // A tap on a row opens the task: details folded behind a button, messages, the reply at the bottom.
   await page.locator(`[data-testid="task-row"][data-task="${t.id}"] .v-line`).tap()
-  await page.getByTestId('open-task').tap()
   await expect(page.getByTestId('task-title')).toHaveText('Fix the gauge reading')
   // The details (checklist, report, facts) are folded on a phone; one tap opens them.
   await expect(page.getByTestId('task-side')).toHaveCount(0)
