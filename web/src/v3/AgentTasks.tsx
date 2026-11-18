@@ -1,4 +1,5 @@
-// An agent's tasks: its open ones (each with where it stands) and the ones done this week, folded.
+// An agent's tasks: its open ones (each with where it stands), the ones just done (muted, a line each),
+// and the rest done this week, folded.
 // On a desktop or tablet they are a pane of their own between the agents list and the stream (its
 // width dragged and kept, folded to a strip with ⇧T); on a phone they are the first tab of the agent's
 // sheet ("Tasks N ›"). In the pane each task has a checkbox (and "All" one on top): the checked tasks
@@ -18,12 +19,40 @@ export function agentTasks(tasks: BoardTask[], sessionId: string) {
   return { open: mine.filter((t) => t.status !== 'done'), done: mine.filter((t) => t.status === 'done') }
 }
 
-/** The list itself (OPEN TASKS, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
+/** How long a done task stays in the list as RECENTLY DONE (then it folds into DONE THIS WEEK). */
+export const RECENT_DONE_MS = 3 * 3600 * 1000
+/** At most this many recently done ones (the newest); older ones fold. */
+export const RECENT_DONE_MAX = 5
+
+const doneAt = (t: BoardTask) => new Date(t.done_at ?? t.updated_at).getTime()
+
+/** Splits the done tasks: recent (done in the last RECENT_DONE_MS, newest first, at most RECENT_DONE_MAX)
+ *  and the rest (DONE THIS WEEK, folded); each task in one of them only. */
+export function splitDone(done: BoardTask[], now: number) {
+  const sorted = [...done].sort((a, z) => doneAt(z) - doneAt(a))
+  const recent = sorted.filter((t) => now - doneAt(t) < RECENT_DONE_MS).slice(0, RECENT_DONE_MAX)
+  const ids = new Set(recent.map((t) => t.id))
+  return { recent, older: sorted.filter((t) => !ids.has(t.id)) }
+}
+
+/** The time now, again every minute (a recently done task folds once its window has passed). */
+function useMinute() {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(iv)
+  }, [])
+  return now
+}
+
+/** The list itself (OPEN TASKS, then RECENTLY DONE muted, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
  *  checkbox per task (shown as a column on the agent's page). onSelect: a task opens there (in the
  *  agent's page, selected: the one shown; clicking it again closes it) instead of the task view. */
 export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null }) {
   const nav = useNav()
-  const { open, done } = agentTasks(tasks, sessionId)
+  const { open, done: allDone } = agentTasks(tasks, sessionId)
+  const now = useMinute()
+  const { recent, older: done } = splitDone(allDone, now)
   const go = (id: string) => {
     onOpen?.()
     if (onSelect) onSelect(id)
@@ -64,6 +93,22 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
         </button>,
       ))}
       {!open.length && <div className="v-cnt2">No open tasks. Ask for something; the agent makes a task when it is new work.</div>}
+      {recent.length > 0 && (
+        <div className="v-recentdone" data-testid="agent-tasks-recent">
+          <div className="v-sec">
+            RECENTLY DONE <span className="v-x">{recent.length}</span>
+          </div>
+          {recent.map((t) => row(t,
+            <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} data-recent-done="" title={`${t.title} · done ${ago(t.done_at ?? t.updated_at)}`} onClick={() => go(t.id)}>
+              <div className="v-a">
+                <IconCheck size={12} className="v-rd-check" />
+                <span className="v-rd-t">{t.title}</span>
+                <span className="v-rd-ago">{ago(t.done_at ?? t.updated_at)}</span>
+              </div>
+            </button>,
+          ))}
+        </div>
+      )}
       {done.length > 0 && (
         <details className="v-donelist">
           <summary className="v-sec">
