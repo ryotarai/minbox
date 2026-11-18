@@ -388,7 +388,7 @@ func criteriaSchema() jobj {
 }
 
 // summaryGuide: a task's summary is the line the person reads under its title in their lists.
-const summaryGuide = "One line on where it stands now, shown under the task's title; update it as the work moves."
+const summaryGuide = "One line on where it stands now, shown under the task's title: what is being done now, concretely (the step, the finding), never only who does it or how (\"a subagent is on it\", \"investigating\"). Update it as the work moves."
 
 var taskDescription = map[string]string{
 	"create_task": strings.Join([]string{
@@ -402,7 +402,7 @@ var taskDescription = map[string]string{
 	"update_task": strings.Join([]string{
 		"Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.",
 		"Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done.",
-		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on where it stands now, updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board.",
+		"Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete.",
 		"message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task).",
 		"title: rename it when the work's scope becomes clear or changes, not on every step.",
 	}, " "),
@@ -430,7 +430,7 @@ func taskSchema(tool string) jobj {
 			"title":          jobj{"type": "string", "description": "A new name, when the work's scope has become clear or changed (2 to 8 words, in the person's language). A name the person gave the task is kept."},
 			"summary":        jobj{"type": "string", "description": summaryGuide},
 			"detail":         jobj{"type": "string", "description": "The fuller summary (Markdown); replaces the current one."},
-			"report":         jobj{"type": "string", "description": "The latest report the person reads on the Board."},
+			"report":         jobj{"type": "string", "description": "The latest report the person reads on the Board: what is done and what is being done, concretely (not who does it or how)."},
 			"status":         jobj{"type": "string", "enum": taskStatuses, "description": taskStatusGuide},
 			"steps":          stepsSchema(),
 			"check_steps":    jobj{"type": "array", "items": jobj{"type": "number"}, "description": "Numbers (from 1, in reading order) of steps that are now done."},
