@@ -286,7 +286,7 @@ export function TaskPicker({ tasks, exclude, head, onPick, onClose }: { tasks: T
 
 // ---- questions ----
 //
-// Answering never sends by itself: a pick (a click, a tap, 1–9) only selects, and the person can
+// Answering never sends by itself: a pick (a click or a tap) only selects, and the person can
 // change it, answer the message's other questions, add a note or free text, then Send once (the
 // button or ⌘↵). The picks are drafts kept per message (in this browser) until sent.
 
@@ -377,68 +377,7 @@ export async function sendAnswers(m: V3Message): Promise<Answer[]> {
   return list
 }
 
-/** Picks a choice of a question as a draft (1–9 on the Board): single replaces, multi toggles. */
-export function pickChoice(m: V3Message, q: Question, label: string) {
-  const cur = loadAnswers(m.id)[q.key]
-  const sel = cur?.selected ?? []
-  const next: Answer = q.kind === 'multi' ? { ...cur, key: q.key, selected: sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label] } : { key: q.key, selected: sel[0] === label ? [] : [label] }
-  const all = { ...loadAnswers(m.id) }
-  if (answerIsEmpty(next)) delete all[q.key]
-  else all[q.key] = next
-  saveAnswers(m.id, all)
-}
-
-/**
- * A question answered in place (the Board's cards): choices to pick (long ones stack, so none grows
- * into a giant button), Other… / a line of text. Picks are drafts; the card's Send sends them.
- */
-export function QuickAnswer({ m, q, keys }: { m: V3Message; q: Question; keys?: boolean }) {
-  const { drafts, set } = useAnswerDrafts(m.id)
-  const d = drafts[q.key]
-  const choices = q.choices ?? []
-  if (q.kind === 'action') return null
-  const long = choices.some((c) => c.label.length > 22) || choices.length > 4
-  const free = (
-    <input
-      className="v-free"
-      placeholder={q.kind === 'text' ? 'Your answer…' : 'Other…'}
-      aria-label={q.kind === 'text' ? 'Answer' : 'Other answer'}
-      data-testid="free-answer"
-      value={(q.kind === 'text' ? d?.text : d?.other) ?? ''}
-      onChange={(e) => set(q.kind === 'text' ? { key: q.key, text: e.target.value } : { ...d, key: q.key, other: e.target.value, selected: q.kind === 'single' && e.target.value ? [] : d?.selected })}
-    />
-  )
-  if (q.kind === 'text') return <div className="v-choices">{free}</div>
-  return (
-    <div className={'v-choices' + (long ? ' col' : '')}>
-      {choices.map((c, i) => {
-        const on = !!d?.selected?.includes(c.label)
-        return (
-          <button
-            type="button"
-            key={c.label}
-            className={'v-choice' + (c.recommended ? ' rec' : '') + (on ? ' on' : '')}
-            data-testid="choice"
-            aria-pressed={on}
-            title={c.label}
-            onClick={(e) => {
-              e.stopPropagation()
-              pickChoice(m, q, c.label)
-            }}
-          >
-            <span className="v-mark">{on ? (q.kind === 'multi' ? '☑' : '●') : q.kind === 'multi' ? '☐' : '○'}</span>
-            {keys && i < 9 && <span className="v-kbd">{i + 1}</span>}
-            <span className="v-cl">{c.label}</span>
-            {c.recommended ? <span className="v-rec">recommended</span> : null}
-          </button>
-        )
-      })}
-      {free}
-    </div>
-  )
-}
-
-/** "N answered · Send": under a message's questions (Board card, stream, task view). */
+/** "N answered · Send": under a message's questions (stream, task view). */
 export function AnswerBar({ m, onSent, testid = 'answers-send' }: { m: V3Message; onSent: (answers: Answer[]) => void; testid?: string }) {
   const { error } = useApp()
   const { drafts, clear } = useAnswerDrafts(m.id)

@@ -69,29 +69,9 @@ select.v-chip { padding: 1px 4px; }
 .v-gh .v-r { margin-left: auto; color: var(--mb-faint); font-weight: 400; letter-spacing: 0; cursor: pointer; background: none; border: 0; font-size: 11px; }
 .v-group.dropping { background: color-mix(in srgb, var(--mb-accent) 10%, transparent); }
 .v-empty { padding: 10px 18px; color: var(--mb-faint); font-size: 12px; }
-.v-qc { margin: 8px 18px; border: 1px solid var(--mb-line2); border-left: 3px solid var(--mb-wait); border-radius: 8px; padding: 8px 12px; background: var(--mb-card); }
-.v-qc.focus { box-shadow: 0 0 0 2px var(--mb-accent); }
-.v-qc.untag { border-left-color: var(--mb-faint); }
-.v-qc .v-q { color: var(--mb-fg); }
-.v-qc .v-qq + .v-qq { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--mb-line2); }
-.v-qc .v-meta .v-k { color: var(--mb-faint); }
-.v-qc .v-q b { color: var(--mb-wait); }
-.v-qc .v-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; color: var(--mb-subtle); font-size: 11.5px; flex-wrap: wrap; position: relative; }
-.v-qc .v-meta .v-sp { flex: 1; }
-.v-choices { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; align-items: center; }
-.v-choice { border: 1px solid var(--mb-line2); background: var(--mb-surface); color: var(--mb-fg2); border-radius: 6px; padding: 3px 9px; font-size: 12.5px; display: flex; gap: 6px; align-items: center; max-width: 100%; text-align: left; }
-.v-choice .v-cl { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.v-choice .v-mark { color: var(--mb-faint); font-size: 11px; flex: none; }
-.v-choice.on .v-mark { color: var(--mb-wait); }
-.v-choice .v-rec { font-size: 10.5px; color: var(--mb-wait); flex: none; }
-.v-choices.col { flex-direction: column; align-items: stretch; }
-.v-choices.col .v-choice { width: 100%; max-width: 720px; }
-.v-choices.col .v-free { max-width: 720px; }
-.v-choice:hover { border-color: var(--mb-wait); color: var(--mb-fg); }
-.v-choice.rec { color: var(--mb-fg); }
-.v-choice.on { background: color-mix(in srgb, var(--mb-wait) 18%, transparent); border-color: var(--mb-wait); }
-.v-free { flex: 1; min-width: 160px; max-width: 360px; border: 1px solid var(--mb-line2); border-radius: 6px; padding: 3px 8px; font-size: 12.5px; }
 .v-row { border-bottom: 1px solid var(--mb-line); }
+.v-row .v-you { color: var(--mb-wait); font-weight: 600; }
+.v-asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--mb-fg); overflow-wrap: anywhere; }
 .v-row .v-line { display: grid; grid-template-columns: minmax(0, 1fr) auto 48px; gap: 14px; padding: 9px 18px; cursor: pointer; align-items: center; }
 .v-row:hover .v-line { background: var(--mb-rowsel); }
 .v-row.focus .v-line { box-shadow: inset 3px 0 0 var(--mb-accent); background: var(--mb-rowsel); }
@@ -193,11 +173,6 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-composer textarea { width: 100%; border: 0; outline: 0; resize: none; min-height: 38px; background: transparent; }
 .v-composer .v-tb { display: flex; gap: 10px; align-items: center; color: var(--mb-faint); font-size: 12px; }
 .v-composer .v-tb .v-sp { flex: 1; }
-.v-qcard { border: 1px solid var(--mb-wait); background: var(--v-waitbg); border-radius: 10px; padding: 9px 12px; }
-.v-qcard .v-q { color: var(--mb-fg); font-weight: 600; }
-.v-qcard.done { border-color: var(--mb-line2); background: var(--mb-sunken); }
-.v-qcard .v-ans { color: var(--mb-ok); font-size: 12px; margin-top: 4px; }
-.v-qcard .v-ctx { color: var(--mb-subtle); font-size: 12px; margin-top: 2px; white-space: pre-wrap; }
 
 /* tag picker */
 .v-tagpop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; background: var(--mb-overlay); border: 1px solid var(--mb-line2); border-radius: 8px; box-shadow: var(--mb-shadow); padding: 6px; text-align: left; }
@@ -261,9 +236,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-tabs button b { font-size: 17px; font-weight: 500; }
   .v-tabs button.on { color: var(--mb-fg); }
   .v-tabs .v-badge { position: absolute; top: 0; left: calc(50% + 6px); }
-  .v-choice { padding: 6px 10px; font-size: 13px; }
-  .v-choices { flex-direction: column; align-items: stretch; }
-  .v-free { max-width: none; }
   .v-dots { opacity: 1; }
   .v-row .v-sub .v-bar { width: 60px; }
   /* Action items on a phone: the text gets the width, Done / Can't do it go under it. */
@@ -273,7 +245,6 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-msg { max-width: 100%; }
   .v-composer { margin: 0 10px 10px; position: sticky; bottom: 8px; z-index: 5; box-shadow: var(--mb-shadow); }
   .v-conv { padding: 12px 12px; }
-  .v-qc { margin: 8px 12px; }
 }
 .v-composer .v-tagpop { top: auto; bottom: 100%; margin-bottom: 4px; }
 .v-msg .v-about .v-tagpop { top: 100%; }

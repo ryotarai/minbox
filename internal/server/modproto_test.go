@@ -407,3 +407,32 @@ func TestPlaceRequestOverProtocol1(t *testing.T) {
 		t.Fatalf("a place request's turn was reminded: %v", o)
 	}
 }
+
+// An update_task with only a status puts a line with a subject in the timeline ("Status → needs
+// you", not a bare "→ needs you"), and a line stored the old way reads the same.
+func TestStatusOnlyUpdateHasASubject(t *testing.T) {
+	p := newProto(t)
+	o := p.tool("create_task", map[string]any{"title": "Check the plan", "steps": []any{map[string]any{"text": "Read it"}}})
+	text := o["text"].(string)
+	id := strings.TrimSuffix(strings.Fields(strings.TrimPrefix(text, "Task created (task_id "))[0], ").")
+	p.tool("update_task", map[string]any{"task_id": id, "check_steps": []any{1}})
+	p.tool("update_task", map[string]any{"task_id": id, "status": "needs_you"})
+	if err := p.st.AddTaskEvent(context.Background(), id, "status", "→ blocked", p.sess.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	code, d, _ := p.do("GET", "/api/v3/tasks/"+id, nil, nil)
+	if code != 200 {
+		t.Fatalf("task: %d %v", code, d)
+	}
+	var lines []string
+	for _, e := range d["events"].([]any) {
+		ev := e.(map[string]any)
+		if ev["text"] == "" || strings.HasPrefix(ev["text"].(string), "→") {
+			t.Fatalf("event without a subject: %v", ev)
+		}
+		lines = append(lines, ev["text"].(string))
+	}
+	if got := strings.Join(lines, " | "); !strings.Contains(got, "Read it → done | Status → needs you | Status → blocked") {
+		t.Fatalf("events: %s", got)
+	}
+}
