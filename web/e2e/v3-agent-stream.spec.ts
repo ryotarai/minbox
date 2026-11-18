@@ -2,7 +2,7 @@
 // is about, ⋯ → Put in a task…, the agent's open tasks beside it, and its terminal one key away. Older
 // threads read as segments of the stream (divider with their subject).
 import { test, expect } from './fixtures'
-import { agentReply, api, say, shot, startAgent, taskAbove, taskNamed } from './v3'
+import { agentReply, api, say, shot, startAgent, taskOn, taskNamed } from './v3'
 
 test('agent stream: task links, put a message in a new task, the terminal beside the stream', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
@@ -31,7 +31,7 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await page.keyboard.type('Staging health')
   await expect(page.getByTestId('task-new')).toContainText('New task “Staging health”')
   await page.keyboard.press('Enter')
-  await expect(taskAbove(q)).toHaveAttribute('title', 'Staging health')
+  await expect(taskOn(q)).toHaveAttribute('title', 'Staging health')
   await taskNamed(minbox, 'Staging health')
 
   // # at the start of the reply box says which task the message being written is about.
@@ -46,7 +46,7 @@ test('agent stream: task links, put a message in a new task, the terminal beside
   await page.getByTestId('composer-text').fill('the staging check is green now')
   await page.getByTestId('composer-send').click()
   const sent = stream.locator('[data-testid="v3-message"][data-author="user"]').filter({ hasText: 'the staging check is green now' })
-  await expect(taskAbove(sent)).toHaveAttribute('title', 'Staging health')
+  await expect(taskOn(sent)).toHaveAttribute('title', 'Staging health')
   await expect(sent).not.toHaveClass(/pending/)
 
   // T opens the terminal beside the stream (the fake agent's screen).
@@ -76,7 +76,7 @@ test('older threads are segments of the stream, with a divider', async ({ page, 
   await expect(stream.getByTestId('v3-message')).toHaveCount(3)
 })
 
-test('the task is named once above each run of messages in it, again when the task changes', async ({ page, minbox }) => {
+test('every message shows its task as a badge in its box, dimmed when the one before is in the same task', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'please fix the gauge reading')
   const gauge = await taskNamed(minbox, /Fix the gauge reading/)
@@ -90,28 +90,32 @@ test('the task is named once above each run of messages in it, again when the ta
   const stream = page.getByTestId('stream-view')
   const msgs = stream.getByTestId('v3-message')
   await expect(msgs).toHaveCount(6)
-  // Three runs: gauge (ask + reply), staging (ask + reply), gauge again (ask + reply).
-  const topics = stream.getByTestId('task-topic')
-  await expect(topics).toHaveCount(3)
-  await expect(topics.nth(0).getByTestId('task-link')).toHaveAttribute('title', gauge.title)
-  await expect(topics.nth(1).getByTestId('task-link')).toHaveAttribute('title', 'Is the staging server up')
-  await expect(topics.nth(2).getByTestId('task-link')).toHaveAttribute('title', gauge.title)
-  // Each message is under the topic line of its own task, and its header does not repeat it.
+  // gauge (ask + reply), staging (ask + reply), gauge again (ask + reply): a badge in every box, the
+  // second of each pair (same task as the one before) dimmed.
+  const titles = [gauge.title, gauge.title, 'Is the staging server up', 'Is the staging server up', gauge.title, gauge.title]
   for (let i = 0; i < 6; i++) {
     const m = msgs.nth(i)
-    const t = await m.getAttribute('data-task')
-    expect(t).toBeTruthy()
-    await expect(m.locator('xpath=preceding-sibling::*[@data-testid="task-topic"][1]')).toHaveAttribute('data-task', t!)
-    await expect(m.getByTestId('task-link')).toHaveCount(0)
+    await expect(m.locator('.v-bd').getByTestId('task-badge')).toHaveCount(1)
+    await expect(taskOn(m)).toHaveAttribute('title', titles[i]!)
+    await expect(m.getByTestId('task-badge')).toHaveAttribute('data-task', (await m.getAttribute('data-task'))!)
+    if (i % 2) await expect(m).toHaveClass(/\brep\b/)
+    else await expect(m).not.toHaveClass(/\brep\b/)
   }
-  // The new task the agent made is said in its reply's header.
+  await expect(stream.getByTestId('task-topic')).toHaveCount(0)
+  // The new task the agent made: a small suffix beside the badge.
   await expect(msgs.nth(1).getByTestId('decision')).toHaveText('→ new task')
-  // The topic line opens its task.
-  await topics.nth(1).getByTestId('task-link').locator('button').click()
+  // ⋮ sits beside the badge.
+  await msgs.nth(2).hover()
+  await msgs.nth(2).getByTestId('about').getByTestId('msg-menu').click()
+  await expect(page.getByTestId('menu-move')).toHaveText('Move to another task…')
+  await msgs.nth(2).getByTestId('msg-menu').click()
+  await expect(page.getByTestId('menu-move')).toHaveCount(0)
+  // A badge opens its task.
+  await taskOn(msgs.nth(2)).locator('button').click()
   await expect(page.getByTestId('task-title')).toHaveText('Is the staging server up')
-  // In the task view every message is of that task: no topic lines, no task in the headers.
+  // In the task view every message is of that task: no badges, the ⋮ in the header.
   const view = page.getByTestId('v3-message')
   await expect(view).toHaveCount(2)
-  await expect(page.getByTestId('task-topic')).toHaveCount(0)
-  await expect(view.getByTestId('task-link')).toHaveCount(0)
+  await expect(view.getByTestId('task-badge')).toHaveCount(0)
+  await expect(view.first().locator('.v-w').getByTestId('msg-menu')).toHaveCount(1)
 })

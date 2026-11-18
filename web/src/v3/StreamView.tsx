@@ -1,6 +1,6 @@
-// An agent's stream: "what is this agent doing?" One conversation, oldest to newest; each run of
-// messages in one task starts with a topic line naming the task, and the agent's decision is in its
-// reply's header; its tasks, terminal, shell and files beside it.
+// An agent's stream: "what is this agent doing?" One conversation, oldest to newest; each message
+// shows its task as a badge in its box (dimmed when the one before is in the same task), with the
+// agent's decision beside it; its tasks, terminal, shell and files beside it.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
@@ -10,7 +10,7 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { ago, short, standing, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { BackButton, Bar, MessageView, StatusDot, TaskChip, TaskTopic, agentHint, msgTask, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, msgTask, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -176,7 +176,7 @@ export function StreamView({
   const linearEv = groupLinearEvents(shown, thread?.linear_events)
   let day = ''
   let seg = ''
-  let topic = '' // the task of the current run of messages, named once above it
+  let run = '' // the task of the run of messages so far: a badge repeating it is dimmed
   const terminalish = pane !== 'tasks'
   return (
     <>
@@ -299,7 +299,7 @@ export function StreamView({
                   for (const ev of linearEv.before.get(m.id) ?? []) out.push(<LinearEventItem key={'l' + ev.id} ev={ev} identifier={thread?.linear?.identifier ?? ''} />)
                   if (d !== day) {
                     day = d
-                    topic = ''
+                    run = ''
                     out.push(
                       <div key={'d' + m.id} className="v-divider">
                         {d === new Date().toDateString() ? 'Today' : new Date(m.created_at).toLocaleDateString()}
@@ -309,7 +309,7 @@ export function StreamView({
                   const sg = m.segment?.id ?? ''
                   if (sg !== seg) {
                     seg = sg
-                    topic = ''
+                    run = ''
                     if (m.segment) {
                       out.push(
                         <div key={'s' + m.id} className="v-divider" data-testid="segment-divider">
@@ -325,14 +325,14 @@ export function StreamView({
                       </div>,
                     )
                   }
-                  // A run of messages in one task starts with its topic line; a message in no task ends the
+                  // A message in the same task as the one before dims its badge; a message in no task ends the
                   // run (commands and minbox's own notes, such as asking the agent to place messages, do not).
                   const note = m.kind === 'command' || m.kind === ('place' as string) || m.kind === ('continue' as string)
                   const mt = note ? undefined : msgTask(m)
-                  if (mt && mt.task_id !== topic) out.push(<TaskTopic key={'t' + m.id} task={mt} tasks={tasks} />)
-                  if (!note) topic = mt?.task_id ?? ''
+                  const repeat = !!mt && mt.task_id === run
+                  if (!note) run = mt?.task_id ?? ''
                   if (foldAll && i < shown.length - 1) out.push(<CompactRow key={m.id} m={m} name={sess.name} onClick={() => setFoldAll(false)} />)
-                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} inTask={mt?.task_id} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
+                  else out.push(<MessageView key={m.id} m={m} tasks={tasks} repeat={repeat} showAgent={false} unread={m.author === 'agent' && !m.read_at} highlight={highlight === m.id} onOpenAttachment={onOpenAttachment} onChanged={reload} onUnread={markUnread} />)
                   if (m === lastUser && !m.pending)
                     out.push(
                       <div key={'dl' + m.id} className="v-delivery">
