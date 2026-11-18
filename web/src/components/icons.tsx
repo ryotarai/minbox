@@ -17,6 +17,7 @@ import LChevronLeft from 'lucide-react/icons/chevron-left'
 import LSettings2 from 'lucide-react/icons/settings-2'
 import LCheck from 'lucide-react/icons/check'
 import LCopy from 'lucide-react/icons/copy'
+import LWrapText from 'lucide-react/icons/wrap-text'
 import LLayoutGrid from 'lucide-react/icons/layout-grid'
 import LChevronsDownUp from 'lucide-react/icons/chevrons-down-up'
 import LChevronsUpDown from 'lucide-react/icons/chevrons-up-down'
@@ -101,6 +102,7 @@ export const IconBack = /*#__PURE__*/ lucide(LChevronLeft)
 export const IconSettings = /*#__PURE__*/ lucide(LSettings2)
 export const IconCheck = /*#__PURE__*/ lucide(LCheck)
 export const IconCopy = /*#__PURE__*/ lucide(LCopy)
+export const IconWrapText = /*#__PURE__*/ lucide(LWrapText)
 export const IconGrid = /*#__PURE__*/ lucide(LLayoutGrid)
 export const IconFold = /*#__PURE__*/ lucide(LChevronsDownUp)
 export const IconUnfold = /*#__PURE__*/ lucide(LChevronsUpDown)
