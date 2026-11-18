@@ -41,8 +41,8 @@ export type Route = {
   m: string | null
 }
 
-function readRoute(): Route {
-  const p = new URLSearchParams(location.hash.slice(1))
+function readRoute(hash = location.hash): Route {
+  const p = new URLSearchParams(hash.replace(/^[^#]*#?/, ''))
   // The Board became Topics, then Tasks: an old link opens Tasks (Root rewrites the hash).
   const v = p.get('v')
   const view = ((v === 'board' || v === 'topics' ? 'tasks' : v) as View) || 'main'
@@ -77,6 +77,46 @@ function routeHash(r: Route): string {
   const h = p.toString()
   return h ? `#${h}` : location.pathname
 }
+
+// ---- in-app history ----
+//
+// Every history entry the app makes carries its depth in the app (mb: 0 for the entry the app was
+// opened on, +1 per push) and the hash it was pushed from (from). The ‹ back control (and Esc) goes
+// back through the browser's history while the previous entry is the app's own (mb > 0), so the
+// button and the browser's back / swipe-back walk the same entries; on the first entry (a deep link,
+// a reload of one, a hash typed in) it replaces the entry with the fallback (the Board): no new
+// entry, and a browser back from there leaves the app instead of bouncing back.
+
+// base: the depth of the first entry of the current screen's run (an issue picked after another stays
+// on My issues), so ‹ on a screen with its own selection can leave the whole screen in one step.
+type HistState = { mb?: number; from?: string; base?: number; baseFrom?: string; viewer?: boolean }
+
+function histState(): HistState {
+  const st = history.state as unknown
+  return st && typeof st === 'object' ? (st as HistState) : {}
+}
+
+/** Marks an entry the app did not make (the first one, a typed hash) as the app's first. */
+function stampEntry() {
+  const st = histState()
+  if (typeof st.mb !== 'number') history.replaceState({ ...st, mb: 0, base: 0 }, '')
+}
+
+/** Where ‹ back leads from here: the previous in-app entry's route, or null (the fallback: the Board). */
+export function backTarget(): Route | null {
+  const st = histState()
+  return (st.mb ?? 0) > 0 && st.from != null ? readRoute(st.from) : null
+}
+
+/** Where leaving the current screen (all its entries) leads: the entry it was opened from, or null. */
+export function leaveTarget(): Route | null {
+  const st = histState()
+  const base = Math.min(st.mb ?? 0, st.base ?? 0)
+  return base > 0 && st.baseFrom != null ? readRoute(st.baseFrom) : null
+}
+
+/** The Board, with nothing selected. */
+export const HOME: Partial<Route> = { view: 'main', s: null, t: null, f: null, k: null, m: null, r: null, issue: null, slack: null }
 
 export function threadLink(sessionId: string, threadId: string): string {
   return `${location.origin}${location.pathname}#s=${sessionId}&t=${threadId}`
@@ -185,6 +225,8 @@ type AppState = {
   route: Route
   navigate: (patch: Partial<Route>, opts?: { push?: boolean }) => void
   back: () => void
+  /** ‹ back (and Esc): the previous in-app entry (history.back()), else replace with fallback (the Board). */
+  goBack: (fallback?: Partial<Route>, opts?: { leave?: boolean }) => void
   sessions: Session[] | null
   setSessions: React.Dispatch<React.SetStateAction<Session[] | null>>
   reloadSessions: () => Promise<void>
@@ -247,7 +289,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Route ↔ hash.
   useEffect(() => {
-    const on = () => setRoute(readRoute())
+    stampEntry()
+    const on = () => {
+      stampEntry()
+      setRoute(readRoute())
+    }
     window.addEventListener('hashchange', on)
     window.addEventListener('popstate', on)
     return () => {
@@ -263,16 +309,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.t === undefined) next.t = null
       if (patch.s !== undefined && patch.s !== routeRef.current.s && patch.f === undefined) next.f = null
       const h = routeHash(next)
-      const push = opts?.push ?? isPhone
+      // Where we are now: a push to the same place makes no second entry.
+      const here = location.hash || location.pathname
+      const push = (opts?.push ?? isPhone) && h !== here
+      const st = histState()
+      const depth = st.mb ?? 0
+      const same = next.view === routeRef.current.view
       // An attachment viewer opened by a push is marked, so closing it can go back instead of stacking entries.
-      if (push) history.pushState(next.f && !routeRef.current.f ? { viewer: true } : null, '', h)
-      else history.replaceState(next.f ? history.state : null, '', h)
+      const from = routeHash(routeRef.current)
+      if (push) history.pushState({ mb: depth + 1, from, base: same ? (st.base ?? 0) : depth + 1, baseFrom: same ? st.baseFrom : from, viewer: next.f && !routeRef.current.f ? true : undefined }, '', h)
+      else history.replaceState({ mb: depth, from: st.from, base: same ? st.base : depth, baseFrom: same ? st.baseFrom : st.from, viewer: next.f ? st.viewer : undefined }, '', h)
       routeRef.current = next
       setRoute(next)
     },
     [isPhone],
   )
   const back = useCallback(() => history.back(), [])
+  const goBack = useCallback(
+    (fallback?: Partial<Route>, opts?: { leave?: boolean }) => {
+      const st = histState()
+      const depth = st.mb ?? 0
+      // leave: back past every entry of this screen (to the one it was opened from).
+      const base = opts?.leave ? Math.min(depth, st.base ?? 0) : depth
+      if (base > 0) history.go(base - depth - 1)
+      else navigate(fallback ?? HOME, { push: false })
+    },
+    [navigate],
+  )
 
   // Toasts.
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
@@ -480,6 +543,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       route,
       navigate,
+      goBack,
       back,
       sessions,
       setSessions,
@@ -507,7 +571,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isPhone,
       isTablet,
     }),
-    [route, navigate, back, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, topicsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone, isTablet],
+    [route, navigate, back, goBack, sessions, reloadSessions, settings, saveSettings, hosts, reloadHosts, projects, reloadProjects, conn, threadsVersion, threadVersion, topicsVersion, devicesVersion, toasts, toast, dismissToast, error, undoLast, layout, setLayout, overlay, isPhone, isTablet],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

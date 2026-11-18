@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSelectedProject } from '../lib/projects'
 import { hhmm, short, v3, STATUS_LABEL, type SearchResult } from './data'
-import { StatusDot, TaskLinks, agentName, useNav, useSessionsById } from './parts'
+import { useApp } from '../lib/app'
+import { BackButton, StatusDot, TaskLinks, agentName, useNav, useSessionsById } from './parts'
 
 function Hl({ s, q }: { s: string; q: string }) {
   const i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1
@@ -22,6 +23,7 @@ export function SearchView() {
   const { id: project } = useSelectedProject()
   const byId = useSessionsById()
   const nav = useNav()
+  const { goBack } = useApp()
   const [q, setQ] = useState('')
   const [res, setRes] = useState<SearchResult | null>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -40,6 +42,7 @@ export function SearchView() {
     <div className="v-col" data-testid="search-view">
       <div className="v-head">
         <div className="v-r1">
+          <BackButton />
           <h1>Search</h1>
         </div>
       </div>
@@ -53,7 +56,7 @@ export function SearchView() {
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.preventDefault()
-              nav.board()
+              goBack()
             }
           }}
         />

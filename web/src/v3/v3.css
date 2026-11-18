@@ -311,3 +311,20 @@ dl.v-facts dt { color: var(--mb-subtle); } dl.v-facts dd { margin: 0; overflow: 
   .v-convwrap { flex: none; }
   .v-composer textarea { min-height: 24px; font-size: 16px; }
 }
+
+/* ‹ back: the first thing in a view's header (to where the person came from, else the Board). */
+.v-back { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 2px; height: 30px; margin-left: -8px; padding: 0 8px 0 4px; border: 0; border-radius: 7px; background: none; color: var(--mb-fg2); font-size: 13px; max-width: min(200px, 26%); min-width: 0; cursor: pointer; }
+/* With ‹ in the row the title keeps its own width first; the back label and the agent's kind give way. */
+.v-head .v-r1 > .v-back ~ h1, .v-head .v-r1 > .v-back ~ h2 { flex: 1 1 auto; min-width: 3em; }
+.v-head .v-r1 > .v-back ~ .v-kind { flex: 0 3 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-back:hover { background: var(--mb-rowsel); color: var(--mb-fg); }
+.v-back:focus-visible { outline: 2px solid var(--mb-accent); outline-offset: 1px; }
+.v-back svg { flex: none; }
+.v-back-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (pointer: coarse) { .v-back { height: 40px; min-width: 40px; justify-content: center; } }
+@media (max-width: 699px) {
+  /* A phone: the arrow alone (44px to tap), the title has the room. */
+  .v-back { height: 44px; min-width: 44px; margin: -8px 0 -8px -12px; padding: 0; justify-content: center; }
+  .v-back-l { display: none; }
+  .v-back svg { width: 20px; height: 20px; }
+}

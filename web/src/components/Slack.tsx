@@ -26,7 +26,7 @@ function useSlackScreen() {
 }
 
 function SlackDesktop({ tablet }: { tablet: boolean }) {
-  const { layout } = useApp()
+  const { layout, goBack } = useApp()
   const c = useSlackScreen()
   const narrow = tablet || (layout.projectsRail ?? window.innerWidth < 1400)
   return (
@@ -35,7 +35,7 @@ function SlackDesktop({ tablet }: { tablet: boolean }) {
         <ProjectRail narrow={narrow} />
       </div>
       <div style={{ width: tablet ? 320 : 400 }} className="shrink-0 border-r border-line">
-        <SlackList state={c.state} selected={c.selected} onSelect={c.select} />
+        <SlackList state={c.state} selected={c.selected} onSelect={c.select} onBack={() => goBack(undefined, { leave: true })} />
       </div>
       <div className="min-w-0 flex-1">
         {c.selected ? (
@@ -51,14 +51,14 @@ function SlackDesktop({ tablet }: { tablet: boolean }) {
 }
 
 function PhoneSlack() {
-  const { navigate } = useApp()
+  const { goBack } = useApp()
   const c = useSlackScreen()
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)]" data-testid="slack-screen" data-screen={c.selected ? 'detail' : 'list'}>
       {c.selected ? (
-        <SlackDetail key={c.selected} id={c.selected} phone item={c.state.data?.items.find((i) => i.id === c.selected)} onBack={() => navigate({ slack: null }, { push: false })} onChanged={c.state.reload} />
+        <SlackDetail key={c.selected} id={c.selected} phone item={c.state.data?.items.find((i) => i.id === c.selected)} onBack={() => goBack({ slack: null })} onChanged={c.state.reload} />
       ) : (
-        <SlackList state={c.state} selected={null} phone onSelect={c.select} onBack={() => navigate({ view: 'main' }, { push: false })} />
+        <SlackList state={c.state} selected={null} phone onSelect={c.select} onBack={() => goBack(undefined, { leave: true })} />
       )}
     </div>
   )
@@ -133,9 +133,9 @@ function SlackList({ state, selected, onSelect, phone, onBack }: { state: SlackS
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Slack" data-testid="slack-list">
       <header className={cx('flex shrink-0 items-center gap-1.5 border-b border-line px-3', phone ? 'h-14' : 'h-12')}>
-        {phone && (
-          <IconButton size={44} aria-label="Back to threads" data-testid="slack-back" onClick={onBack} className="-ml-2 text-fg2">
-            <IconBack size={20} />
+        {onBack && (
+          <IconButton size={phone ? 44 : 32} aria-label="Back" title="Back (Esc)" data-testid="slack-back" onClick={onBack} className="-ml-2 text-fg2">
+            <IconBack size={phone ? 20 : 16} />
           </IconButton>
         )}
         <IconSlack size={15} className="shrink-0 text-fg2" />

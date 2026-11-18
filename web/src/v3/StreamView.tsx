@@ -10,7 +10,7 @@ import { TerminalPane } from '../components/TerminalPane'
 import { ShellPane } from '../components/ShellPane'
 import { FilesPane } from '../components/FilesPane'
 import { ago, short, useLive, useMarkRead, v3, STATUS_LABEL, type BoardTask, type Stream, type V3Message } from './data'
-import { Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
+import { BackButton, Bar, MessageView, StatusDot, TaskChip, agentHint, useNav, useSessionsById } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { CompactRow, NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow, useKeepPosition } from './conversation'
 import { QuoteBubble } from './quote'
@@ -104,7 +104,17 @@ export function StreamView({
     },
     !route.f,
   )
-  if (!sess) return <div className="v-col"><div className="v-empty">This agent is gone. Pick another one on the left.</div></div>
+  if (!sess)
+    return (
+      <div className="v-col">
+        <div className="v-head">
+          <div className="v-r1">
+            <BackButton tasks={tasks} />
+          </div>
+        </div>
+        <div className="v-empty">This agent is gone. Pick another one on the left.</div>
+      </div>
+    )
   const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === id))
   const openTasks = mine.filter((t) => t.status !== 'done')
   const doneTasks = mine.filter((t) => t.status === 'done')
@@ -169,12 +179,13 @@ export function StreamView({
       <div className="v-col" data-testid="stream-view" data-session={id}>
         <div className="v-head">
           <div className="v-r1">
+            <BackButton tasks={tasks} />
             <span className={'v-dot ' + (sess.status === 'working' ? 'd-work v-live' : sess.status === 'ended' ? 'd-done' : 'd-idle')} />
             <h2 data-testid="agent-name">
               {sess.name}
               {hint && <small className="v-hint"> · {hint}</small>}
             </h2>
-            <span className="v-hide-phone" style={{ color: 'var(--mb-subtle)', fontSize: 12 }}>
+            <span className="v-hide-phone v-kind" style={{ color: 'var(--mb-subtle)', fontSize: 12 }} title={[agentKindLabel(sess.agent), sess.is_main ? 'main' : '', sess.host_name].filter(Boolean).join(' · ')}>
               {agentKindLabel(sess.agent)}
               {sess.is_main ? ' · main' : ''}
               {sess.host_name ? ' · ' + sess.host_name : ''}
