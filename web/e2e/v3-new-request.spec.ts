@@ -1,8 +1,8 @@
 // UC3 (give a new request without thinking where it goes): ⇧N writes to the main agent by default
-// (or to a new agent); the agent decides existing task / new task, and says so under its reply. Every
+// (or to a new agent); the agent decides existing task / new task, and says so in its reply's header. Every
 // message is about a task: chit-chat gets a small task of its own, done at once.
 import { test, expect } from './fixtures'
-import { agentReply, api, board, shot, startAgent } from './v3'
+import { agentReply, api, board, shot, startAgent, taskAbove } from './v3'
 
 test('⇧N to the main agent: new work becomes a task, a follow-up is about it, chit-chat is a small done task', async ({ page, minbox }) => {
   const main = await startAgent(minbox, 'api')
@@ -23,16 +23,16 @@ test('⇧N to the main agent: new work becomes a task, a follow-up is about it, 
   await expect(stream).toHaveAttribute('data-session', main.id)
   const created = stream.locator('[data-testid="decision"][data-decision="created"]')
   await expect(created).toBeVisible({ timeout: 15_000 })
-  await expect(created).toContainText('Add a dark mode toggle to settings')
+  await expect(created).toHaveAttribute('title', 'Add a dark mode toggle to settings')
   // The person's message is about the new task too.
   const mine = stream.locator('[data-testid="v3-message"][data-author="user"]').first()
-  await expect(mine.getByTestId('task-link')).toHaveAttribute('title', 'Add a dark mode toggle to settings')
+  await expect(taskAbove(mine)).toHaveAttribute('title', 'Add a dark mode toggle to settings')
 
-  // A follow-up about it: "in <task>" under the reply, no decision note (nothing new happened).
+  // A follow-up about it: in the same run under the task's topic line, no decision note (nothing new happened).
   await page.getByTestId('composer-text').fill('the dark toggle should remember the choice')
   await page.getByTestId('composer-send').click()
   const follow = stream.locator('[data-testid="v3-message"][data-author="agent"]').nth(1)
-  await expect(follow.getByTestId('task-link')).toHaveAttribute('title', 'Add a dark mode toggle to settings', { timeout: 15_000 })
+  await expect(taskAbove(follow)).toHaveAttribute('title', 'Add a dark mode toggle to settings', { timeout: 15_000 })
   await expect(follow.getByTestId('decision')).toHaveCount(0)
 
   // Chit-chat: a small task of its own, done at once (off the open lists).
@@ -40,7 +40,7 @@ test('⇧N to the main agent: new work becomes a task, a follow-up is about it, 
   await page.keyboard.press('ControlOrMeta+Enter')
   const chat = stream.locator('[data-testid="v3-message"][data-author="agent"]').nth(2)
   await expect(chat).toContainText('Sure', { timeout: 15_000 })
-  await expect(chat.getByTestId('task-link')).toHaveAttribute('title', 'Is the staging server up')
+  await expect(taskAbove(chat)).toHaveAttribute('title', 'Is the staging server up')
   await expect(stream.getByTestId('unplaced')).toHaveCount(0)
   await shot(page, 'uc3-decisions', 'light')
   const b = await board(minbox)

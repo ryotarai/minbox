@@ -3,7 +3,7 @@
 // messages are sent through the API when a test only needs data.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import type { Minbox } from './fixtures'
 
 export type Agent = { id: string; name: string; project_id: string }
@@ -71,6 +71,14 @@ export async function taskNamed(m: Minbox, title: string | RegExp): Promise<any>
 }
 
 export { api }
+
+/**
+ * The task named above a message in an agent's stream: the topic line its run of messages in one task
+ * starts with (the nearest one before it), as its task link.
+ */
+export function taskAbove(msg: Locator): Locator {
+  return msg.locator('xpath=preceding-sibling::*[@data-testid="task-topic"][1]').getByTestId('task-link')
+}
 
 /** Saves a screenshot of the use-case flow into docs/v3/screens (UX review), light or dark. */
 export async function shot(page: Page, name: string, theme?: 'light' | 'dark') {
