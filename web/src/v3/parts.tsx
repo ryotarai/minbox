@@ -3,7 +3,7 @@
 // its questions and actions (reply, copy, 👍, start a new thread from it, mark unread from it).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { api, type Answer, type Attachment, type Question, type Session, type Thread } from '../api'
-import { backTarget, useApp, type Route } from '../lib/app'
+import { backTarget, isPhoneWidth, useApp, type Route } from '../lib/app'
 import { ContextMenu, useContextMenu } from '../components/ContextMenu'
 import { ForkDialog } from '../components/ForkDialog'
 import { Kbd, MenuItem } from '../components/ui'
@@ -59,7 +59,8 @@ export function routeLabel(r: Route | null, tasks: { id: string; title: string }
     case 'agent':
       return (r.s && byId.get(r.s)?.name) || 'Agent'
     case 'agents':
-      return 'Agents'
+      // The Agents page is the phone's tab; wider, #v=agents shows the Board (the sidebar lists the agents).
+      return isPhoneWidth() ? 'Agents' : 'Board'
     case 'search':
       return 'Search'
     case 'settings':
