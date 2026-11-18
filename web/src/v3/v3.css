@@ -410,8 +410,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-taskcard-main { flex: 1 1 300px; min-width: 0; }
 .v-column .v-taskcard .v-r2 { flex-wrap: wrap; }
 .v-taskcheck { flex: 0 1 340px; min-width: 220px; }
-.v-taskcheck .v-sec { margin: 0 0 4px; }
-.v-taskcheck-bar { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; letter-spacing: 0; font-weight: 500; flex: 0 1 180px; min-width: 80px; }
+.v-taskcheck-bar { display: flex; gap: 8px; align-items: center; min-height: 24px; margin-bottom: 4px; color: var(--mb-subtle); font-size: 12px; }
 .v-taskcheck-bar .v-bar { width: auto; flex: 1; }
 .v-taskcheck-list { font-size: 12.5px; }
 .v-taskcheck-list.folded { max-height: 118px; overflow: auto; overscroll-behavior: contain; }
