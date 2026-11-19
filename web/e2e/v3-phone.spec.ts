@@ -18,7 +18,8 @@ test('phone: tabs, a task in its agent page with its checklist, an agent stream,
   await expect(page.getByTestId('phone-tabs')).toBeVisible()
   await expect(page.getByTestId('sidebar')).toHaveCount(0)
   await expect(page.getByTestId('tab-board')).toHaveClass(/on/)
-  await expect(page.getByTestId('tab-board')).toContainText('1')
+  // The tab counts NEEDS YOU (tasks set to needs you): the open question alone adds nothing.
+  await expect(page.getByTestId('tab-board')).toHaveText('Board')
   await shot(page, 'uc11-phone-board', 'dark')
   const noHScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)
   expect(await noHScroll()).toBe(true)

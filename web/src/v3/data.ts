@@ -46,7 +46,6 @@ export type BoardTask = Task & {
   message_count: number
   last_activity: string
   last_agent: string
-  needs_you: boolean
   criteria_done: number
   task_ids?: string[]
   /** The start of the newest agent message about it. */
@@ -74,7 +73,8 @@ export type AnswersTo = { message_id: string; task_id?: string; line?: string; q
 
 export type TaskEvent = { id: string; task_id: string; at: string; kind: string; text: string; session_id?: string; message_id?: string }
 
-export type Board = { tasks: BoardTask[]; questions: V3Message[]; agents: Record<string, { unread: number; open_questions: number }> }
+/** The Board: tasks and goals; per agent, its unread messages and its open tasks set to needs you. */
+export type Board = { tasks: BoardTask[]; agents: Record<string, { unread: number; needs_you: number }> }
 export type TaskDetail = { task: BoardTask; messages: V3Message[]; events: TaskEvent[]; tasks: BoardTask[]; goal: Task | null }
 export type Stream = { messages: V3Message[]; has_more: boolean; tasks: Task[]; stream_thread_id: string; task_events?: StreamTaskEvent[] }
 export type SearchResult = { tasks: Task[]; messages: { id: string; session_id: string; thread_id: string; author: 'agent' | 'user'; text: string; created_at: string; tasks: TaskRef[] }[] }

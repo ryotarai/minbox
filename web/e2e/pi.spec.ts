@@ -31,10 +31,10 @@ test('a Pi session reports status and its messages; the person’s messages from
   await createSession(page, piMinbox.dataDir, 'pi-flow', 'pi')
   await expectTerminal(page, 'ready>')
 
-  // Pi sends a question (as the extension's minbox_send_message does): it waits on the Board.
+  // Pi sends a question (as the extension's minbox_send_message does): it waits in its stream.
   await typeInTerminal(page, 'ask')
   await expectTerminal(page, 'sent question: Sent to the person in minbox asking 1 question.')
-  await expect(page.getByTestId('board-badge')).toHaveText('1')
+  await expect(page.locator('[data-testid="question"][data-open="true"]').first()).toBeVisible()
 
   // A message from the agent's stream is picked up (claim -> delivered) by the Pi side.
   await page.getByTestId('composer-text').fill('Please also update the README')

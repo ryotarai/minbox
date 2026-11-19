@@ -30,7 +30,7 @@ and `usecases.md` for what the screens do with them.
 
 | Method | Path | |
 | --- | --- | --- |
-| GET | `/api/v3/board?project=` | `{tasks: [BoardTask], questions: [V3Message], agents: {session_id: {unread, open_questions}}}`. BoardTask = Task + `open_questions, unread, message_count, last_activity, last_agent, needs_you, criteria_done, task_ids` (a goal's tasks). Done tasks of the last 7 days. |
+| GET | `/api/v3/board?project=` | `{tasks: [BoardTask], agents: {session_id: {unread, needs_you}}}`. BoardTask = Task + `open_questions, unread, message_count, last_activity, last_agent, criteria_done, task_ids` (a goal's tasks). `open_questions` is only the `? n` mark: NEEDS YOU is the tasks whose `status` is `needs_you`. An agent's `needs_you` counts its open tasks set to needs_you (by `last_agent`): the amber dot in the agent list. Done tasks of the last 7 days. |
 | GET | `/api/v3/tasks/{id}` | `{task: BoardTask, messages: [V3Message + gap], events, tasks: [BoardTask] (a goal's), goal: Task?}`. `gap`: other messages of the same stream (about other tasks or none) since its previous message about this task. |
 | GET | `/api/v3/tasks/{id}/suggestions` | The reply help of a task's view (docs/api-contract.md "Reply suggestions"): questions for the task's latest agent message. A stream's help is `GET /api/threads/{stream_thread_id}/suggestions`. |
 | PATCH | `/api/v3/tasks/{id}` | `{title?, status?, summary?, steps?, criteria?, parent_id?}` by the person (status is marked manual). A new title is a timeline event `title` ("Renamed: old → new (you)") and makes `title_by` `person`. |
@@ -51,9 +51,10 @@ SSE: `tasks` (any task, message–task link or read change) besides the older `t
 
 ### What the Board shows
 
-- **NEEDS YOU**: question cards. A question in a task's messages shows on that task's card (once, not
-  also as a task row); a task set to needs you without an open question is a row. Long choices wrap
-  as a list, free-text questions answer in place.
+- **NEEDS YOU**: the tasks and goals whose status is `needs_you` (the agent sets it when it asks; the
+  person can too), each a row with what it waits on. Nothing else: an open question, however old, never
+  adds a row; its task stays in its group with `? n`, and it is answered in the task or the agent's
+  stream. The header count, the sidebar's Board badge, the tab title and the favicon count these rows.
 - **GOALS**: goals with their tasks and run state.
 - **WORKING**: open tasks with activity in the last 3 days, newest first; each row shows its agents
   (live state), progress, PR / links and age.

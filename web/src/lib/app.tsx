@@ -10,7 +10,7 @@ import {
   type Session,
   type Settings,
 } from '../api'
-import { dingDong, notify, setFaviconCount } from './alerts'
+import { dingDong, notify } from './alerts'
 import { setSingleKeysEnabled } from './hotkeys'
 
 // ---- route: the URL hash ----
@@ -521,16 +521,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // Attention: tab title, favicon, notifications and the chime.
+  // Attention: notifications and the chime when an agent starts waiting on the person (a new question).
+  // The tab title and the favicon count NEEDS YOU (the tasks set to needs you): V3App sets them.
   const prev = useRef<Map<string, { attention: number; stopped: number }>>(new Map())
   useEffect(() => {
     if (!sessions) return
     const live = sessions.filter((s) => !s.archived_at)
     const waiting = live.reduce((n, s) => n + attentionOf(s), 0)
-    const unread = live.reduce((n, s) => n + s.unread, 0)
-    const count = waiting > 0 ? waiting : unread
-    document.title = settings.tab_count && count > 0 ? `(${count}) minbox` : 'minbox'
-    setFaviconCount(settings.tab_count ? waiting : 0)
     const grew: Session[] = []
     let stoppedGrew = false
     for (const s of live) {
@@ -557,7 +554,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (settings.sound) dingDong()
     }
-  }, [sessions, settings.tab_count, settings.notifications, settings.sound, navigate])
+  }, [sessions, settings.notifications, settings.sound, navigate])
 
   const value = useMemo<AppState>(
     () => ({

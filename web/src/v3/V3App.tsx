@@ -6,6 +6,7 @@ import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
 import { useMentions } from '../components/Mentions'
 import { railWidth, useApp } from '../lib/app'
+import { setFaviconCount } from '../lib/alerts'
 import { isMac } from '../lib/format'
 import { NotificationAsk, SessionMenu } from '../components/Sidebar'
 import { PhoneProjectButton } from '../components/PhoneProjects'
@@ -30,7 +31,7 @@ import { AllAgentsView } from './AllAgents'
 import { useOpenOnboarding } from './Onboarding'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
-import { BackButton, SendKey, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
+import { BackButton, SendKey, rememberTasks, agentHint, taskOwner, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconSearch, IconTasks } from '../components/icons'
@@ -52,7 +53,6 @@ export function V3App() {
   const [focus, setFocus] = useState<string | null>(null)
   const [showDone, setShowDone] = useState(false)
   const [showQuiet, setShowQuiet] = useState(false)
-  const [hidden, setHidden] = useState<Set<string>>(new Set())
   // The file open over the conversation (route f: ] / [ in the viewer step through the files).
   const [viewerSession, setViewerSession] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
@@ -60,7 +60,6 @@ export function V3App() {
   const [sbOpen, setSbOpen] = useState(false)
   // The agent's Tasks pane where there is no room for it beside the stream: unfolded over the stream.
   const [tasksOver, setTasksOver] = useState(false)
-  useEffect(() => setHidden(new Set()), [board])
   const agents = useMemo(() => {
     const live = (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell' && (!projectId || s.project_id === projectId))
     return live.sort((a, b) => ((a.last_activity ?? '') < (b.last_activity ?? '') ? 1 : -1))
@@ -114,12 +113,22 @@ export function V3App() {
   const streamNarrow = !isPhone && shownPanes.length > 0 && winW - railWidth(layout) - sbShownW - tasksSpace - shownPanes.reduce((n, p) => n + (fitted.widths[p] ?? 0), 0) < 480
   const { show: showPane, close: closePane } = side
   const togglePane = useCallback((p: PaneKind) => (shownPanes.includes(p) ? closePane(p) : showPane(p)), [shownPanes.join(' '), showPane, closePane]) // eslint-disable-line react-hooks/exhaustive-deps
-  // The Board's own count of NEEDS YOU, so the badge never counts an entry the Board does not show.
-  const needs = needsCount(board, hidden)
+  // The Board's own count of NEEDS YOU (the tasks set to needs you), so the badge, the tab title and the
+  // favicon never count an entry the Board does not show (an open question alone is none).
+  const needs = needsCount(board)
   const unread = board ? Object.values(board.agents).reduce((n, a) => n + a.unread, 0) : 0
   useEffect(() => {
-    document.title = needs > 0 ? `(${needs}) minbox` : 'minbox'
-  }, [needs])
+    const n = settings.tab_count ? needs : 0
+    document.title = n > 0 ? `(${n}) minbox` : 'minbox'
+    setFaviconCount(n)
+  }, [needs, settings.tab_count])
+  useEffect(
+    () => () => {
+      document.title = 'minbox'
+      setFaviconCount(0)
+    },
+    [],
+  )
   // The task page is gone: #v=task&k=<task> becomes its agent's page with the task selected
   // (#s=<agent>&v=agent&k=<task>, replacing the entry). With no agent for it (see taskOwner): the Board,
   // its row focused.
@@ -185,23 +194,6 @@ export function V3App() {
   // The ＋ on a project's header in the agent list: the New agent dialog in that project.
   const newAgentIn = useCallback((pid?: string) => setOverlay({ kind: 'new-session', projectId: pid || undefined }), [setOverlay])
   const paletteCtx: PaletteCtx = { agent: current, panes: shownPanes, togglePane, tasksPane: hasTasks ? { shown: tasksShown, show: showTasks } : undefined, openNew, openNewAgent, openHelp: () => setOverlay({ kind: 'v3-help' } as never), rename: setRenaming }
-
-  // A Board question row's open questions ignored (moot): gone at once, back on failure or Undo.
-  const ignoreAsk = (m: V3Message) => {
-    const keys = openQuestions(m).map((q) => q.key)
-    if (!keys.length) return
-    const show = () => setHidden((h) => { const n = new Set(h); n.delete(m.id); return n })
-    setHidden((h) => new Set(h).add(m.id))
-    v3.ignore(m.id, keys)
-      .then(() => {
-        reloadBoard()
-        app.toast('Ignored', { action: 'Undo', undo: true, onAction: () => v3.unignore(m.id, keys).then(reloadBoard).catch(app.error) })
-      })
-      .catch((e) => {
-        show()
-        app.error(e)
-      })
-  }
 
   // ---- keys ----
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -292,7 +284,7 @@ export function V3App() {
       return
     }
     if (view !== 'board') return
-    const keys = boardKeys(board, showDone, hidden, showQuiet)
+    const keys = boardKeys(board, showDone, showQuiet)
     const i = focus ? keys.indexOf(focus) : -1
     const move = (k: string | undefined) => {
       if (!k) return
@@ -307,19 +299,7 @@ export function V3App() {
       move(keys[Math.max(0, i - 1)])
     } else if (!focus) return
     else if (e.key === 'Enter') {
-      const [k, id] = focus.split(':') as [string, string]
-      if (k === 't') nav.task(id)
-      else {
-        const m = board?.questions.find((x) => x.id === id)
-        if (m) m.tasks[0] ? nav.task(m.tasks[0].task_id, m.id) : nav.agent(m.session_id, m.id)
-      }
-    } else if ((e.key === 'i' || e.key === 'I') && !e.shiftKey && focus.startsWith('q:')) {
-      const m = board?.questions.find((x) => x.id === focus.slice(2))
-      if (m) {
-        e.preventDefault()
-        move(keys[i + 1] ?? keys[i - 1])
-        ignoreAsk(m)
-      }
+      if (focus.startsWith('t:')) nav.task(focus.slice(2))
     } else if ((e.key === 'x' || e.key === 'X') && focus.startsWith('t:')) {
       const t = board?.tasks.find((x) => x.id === focus.slice(2))
       if (t) {
@@ -381,9 +361,7 @@ export function V3App() {
         setShowDone={setShowDone}
         showQuiet={showQuiet}
         setShowQuiet={setShowQuiet}
-        hidden={hidden}
         onRename={setRenamingTask}
-        onIgnore={ignoreAsk}
       />
     )
   const viewerSess = byId.get(viewerSession ?? route.s ?? '')
@@ -530,7 +508,8 @@ export function V3App() {
   )
 }
 
-type Counts = Record<string, { unread: number; open_questions: number }>
+/** Per agent: unread agent messages, and its open tasks set to needs you (where their replies go). */
+type Counts = Record<string, { unread: number; needs_you: number }>
 
 /** The agents (grouped by project when all projects are shown, as main's session list was), then the plain shells. */
 /** The ＋ on a project's header in the agent list: a new agent in that project (its folder, host and default agent). */
@@ -630,11 +609,12 @@ function AllAgentsRow({ agents, tasks, sel, counts }: { agents: Session[]; tasks
   )
 }
 
-function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number }; onRename: (s: Session) => void }) {
+function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; counts?: Counts[string]; onRename: (s: Session) => void }) {
   const { sessions, navigate } = useApp()
   const hint = agentHint(sessions ?? [], a)
   const u = counts?.unread ?? 0
-  const waits = (counts?.open_questions ?? 0) > 0
+  // Amber when one of its tasks is set to needs you (an open question alone does not count).
+  const waits = (counts?.needs_you ?? 0) > 0
   // Right-click / long press / Shift+F10: the session menu (rename, restart, stop, archive, delete).
   const menu = useContextMenu()
   const shell = a.kind === 'shell'
@@ -881,10 +861,9 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ['/', 'Search'],
     ['g b · g a', 'Board · first agent'],
     ['J / K', 'Move on the Board'],
-    ['Enter', 'Open the task (a question: its task, at the question, to answer it)'],
+    ['Enter', 'Open the focused task'],
     ['⌘↵', 'Send the message (with any answers picked in the task or stream)'],
     ['X', 'Done / reopen the focused task'],
-    ['I', 'Ignore the focused question (no longer relevant; the agent is not told)'],
     ['E · F2', 'Rename the task (the open one, or the focused Board row)'],
     ['Z', 'Undo the last action (done, archive)'],
     ['N', 'Next agent with unread messages'],

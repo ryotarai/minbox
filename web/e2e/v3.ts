@@ -70,6 +70,12 @@ export async function taskNamed(m: Minbox, title: string | RegExp): Promise<any>
   return t
 }
 
+/** The open questions in the agent's stream (what is still unanswered). */
+export async function openAsks(m: Minbox, a: Agent): Promise<number> {
+  const s = await api(m, 'GET', `/api/v3/sessions/${a.id}/stream`)
+  return s.messages.reduce((n: number, x: any) => n + (x.open ?? 0), 0)
+}
+
 export { api }
 
 /** The task badge at the top of a message's box, as its task link. */

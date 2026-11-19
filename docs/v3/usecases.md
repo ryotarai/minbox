@@ -20,15 +20,15 @@ is *about* one or more tasks (or none).
 
 ## UC1. Morning triage: what needs me
 - **Entry**: open minbox (desktop or phone). Lands on the Board.
-- **Shown first**: NEEDS YOU, as question cards (`you: <question>`, the task it is about, agent, age, the choices as buttons; a task's question shows once, on its card, not again as a task row), then tasks set to *needs you* without a question, then GOALS, WORKING (active in the last 3 days, with agent state, PR / links, age), IDLE (collapsed: open but quiet for more than 3 days), BLOCKED (only when there is one), DONE (collapsed, last 48 h).
-- **Actions**: `J/K` walk the cards, `1–9` answers a single-choice question in place, `Enter` (or a click) opens a row's task (a question row: the task at the question).
+- **Shown first**: NEEDS YOU: the tasks and goals whose status is *needs you* (set by the agent when it asks, or by the person), each a row saying what it waits on. An open question alone never puts anything there: a task with one stays in its group with a `? n` mark, and the question is answered in the task or the agent's stream. Then GOALS, WORKING (active in the last 3 days, with agent state, PR / links, age), IDLE (collapsed: open but quiet for more than 3 days), BLOCKED (only when there is one), DONE (collapsed, last 48 h).
+- **Actions**: `J/K` walk the rows, `Enter` (or a click) opens a row's task, `X` marks it done.
 - **Must not be required**: opening an agent or task to see what is asked; choosing a project's thread; reading every report.
 - Spec: `v3-triage.spec.ts`.
 
 ## UC2. Answer a question fast (desktop and phone)
-- **Entry**: Board card, or the question inside the task / agent view, or a notification.
+- **Entry**: the question inside the task / agent view (a NEEDS YOU row opens its task), or a notification.
 - **Shown first**: the question and its choices.
-- **Actions**: one click / tap on a choice (or `1–9`); free text in "Other…" + Enter; a free-text question is answered in place on its card. Long choices wrap as a list, not giant buttons. The card leaves NEEDS YOU at once (optimistic) and the answer goes to the agent that asked, about the question's tasks.
+- **Actions**: one click / tap on a choice (or `1–9`); free text in "Other…" + Enter; a free-text question is answered in place on its card. Long choices wrap as a list, not giant buttons. The answer goes to the agent that asked, about the question's tasks; the task leaves NEEDS YOU when its status changes (the agent sets it back to working).
 - **Must not be required**: navigating to the agent; typing a reply around the answer.
 - Spec: `v3-answer.spec.ts` (desktop + phone viewport).
 
@@ -89,8 +89,8 @@ is *about* one or more tasks (or none).
 - Spec: `v3-triage.spec.ts` (X).
 
 ## UC11. Get notified and act from the phone
-- **Entry**: a notification / the tab badge (count = NEEDS YOU). Phone opens on the Board with bottom tabs Board · Agents · Search.
-- **Shown first**: the question cards, each answerable with one tap.
+- **Entry**: a notification / the tab badge (count = NEEDS YOU: the tasks set to needs you). Phone opens on the Board with bottom tabs Board · Agents · Search.
+- **Shown first**: the NEEDS YOU rows; a tap opens the task, where its question is answered with one tap.
 - **Actions**: tap a choice; tap a row to open the task (status + checklist folded on top, messages, reply at the bottom); Agents tab → an agent → its stream.
 - **Must not be required**: horizontal scrolling; a desktop-only gesture (drag, hover) to do any of the above.
 - Spec: `v3-phone.spec.ts`.
@@ -103,6 +103,6 @@ is *about* one or more tasks (or none).
 ## UC13. Set a goal and let an agent run toward it
 - **Entry**: any message ("keep fixing until CI is green and the PR is approved"), as UC3. The agent decides it is a goal (`create_task {kind: "goal", criteria, autonomous}`).
 - **Shown first**: on the Board, under GOALS: the goal with its *done when* checklist progress, its tasks, its agent, and the run state (`running · turn 3/20`) with **Pause** / **Stop** (or **Start** when not running).
-- **Actions**: Start / Pause / Stop with one click (Board row or the goal view). A question from the run lands in NEEDS YOU and the run waits; answering it lets the run continue.
+- **Actions**: Start / Pause / Stop with one click (Board row or the goal view). A question from the run makes the run wait (the agent sets the task to needs you, which puts it in NEEDS YOU); answering it lets the run continue.
 - **Must not be required**: typing "continue" after every turn; watching the terminal; a separate goal editor before sending.
 - Spec: `v3-goal.spec.ts`.

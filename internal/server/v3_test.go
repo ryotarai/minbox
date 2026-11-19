@@ -182,14 +182,14 @@ func TestV3QuestionsOnBoardAndAnswerTags(t *testing.T) {
 	// Later messages do not close a stream question.
 	e.agentSays(sess, map[string]any{"body": "Meanwhile: tests pass."})
 	_, board, _ := e.do("GET", "/api/v3/board", nil, nil)
-	if qs := board["questions"].([]any); len(qs) != 1 {
-		t.Fatalf("questions = %v", board["questions"])
+	if _, ok := board["questions"]; ok {
+		t.Fatalf("the Board has per-question entries: %v", board["questions"])
 	}
 	bt := board["tasks"].([]any)[0].(map[string]any)
-	if bt["needs_you"] != true || bt["open_questions"].(float64) != 1 {
+	if bt["status"] != "working" || bt["open_questions"].(float64) != 1 {
 		t.Fatalf("task = %v", bt)
 	}
-	// Answering: the answer carries the question's task, and the question leaves the Board.
+	// Answering: the answer carries the question's task, and the task has no open question left.
 	code, ans, _ := e.do("POST", "/api/v3/sessions/"+sess.ID+"/messages", map[string]any{"answers_for": q["message_id"], "answers": []any{map[string]any{"key": q["questions"].([]any)[0].(map[string]any)["key"], "selected": []string{"Tokyo"}}}}, nil)
 	if code != 201 {
 		t.Fatalf("answer: %d %v", code, ans)
@@ -197,9 +197,8 @@ func TestV3QuestionsOnBoardAndAnswerTags(t *testing.T) {
 	if got := tagIDs(t, e, ans["id"].(string)); len(got) != 1 || got[0] != tk["task_id"] {
 		t.Fatalf("answer tags = %v", got)
 	}
-	_, board, _ = e.do("GET", "/api/v3/board", nil, nil)
-	if len(board["questions"].([]any)) != 0 {
-		t.Fatalf("still open: %v", board["questions"])
+	if bt := boardTaskOf(t, e, tk["task_id"]); bt["open_questions"].(float64) != 0 {
+		t.Fatalf("still open: %v", bt)
 	}
 }
 

@@ -58,6 +58,8 @@ type Segment struct {
 // BoardTask is a task (or goal) with what the Board shows about it.
 type BoardTask struct {
 	store.Task
+	// OpenQuestions: the open questions in its messages (the "? n" mark). They never put it in NEEDS
+	// YOU: only its status (needs_you) does.
 	OpenQuestions int       `json:"open_questions"`
 	Unread        int       `json:"unread"`
 	MessageCount  int       `json:"message_count"`
@@ -65,8 +67,6 @@ type BoardTask struct {
 	// LastAgent: the session of the newest tagged agent message (else the first assigned agent):
 	// where a reply from the task goes by default.
 	LastAgent string `json:"last_agent"`
-	// NeedsYou: set to needs_you, or a tagged question is open.
-	NeedsYou bool `json:"needs_you"`
 	// Goals: how many of its criteria are met; its tasks.
 	CriteriaDone int      `json:"criteria_done"`
 	TaskIDs      []string `json:"task_ids,omitempty"`
@@ -252,12 +252,13 @@ func (v *v3View) boardTask(t store.Task, tasks []store.Task) BoardTask {
 			b.TaskIDs = append(b.TaskIDs, x.ID)
 		}
 	}
-	b.NeedsYou = t.Status != store.TaskDone && (t.Status == store.TaskNeedsYou || b.OpenQuestions > 0)
 	return b
 }
 
-// GET /api/v3/board?project=<id>: the Board: open questions (oldest first), tasks and goals with
-// their derived fields (open ones, then the done ones of the last week), and per-agent counts.
+// GET /api/v3/board?project=<id>: the Board: tasks and goals with their derived fields (open ones,
+// then the done ones of the last week), and per-agent counts: unread agent messages, and needs_you, the
+// open tasks set to needs_you whose replies go to the agent (last_agent). NEEDS YOU is the tasks whose
+// status is needs_you; an open question alone never puts anything there.
 func (s *Server) v3Board(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	project := r.URL.Query().Get("project")
@@ -276,31 +277,34 @@ func (s *Server) v3Board(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	out := make([]BoardTask, 0, len(tasks))
-	for _, t := range tasks {
-		out = append(out, v.boardTask(t, tasks))
-	}
-	questions := []V3Message{}
 	type agentCount struct {
-		Unread        int `json:"unread"`
-		OpenQuestions int `json:"open_questions"`
+		Unread   int `json:"unread"`
+		NeedsYou int `json:"needs_you"`
 	}
 	agents := map[string]*agentCount{}
-	for _, m := range v.msgs {
-		a := agents[m.SessionID]
+	agent := func(id string) *agentCount {
+		a := agents[id]
 		if a == nil {
 			a = &agentCount{}
-			agents[m.SessionID] = a
+			agents[id] = a
 		}
+		return a
+	}
+	out := make([]BoardTask, 0, len(tasks))
+	for _, t := range tasks {
+		b := v.boardTask(t, tasks)
+		if b.Status == store.TaskNeedsYou && b.LastAgent != "" {
+			agent(b.LastAgent).NeedsYou++
+		}
+		out = append(out, b)
+	}
+	for _, m := range v.msgs {
+		a := agent(m.SessionID)
 		if m.Author == store.AuthorAgent && m.ReadAt == nil {
 			a.Unread++
 		}
-		if m.Open > 0 {
-			a.OpenQuestions += m.Open
-			questions = append(questions, m)
-		}
 	}
-	writeJSON(w, 200, map[string]any{"tasks": out, "questions": questions, "agents": agents})
+	writeJSON(w, 200, map[string]any{"tasks": out, "agents": agents})
 }
 
 // GET /api/v3/tasks/{id}: a task (or goal) with its tagged messages from every stream (oldest first),

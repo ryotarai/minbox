@@ -1,6 +1,6 @@
 {
   "protocol": 1,
-  "version": "3f375a31a48f",
+  "version": "39a2b3fba019",
   "tools": [
     {
       "name": "send_message",
@@ -232,7 +232,7 @@
             "type": "array"
           },
           "status": {
-            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
+            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take), also while a question you asked waits on their answer (an open question alone does not put the task in NEEDS YOU). blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
             "enum": [
               "working",
               "needs_you",
@@ -353,7 +353,7 @@
             "type": "string"
           },
           "status": {
-            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
+            "description": "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take), also while a question you asked waits on their answer (an open question alone does not put the task in NEEDS YOU). blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped.",
             "enum": [
               "working",
               "needs_you",

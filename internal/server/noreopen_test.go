@@ -79,8 +79,8 @@ func TestPersonMessageKeepsDoneTaskDone(t *testing.T) {
 	}
 }
 
-// An agent question on a done task: the task stays done (not needs you on its card), the question
-// still shows in the Board's NEEDS YOU, and answering it does not reopen the task.
+// An agent question on a done task: the task stays done (its status decides; the open question counts
+// on it), and answering it does not reopen the task.
 func TestQuestionOnDoneTaskStaysDone(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -100,12 +100,8 @@ func TestQuestionOnDoneTaskStaysDone(t *testing.T) {
 			card = x
 		}
 	}
-	if card == nil || card["status"] != "done" || card["needs_you"] == true {
+	if card == nil || card["status"] != "done" || card["open_questions"].(float64) != 1 {
 		t.Fatalf("card = %v", card)
-	}
-	qs := board["questions"].([]any)
-	if len(qs) != 1 || qs[0].(map[string]any)["id"] != msg {
-		t.Fatalf("questions = %v", qs)
 	}
 
 	if code, _, _ := e.do("POST", "/api/threads/"+thread+"/reply", map[string]any{"words": "", "answers_for": msg,
