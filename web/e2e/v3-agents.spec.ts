@@ -149,7 +149,7 @@ test('all projects: the agents are grouped under their project; one project show
   await expect(page.getByTestId('new-session-project-name')).toHaveText('web')
 })
 
-test('New agent: the full dialog (folder, name) from the sidebar starts an agent and opens its terminal', async ({ page, minbox }) => {
+test('New agent: the full dialog (folder, name) from the sidebar starts an agent and opens its stream, the terminal hidden', async ({ page, minbox }) => {
   await page.goto(minbox.url)
   // No project and no agent yet: the empty list offers the dialog (a folder).
   await page.getByTestId('first-agent').click()
@@ -161,8 +161,12 @@ test('New agent: the full dialog (folder, name) from the sidebar starts an agent
   await page.getByTestId('new-session-start').click()
   await expect(page.getByTestId('stream-view')).toBeVisible()
   await expect(page.getByTestId('agent-name')).toContainText('fresh')
-  await expect(page.getByTestId('terminal-toggle')).toHaveAttribute('aria-pressed', 'true')
+  // The terminal is hidden by default; the header's toggle shows it.
+  await expect(page.getByTestId('terminal-toggle')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('terminal')).toHaveCount(0)
+  await expect(page).not.toHaveURL(/tab=terminal/)
   await expectTerminal(page, 'ready>')
+  await expect(page.getByTestId('terminal-toggle')).toHaveAttribute('aria-pressed', 'true')
 
   // From the New message dialog's New agent… choice too.
   await page.keyboard.press('Escape')

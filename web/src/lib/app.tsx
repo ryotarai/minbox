@@ -230,6 +230,8 @@ export type Overlay =
   | { kind: 'drafts' }
   | { kind: 'new-session'; projectId?: string }
   | { kind: 'new-project' }
+  /** The first-run introduction (v3/Onboarding.tsx): its steps. */
+  | { kind: 'onboarding' }
   | { kind: 'edit-project'; project: Project }
   | { kind: 'delete-project'; project: Project }
   | { kind: 'project-icon'; project: Project }

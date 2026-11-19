@@ -435,8 +435,11 @@ func defaultSettings() map[string]any {
 	return map[string]any{
 		"theme": "system", "text_size": 13, "notifications": true, "sound": true, "tab_count": true, "single_key": true,
 		"decision_mode": false, "prompt_extra": "", "orchestrator_prompt": true, "claude_trust_folders": true, "reply_suggestions": true, "public_url": "", "default_agent": "",
-		"linear": defaultLinearSettings(),
-		"list":   map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
+		// The first-run introduction (web/src/v3/Onboarding.tsx) was finished or skipped: false on a
+		// fresh data dir, so it shows on any browser until it is done once.
+		"onboarded": false,
+		"linear":    defaultLinearSettings(),
+		"list":      map[string]any{"highlight_subject": true, "compact": false, "hide_icons": false, "small_names": false, "keep_panel": false},
 	}
 }
 
@@ -486,6 +489,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			var a string
 			if json.Unmarshal(v, &a) != nil || (a != "" && !agent.Valid(a)) {
 				httpError(w, 400, "default_agent must be empty, claude or pi")
+				return
+			}
+		}
+		if k == "onboarded" {
+			var b bool
+			if json.Unmarshal(v, &b) != nil {
+				httpError(w, 400, "onboarded must be true or false")
 				return
 			}
 		}

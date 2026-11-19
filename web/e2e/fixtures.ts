@@ -178,6 +178,12 @@ export class Minbox {
   /** Pair the tests' browser before the server starts (off: a first run, nothing paired). */
   pairBrowser = true
   /**
+   * The first-run introduction counts as done (Settings `onboarded`), so a spec on a fresh server sees
+   * the app, not the introduction over it. Off (onboarding.spec.ts): a first run as a person sees it.
+   */
+  onboarded = true
+  private markedOnboarded = false
+  /**
    * The test's browser: it gets the cookie each start signs in, so its first page load is already
    * signed in (as a returning browser's is). Without it the app signs in by itself with the key.
    */
@@ -234,6 +240,11 @@ export class Minbox {
             cookies.set(new URL(this.url).origin, cookie)
             const [name, value] = cookie.split('=')
             await this.browserContext?.addCookies([{ name, value, url: this.url, httpOnly: true, sameSite: 'Strict' }])
+            if (this.onboarded && !this.markedOnboarded) {
+              this.markedOnboarded = true
+              const r = await fetch(this.url + '/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ onboarded: true }) })
+              if (!r.ok) throw new Error('e2e: could not mark the introduction done: ' + r.status)
+            }
           }
           return
         }
@@ -301,7 +312,7 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox; freshMinbox: Minbox }>({
   // The test's own browser is this machine's paired browser (contexts made with browser.newContext() are not).
   context: async ({ context }, use) => {
     await trustBrowser(context)
@@ -371,6 +382,17 @@ export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: 
   piMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), `python3 ${FAKE_PI}`)
+    m.browserContext = context
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
+  // A first run as a person sees it: the introduction not done yet (see Minbox.onboarded).
+  freshMinbox: async ({ context }, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort())
+    m.onboarded = false
     m.browserContext = context
     await m.start()
     await use(m)

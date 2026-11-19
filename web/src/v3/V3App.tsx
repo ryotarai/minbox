@@ -26,6 +26,7 @@ import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
 import { AllTasksPane, TasksPane, agentTasks } from './AgentTasks'
 import { AllAgentsView } from './AllAgents'
+import { useOpenOnboarding } from './Onboarding'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, SendKey, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
@@ -702,12 +703,17 @@ function AgentsList({ agents, shells, counts, tasks, onNewAgent, onRename }: { a
 
 /** No agents: a project's ＋ starts one; with no project at all yet, the New agent dialog (a folder) from here. */
 function NoAgents({ noProjects, onNewAgent }: { noProjects: boolean; onNewAgent: (projectId?: string) => void }) {
+  const openOnboarding = useOpenOnboarding()
   if (!noProjects) return <div className="v-empty">No agents yet. Start one with the ＋ beside its project.</div>
   return (
     <div className="v-empty">
       No agents yet.{' '}
       <button type="button" className="v-link" data-testid="first-agent" onClick={() => onNewAgent()}>
         Start one in a folder…
+      </button>
+      {' · '}
+      <button type="button" className="v-link" data-testid="no-agents-introduction" onClick={openOnboarding}>
+        Show the introduction
       </button>
     </div>
   )
@@ -854,6 +860,7 @@ async function waitSession(threadId: string): Promise<string | undefined> {
 }
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
+  const openOnboarding = useOpenOnboarding()
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', on)
@@ -899,6 +906,13 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
           </tbody>
         </table>
         <p className="v-help-note">New agent: the ＋ beside a project&apos;s name in the agent list (or {mod}K › New agent).</p>
+        <p className="v-help-note">
+          New to minbox?{' '}
+          <button type="button" className="v-link" data-testid="help-introduction" onClick={openOnboarding}>
+            Show the introduction
+          </button>{' '}
+          (projects, agents and tasks, step by step).
+        </p>
       </div>
     </div>
   )
