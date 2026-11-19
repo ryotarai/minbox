@@ -115,19 +115,42 @@ server cannot be reached, so they cannot come from it).
 ## Changing tools at runtime: what each host allows
 
 When a heartbeat answers a `tools_version` other than the one registered, the integration fetches
-`GET /api/agent/tools` again and registers the set again. What the hosts allow:
+`GET /api/agent/tools` again and registers the set again (the Claude Code mod: what is new or
+changed). What the hosts allow:
 
 - **Claude Code** (mod API, checked against the types of Claude Code 2.1.3xx,
   `claude-code.d.ts`): `$.tool.register(spec)` "declares a tool the model can call from the next prompt
   on … a name registered again is replaced. Rejects until the session binds, at `session.start`." So
-  new tools and new descriptions or schemas can be registered at any time after `session.start`. Limits:
-  there is no way to remove a tool (a tool the server dropped stays listed and the server answers
-  `minbox: unknown tool`); a changed description of a tool the conversation already sent may only reach
-  the model with a new conversation or a compaction (the `tool.describe` docs: "a changed answer for a
-  tool a thread has sent waits for a new thread or a compaction, unless it carries `breakPromptCache:
-  true`"). Calls are served by one `tool.call` hook without a matcher, which answers the tools the
-  server named (by the full names `register` returned) and passes the rest on, so a new tool needs no
-  new hook.
+  new tools and new descriptions or schemas can be registered at any time after `session.start`, and a
+  new tool is listed from the next prompt on. Calls are served by one `tool.call` hook without a
+  matcher, which answers the tools the server named (by the full names `register` returned) and passes
+  the rest on, so a new tool needs no new hook. There is no way to remove a tool (a tool the server
+  dropped stays listed and the server answers `minbox: unknown tool`).
+
+  What a conversation already sent stays as sent ("What a thread has sent is fixed" in the
+  plugin-authoring reference): `breakPromptCache` exists only on a `tool.describe` (and
+  `prompt.section`) answer, not on `$.tool.register`. Read from Claude Code 2.1.328 itself, a tool in
+  the prompt's list (`deferred: false`) that a conversation has sent is sent again with:
+  - its **description** as recorded, unless the `tool.describe` hook *rewrote* it (its answer differs
+    from the registered description) and said `breakPromptCache: true`: then the hook's text goes out
+    next turn, after `$.ui.invalidate("tool.describe")`. A re-registered description alone, passed
+    through by the hook, waits for a new conversation or a compaction;
+  - its **input schema** as recorded, whatever the flag (no mod call changes it);
+
+  a tool behind ToolSearch (`deferred: true`) is built from the current registration on every request,
+  so its new description and schema reach the model without anything more.
+
+  So the mod keeps each tool's first registered description in the process as the registered text
+  and, on a refresh, registers only the tools that are new or changed (description, schema or
+  placement). A tool whose description now differs from that first text is answered by the mod's
+  `tool.describe` hook with the current text and `breakPromptCache: true`; when a refresh changed a
+  description of a tool the session already had, the mod calls `$.ui.invalidate("tool.describe")`.
+  Claude Code rewrites a conversation's tool block, and drops its prompt cache, only where the answer
+  differs from what that conversation sent, so the cost is paid once per real change. Nothing is
+  flagged at `session.start` (a start registers the whole set afresh). A change of schema alone to a
+  listed tool cannot be sent to a conversation that has the tool: the model sees it after a new
+  conversation or a compaction, so a new parameter should come with a description that says what it
+  does.
 - **Pi** (1.4, `docs/extensions.md` of `@earendil-works/pi-coding-agent`): `pi.registerTool` works after
   startup (the `dynamic-tools.ts` example registers from `session_start` and from a command); registering
   a name again replaces it; "tools cannot be unregistered", but "re-register a tool with `exposure:

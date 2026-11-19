@@ -7,8 +7,9 @@
  * The mod holds no wording and makes no decisions about what the agent reads: the server does.
  * - Tools: the tool set (names, descriptions, schemas, deferred or not) comes from GET
  *   /api/agent/tools and is registered as given; every call goes to POST /api/agent/tool, whose text
- *   is the result (or the refusal). A heartbeat answer naming another tools_version re-registers the
- *   set (`$.tool.register` replaces a name registered again).
+ *   is the result (or the refusal). A heartbeat answer naming another tools_version fetches the set
+ *   again and registers what is new or changed (`$.tool.register` replaces a name registered again);
+ *   a changed description goes out through the tool.describe hook with breakPromptCache.
  * - Guards: the server's guards refuse host tool calls (a Bash command that would open a page on the
  *   host) with the server's text.
  * - Delivery: long-polls GET /api/agent/pending?proto=1. Once Claude has been idle for two ticks each
@@ -25,7 +26,7 @@
  * Anywhere else (no MINBOX_TOKEN, a -p run) every hook passes through.
  */
 import type { Register } from 'claude-code'
-import { argsOf, guardDeny, manifestOf, pendingOf, PROTOCOL, serverUrlOf, type Manifest, type PendingItem } from './proxy'
+import { argsOf, guardDeny, manifestOf, pendingOf, PROTOCOL, serverUrlOf, type Manifest, type PendingItem, type ToolDef } from './proxy'
 
 const TICK_MS = 1000
 /** The mod's version, reported in every heartbeat (keep in step with .claude-plugin/plugin.json). */
@@ -76,6 +77,17 @@ let helloing: Promise<void> | null = null
 let manifest: Manifest | null = null
 let registering: Promise<void> | null = null
 const toolNames = new Map<string, string>()
+/**
+ * Each tool's description as first registered in this process: the baseline every later
+ * registration keeps, so that a changed description is the `tool.describe` hook's own answer.
+ * Claude Code sends a changed description to a conversation that already sent the tool only when a
+ * hook rewrote it and said `breakPromptCache: true` (docs/mod-protocol.md).
+ */
+const baseDescriptions = new Map<string, string>()
+/** Each tool's definition as last registered (toolKey), by its short name. */
+const registeredKeys = new Map<string, string>()
+/** Full names of tools whose current description differs from the baseline, with that description. */
+const redescribed = new Map<string, string>()
 /** The mod's recent events (see ModEvent); a tail goes with each heartbeat. */
 let events: ModEvent[] = []
 let heartbeatTimer: { cancel(): void } | null = null
@@ -209,6 +221,11 @@ async function apiOnce($: any, method: string, path: string, body?: unknown): Pr
 
 const failText = (res: ApiResult) => `minbox: ${res.json?.error ?? `HTTP ${res.status}`}`
 
+/** What a refresh compares: a tool's description, schema and placement. */
+function toolKey(t: ToolDef): string {
+  return JSON.stringify([t.description, t.input_schema ?? null, t.deferred === true])
+}
+
 /** Fetches the server's tool set and registers it (again, when it changed). */
 function refreshTools($: any): Promise<void> {
   if (registering) return registering
@@ -219,16 +236,35 @@ function refreshTools($: any): Promise<void> {
       note($, 'tools-failed', `the tool set could not be fetched (${res.status === 0 ? 'not reachable' : 'HTTP ' + res.status}); retried`)
       return
     }
+    // A refresh registers only what is new or changed; the first fetch registers everything.
+    const changed: string[] = []
     for (const t of m.tools) {
+      const key = toolKey(t)
+      const old = registeredKeys.get(t.name)
+      if (old === key) continue
+      const base = baseDescriptions.get(t.name) ?? t.description
       try {
-        const r = await $.tool.register({ name: t.name, description: t.description, inputSchema: t.input_schema, isDeferred: t.deferred === true })
-        toolNames.set(r?.tool ?? `mcp__minbox__${t.name}`, t.name)
+        const r = await $.tool.register({ name: t.name, description: base, inputSchema: t.input_schema, isDeferred: t.deferred === true })
+        const full = r?.tool ?? `mcp__minbox__${t.name}`
+        toolNames.set(full, t.name)
+        baseDescriptions.set(t.name, base)
+        registeredKeys.set(t.name, key)
+        if (t.description !== base) redescribed.set(full, t.description)
+        else redescribed.delete(full)
+        // Only a description can be sent again: a conversation keeps the schema it was sent.
+        if (old !== undefined && JSON.parse(old)[0] !== t.description) changed.push(t.name)
       } catch (err) {
         note($, 'tool-register-failed', `${t.name}: ${String(err).slice(0, 120)}`)
       }
     }
     if (manifest && manifest.version !== m.version) note($, 'tools-updated', `tool set ${manifest.version} -> ${m.version}`)
     manifest = m
+    // A tool the session already had has a new description: ask Claude Code for the descriptions again, so the
+    // tool.describe hook's answer (with breakPromptCache) reaches a conversation that sent the old one.
+    if (changed.length > 0) {
+      note($, 'tools-redescribed', `changed description(s) sent again: ${changed.join(',')}`)
+      $.ui.invalidate('tool.describe')
+    }
   })().finally(() => {
     registering = null
   })
@@ -400,6 +436,10 @@ export const register: Register = (on) => {
     if (!token || !serverFile || !e.isInteractive) return next(e)
     conn = { token, serverFile, owner: randomId() }
     note($, 'session-start', `mod ${MOD_VERSION} (protocol ${PROTOCOL}) started; owner ${conn.owner.slice(0, 4)}…`)
+    // A session start registers the whole set as served: nothing is sent again over a cache.
+    registeredKeys.clear()
+    baseDescriptions.clear()
+    redescribed.clear()
     await refreshTools($)
 
     timer?.cancel()
@@ -476,6 +516,15 @@ export const register: Register = (on) => {
     const added: string[] = r.ok && Array.isArray(r.json?.context) ? r.json.context.filter((c: unknown) => typeof c === 'string' && c) : []
     if (added.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...added] })
+  })
+
+  // A server tool whose description changed after it was first registered: the new text is this
+  // hook's answer, with breakPromptCache so a conversation that already sent the tool gets it next
+  // turn. Claude Code breaks the cache only where the answer differs from what the conversation sent.
+  on('tool.describe', async ($, e, next) => {
+    const description = redescribed.get(e.tool)
+    if (description === undefined) return next(e)
+    return { ...(await next(e)), description, breakPromptCache: true }
   })
 
   // Every tool call: the server's tools are answered by the server; the host's own pass its guards.

@@ -32,6 +32,8 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
   const delivered = new Set<string>()
   const claimed = new Set<string>()
   const registered: Record<string, any> = {}
+  const registrations: string[] = []
+  const invalidated: string[] = []
   on('fs.read', (_: any, e: any) => ({ value: e.path === SERVER_FILE ? JSON.stringify({ url: 'http://127.0.0.1:4848' }) : null }))
   on('session.id', () => ({ value: opts.id?.current ?? 'claude-1' }))
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
@@ -39,8 +41,14 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
   on('turn.complete', (_: any, e: any) => ({ text: e.answer ?? '' }))
   on('tool.register', (_: any, e: any) => {
     registered[e.name] = e
+    registrations.push(e.name)
     return { value: { tool: `mcp__minbox__${e.name}` } }
   })
+  on('ui.invalidate', (_: any, e: any) => {
+    invalidated.push(e.event)
+    return { value: undefined }
+  })
+  on('tool.describe', (_: any, e: any) => ({ description: e.description }))
   on('http.fetch', (_: any, e: any) => {
     const url = new URL(e.url)
     const body = e.init?.body ? JSON.parse(e.init.body) : undefined
@@ -78,7 +86,7 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
     return { text: e.text, context: e.context }
   })
   const events = () => calls.filter((c) => c.path === '/api/agent/event').map((c) => c.body)
-  return { calls, submitted, delivered, registered, events, releaseAll: () => claimed.clear() }
+  return { calls, submitted, delivered, registered, registrations, invalidated, events, releaseAll: () => claimed.clear() }
 }
 
 const REPLY: Item = { id: 'msg_r1', text: 'SERVER WAKE TEXT 1' }
@@ -141,6 +149,93 @@ test("a new tools_version in the heartbeat's answer registers the tool set again
   await clock.advance(15000)
   expect(server.calls.filter((c) => c.path === '/api/agent/tools').length).toBe(2) // not again for the same version
   expect(beat.body.protocol).toBe(1)
+})
+
+/** Raises tool.describe for a minbox tool as Claude Code does, with the description it registered. */
+const describe = ($: any, server: { registered: Record<string, any> }, name: string) =>
+  $.tool.describe({ tool: `mcp__minbox__${name}`, description: server.registered[name].description, provider: { plugin: 'minbox', tier: 'user' } })
+
+/** Starts a session, then serves the tool set `next` under v2 and lets the heartbeat fetch it. */
+async function refreshTo($: any, on: any, next: any) {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { toolsVersion: { current: 'v1' } }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  await clock.advance(1000)
+  const atStart = server.registrations.length
+  opts.manifest = next
+  opts.toolsVersion.current = 'v2'
+  await clock.advance(15000)
+  expect(server.calls.filter((c) => c.path === '/api/agent/tools').length).toBe(2)
+  return { server, again: server.registrations.slice(atStart) }
+}
+
+test('at session start no tool breaks the prompt cache and nothing is described again', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await start($)
+  expect(server.registrations).toEqual(['send_message', 'list_threads'])
+  expect(server.invalidated).toEqual([])
+  for (const name of ['send_message', 'list_threads']) {
+    const res: any = await describe($, server, name)
+    expect(res.breakPromptCache).toBeUndefined()
+    expect(res.description).toBe(server.registered[name].description)
+  }
+})
+
+test('a refresh with one changed tool registers only that one and sends its new description over the cache', async ($, on) => {
+  const next = manifest('v2')
+  next.tools[0] = { ...next.tools[0]!, description: 'SEND-DESC-2', input_schema: { type: 'object', properties: { body: { type: 'string' }, commands: { type: 'array' } } } }
+  const { server, again } = await refreshTo($, on, next)
+  expect(again).toEqual(['send_message'])
+  // The new schema is registered; the registered description stays the first one, so the new
+  // text is the describe hook's own answer, which Claude Code sends over what a conversation sent.
+  expect(server.registered.send_message.inputSchema.properties.commands).toEqual({ type: 'array' })
+  expect(server.registered.send_message.description).toBe('SEND-DESC')
+  expect(server.invalidated).toEqual(['tool.describe'])
+  const changed: any = await describe($, server, 'send_message')
+  expect(changed).toEqual({ description: 'SEND-DESC-2', breakPromptCache: true })
+  const same: any = await describe($, server, 'list_threads')
+  expect(same.breakPromptCache).toBeUndefined()
+  expect(same.description).toBe('NAV-DESC')
+})
+
+test('a refresh to the same definitions under a new version registers nothing and breaks nothing', async ($, on) => {
+  const { server, again } = await refreshTo($, on, manifest('v2'))
+  expect(again).toEqual([])
+  expect(server.invalidated).toEqual([])
+  for (const name of ['send_message', 'list_threads']) expect(((await describe($, server, name)) as any).breakPromptCache).toBeUndefined()
+})
+
+test('a changed schema alone is registered but asks for no description again', async ($, on) => {
+  const next = manifest('v2')
+  next.tools[1] = { ...next.tools[1]!, input_schema: { type: 'object', properties: { q: { type: 'string' } } } }
+  const { server, again } = await refreshTo($, on, next)
+  expect(again).toEqual(['list_threads'])
+  expect(server.invalidated).toEqual([])
+  expect(((await describe($, server, 'list_threads')) as any).breakPromptCache).toBeUndefined()
+})
+
+test('a description changed back to the first one is answered plainly again', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { toolsVersion: { current: 'v1' } }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  const v2 = manifest('v2')
+  v2.tools[0] = { ...v2.tools[0]!, description: 'SEND-DESC-2' }
+  opts.manifest = v2
+  opts.toolsVersion.current = 'v2'
+  await clock.advance(15000)
+  expect(((await describe($, server, 'send_message')) as any).breakPromptCache).toBe(true)
+  opts.manifest = manifest('v3')
+  opts.toolsVersion.current = 'v3'
+  await clock.advance(15000)
+  const res: any = await describe($, server, 'send_message')
+  expect(res.description).toBe('SEND-DESC')
+  expect(res.breakPromptCache).toBeUndefined()
 })
 
 test("the server's text is delivered once Claude is idle, then acknowledged", async ($, on) => {
