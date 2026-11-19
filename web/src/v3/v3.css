@@ -427,7 +427,9 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-column .v-composer { margin: 0 10px 10px; }
 .v-colsub { margin-top: 4px; font-size: 12px; color: var(--mb-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The task shown in the agent's page (picked by its title in the Tasks pane). */
-.v-mt.sel { background: var(--mb-rowsel); box-shadow: inset 2px 0 0 var(--mb-accent); padding-left: 7px; padding-right: 4px; border-radius: 0 6px 6px 0; }
+/* Its highlight bleeds into the list's side padding (negative margins, the same padding back, a wider
+   box), so selecting a row never moves its title, badge or progress. */
+.v-mt.sel { background: var(--mb-rowsel); box-shadow: inset 2px 0 0 var(--mb-accent); margin-left: -7px; margin-right: -4px; width: calc(100% + 11px); padding-left: 7px; padding-right: 4px; border-radius: 0 6px 6px 0; }
 .v-goal { margin-right: 4px; }
 .v-ev-ic { display: inline-flex; align-items: center; gap: 3px; }
 /* The task picked in the agent's page: a card with its checklist beside the title, status and agents
