@@ -34,8 +34,8 @@ type Unplaced struct {
 // own requests to place them, and not the person's messages still on their way (provisional).
 func (s *Store) UnplacedMessages(ctx context.Context, sessionID string) ([]Unplaced, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.author, m.kind, m.body, m.words, m.created_at FROM messages m JOIN threads t ON t.id=m.thread_id
-	  WHERE t.session_id=? AND m.kind!=? AND NOT (m.author='user' AND m.delivered_at IS NULL)
-	  AND NOT EXISTS(SELECT 1 FROM message_tasks mt WHERE mt.message_id=m.id) ORDER BY m.created_at, m.rowid`, sessionID, KindPlace)
+	  WHERE t.session_id=? AND m.kind NOT IN (?,?) AND NOT (m.author='user' AND m.delivered_at IS NULL)
+	  AND NOT EXISTS(SELECT 1 FROM message_tasks mt WHERE mt.message_id=m.id) ORDER BY m.created_at, m.rowid`, sessionID, KindPlace, KindRunResult)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +349,7 @@ func placeAll(ctx context.Context, tx *sql.Tx) error {
 func firstWords(msgs []*v3Msg, thread string) string {
 	first := ""
 	for _, m := range msgs {
-		if thread != "" && m.thread != thread || m.kind == KindCommand || m.kind == KindPlace {
+		if thread != "" && m.thread != thread || m.kind == KindCommand || m.kind == KindPlace || m.kind == KindRunResult {
 			continue
 		}
 		text := m.body

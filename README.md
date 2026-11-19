@@ -167,10 +167,12 @@ binary; the agents resume (or, if you untick that, end).
   recommended**, **Skip** or **Ignore**. The answer is about the question's task, and the agent gets it under
   "## Answers to your questions". Agents also send `:::actions` checklists for things only you can do.
 - **Help me reply** (on by default): when the agent's message is the last one, a helper model drafts a few questions
-  with options that help you decide your reply; what you pick is added to your message as `Q: … → A: …` lines. When
-  the agent's shell command was denied, a **Run yourself** chip offers `!<command>`.
+  with options that help you decide your reply; what you pick is added to your message as `Q: … → A: …` lines.
 - **Commands**: a message that starts with `!` runs as a shell command in the agent's folder (60 s limit); the result
   shows in the stream and goes to the agent at once. See [docs/thread-commands.md](docs/thread-commands.md).
+- **Commands the agent asks to run**: an agent can send shell commands with its message; each shows with **Allow** and
+  **Deny** (and **Allow all** / **Deny all**). Allowed ones run on the agent's host, the card shows the exit code and the
+  output, and the results go back to the agent. See [docs/agent-commands.md](docs/agent-commands.md).
 - **Attachments**: paste (`⌘V`), drop, or the attach button (on a phone, photo or file). Type `@` for a popup of the
   agent's files and folders. The draw button opens a sketcher (shapes, arrows, text, pen; **Done** attaches a PNG),
   and the pencil on an attached image draws on top of it.

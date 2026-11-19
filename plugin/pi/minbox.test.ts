@@ -220,25 +220,12 @@ test('a heartbeat carries state, protocol and its own events; a new tools_versio
   t.ext!.stop()
 })
 
-test('bash outcomes go to the server: a block with its reason, a run without its output', async () => {
+test('bash calls are not reported to the server', async () => {
   const t = setup()
   await t.handlers.get('session_start')!({ reason: 'startup' }, t.ctx(() => true))
-  const start = t.handlers.get('tool_execution_start')!
-  const end = t.handlers.get('tool_execution_end')!
-  const text = (s: string) => ({ content: [{ type: 'text', text: s }] })
-  await start({ toolCallId: 'c1', toolName: 'bash', args: { command: ' npm publish ' } })
-  await end({ toolCallId: 'c1', toolName: 'bash', isError: true, result: text('Blocked by permission-gate') })
-  await start({ toolCallId: 'c2', toolName: 'bash', args: { command: 'false' } })
-  await end({ toolCallId: 'c2', toolName: 'bash', isError: true, durationMs: 3, result: text('secret output') })
-  // The extension's own refusal is not reported.
-  await t.handlers.get('tool_call')!({ toolCallId: 'c3', toolName: 'bash', input: { command: 'open https://example.com' } })
-  await start({ toolCallId: 'c3', toolName: 'bash', args: { command: 'open https://example.com' } })
-  await end({ toolCallId: 'c3', toolName: 'bash', isError: true, result: text('refused') })
+  await t.handlers.get('tool_execution_start')!({ toolCallId: 'c1', toolName: 'bash', args: { command: 'npm publish' } })
+  assert.equal(t.handlers.get('tool_execution_end'), undefined)
   await settle()
-  const bash = t.events().filter((e) => e.type === 'bash')
-  assert.deepEqual(bash, [
-    { type: 'bash', phase: 'end', id: 'c1', command: ' npm publish ', is_error: true, ran: false, text: 'Blocked by permission-gate' },
-    { type: 'bash', phase: 'end', id: 'c2', command: 'false', is_error: true, ran: true },
-  ])
+  assert.deepEqual(t.events().filter((e) => e.type === 'bash'), [])
   t.ext!.stop()
 })

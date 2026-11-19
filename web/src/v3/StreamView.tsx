@@ -206,7 +206,7 @@ export function StreamView({
       .then(() => toast('Archived this conversation', { action: 'Undo', undo: true, onAction: () => api.unarchiveThread(thread.id).catch(error) }))
       .catch(error)
   }
-  const lastUser = [...msgs].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
+  const lastUser = [...msgs].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command' && m.kind !== 'run_result')
   const openQs = (s?.messages ?? []).reduce((n, m) => n + m.open, 0)
   // The Linear issue's comments and changes between the messages (by time).
   const linearEv = groupLinearEvents(shown, thread?.linear_events)
@@ -379,7 +379,7 @@ export function StreamView({
                   }
                   // A message in the same task as the one before dims its badge; a message in no task ends the
                   // run (commands and minbox's own notes, such as asking the agent to place messages, do not).
-                  const note = m.kind === 'command' || m.kind === ('place' as string) || m.kind === ('continue' as string)
+                  const note = m.kind === 'command' || m.kind === 'run_result' || m.kind === ('place' as string) || m.kind === ('continue' as string)
                   const mt = note ? undefined : msgTask(m)
                   const repeat = !!mt && mt.task_id === run
                   if (!note) run = mt?.task_id ?? ''

@@ -43,7 +43,7 @@ func TestBuildSuggestPrompt(t *testing.T) {
 			t.Errorf("prompt lacks %q", want)
 		}
 	}
-	// Commands to run come only from reported denials (denied.go), never from the helper.
+	// The helper is never asked for commands to run.
 	if strings.Contains(p, "command") || strings.Contains(suggestSchema, "command") {
 		t.Error("the helper is asked for a command")
 	}

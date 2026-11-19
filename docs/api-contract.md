@@ -252,31 +252,21 @@ help them decide how to reply; the person's answers are put into their reply whe
 with `ReplyQuestion = {question: string, kind: "single"|"multi", options: {label: string, description?: string}[0..5]}`.
 Every question also takes a free-text "Other" answer in the UI; `options: []` means free text only (the helper is told to
 use that only when no sensible options exist). Always 200 for generation problems (error = short reason, questions empty);
-404 for an unknown thread. No questions and no command is a valid (cached) answer: nothing to ask. `command` rides
-every answer (also `disabled`, `not_needed`, `no_agent` and errors) and is not cached.
+404 for an unknown thread. No questions is a valid (cached) answer: nothing to ask.
 
 - `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent
-  (minbox's own requests to the agent, kinds `place` and `continue`, are left out: the agent's message before them counts).
+  (minbox's own messages to the agent, kinds `place`, `continue` and `run_result`, are left out: the agent's message before them counts).
 - v3: a stream's help is `GET /api/threads/{stream_thread_id}/suggestions`; a task's view asks
   `GET /api/v3/tasks/{id}/suggestions` (same answer): the prompt holds the task's messages (every agent's), the
-  last one decides `not_needed`, the cache key is (`task:<id>`, last message id), and `command` is the denied command
-  of the stream of the task's latest agent message.
+  last one decides `not_needed`, and the cache key is (`task:<id>`, last message id).
   `no_agent`: no coding agent (claude, pi or opencode) is installed to run the helper (feature off, not an error).
 - Otherwise the request blocks (up to 50 s) for one helper run and returns it. Results are cached in memory per
   (thread id, last message id): LRU of 200 entries, TTL 1 h. Concurrent requests for the same key share one run
   (singleflight, the run is not cancelled when a request goes away); at most 2 runs at a time; a run times out after 45 s.
   Errors are not cached. When a run finishes, SSE `{type:"suggestions", session_id, thread_id}` is published (informational).
-- `command` (denied commands, `internal/server/denied.go`): the thread's latest unresolved shell command that the agent
-  tried and was denied, as its integration reported it (`POST /api/agent/denied-commands`, see "Denied commands" under the
-  agent API), as `!<command>` (a "Thread commands" run). Only single-line commands of at most 500 characters are offered.
-  It never comes from the message text or the helper. Cleared when the person runs the same command with `!` in any thread
-  of the session, when the agent later runs it successfully (`POST /api/agent/denied-commands/ran`), or when the person
-  dismisses the reply help (`DELETE /api/threads/{id}/denied-command` → `{ok, cleared}`). Kept in memory (20 per session):
-  a server restart forgets them.
 - The UI (ThreadView, `ReplyHelp.tsx`) requests it when the agent's message is the last one, no question of the agent is
   open and the session has not ended; the result and the person's answers are kept in memory per (thread, last message).
-  Above the reply box (desktop and phone) it shows: the command as a one-tap chip (`reply-command`: sends `!<cmd>` at once;
-  the pencil `reply-command-edit` puts it in the reply box), then a collapsible, dismissible panel (`reply-qa`,
+  Above the reply box (desktop and phone) it shows a collapsible, dismissible panel (`reply-qa`,
   `reply-qa-toggle` with `aria-expanded`, the collapsed state remembered in localStorage `minbox.replyHelp.collapsed`;
   `reply-qa-dismiss` drops it and its answers for this message). Each question (`reply-q`, `data-kind`) has option chips
   (`reply-q-option`; `role=radio` in a `radiogroup` with arrow-key roving for single, `role=checkbox` for multi; a second
@@ -823,16 +813,6 @@ ecdsa-p256 SHA256:…`), `minbox pair accept|reject CODE` works for them (server
 
 ## Opening pages: `open_url`
 
-- Denied commands: `POST /api/agent/denied-commands {command, reason?, thread_id?, at?}` → `{ok, thread_id}` records a
-  shell command the agent tried and could not run because it was denied (trimmed; 400 without a command). `thread_id` is the
-  thread whose delivered message the turn answers, when the integration knows exactly one; a missing, unknown or foreign
-  thread leaves it unassigned, and the session's next agent message (`POST /api/agent/messages`) gives it its thread. The same
-  command denied again replaces the earlier entry. `POST /api/agent/denied-commands/ran {command}` → `{ok, cleared}`: the agent
-  ran a command it was denied earlier (it is no longer offered). Who reports what: the Claude Code mod (a `tool.check` deny
-  verdict for Bash, `classic.PermissionDenied`, a Bash `tool.call` result worded as a refusal such as "The user doesn't want to
-  proceed with this tool use" / "Permission to use Bash … has been denied"), Pi's extension (a `bash` call that ended in error
-  without running: another extension's `tool_call` block), OpenCode's plugin (`session.tool.failed` with
-  `error.type: "permission.rejected"` for a shell call).
 - Tool `open_url {url}` → `POST /api/agent/open {url}` (absolute http(s) URL, else 400). With no
   browser on `/api/events`: 409 (Claude gives the URL in its reply instead). Otherwise it publishes
   the event `{"type":"open","session_id","url"}` and answers `{ok, url, browsers}`.

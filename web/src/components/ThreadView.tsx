@@ -1517,16 +1517,7 @@ function ReplyBox({
     </>
   )
   const chips = wantHelp ? (
-    <ReplyHelpPanel
-      help={help}
-      threadId={thread.id}
-      phone={phone}
-      onSubmit={() => void send()}
-      onEditCommand={(text) => {
-        updateReplyDraft(thread.id, (d) => ({ ...d, words: text }))
-        replyRef.current?.focus()
-      }}
-    />
+    <ReplyHelpPanel help={help} phone={phone} onSubmit={() => void send()} />
   ) : null
   const actionsDone = (target?.questions ?? []).filter((q) => q.kind === 'action' && answers.some((a) => a.key === q.key)).length
 

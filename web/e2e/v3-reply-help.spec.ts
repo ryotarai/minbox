@@ -13,9 +13,8 @@ import { agentReply, api, say as sayTo, startAgent, taskNamed, type Agent } from
 // for me), "What should it check?" (multi: Tests / Docs / Lint), "Anything else to tell it?" (free text).
 
 /** An agent whose stream ends with its message `say` (after a first exchange, so the fake agent writes
- *  into its stream); with `denied`, its integration then reports that Bash command as denied and the
- *  agent says so in a second message. */
-async function seed(page: Page, m: Minbox, say = 'Finished the migration', denied?: string) {
+ *  into its stream). */
+async function seed(page: Page, m: Minbox, say = 'Finished the migration') {
   const a = await startAgent(m, 'sg')
   await sayTo(m, a, 'hello there')
   await agentReply(m, a, /Sure — noted/)
@@ -23,12 +22,6 @@ async function seed(page: Page, m: Minbox, say = 'Finished the migration', denie
   await expectTerminal(page, 'ready>')
   await typeInTerminal(page, `say ${say}`)
   await expectTerminal(page, /sent in thr_/)
-  if (denied) {
-    await typeInTerminal(page, `denied ${denied}`)
-    await expectTerminal(page, /denied reported thr_/)
-    await typeInTerminal(page, 'say I could not run it. Should I continue?')
-    await expectTerminal(page, /denied reported thr_[\s\S]*sent in thr_/)
-  }
   current = { m, a }
   // The help is drafted for the stream's last message: load it for that one.
   await page.reload()
@@ -330,54 +323,16 @@ test("phone: a task's view has the questions above its reply box", async ({ page
   await expect.poll(() => lastWords(minbox.url)).toBe('Q: How should it continue? (0) → A: Wait for me')
 })
 
-test('a denied command the agent reported is offered as a one-tap !command; running it clears it', async ({ page, minbox }) => {
-  await page.goto(minbox.url)
-  await seed(page, minbox, 'Trying the deploy.', 'echo hi-from-denied')
-  const chip = page.getByTestId('reply-command')
-  await expect(chip).toContainText('!echo hi-from-denied')
-  await expect(page.getByTestId('reply-q')).toHaveCount(3)
-  // The pencil puts it in the box.
-  await page.getByTestId('reply-command-edit').click()
-  await expect(page.getByTestId('composer-text')).toHaveValue('!echo hi-from-denied')
-  await page.getByTestId('composer-text').fill('')
-  // One tap runs it.
-  await chip.click()
-  const block = page.locator('[data-testid="message"][data-kind="command"]')
-  await expect(block).toHaveCount(1)
-  await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
-  // Run, it is no longer offered.
-  const sug = await (await fetch(`${minbox.url}/api/threads/${await streamThread(minbox, current!.a)}/suggestions`)).json()
-  expect(sug.command).toBeUndefined()
-})
-
-test('a message that only talks about denied commands offers no command', async ({ page, minbox }) => {
-  await page.goto(minbox.url)
-  await seed(page, minbox, 'Running `echo hi-from-denied` was denied. Please run `make lint` yourself.')
-  await expect(page.getByTestId('reply-q')).toHaveCount(3)
-  await expect(page.getByTestId('reply-command')).toHaveCount(0)
-})
-
-test('dismissing the help also drops the denied command', async ({ page, minbox }) => {
-  await page.goto(minbox.url)
-  await seed(page, minbox, 'Trying the deploy.', 'echo dismissed-one')
-  await expect(page.getByTestId('reply-command')).toContainText('!echo dismissed-one')
-  await page.getByTestId('reply-qa-dismiss').click()
-  await expect(page.getByTestId('reply-command')).toHaveCount(0)
-  const st = await streamThread(minbox, current!.a)
-  await expect.poll(async () => (await (await fetch(`${minbox.url}/api/threads/${st}/suggestions`)).json()).command).toBeUndefined()
-})
-
 test('a !command sent from the box goes alone, without the answers', async ({ page, minbox }) => {
   await page.goto(minbox.url)
-  await seed(page, minbox, 'Trying the deploy.', 'echo hi-from-denied')
+  await seed(page, minbox, 'Trying the deploy.')
   await expect(page.getByTestId('reply-q')).toHaveCount(3)
   await q(page, 0).getByRole('radio', { name: /Go ahead/ }).click()
-  await page.getByTestId('reply-command-edit').click()
-  await expect(page.getByTestId('composer-text')).toHaveValue('!echo hi-from-denied')
+  await page.getByTestId('composer-text').fill('!echo hi-from-box')
   await page.getByTestId('composer-send').click()
   const block = page.locator('[data-testid="message"][data-kind="command"]')
   await expect(block).toHaveCount(1)
-  await expect(block.getByTestId('command-output')).toContainText('hi-from-denied')
+  await expect(block.getByTestId('command-output')).toContainText('hi-from-box')
   await expect(block).not.toContainText('How should it continue')
   const th = await (await fetch(`${minbox.url}/api/threads/${await streamThread(minbox, current!.a)}`)).json()
   expect(JSON.stringify(th.messages)).not.toContain('Q: How should it continue')

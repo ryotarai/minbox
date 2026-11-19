@@ -10,11 +10,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/ryotarai/minbox/internal/agent"
 	"github.com/ryotarai/minbox/internal/store"
@@ -160,8 +158,6 @@ func (s *Server) agentRoutes() []struct {
 		{"POST /api/agent/heartbeat", s.agentHeartbeat},
 		{"POST /api/agent/title", s.agentTitle},
 		{"POST /api/agent/open", s.agentOpen},
-		{"POST /api/agent/denied-commands", s.agentDeniedCommand},
-		{"POST /api/agent/denied-commands/ran", s.agentRanCommand},
 		{"GET /api/agent/tasks", s.agentListTasks},
 		{"POST /api/agent/tasks", s.agentCreateTask},
 		{"PATCH /api/agent/tasks/{id}", s.agentUpdateTask},
@@ -303,6 +299,9 @@ func (s *Server) runTool(ctx context.Context, sess *store.Session, names toolNam
 		if v, ok := e["review"].(map[string]any); ok {
 			req["review"] = v
 		}
+		if v, ok := e["commands"].([]any); ok {
+			req["commands"] = v
+		}
 		v, fail := call(apiCall{Method: "POST", Path: "/api/agent/messages", Body: req})
 		if fail != "" {
 			return "", nil, fail
@@ -408,8 +407,6 @@ type proxyState struct {
 	threadsNext bool     // the next prompt carries the open threads (after a compaction)
 	fresh       bool     // a hello came: the next prompt carries the instructions
 	prompts     int
-	reported    []string        // tool call ids reported as denied (once each)
-	denied      map[string]bool // commands reported as denied: a later run clears them
 }
 
 func (s *Server) proxyUpdate(id string, f func(p *proxyState)) {
@@ -420,7 +417,7 @@ func (s *Server) proxyUpdate(id string, f func(p *proxyState)) {
 	}
 	p := s.proxy[id]
 	if p == nil {
-		p = &proxyState{remind: true, denied: map[string]bool{}}
+		p = &proxyState{remind: true}
 		s.proxy[id] = p
 	}
 	f(p)
@@ -452,31 +449,6 @@ func orchestratorEvery() int {
 
 // ---- POST /api/agent/event ----
 
-// claudeRefusals: how Claude Code words a tool call that never ran because it was refused (the
-// person rejecting the prompt, a deny rule, a mode that cannot ask, auto mode's classifier). Anchored
-// at the start, so a command's own output ("Permission denied") does not count.
-var claudeRefusals = []*regexp.Regexp{
-	regexp.MustCompile(`^The user doesn't want to proceed with this tool use\b`),
-	regexp.MustCompile(`^The user doesn't want to take this action right now\b`),
-	regexp.MustCompile(`(?s)^Permission to use \S+(?: with command .*?)? has been denied\b`),
-	regexp.MustCompile(`^Permission for this action has been denied\b`),
-	regexp.MustCompile(`^Permission to use \S+ has been denied\b`),
-}
-
-var piNotBlocked = regexp.MustCompile(`^(Operation aborted|Tool \S+ not found|Invalid arguments for tool|Validation failed)`)
-
-// deniedMax: the longest command reported (the reply area offers at most 500 characters).
-const deniedMax = 4000
-
-// shortReason: a reason's first line, at most 300 characters.
-func shortReason(reason string) string {
-	line := strings.Split(strings.TrimSpace(reason), "\n")[0]
-	if utf8.RuneCountInString(line) > 300 {
-		return cut(line, 300) + "…"
-	}
-	return line
-}
-
 type eventReq struct {
 	Type string `json:"type"`
 	// turn.complete (Claude Code): why the turn ended, whether it was aborted, its final answer.
@@ -485,19 +457,6 @@ type eventReq struct {
 	Answer  string `json:"answer"`
 	// prompt: who submitted it ("composer": the person typed).
 	Origin string `json:"origin"`
-	// bash: a shell call's outcome, as the host reported it (Phase says which hook saw it).
-	Phase    string  `json:"phase"`
-	ID       string  `json:"id"`
-	Command  string  `json:"command"`
-	Deny     *string `json:"deny"`
-	IsError  bool    `json:"is_error"`
-	Ran      bool    `json:"ran"`
-	Text     string  `json:"text"`
-	Decision string  `json:"decision"`
-	Rule     string  `json:"rule"`
-	Hook     string  `json:"hook"`
-	Message  string  `json:"message"`
-	ErrType  string  `json:"error_type"`
 }
 
 // POST /api/agent/event {type, ...}: what happened in the agent, forwarded by a protocol-1
@@ -510,7 +469,7 @@ type eventReq struct {
 //	session.end                        the conversation ended (/clear, resume): its state starts over
 //	session.compact                    the conversation was compacted
 //	prompt {origin}                    a prompt is being submitted
-//	bash {phase, id, command, ...}     a shell call's outcome (see bashOutcome)
+//	bash                               ignored (older integrations report shell call outcomes)
 func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.Session) {
 	var req eventReq
 	if !decode(w, r, &req) {
@@ -552,7 +511,7 @@ func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.
 		}
 	case "session.end":
 		s.proxyUpdate(sess.ID, func(p *proxyState) {
-			*p = proxyState{remind: true, denied: p.denied, reported: p.reported}
+			*p = proxyState{remind: true}
 		})
 		status(store.StatusIdle)
 	case "session.compact":
@@ -560,7 +519,8 @@ func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.
 	case "prompt":
 		out["context"] = s.promptContext(ctx, sess, names, req.Origin == "composer")
 	case "bash":
-		s.bashOutcome(ctx, sess, names, req)
+		// Shell call outcomes: integrations of before the "Run yourself" offer was retired still send
+		// them. Nothing is done with them any more (send_message `commands` replaced the offer).
 	default:
 		httpError(w, 400, "unknown event type "+req.Type)
 		return
@@ -601,121 +561,6 @@ func (s *Server) promptContext(ctx context.Context, sess *store.Session, names t
 		}
 	}
 	return added
-}
-
-// bashOutcome reads a shell call's outcome as the host reported it: a refused command is offered to
-// the person as "Run yourself" (denied.go), a later successful run of it withdraws the offer.
-//
-//	check  {decision, rule, hook, reason}  Claude Code's permission verdict (tool.check)
-//	denied {reason}                        Claude Code's auto mode refused it
-//	result {deny?, is_error, text}         Claude Code's tool result (a refusal is worded as an error)
-//	end    {is_error, ran, text}           Pi's tool_execution_end (ran: it has a duration)
-//	failed {error_type, message}           OpenCode's session.tool.failed
-//	success                                OpenCode's session.tool.success
-func (s *Server) bashOutcome(ctx context.Context, sess *store.Session, names toolNames, e eventReq) {
-	command := strings.TrimSpace(e.Command)
-	if command == "" {
-		return
-	}
-	reason, denied, ran := "", false, false
-	switch e.Phase {
-	case "check":
-		if e.Decision == "deny" {
-			denied = true
-			switch {
-			case e.Rule != "":
-				reason = "denied by the rule " + e.Rule
-			case e.Hook != "":
-				reason = "denied by a " + e.Hook + " hook"
-				if e.Message != "" {
-					reason += ": " + e.Message
-				}
-			case e.Message != "":
-				reason = e.Message
-			default:
-				reason = "denied"
-			}
-		}
-	case "denied":
-		denied, reason = true, firstNonEmpty(e.Message, "denied")
-	case "result":
-		switch {
-		case e.Deny != nil:
-			denied, reason = true, firstNonEmpty(*e.Deny, "denied")
-		case e.IsError:
-			text := strings.TrimSpace(e.Text)
-			for _, re := range claudeRefusals {
-				if re.MatchString(text) {
-					denied, reason = true, text
-					break
-				}
-			}
-		default:
-			ran = true
-		}
-	case "end":
-		if e.IsError && !e.Ran {
-			text := strings.TrimSpace(e.Text)
-			if !piNotBlocked.MatchString(text) {
-				denied, reason = true, firstNonEmpty(text, "Tool execution was blocked")
-			}
-		} else if !e.IsError {
-			ran = true
-		}
-	case "failed":
-		if e.ErrType == "permission.rejected" {
-			denied, reason = true, firstNonEmpty(e.Message, "permission rejected")
-		}
-	case "success":
-		ran = true
-	}
-	if denied && reason == openDeny(names.of(toolOpen)) {
-		return // minbox's own refusal (a page opened on the host)
-	}
-	if denied {
-		if len(command) > deniedMax {
-			return
-		}
-		dup, thread := false, ""
-		s.proxyUpdate(sess.ID, func(p *proxyState) {
-			if e.ID != "" {
-				for _, id := range p.reported {
-					if id == e.ID {
-						dup = true
-					}
-				}
-				if !dup {
-					p.reported = append(p.reported, e.ID)
-					if len(p.reported) > 200 {
-						p.reported = p.reported[1:]
-					}
-				}
-			}
-			if !dup {
-				p.denied[command] = true
-			}
-			thread = p.currentThread()
-		})
-		if dup {
-			return
-		}
-		body := jobj{"command": command, "reason": shortReason(reason), "at": s.nowFn().UTC().Format("2006-01-02T15:04:05.000Z07:00")}
-		if thread != "" {
-			body["thread_id"] = thread
-		}
-		s.agentDo(ctx, sess, apiCall{Method: "POST", Path: "/api/agent/denied-commands", Body: body})
-		return
-	}
-	if ran {
-		was := false
-		s.proxyUpdate(sess.ID, func(p *proxyState) {
-			was = p.denied[command]
-			delete(p.denied, command)
-		})
-		if was {
-			s.agentDo(ctx, sess, apiCall{Method: "POST", Path: "/api/agent/denied-commands/ran", Body: jobj{"command": command}})
-		}
-	}
 }
 
 // ---- the pending poll, protocol 1 ----

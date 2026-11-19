@@ -272,6 +272,8 @@ type Message struct {
 	Closed map[string]string `json:"closed,omitempty"`
 	// Command: the run of a "!" message (kind "command").
 	Command *Command `json:"command,omitempty"`
+	// RunCommands: the commands this agent message asks the person to run (send_message `commands`).
+	RunCommands []RunCommand `json:"run_commands,omitempty"`
 	// v3: the agent's decision about the person's messages its reply answered (DecisionExisting,
 	// DecisionCreated, DecisionNone, DecisionMoved), the task it names, and those messages (TurnOf).
 	Decision     string   `json:"decision,omitempty"`
@@ -519,6 +521,9 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(commandSchema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(runCommandSchema); err != nil {
 		return err
 	}
 	if _, err := db.Exec(topicSchema); err != nil {
@@ -901,6 +906,8 @@ type NewMessage struct {
 	Status string
 	// Delivered stores the message as delivered already (a command is not sent to the agent).
 	Delivered bool
+	// RunCommands: commands the agent asks the person to run (stored pending with the message).
+	RunCommands []RunCommandSpec
 }
 
 // statusAfter is the thread's status after message m: the message's own
@@ -912,7 +919,7 @@ func statusAfter(cur string, m NewMessage) string {
 		return m.Status
 	case m.Author == AuthorUser && m.Kind != KindNote && m.Kind != KindCommand:
 		return ThreadWorking
-	case m.Author == AuthorAgent && len(m.Questions) > 0:
+	case m.Author == AuthorAgent && (len(m.Questions) > 0 || len(m.RunCommands) > 0):
 		return ThreadNeedAction
 	case m.Author == AuthorAgent:
 		// No status given (a mod from before status was required): the agent reported something, so it is not working on it any more.
@@ -977,6 +984,11 @@ func insertMessage(ctx context.Context, tx *sql.Tx, threadID string, m NewMessag
 			return nil, err
 		}
 		msg.DeliveredAt = &now
+	}
+	if len(m.RunCommands) > 0 {
+		if err := insertRunCommands(ctx, tx, msg, m.RunCommands); err != nil {
+			return nil, err
+		}
 	}
 	var cur sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM threads WHERE id=?`, threadID).Scan(&cur); err != nil {
@@ -1126,6 +1138,11 @@ func (s *Store) loadThreads(ctx context.Context, where string, args ...any) ([]T
 		if cmds, err := s.commandsOfThread(ctx, threads[i].ID); err == nil && len(cmds) > 0 {
 			for j := range threads[i].Messages {
 				threads[i].Messages[j].Command = cmds[threads[i].Messages[j].ID]
+			}
+		}
+		if rcs, err := s.runCommandsOfThread(ctx, threads[i].ID); err == nil && len(rcs) > 0 {
+			for j := range threads[i].Messages {
+				threads[i].Messages[j].RunCommands = rcs[threads[i].Messages[j].ID]
 			}
 		}
 		derive(&threads[i], status[threads[i].ID], s.now())

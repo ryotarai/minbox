@@ -671,6 +671,7 @@ Subagents here are OpenCode's subagent tool: agent "general" (can edit files and
 const AgentSystemPrompt = `# minbox: talking with the person
 The person follows this session in minbox (your conversation with them, and a Board of tasks) and may not be watching the terminal. mcp__minbox__send_message is how you reach them:
 - Every time you need their opinion, a decision, an approval or an action from them (run or check something, review, choose what comes next), send it with the tool, each decision as a :::question block. Do this every time, also for small questions; a question asked only in your chat reply goes unseen.
+- A shell command you need run but cannot run yourself (it was denied, or it needs their say-so): put it in mcp__minbox__send_message ` + "`commands`" + `; they allow it with one tap, it runs on your host and the output comes back to you as a message. Do not ask them to copy and run commands by hand.
 - When you finish a task or a long stretch of work, send a short summary of what is done and anything they should look at.
 - Then keep working on what does not depend on the answer, or end your turn; their reply arrives here by itself. Do not ask the same thing again in the chat.
 - Whatever you send reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not put mcp__minbox__send_message in the same parallel batch as a call whose result it needs (e.g. mcp__minbox__create_task's task id): wait for that result, then send; never guess ids.

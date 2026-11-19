@@ -1,10 +1,10 @@
 {
   "protocol": 1,
-  "version": "c37c8c31f5a6",
+  "version": "093db8ec3b74",
   "tools": [
     {
       "name": "minbox_send_message",
-      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
+      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes. commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so); the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -18,6 +18,31 @@
           "body": {
             "description": "The message, in Markdown. Lead with what you need from the person; they switch in cold, so say what it affects and what you know.\nAsk each decision as a block:\n:::question\nThe question, on the first line.\nOne to three short lines of context.\n- [ ] Choice A — why\n- [ ] Choice B — why\nRecommended: Choice A\n:::\n`:::question` picks one, `:::question-multi` any number, `:::question-text` asks for free text.\nOptional context lines: `Stopped: \u003cwhat waits\u003e` when your work is stopped on the answer; `Holds up: a; b` for what it blocks; `Replaces: \u003cearlier question\u003e` when you re-ask.\nAsk the person to do things by hand with an `:::actions` block of `- [ ] item` lines; they mark each Done or Can't do it.\nFenced blocks draw as pictures: ```mermaid and ```dot (Graphviz) as diagrams, ```svg (an inline \u003csvg\u003e) as an image, ```html as a sandboxed live page. Use them instead of ASCII art.\nThe person can also answer Other, add a note, or skip. Ask only what you cannot decide alone.\nAnswers come back under \"## Answers to your questions\".",
             "type": "string"
+          },
+          "commands": {
+            "description": "Shell commands for the person to approve, in order. Each runs only after the person presses Allow in minbox, at most once, with `sh -c` on your host (the machine you run on), in `cwd` (default: your working directory), with no input and a 10-minute limit. Allowed ones run one after another (a failure does not stop the rest). When the person has decided, the results (exit code and output of each, and which were denied) arrive as a new message in this conversation: do not wait or poll for them, and do not run the same commands yourself meanwhile. Say in the body why they are needed.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "description": "The command line, exactly as it should run (sh -c).",
+                  "type": "string"
+                },
+                "cwd": {
+                  "description": "Where it runs (absolute, or relative to your working directory). Default: your working directory.",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "One short line on what it does, shown to the person.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "review": {
             "description": "A guided review of your changes: minbox snapshots each file's diff, in the git repository or worktree that holds the file. Lead with the section the person should look at most. Working in a worktree or on a branch whose changes are committed: set cwd to the worktree and base to the branch you started from (e.g. main), or the review shows only uncommitted changes.",

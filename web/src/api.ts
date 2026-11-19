@@ -304,6 +304,28 @@ export type MessageCommand = {
   told: boolean
 }
 
+/** A command an agent asked the person to run (send_message `commands`): it runs after they allow it. */
+export type RunCommand = {
+  id: string
+  message_id: string
+  index: number
+  command: string
+  cwd: string
+  description?: string
+  state: 'pending' | 'allowed' | 'denied' | 'running' | 'done'
+  exit_code: number
+  timed_out: boolean
+  truncated: boolean
+  error?: string
+  output: string
+  duration_ms: number
+  decided_by?: string
+  decided_at?: string
+  finished_at?: string
+  /** The agent was sent its result. */
+  reported: boolean
+}
+
 export type Message = {
   id: string
   thread_id: string
@@ -319,8 +341,10 @@ export type Message = {
   delivered_at: string | null
   answer_state?: Record<string, Answer> | null
   delivery?: Delivery
-  kind?: 'message' | 'note' | 'command'
+  kind?: 'message' | 'note' | 'command' | 'run_result'
   command?: MessageCommand | null
+  /** Commands this agent message asks the person to run. */
+  run_commands?: RunCommand[] | null
   attachments?: Attachment[] | null
   inline_images?: Attachment[] | null
   annotations?: Annotation[] | null
@@ -751,9 +775,8 @@ export type LinearEvent = {
 /** A question for the person that helps them reply to the agent (drafted by the helper agent). Every
  *  question also takes a free-text "Other" answer; no options means free text only. */
 export type ReplyQuestion = { question: string; kind: 'single' | 'multi'; options: { label: string; description?: string }[] }
-/** Reply help for a thread (the server caches it per last message): questions to answer, and a
- *  `!command` the agent was denied that the person may run themselves. */
-export type SuggestResult = { questions: ReplyQuestion[]; command?: string; reason?: 'disabled' | 'not_needed' | 'no_agent'; error?: string }
+/** Reply help for a thread (the server caches it per last message): questions to answer. */
+export type SuggestResult = { questions: ReplyQuestion[]; reason?: 'disabled' | 'not_needed' | 'no_agent'; error?: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -1003,8 +1026,6 @@ export const api = {
   unsnoozeThread: (id: string) => call<Ok>('POST', `/api/threads/${id}/unsnooze`),
   reask: (id: string) => call<Message>('POST', `/api/threads/${id}/reask`),
   suggestions: (threadId: string) => call<SuggestResult>('GET', `/api/threads/${threadId}/suggestions`),
-  /** The person dismissed the "Run yourself" command (a denied command the agent reported). */
-  dismissDeniedCommand: (threadId: string) => call<Ok>('DELETE', `/api/threads/${threadId}/denied-command`),
   reply: (threadId: string, req: ReplyRequest) =>
     call<Message & { forwarded_thread_id?: string; thread_id: string }>('POST', `/api/threads/${threadId}/reply`, req),
   cancelMessage: (messageId: string) => call<{ ok: boolean; thread_id: string; thread_deleted: boolean }>('POST', `/api/messages/${messageId}/cancel`),

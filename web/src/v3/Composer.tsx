@@ -109,17 +109,18 @@ export function Composer({
   // Questions that help the person reply: the agent spoke last (in its stream, or about the task) and
   // asked nothing. minbox's own requests to the agent (to place messages in tasks, a goal's "continue")
   // do not count: the agent's message before them is the one to reply to (as on the server).
-  const last = [...messages].reverse().find((m) => !m.pending && m.kind !== ('place' as string) && m.kind !== ('continue' as string))
+  const last = [...messages].reverse().find((m) => !m.pending && m.kind !== ('place' as string) && m.kind !== ('continue' as string) && m.kind !== 'run_result')
   const helpOn = helpTask ? true : !!helpThread && !last?.segment
-  const wantHelp = helpOn && settings.reply_suggestions && last?.author === 'agent' && openCount === 0 && target?.status !== 'ended'
-  // A task's help: its answers are kept by the task; a denied command is the one of its last agent message's stream.
+  // Commands waiting for Allow or Deny are what the person answers first: no reply help meanwhile.
+  const commandsWaiting = messages.some((m) => m.run_commands?.some((c) => c.state === 'pending'))
+  const wantHelp = helpOn && settings.reply_suggestions && last?.author === 'agent' && openCount === 0 && !commandsWaiting && target?.status !== 'ended'
+  // A task's help: its answers are kept by the task.
   const help = useReplyHelp(
     (helpTask ? last?.thread_id : helpThread) || '_',
     last?.id,
     !!wantHelp,
     helpTask ? { key: 'v3:task:' + helpTask, fetch: () => v3.taskSuggestions(helpTask) } : {},
   )
-  const helpCmdThread = helpTask ? (last?.thread_id ?? '') : (helpThread ?? '')
   const helpText = cmd || !wantHelp ? '' : help.text
 
   const uploading = files.some((f) => f.state === 'uploading')
@@ -218,16 +219,7 @@ export function Composer({
   return (
     <div className={'v-composer' + (full ? ' full' : '') + (compact ? ' compact' : '')} data-testid={testid} onDragOver={io.onDragOver} onDrop={io.onDrop}>
       {wantHelp && (
-        <ReplyHelpPanel
-          help={help}
-          threadId={helpCmdThread}
-          phone={isPhone}
-          onSubmit={() => void send()}
-          onEditCommand={(text) => {
-            setWords(() => text)
-            box.current?.focus()
-          }}
-        />
+        <ReplyHelpPanel help={help} phone={isPhone} onSubmit={() => void send()} />
       )}
       <div className="v-to">
         to{' '}

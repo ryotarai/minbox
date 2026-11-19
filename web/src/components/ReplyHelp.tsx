@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, type ReplyQuestion, type SuggestResult } from '../api'
-import { useApp } from '../lib/app'
 import { getReplyHelpDraft, setReplyHelpDraft, useDraftsVersion, type ReplyHelpAnswer, type ReplyHelpDraft } from '../lib/drafts'
-import { IconCheckSquare, IconChevronDown, IconChevronRight, IconClose, IconPencil, IconRadioOff, IconRadioOn, IconSparkle, IconSquare, IconTerminal } from './icons'
+import { IconCheckSquare, IconChevronDown, IconChevronRight, IconClose, IconRadioOff, IconRadioOn, IconSparkle, IconSquare } from './icons'
 import { cx } from './ui'
 
 // Reply help: questions for the person (drafted by the helper agent, GET /api/threads/{id}/suggestions)
 // that help them decide how to answer the agent's latest message. Picked options and "Other" text are
-// put into the reply when it is sent (composeReplyHelp). The same answer carries `command`: a shell
-// command the agent tried and was denied, as its integration reported it (never guessed from text),
-// offered as "Run yourself".
+// put into the reply when it is sent (composeReplyHelp).
 
 export type { ReplyHelpAnswer }
 
 type HelpState = {
   data: SuggestResult | null // null: still drafting
   dismissed: boolean
-  commandSent: boolean
 }
 
 // Per (thread, last message): survives switching threads and remounts. The answers are kept apart,
@@ -70,9 +66,9 @@ function visibleQuestions(fresh: ReplyQuestion[], saved: ReplyHelpDraft): ReplyQ
   return [...kept, ...fresh.map((q) => (touched(saved[q.question]?.a) ? saved[q.question].q : q))]
 }
 
-/** State of the reply help for the thread's last message; fetches when enabled. threadId is the thread
- *  the denied command runs in (and is dismissed from); `opts.key` keeps the answers elsewhere than by
- *  that thread (a v3 task's view: by the task) and `opts.fetch` asks another endpoint for the questions. */
+/** State of the reply help for the thread's last message; fetches when enabled. `opts.key` keeps the
+ *  answers elsewhere than by threadId (a v3 task's view: by the task) and `opts.fetch` asks another
+ *  endpoint for the questions. */
 export function useReplyHelp(threadId: string, lastId: string | undefined, enabled: boolean, opts: { key?: string; fetch?: () => Promise<SuggestResult> } = {}) {
   const draftKey = opts.key ?? threadId
   const key = `${draftKey}:${lastId ?? ''}`
@@ -85,7 +81,7 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
   const get = (): HelpState => {
     let s = store.get(key)
     if (!s) {
-      s = { data: null, dismissed: false, commandSent: false }
+      s = { data: null, dismissed: false }
       store.set(key, s)
     }
     return s
@@ -100,7 +96,7 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     if (s?.data) return
     let live = true
     const fill = (data: SuggestResult) => {
-      store.set(key, { ...(store.get(key) ?? { dismissed: false, commandSent: false }), data })
+      store.set(key, { ...(store.get(key) ?? { dismissed: false }), data })
       if (live) bump()
     }
     ;(fetchRef.current ? fetchRef.current() : api.suggestions(threadId))
@@ -129,33 +125,25 @@ export function useReplyHelp(threadId: string, lastId: string | undefined, enabl
     },
     dismiss: () => {
       setReplyHelpDraft(draftKey, {})
-      // The denied command goes too, also on the server (it is not offered again).
-      if (get().data?.command && threadId) api.dismissDeniedCommand(threadId).catch(() => {})
       set((st) => ({ ...st, dismissed: true }))
     },
     clear: () => setReplyHelpDraft(draftKey, {}),
-    commandSent: (v: boolean) => set((st) => ({ ...st, commandSent: v })),
   }
 }
 
 export type ReplyHelpHandle = ReturnType<typeof useReplyHelp>
 
-/** The panel above the reply box: the denied command chip, then the questions with options. */
+/** The panel above the reply box: the questions with options. */
 export function ReplyHelpPanel({
   help,
-  threadId,
   phone,
-  onEditCommand,
   onSubmit,
 }: {
   help: ReplyHelpHandle
-  threadId: string
   phone?: boolean
-  onEditCommand: (text: string) => void
   /** ⌘↵ in an answer field: send the reply. */
   onSubmit: () => void
 }) {
-  const { error } = useApp()
   const [collapsed, setCollapsedState] = useState(() => localStorage.getItem(COLLAPSED) === '1')
   const setCollapsed = (v: boolean) => {
     setCollapsedState(v)
@@ -175,46 +163,11 @@ export function ReplyHelpPanel({
       </div>
     )
   const drafting = !s.data
-  const cmd = s.commandSent || !s.data ? '' : (s.data.command ?? '')
-  if (!cmd && qs.length === 0) return null
-
-  const runCommand = () => {
-    help.commandSent(true)
-    api.reply(threadId, { words: cmd }).catch((err) => {
-      help.commandSent(false)
-      error(err)
-    })
-  }
+  if (qs.length === 0) return null
   const answered = qs.filter((q) => answerParts(q, help.answers[q.question]).length > 0).length
-  const commandChip = cmd ? (
-    <span className="inline-flex max-w-full items-center overflow-hidden rounded-full border border-accent/60 bg-wait/8 text-[12.5px] text-fg2">
-      <button
-        type="button"
-        data-testid="reply-command"
-        title={`Run ${cmd.slice(1)} yourself (the agent was denied it)`}
-        onClick={runCommand}
-        className={cx('flex min-w-0 max-w-[60ch] items-center gap-1.5 border-0 bg-transparent pl-3 pr-1.5 text-left hover:bg-raised hover:text-fg', phone ? 'min-h-10' : 'py-1')}
-      >
-        <IconTerminal size={14} />
-        <span className="shrink-0 text-subtle">Run yourself:</span>
-        <code className="min-w-0 truncate font-mono">{cmd}</code>
-      </button>
-      <button
-        type="button"
-        data-testid="reply-command-edit"
-        aria-label={`Edit: ${cmd}`}
-        title="Edit before running"
-        onClick={() => onEditCommand(cmd)}
-        className={cx('shrink-0 border-0 bg-transparent pl-1 pr-2.5 text-subtle hover:bg-raised hover:text-fg', phone ? 'min-h-10' : 'py-1')}
-      >
-        <IconPencil size={14} />
-      </button>
-    </span>
-  ) : null
 
   return (
     <section data-testid="reply-qa" data-reply-help="" aria-label="Questions to help you reply" className="flex flex-col gap-1.5">
-      {commandChip && <div className="flex">{commandChip}</div>}
       {qs.length > 0 && (
         <div className={cx('flex flex-col rounded-lg border border-line bg-sunken/60', phone ? 'gap-2 px-2.5 py-2' : 'gap-2 px-3 py-2')}>
           <div className="flex items-center gap-1.5">

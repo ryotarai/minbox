@@ -136,7 +136,12 @@ var sendDescription = strings.Join([]string{
 	"`thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
 	"It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused.",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
+	"commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so); the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
 }, " ")
+
+const commandsGuide = "Shell commands for the person to approve, in order. Each runs only after the person presses Allow in minbox, at most once, with `sh -c` on your host (the machine you run on), in `cwd` (default: your working directory), with no input and a 10-minute limit. " +
+	"Allowed ones run one after another (a failure does not stop the rest). When the person has decided, the results (exit code and output of each, and which were denied) arrive as a new message in this conversation: do not wait or poll for them, and do not run the same commands yourself meanwhile. " +
+	"Say in the body why they are needed."
 
 var questionGuide = strings.Join([]string{
 	"The message, in Markdown. Lead with what you need from the person; they switch in cold, so say what it affects and what you know.",
@@ -189,6 +194,20 @@ func sendSchema() jobj {
 				"type":        "array",
 				"items":       jobj{"type": "string"},
 				"description": attachmentsGuide,
+			},
+			"commands": jobj{
+				"type":        "array",
+				"description": commandsGuide,
+				"items": jobj{
+					"type": "object",
+					"properties": jobj{
+						"command":     jobj{"type": "string", "description": "The command line, exactly as it should run (sh -c)."},
+						"cwd":         jobj{"type": "string", "description": "Where it runs (absolute, or relative to your working directory). Default: your working directory."},
+						"description": jobj{"type": "string", "description": "One short line on what it does, shown to the person."},
+					},
+					"required":             []string{"command"},
+					"additionalProperties": false,
+				},
 			},
 			"review": jobj{
 				"type":        "object",
@@ -344,7 +363,7 @@ func wakeText(p wakeMsg, sendTool, readTool string) string {
 	if p.Stream {
 		// A goal's run ("continue") and minbox's request to place messages in tasks ("place", v3place.go)
 		// are minbox's own words: as they are.
-		if p.Kind == "continue" || p.Kind == "place" {
+		if p.Kind == "continue" || p.Kind == "place" || p.Kind == "run_result" {
 			return strings.TrimSpace(p.Body)
 		}
 		tl := tasksLine(p)
@@ -514,9 +533,20 @@ func sentText(r any) string {
 		}
 		about = " About task" + s + " " + strings.Join(ids, ", ") + "."
 	}
+	cmds := jarr(jget(r, "commands"))
+	if len(cmds) > 0 {
+		if files == "" {
+			files = " with " + plural(float64(len(cmds)), "command") + " for them to approve"
+		} else {
+			files += " and " + plural(float64(len(cmds)), "command") + " for them to approve"
+		}
+	}
 	lines := []string{
 		"Sent to the person in minbox" + asking + files + "." + about,
 		"The person's reply will arrive by itself as a new message in this conversation. Do not wait or poll for it.",
+	}
+	if len(cmds) > 0 {
+		lines = append(lines, "The commands run only when the person allows them; their results (and which were denied) arrive as a new message. Do not wait or poll for them.")
 	}
 	if len(qs) > 0 {
 		ps := make([]string, len(qs))

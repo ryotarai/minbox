@@ -73,8 +73,6 @@ type Server struct {
 	hub      *hub
 	sessions *sessionManager
 	suggest  *suggester
-	// denied: shell commands the agent was denied, offered as "Run yourself" (denied.go).
-	denied *deniedStore
 	// poller receives messages from Slack (RunSlackInbound runs it); its status feeds the Notifications API.
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
@@ -129,6 +127,10 @@ type Server struct {
 	slack *slackSvc
 	// commandTimeout overrides the 60 s limit of "!" commands (tests).
 	commandTimeout time.Duration
+	// runCmds serializes the runs of the commands agents ask the person to run (runcommands.go);
+	// runCmdTimeout overrides their 10 min limit (tests).
+	runCmds       runCmdState
+	runCmdTimeout time.Duration
 
 	// binary is this server's build (termhost.BinaryID), to tell an outdated host.
 	binary string
@@ -174,7 +176,6 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.poller = notify.NewPoller(st, slackInbound{s})
 	s.poller.Changed = func() { h.publish(Event{Type: "notifications"}) }
 	s.suggest = newSuggester(s.runSuggest)
-	s.denied = newDeniedStore()
 	s.pickRun = s.runPick
 	s.agentPickRun = s.runAgentPick
 	key, err := hostauth.LoadOrCreateKey(filepath.Join(cfg.DataDir, "server-key"))
@@ -206,6 +207,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	if err := st.FailRunningCommands(context.Background()); err != nil {
 		log.Printf("commands: %v", err)
 	}
+	s.reportPendingRunResults()
 	s.handler = s.routes()
 	go s.runGoals(2 * time.Second)
 	return s
@@ -254,7 +256,6 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/threads", s.createUserThread)
 	mux.HandleFunc("GET /api/threads/{id}", s.getThread)
 	mux.HandleFunc("GET /api/threads/{id}/suggestions", s.threadSuggestions)
-	mux.HandleFunc("DELETE /api/threads/{id}/denied-command", s.dismissDeniedCommand)
 	mux.HandleFunc("POST /api/threads/{id}/fork/preview", s.forkPreview)
 	mux.HandleFunc("POST /api/threads/{id}/fork", s.forkThread)
 	mux.HandleFunc("GET /api/threads/{id}/linear", s.getThreadLinear)
@@ -350,6 +351,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/v3/messages/{id}/move", s.v3Move)
 	mux.HandleFunc("POST /api/v3/messages/{id}/ignore", s.v3Ignore(true))
 	mux.HandleFunc("POST /api/v3/messages/{id}/unignore", s.v3Ignore(false))
+	mux.HandleFunc("POST /api/v3/messages/{id}/commands", s.decideRunCommands)
 	mux.HandleFunc("POST /api/v3/read", s.v3Read)
 	mux.HandleFunc("POST /api/v3/unread", s.v3Unread)
 	mux.HandleFunc("GET /api/v3/search", s.v3Search)

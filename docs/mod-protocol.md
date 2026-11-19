@@ -89,14 +89,8 @@ What happened in the agent; the answer says what to do.
 | `session.end` | | the conversation's state starts over (`/clear`, resume); status idle |
 | `session.compact` | | the next prompt carries the open threads |
 | `prompt` | `origin` (`composer`: the person typed) | `context: [text]`: the standing instructions on the first prompt of a conversation, after a hello, after a compaction (with the open threads) and every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` on the server overrides); else `[]` |
-| `bash` | `phase`, `id`, `command` and the host's raw outcome | the server tells a refusal from a run and offers a refused command as "Run yourself" (docs/thread-commands.md); a later run withdraws it |
+| `bash` | (anything) | accepted and ignored: integrations of before the "Run yourself" offer was retired report shell call outcomes; current ones send none (agents ask the person to run commands with `send_message` `commands`, docs/agent-commands.md) |
 
-`bash` phases: Claude Code `check {decision, rule, hook, message}` (the permission verdict),
-`denied {message}` (auto mode), `result {deny?, is_error, text?}` (the tool result; `text` only for an
-error, cut to 2000 characters); Pi `end {is_error, ran, text?}` (`ran`: the call has a duration);
-OpenCode `failed {error_type, message}` and `success`. The server dedupes by `id`, never reports its
-own guard's refusal, and files the command under the thread the turn answers (the threads of the
-messages delivered before `turn.start`).
 
 ### `GET /api/agent/pending?owner=&wait=&proto=1`
 
