@@ -361,9 +361,8 @@ func doneTaskLine(updateTool string) string {
 // wakeText is the turn text of one of the person's messages.
 func wakeText(p wakeMsg, sendTool, readTool string) string {
 	if p.Stream {
-		// A goal's run ("continue") and minbox's request to place messages in tasks ("place", v3place.go)
-		// are minbox's own words: as they are.
-		if p.Kind == "continue" || p.Kind == "place" || p.Kind == "run_result" {
+		// A goal's run ("continue") and a command's results are minbox's own words: as they are.
+		if p.Kind == "continue" || p.Kind == "run_result" {
 			return strings.TrimSpace(p.Body)
 		}
 		tl := tasksLine(p)
@@ -573,7 +572,7 @@ func sentText(r any) string {
 			lines = append(lines, "The message was sent, but this image will not show: "+jtext(jget(n, "ref"))+" ("+jtext(jget(n, "reason"))+"). Copy the image to a plain folder and link that path, or attach it with attachments.")
 		}
 	}
-	// The messages of the turn still in no task (agentSend's unplacedNote).
+	// The message and its turn are in no task yet (agentSend's unplacedNote).
 	if note := jstr(jget(r, "note")); note != "" {
 		lines = append(lines, note)
 	}

@@ -112,9 +112,9 @@ export function Composer({
   const annos = annoKeys.flatMap((k) => getReplyDraft(k).annotations)
 
   // Questions that help the person reply: the agent spoke last (in its stream, or about the task) and
-  // asked nothing. minbox's own requests to the agent (to place messages in tasks, a goal's "continue")
-  // do not count: the agent's message before them is the one to reply to (as on the server).
-  const last = [...messages].reverse().find((m) => !m.pending && m.kind !== ('place' as string) && m.kind !== ('continue' as string) && m.kind !== 'run_result')
+  // asked nothing. minbox's own requests to the agent (a goal's "continue") do not count: the agent's
+  // message before them is the one to reply to (as on the server).
+  const last = [...messages].reverse().find((m) => !m.pending && m.kind !== ('continue' as string) && m.kind !== 'run_result')
   const helpOn = helpTask ? true : !!helpThread && !last?.segment
   // Commands waiting for Allow or Deny are what the person answers first: no reply help meanwhile.
   const commandsWaiting = messages.some((m) => m.run_commands?.some((c) => c.state === 'pending'))

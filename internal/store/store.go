@@ -120,7 +120,7 @@ const UrgentAfter = 5 * time.Minute
 
 // urgentKind tells whether a message of this kind goes into a busy agent's running turn at once (as
 // Send now did): the person's own messages (replies, answers, new threads, hand-offs, notes, a
-// command's follow-up) do. minbox's own requests (KindPlace, the goal's "continue") wait for the
+// command's follow-up) do. minbox's own requests (the goal's "continue") wait for the
 // turn to end, so they never cut into the work they are about.
 func urgentKind(kind string) bool {
 	return kind == "" || kind == KindMessage || kind == KindNote
@@ -589,6 +589,11 @@ func migrate(db *sql.DB) error {
 	}
 	if err := migrateOneTask(context.Background(), db); err != nil {
 		return fmt.Errorf("one task per message: %w", err)
+	}
+	// minbox no longer asks the agent to place messages in tasks: an older request still on its way is
+	// never delivered.
+	if _, err := db.Exec(`UPDATE messages SET delivered_at=created_at WHERE kind=? AND delivered_at IS NULL`, KindPlace); err != nil {
+		return err
 	}
 	// Hosts added with a shared token (before pairing) must be paired again.
 	if _, err := db.Exec(`UPDATE hosts SET token='', paired=0, pairing_code='' WHERE builtin=0 AND token!=''`); err != nil {

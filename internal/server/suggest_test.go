@@ -281,7 +281,7 @@ func TestSuggestionsEndpoint(t *testing.T) {
 	}
 }
 
-// v3: a stream's help skips minbox's own requests to the agent (place, continue); a task's view asks
+// v3: a stream's help skips minbox's own requests to the agent (continue, an older place request); a task's view asks
 // for its task's latest agent message.
 func TestSuggestionsV3StreamAndTask(t *testing.T) {
 	e := newEnv(t)
@@ -320,7 +320,7 @@ func TestSuggestionsV3StreamAndTask(t *testing.T) {
 	if p := lastPrompt(); !strings.Contains(p, "Subject: Fix the login page") || !strings.Contains(p, "Login fixed.") {
 		t.Fatalf("task prompt: %q", p)
 	}
-	// minbox asks the agent to place messages: the agent's message is still the one to reply to.
+	// An older request to place messages (no longer sent): the agent's message is still the one to reply to.
 	if _, err := e.st.AddMessage(context.Background(), stream, store.NewMessage{Author: store.AuthorUser, Body: "Put these in tasks", Words: "Asked s to put 1 message(s) in tasks.", Kind: store.KindPlace}); err != nil {
 		t.Fatal(err)
 	}

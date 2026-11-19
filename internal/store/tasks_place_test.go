@@ -102,21 +102,23 @@ func TestMigrateV3Place(t *testing.T) {
 	}
 }
 
-// Unplaced messages: in no task, not minbox's requests, not the person's messages on their way.
-func TestUnplacedMessages(t *testing.T) {
+// minbox no longer asks the agent to place messages in tasks: an older request still on its way is
+// marked delivered when the database is opened, and is never pending again.
+func TestOldPlaceRequestNotDelivered(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 	a, _ := s.CreateSession(ctx, "api", "/tmp/a", "u")
 	stream, _ := s.StreamThread(ctx, a.ID)
-	queued, _ := s.AddMessage(ctx, stream, NewMessage{Author: AuthorUser, Body: "later", Words: "later"})
-	r, _ := s.AddMessage(ctx, stream, agentMsg("hi"))
-	_, _ = s.AddMessage(ctx, stream, NewMessage{Author: AuthorUser, Body: "place them", Kind: KindPlace, Delivered: true})
-	got, err := s.UnplacedMessages(ctx, a.ID)
-	if err != nil || len(got) != 1 || got[0].ID != r.ID {
-		t.Fatalf("unplaced = %+v %v (queued %s)", got, err, queued.ID)
+	place, _ := s.AddMessage(ctx, stream, NewMessage{Author: AuthorUser, Body: "place them", Kind: KindPlace})
+	msg, _ := s.AddMessage(ctx, stream, NewMessage{Author: AuthorUser, Body: "hi", Words: "hi"})
+	if err := migrate(s.db); err != nil {
+		t.Fatal(err)
 	}
-	reqs, _ := s.OpenPlaceRequests(ctx, a.ID)
-	if len(reqs) != 1 {
-		t.Fatalf("requests = %+v", reqs)
+	p, err := s.PendingForSession(ctx, a.ID, "o")
+	if err != nil || len(p) != 1 || p[0].ID != msg.ID {
+		t.Fatalf("pending = %+v %v (place %s)", p, err, place.ID)
+	}
+	if m, _ := s.GetMessage(ctx, place.ID); m.DeliveredAt == nil {
+		t.Fatalf("old place request not delivered: %+v", m)
 	}
 }

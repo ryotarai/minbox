@@ -121,7 +121,8 @@ func (s *Server) untaggedOf(ctx context.Context, ids []string) ([]string, map[st
 //   - else the turn's context, and only when it points at exactly one task: the single task the
 //     agent created in this turn, else the task of the person's messages the reply answers (when
 //     they are all about one task);
-//   - else none: the reply stays unplaced and minbox asks the agent to place it after the turn.
+//   - else none: the reply stays in no task (send_message's result says so; the agent places it with
+//     create_task / update_task message_ids).
 //
 // source is how the link is made: LinkAgent when the agent named or created the task, LinkAuto when
 // it is inherited from the person's messages.
@@ -188,7 +189,6 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 		}
 		_ = s.store.SetDecision(ctx, messageID, decision, task, cand)
 	}
-	s.settlePlaceRequests(ctx, sess.ID)
 	if len(all) > 0 || decision != "" {
 		s.publishTasks()
 	}
@@ -425,7 +425,6 @@ func (s *Server) agentCreateTask(w http.ResponseWriter, r *http.Request, sess *s
 	if len(msgIDs) > 0 {
 		moved, _ = s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, msgIDs), store.LinkAgent)
 	}
-	s.settlePlaceRequests(ctx, sess.ID)
 	if t.Kind == store.KindGoal && b.Autonomous != nil && *b.Autonomous {
 		s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
 	}
@@ -498,7 +497,6 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 	if added, _ := s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, ids), store.LinkAgent); len(added) > 0 {
 		_ = s.store.AddTaskEvent(ctx, t.ID, "link", strconv.Itoa(len(added))+" earlier message(s) added by "+sess.Name, sess.ID, "")
 	}
-	s.settlePlaceRequests(ctx, sess.ID)
 	_, _ = s.store.AddTaskAgent(ctx, t.ID, sess.ID, store.RoleInvolved)
 	if t.Kind == store.KindGoal {
 		allMet := len(t.Criteria) > 0

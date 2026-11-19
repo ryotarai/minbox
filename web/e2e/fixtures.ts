@@ -220,7 +220,7 @@ export class Minbox {
     if (!this.linear.url) await this.linear.start()
     if (!this.slackUser.url) await this.slackUser.start()
     mkdirSync(this.claudeConfigDir, { recursive: true })
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: this.claudeConfigDir, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_SUGGEST_AGENTS: join(this.dataDir, 'suggest.agents'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, FAKE_OPENCODE_DIR: this.dataDir, MINBOX_PLACE_WAIT_S: '0.5', ...this.extraEnv }
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: this.claudeConfigDir, MINBOX_SUGGEST_COMMAND: `python3 ${FAKE_SUGGEST}`, MINBOX_SLACK_API_BASE: this.slackApi.url, MINBOX_LINEAR_MCP_URL: this.linear.url + '/mcp', MINBOX_SLACK_API_URL: this.slackUser.url, FAKE_JUDGE_FAIL: join(this.dataDir, 'judge.fail'), FAKE_SUGGEST_AGENTS: join(this.dataDir, 'suggest.agents'), FAKE_LINEAR_DRAFT_HOLD: this.draftHold, FAKE_OPENCODE_DIR: this.dataDir, ...this.extraEnv }
     // The person's own Claude Code config must never be written by a test (see playwright.config.ts).
     const cfg = env.CLAUDE_CONFIG_DIR ? resolve(env.CLAUDE_CONFIG_DIR) : ''
     if (!cfg || cfg === resolve(homedir(), '.claude') || cfg === resolve(homedir())) throw new Error(`e2e: CLAUDE_CONFIG_DIR must be a temporary folder, not ${cfg || 'unset'}`)

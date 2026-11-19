@@ -346,7 +346,7 @@ func TestV3HandoffCarriesTheTask(t *testing.T) {
 
 // Every message of the person goes into a busy agent's running turn at once (urgent by default, as
 // Send now did): a stream message, a task's message, an answer, an older thread's reply, a new
-// thread. Both protocols see it; minbox's own place request and a goal's continue do not.
+// thread. Both protocols see it; a goal's continue does not.
 func TestPersonMessagesAreUrgent(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
@@ -367,9 +367,6 @@ func TestPersonMessagesAreUrgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.st.AddMessage(context.Background(), streamID, store.NewMessage{Author: store.AuthorUser, Body: "place them", Kind: store.KindPlace}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := e.st.AddMessage(context.Background(), streamID, store.NewMessage{Author: store.AuthorUser, Body: "carry on", Kind: KindContinue}); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +375,7 @@ func TestPersonMessagesAreUrgent(t *testing.T) {
 	for _, p := range e.pending(sess) {
 		got = append(got, fmt.Sprintf("%s:%v", p["body"], p["urgent"]))
 	}
-	want := "first:true second:true a new thread:true place them:false carry on:false"
+	want := "first:true second:true a new thread:true carry on:false"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("proto 0 pending = %s, want %s", strings.Join(got, " "), want)
 	}

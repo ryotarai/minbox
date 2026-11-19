@@ -1,10 +1,9 @@
-// Every message is about a task. A turn that leaves messages in no task ends with minbox asking the
-// agent to place them; it asks again after each turn that leaves them, until the agent does. Until
-// then the message says it waits for the agent.
+// Every message is about a task, and the agent places them itself. A reply it left in no task says it
+// waits for the agent; minbox does not ask the agent after the turn to place it (no request, no note).
 import { test, expect } from './fixtures'
-import { agentReply, api, say, startAgent, taskOn } from './v3'
+import { agentReply, api, say, startAgent } from './v3'
 
-test('the agent ignores the request to place its messages, is asked again after each turn, and places them', async ({ page, minbox }) => {
+test('a reply left in no task: minbox does not ask the agent to place it', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
   const stream = page.getByTestId('stream-view')
@@ -12,15 +11,11 @@ test('the agent ignores the request to place its messages, is asked again after 
   const chat = await agentReply(minbox, a, /Sure — noted/)
   const reply = stream.locator(`[data-testid="v3-message"][data-message-id="${chat.id}"]`)
   await expect(reply.getByTestId('unplaced')).toContainText('waiting for api to place it')
-  // Asked three times (the first two ignored); the third time it puts them in a task.
-  const asks = stream.locator('[data-testid="v3-message"][data-kind="place"]')
-  await expect(asks).toHaveCount(3, { timeout: 20_000 })
-  await expect(asks.first()).toContainText('Asked api to put 2 messages in tasks')
-  await expect(reply.getByTestId('unplaced')).toHaveCount(0, { timeout: 10_000 })
-  await expect(taskOn(reply)).toHaveAttribute('title', 'Quick questions')
-  await expect(stream.getByTestId('unplaced')).toHaveCount(0)
-  // Nothing is left in no task, and no more requests come.
-  await expect.poll(async () => (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).messages.filter((m: any) => m.tasks.length === 0).length).toBe(0)
+  // Well after the turn: no request to place it, in the stream or in the data.
   await page.waitForTimeout(3000)
-  await expect(asks).toHaveCount(3)
+  await expect(stream.locator('[data-testid="v3-message"][data-kind="place"]')).toHaveCount(0)
+  await expect(stream.getByText(/to put \d+ messages? in tasks/)).toHaveCount(0)
+  const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
+  expect(s.messages.filter((m: any) => m.kind === 'place')).toHaveLength(0)
+  await expect(reply.getByTestId('unplaced')).toContainText('waiting for api to place it')
 })

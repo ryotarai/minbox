@@ -148,6 +148,10 @@ func (s *Server) loadView(ctx context.Context, ths []store.Thread) (*v3View, err
 	}
 	v := &v3View{byID: map[string]int{}, threads: byThread}
 	for _, m := range all {
+		// minbox's older requests to place messages in tasks (no longer sent) are not shown.
+		if m.Kind == store.KindPlace {
+			continue
+		}
 		th := byThread[m.ThreadID]
 		vm := V3Message{Message: m, SessionID: th.SessionID, Tasks: tags[m.ID]}
 		if vm.Tasks == nil {

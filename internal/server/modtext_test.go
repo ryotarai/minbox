@@ -57,10 +57,6 @@ func TestWakeTextOfAStreamMessage(t *testing.T) {
 	if !strings.Contains(plain, "Every message must be about a task") || strings.Contains(plain, "nothing that needs a task") {
 		t.Fatalf("every message is about a task:\n%s", plain)
 	}
-	place := wakeText(wakeMsg{ID: "m4", Kind: "place", Stream: true, Body: "minbox: these messages of your conversation with the person are in no task yet.\n"}, "s", "r")
-	if place != "minbox: these messages of your conversation with the person are in no task yet." {
-		t.Fatalf("place = %q", place)
-	}
 }
 
 func TestSentText(t *testing.T) {

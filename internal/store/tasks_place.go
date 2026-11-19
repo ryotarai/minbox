@@ -7,82 +7,17 @@ import (
 	"errors"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Every message belongs to exactly one task (docs/v3/redesign.md §4.5, revisions 7 and 8). The agent places
 // its messages and the person's: send_message task_id, create_task, update_task message_ids. A
-// message it has not placed yet is unplaced: minbox asks the agent to place it at the end of each turn
-// (KindPlace) until it does; the person's message not yet delivered is provisional (it is the next
-// turn's). The person moves messages between tasks but cannot take a message out of its task.
+// message it has not placed yet stays in no task (minbox does not ask the agent about it after the
+// turn); the person's message not yet delivered is provisional (it is the next turn's). The person
+// moves messages between tasks but cannot take a message out of its task.
 
-// KindPlace marks minbox's request to the agent to place its unplaced messages in tasks (a message from
-// the person's side, delivered like theirs, shown as a small note). TurnOf lists the messages it asks
-// about; it belongs to the tasks they end up in.
+// KindPlace marked minbox's request to the agent to place its messages in tasks, which minbox no
+// longer sends. Older ones stay stored: they are never delivered and the stream does not show them.
 const KindPlace = "place"
-
-// Unplaced is a message no task has yet.
-type Unplaced struct {
-	ID        string
-	Author    string
-	Kind      string
-	Text      string
-	CreatedAt time.Time
-}
-
-// UnplacedMessages lists the messages of a session that are in no task, oldest first: not minbox's
-// own requests to place them, and not the person's messages still on their way (provisional).
-func (s *Store) UnplacedMessages(ctx context.Context, sessionID string) ([]Unplaced, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.author, m.kind, m.body, m.words, m.created_at FROM messages m JOIN threads t ON t.id=m.thread_id
-	  WHERE t.session_id=? AND m.kind NOT IN (?,?) AND NOT (m.author='user' AND m.delivered_at IS NULL)
-	  AND NOT EXISTS(SELECT 1 FROM message_tasks mt WHERE mt.message_id=m.id) ORDER BY m.created_at, m.rowid`, sessionID, KindPlace, KindRunResult)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Unplaced{}
-	for rows.Next() {
-		var u Unplaced
-		var body, words string
-		var at int64
-		if err := rows.Scan(&u.ID, &u.Author, &u.Kind, &body, &words, &at); err != nil {
-			return nil, err
-		}
-		u.Text, u.CreatedAt = body, fromMs(at)
-		if u.Author == AuthorUser && strings.TrimSpace(words) != "" {
-			u.Text = words
-		}
-		out = append(out, u)
-	}
-	return out, rows.Err()
-}
-
-// PlaceRequest is minbox's request to place messages (KindPlace) that is in no task yet.
-type PlaceRequest struct {
-	ID      string
-	Targets []string
-}
-
-// OpenPlaceRequests lists the session's requests to place messages that are in no task yet.
-func (s *Store) OpenPlaceRequests(ctx context.Context, sessionID string) ([]PlaceRequest, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.turn_of FROM messages m JOIN threads t ON t.id=m.thread_id
-	  WHERE t.session_id=? AND m.kind=? AND NOT EXISTS(SELECT 1 FROM message_tasks mt WHERE mt.message_id=m.id) ORDER BY m.created_at`, sessionID, KindPlace)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []PlaceRequest{}
-	for rows.Next() {
-		var p PlaceRequest
-		var turnOf string
-		if err := rows.Scan(&p.ID, &turnOf); err != nil {
-			return nil, err
-		}
-		_ = json.Unmarshal([]byte(turnOf), &p.Targets)
-		out = append(out, p)
-	}
-	return out, rows.Err()
-}
 
 // CountUnlinked is how many messages are in no task (all of them, provisional ones too).
 func (s *Store) CountUnlinked(ctx context.Context) (int, error) {

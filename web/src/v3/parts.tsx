@@ -573,16 +573,8 @@ export function MessageView({
     }
   }
   if (m.kind === 'command') return <CommandMessage m={m} />
-  if (m.kind === ('place' as string)) {
-    const n = m.turn_of?.length ?? 0
-    return (
-      <div className="v-msg cont" data-testid="v3-message" data-kind="place" data-message-id={m.id}>
-        <div className="v-bd">
-          <IconRefresh size={12} /> Asked {name} to put {n} message{n === 1 ? '' : 's'} in tasks ({hhmm(m.created_at)})
-        </div>
-      </div>
-    )
-  }
+  // minbox's older requests to place messages in tasks (no longer sent; the server leaves them out).
+  if (m.kind === ('place' as string)) return null
   if (m.kind === 'run_result') {
     return (
       <div className="v-msg cont" data-testid="v3-message" data-kind="run_result" data-message-id={m.id}>

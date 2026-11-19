@@ -376,8 +376,8 @@ export function StreamView({
                     )
                   }
                   // A message in the same task as the one before dims its badge; a message in no task ends the
-                  // run (commands and minbox's own notes, such as asking the agent to place messages, do not).
-                  const note = m.kind === 'command' || m.kind === 'run_result' || m.kind === ('place' as string) || m.kind === ('continue' as string)
+                  // run (commands and minbox's own notes, such as a goal's continue, do not).
+                  const note = m.kind === 'command' || m.kind === 'run_result' || m.kind === ('continue' as string)
                   const mt = note ? undefined : msgTask(m)
                   const repeat = !!mt && mt.task_id === run
                   if (!note) run = mt?.task_id ?? ''

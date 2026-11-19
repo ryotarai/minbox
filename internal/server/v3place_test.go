@@ -9,12 +9,6 @@ import (
 	"github.com/ryotarai/minbox/internal/store"
 )
 
-func shortPlace(t *testing.T) {
-	oldS, oldW := placeSettle, placeWait
-	placeSettle, placeWait = 0, 0
-	t.Cleanup(func() { placeSettle, placeWait = oldS, oldW })
-}
-
 // takePending claims and delivers the session's pending messages (the agent took them in a turn).
 func (e *env) takePending(sess *store.Session) []store.PendingDelivery {
 	e.t.Helper()
@@ -26,80 +20,84 @@ func (e *env) takePending(sess *store.Session) []store.PendingDelivery {
 	return pend
 }
 
+// idle ends the agent's turn and waits a little (minbox used to ask about unplaced messages then).
 func (e *env) idle(sess *store.Session) {
 	e.do("POST", "/api/agent/status", map[string]string{"status": "idle"}, bearer(sess))
-	time.Sleep(5 * time.Millisecond)
-	e.srv.placeCheck(sess.ID)
+	time.Sleep(50 * time.Millisecond)
 }
 
-// A turn that leaves messages in no task ends with minbox asking the agent to place them, again after
-// every turn that leaves them, until it does; the requests then belong to those tasks too.
-func TestV3PlaceAsksUntilPlaced(t *testing.T) {
-	shortPlace(t)
+// A turn that leaves messages in no task: minbox does not ask the agent to place them (no message
+// to the agent, nothing in the stream); they stay in no task until the agent places them.
+func TestV3NoPlaceRequestAfterTurn(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	sess := e.createSession()
 	u := e.personSays(sess, "thanks!")
+	e.do("POST", "/api/agent/status", map[string]string{"status": "working"}, bearer(sess))
 	r := e.agentSays(sess, map[string]any{"body": "You're welcome."})
 	reply := r["message_id"].(string)
+	// send_message's own answer still says the message is in no task.
 	if note, _ := r["note"].(string); !strings.Contains(note, "in no task") || !strings.Contains(note, u) {
 		t.Fatalf("send_message note = %q", note)
 	}
 	e.idle(sess)
-	pend := e.takePending(sess)
-	if len(pend) != 1 || pend[0].Kind != store.KindPlace || pend[0].Urgent || !strings.Contains(pend[0].Body, u) || !strings.Contains(pend[0].Body, reply) || !strings.Contains(pend[0].Body, "create_task") {
-		t.Fatalf("first request = %+v", pend)
-	}
-	// Not idle again since: no second request.
-	e.srv.placeCheck(sess.ID)
-	if p, _ := e.st.PendingForSession(ctx, sess.ID, ""); len(p) != 0 {
-		t.Fatalf("asked twice in one idle: %+v", p)
-	}
-	// The agent ignores it (a turn without placing anything): asked again.
 	e.do("POST", "/api/agent/status", map[string]string{"status": "working"}, bearer(sess))
 	e.idle(sess)
-	pend2 := e.takePending(sess)
-	if len(pend2) != 1 || pend2[0].Kind != store.KindPlace {
-		t.Fatalf("second request = %+v", pend2)
+	if p, _ := e.st.PendingForSession(ctx, sess.ID, ""); len(p) != 0 {
+		t.Fatalf("asked the agent: %+v", p)
 	}
-	// It places them: create_task with the reply (its turn comes along), status done.
+	stream, _ := e.st.StreamThread(ctx, sess.ID)
+	th, err := e.st.GetThread(ctx, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Messages) != 2 {
+		t.Fatalf("stream = %+v", th.Messages)
+	}
+	for _, m := range th.Messages {
+		if m.Kind == store.KindPlace {
+			t.Fatalf("a request to place messages: %+v", m)
+		}
+	}
+	for _, id := range []string{u, reply} {
+		if got := tagIDs(t, e, id); len(got) != 0 {
+			t.Fatalf("%s in %v", id, got)
+		}
+	}
+	// The agent places them itself: create_task with the reply (its turn comes along).
 	code, obj, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Thanks", "status": "done", "message_ids": []string{reply}}, bearer(sess))
 	if code != 200 {
 		t.Fatalf("create: %d %v", code, obj)
 	}
 	tid := obj["task_id"].(string)
-	for _, id := range []string{u, reply, pend[0].ID, pend2[0].ID} {
+	for _, id := range []string{u, reply} {
 		if got := tagIDs(t, e, id); len(got) != 1 || got[0] != tid {
 			t.Fatalf("%s in %v, want %s", id, got, tid)
 		}
 	}
-	e.idle(sess)
-	if p, _ := e.st.PendingForSession(ctx, sess.ID, ""); len(p) != 0 {
-		t.Fatalf("asked with nothing left: %+v", p)
-	}
-	if left, _ := e.st.UnplacedMessages(ctx, sess.ID); len(left) != 0 {
-		t.Fatalf("unplaced = %+v", left)
-	}
 }
 
-// Not while one of its questions waits on the person, nor while the person's message is on its way.
-func TestV3PlaceWaits(t *testing.T) {
-	shortPlace(t)
+// An older request to place messages (stored before this was dropped) is not in the v3 stream.
+func TestV3OldPlaceRequestHidden(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	sess := e.createSession()
-	e.agentSays(sess, map[string]any{"body": "Which one?\n\n:::question\nPick\n- [ ] A\n- [ ] B\n:::"})
-	e.idle(sess)
-	if p, _ := e.st.PendingForSession(ctx, sess.ID, ""); len(p) != 0 {
-		t.Fatalf("asked while a question is open: %+v", p)
+	u := e.personSays(sess, "hi")
+	stream, _ := e.st.StreamThread(ctx, sess.ID)
+	old, err := e.st.AddMessage(ctx, stream, store.NewMessage{Author: store.AuthorUser, Body: "place them", Words: "Asked s to put 1 message(s) in tasks.", Kind: store.KindPlace, Delivered: true})
+	if err != nil {
+		t.Fatal(err)
 	}
-	code, m, _ := e.do("POST", "/api/v3/sessions/"+sess.ID+"/messages", map[string]any{"words": "later"}, nil)
-	if code != 201 {
-		t.Fatalf("send: %d %v", code, m)
+	code, obj, _ := e.do("GET", "/api/v3/sessions/"+sess.ID+"/stream", nil, nil)
+	if code != 200 {
+		t.Fatalf("stream: %d %v", code, obj)
 	}
-	e.idle(sess)
-	if p, _ := e.st.PendingForSession(ctx, sess.ID, ""); len(p) != 1 || p[0].Kind == store.KindPlace {
-		t.Fatalf("pending = %+v", p)
+	ids := []string{}
+	for _, m := range obj["messages"].([]any) {
+		ids = append(ids, m.(map[string]any)["id"].(string))
+	}
+	if strings.Join(ids, ",") != u {
+		t.Fatalf("stream = %v (old %s)", ids, old.ID)
 	}
 }
 

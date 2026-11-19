@@ -255,21 +255,6 @@ test("a task's view: questions for the task's latest agent message; the answers 
   await expect(box.getByTestId('reply-qa-toggle')).not.toContainText('answered')
 })
 
-test("minbox's request to place messages in tasks does not hide the questions for the agent's message before it", async ({ page, minbox }) => {
-  const a = await startAgent(minbox, 'sg')
-  current = { m: minbox, a }
-  await page.goto(`${minbox.url}/#v=agent&s=${a.id}`)
-  await sayTo(minbox, a, 'IGNORE how is it going?')
-  await agentReply(minbox, a, /Sure — noted/)
-  await expect(page.getByTestId('stream-view').locator('[data-testid="v3-message"][data-kind="place"]').first()).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByTestId('reply-q')).toHaveCount(3)
-  await expect(q(page, 0)).toContainText('How should it continue? (1)')
-  const st = await streamThread(minbox, a)
-  const sug = await (await fetch(`${minbox.url}/api/threads/${st}/suggestions`)).json()
-  expect(sug.reason).toBeUndefined()
-  expect(sug.questions).toHaveLength(3)
-})
-
 /** The agent's Tasks pane, unfolded. */
 async function tasksPane(page: Page) {
   const pane = page.getByTestId('tasks-pane')

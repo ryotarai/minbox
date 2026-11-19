@@ -255,7 +255,7 @@ use that only when no sensible options exist). Always 200 for generation problem
 404 for an unknown thread. No questions is a valid (cached) answer: nothing to ask.
 
 - `disabled`: setting `reply_suggestions` is off. `not_needed`: the thread's last message is not from the agent
-  (minbox's own messages to the agent, kinds `place`, `continue` and `run_result`, are left out: the agent's message before them counts).
+  (minbox's own messages to the agent, kinds `continue` and `run_result`, and older `place` requests, are left out: the agent's message before them counts).
 - v3: a stream's help is `GET /api/threads/{stream_thread_id}/suggestions`; a task's view asks
   `GET /api/v3/tasks/{id}/suggestions` (same answer): the prompt holds the task's messages (every agent's), the
   last one decides `not_needed`, and the cache key is (`task:<id>`, last message id).
@@ -387,7 +387,7 @@ SSE event types: `sessions`, `threads`, `thread`, `topics`, `settings`.
 - `send_message` adds `attachments: string[]` (file paths, relative to the session cwd
   allowed; at most 10, 5 MB each), `review: {title, summary, sections:[{title, summary, files: string[]}]}`
   and `name` (thread name for a new thread). The server snapshots files and diffs at send time.
-- Pending items add `urgent: bool`: every message of the person (kind `message` or `note`), Send now, or one queued longer than 5 minutes; minbox's own requests (kind `place`, a goal's `continue`) are not. The mod
+- Pending items add `urgent: bool`: every message of the person (kind `message` or `note`), Send now, or one queued longer than 5 minutes; minbox's own requests (a goal's `continue`) are not. The mod
   delivers an urgent item even while the agent is busy (into its running turn).
 - Delivery format (the mod's turn text, `wakeText`): per delivered message a header
   `minbox inbox: <subject> (thread_id: <id>)`, a line saying reply or new thread, the answer-in-thread

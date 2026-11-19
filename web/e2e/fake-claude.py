@@ -30,9 +30,7 @@ message belongs to exactly one task. "GOAL: <title>" + "- <criterion>" lines -> 
 "ASK" -> a question; a goal's continuation -> progress, and on the second one the criteria are met.
 "GOAL: <title> (stuck)" -> such a goal whose continuations end at once with nothing done (no message, no
 progress): minbox's guards pause its run.
-minbox's request to place messages in tasks (kind "place") -> put them in the newest open task, else a
-done "Quick questions" task. "IGNORE" -> a plain reply in no task, and the next two requests to place
-it are ignored (the third is done).
+"IGNORE" -> a plain reply in no task (minbox does not ask the agent to place it).
 """
 import json, os, re, sys, threading, time, urllib.error, urllib.request, uuid
 
@@ -51,8 +49,6 @@ answering = os.environ.get("FAKE_AGENT", "1") != "0"  # "agent off": stream mess
 failing = os.environ.get("FAKE_TURN_ERROR") == "1"  # "fail on": each stream message's turn dies on an API error
 continued = {}  # goal id -> continuations taken
 stuck = set()  # goals whose continuations do nothing ("(stuck)")
-ignore_left = 0  # requests to place messages still to ignore ("IGNORE")
-PLACE_ID = re.compile(r"^- (msg_[0-9A-Za-z]+) \(", re.M)
 
 
 def base():
@@ -175,26 +171,7 @@ def fail_turn():
     api("POST", "/api/agent/event", {"type": "turn.complete", "reason": "error", "aborted": False, "answer": ""})
 
 
-def place(body):
-    global ignore_left
-    if ignore_left > 0:
-        ignore_left -= 1
-        out("ignored the request to place messages")
-        return
-    ids = PLACE_ID.findall(body)
-    tasks = [t for t in (api("GET", "/api/agent/tasks").get("tasks") or []) if t["status"] != "done"]
-    if tasks:
-        api("PATCH", "/api/agent/tasks/" + tasks[0]["id"], {"message_ids": ids})
-    else:
-        api("POST", "/api/agent/tasks", {"title": "Quick questions", "status": "done", "message_ids": ids})
-    out(f"placed {len(ids)} message(s)")
-
-
 def turn(p, body):
-    global ignore_left
-    if p.get("kind") == "place":
-        place(body)
-        return
     if p.get("kind") == "continue":
         gid = re.search(r"Goal (tsk_[0-9a-f]+)", body).group(1)
         continued[gid] = continued.get(gid, 0) + 1
@@ -264,7 +241,6 @@ def turn(p, body):
         say(f"On it. I created a task for this (“{title}”) and will report progress there.")
         return
     if "IGNORE" in body:
-        ignore_left = 2
         say("Sure — noted.")
         return
     api("POST", "/api/agent/tasks", {"title": title_from(body), "status": "done"})

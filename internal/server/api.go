@@ -740,10 +740,6 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 		}
 		v3Turns.end(sess.ID)
 		noteIdle(sess.ID)
-		// A turn is over: messages it left in no task are asked about (v3place.go).
-		if sess.Status == store.StatusWorking {
-			s.schedulePlace(sess.ID, placeSettle)
-		}
 		defer func() { go s.goalTick() }()
 	}
 	if sess.Status != store.StatusEnded && sess.Status != req.Status {
@@ -1117,7 +1113,7 @@ func (s *Server) agentDelivered(w http.ResponseWriter, r *http.Request, sess *st
 	s.modDelivery(sess.ID, "delivered", r.PathValue("id"))
 	s.stuckKick()
 	// The next turn answers the delivered message's thread; minbox's own request to place messages in
-	// tasks is no message of the person to answer (no "you did not reply" reminder after it).
+	// tasks (KindPlace, no longer sent; older ones stay stored) is no message of the person to answer.
 	if m, err := s.store.GetMessage(r.Context(), r.PathValue("id")); err == nil && m.Kind != store.KindPlace && m.Kind != store.KindRunResult {
 		s.noteDelivered(sess.ID, m.ThreadID)
 	}

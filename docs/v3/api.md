@@ -72,24 +72,21 @@ tiles with remove and upload progress; they go as `uploads`.
 
 | Call | v3 |
 | --- | --- |
-| `POST /api/agent/messages` | `{body, task_id?, attachments?, review?}`; `task_ids` is the older name of `task_id` (one id; **400** with a "pick one task" text for more); `thread_id` / `thread_title` are accepted but not needed (legacy). A non-empty `status` is **refused** (400, nothing stored): `send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status.` (a task's status is set with update_task). Every message goes to the stream and belongs to one task: the named one; else, only when the turn points at one task, the single task created in the turn, else the task of the turn's person's messages (when they are all in one); else none (minbox asks the agent to place it after the turn). A legacy `thread_id` of an older thread names that thread's task only when no task is named; `thread_title` is ignored. **The turn's person's messages that are in no task yet** go in the reply's task; those the turn's first `create_task` put in its task move to the reply's task when the reply names another. Answer adds `task_id`, `task_ids` (at most one), `decision` and `note`: when the message went in no task, `note` says so and how to place it and the turn's person's messages (update_task / create_task `message_ids`, which move messages). |
+| `POST /api/agent/messages` | `{body, task_id?, attachments?, review?}`; `task_ids` is the older name of `task_id` (one id; **400** with a "pick one task" text for more); `thread_id` / `thread_title` are accepted but not needed (legacy). A non-empty `status` is **refused** (400, nothing stored): `send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status.` (a task's status is set with update_task). Every message goes to the stream and belongs to one task: the named one; else, only when the turn points at one task, the single task created in the turn, else the task of the turn's person's messages (when they are all in one); else none (the `note` tells the agent; minbox does not ask it again after the turn). A legacy `thread_id` of an older thread names that thread's task only when no task is named; `thread_title` is ignored. **The turn's person's messages that are in no task yet** go in the reply's task; those the turn's first `create_task` put in its task move to the reply's task when the reply names another. Answer adds `task_id`, `task_ids` (at most one), `decision` and `note`: when the message went in no task, `note` says so and how to place it and the turn's person's messages (update_task / create_task `message_ids`, which move messages). |
 | `POST /api/agent/tasks` | `{title, kind?: "goal", goal_id?, summary?, detail?, status?, steps?, criteria?, autonomous?, max_turns?, message_ids?}` → `{task_id, task, tagged_messages, similar_tasks?, note?}`. The turn's person's messages about no task, and later replies in the turn, are about it; so are `message_ids` (an agent reply brings its turn's messages in no task). `status: "done"` makes a quick exchange's small task, closed at once. `similar_tasks` ([{id, title, status}]) and `note` name open tasks with a similar title: the agent should keep using one of them rather than creating more. |
 | `PATCH /api/agent/tasks/{id}` | `{title?, summary?, detail?, status?, report?, steps?, check_steps?, uncheck_steps?, criteria?, check_criteria?, goal_id?, links?, message_ids?, autonomous?}`. Any task of the project; the agent becomes involved. `message_ids`: earlier messages that are about it (an agent reply brings the person's messages it answered that are in no task). All criteria met (or done) ends a goal's run. A `title` renames it (event "Renamed: old → new", `title_by` `agent`), except a task the person named (`title_by` `person`): that title is kept, the rest is applied, and the answer's `note` (shown in the tool result) tells the agent to suggest a name to the person instead. |
 | `GET /api/agent/tasks[?all=1]` | `{tasks}`: the caller's (or the project's open) tasks and goals. |
-| `GET /api/agent/pending` | each message also has `tasks: [{task_id, title, status}]` (the tasks it is about) and `stream`. A goal's continuation has `kind: "continue"`; minbox's request to place messages in tasks has `kind: "place"` (its body, written by the server, is the whole turn text: the integrations pass it on as it is). |
+| `GET /api/agent/pending` | each message also has `tasks: [{task_id, title, status}]` (the tasks it is about) and `stream`. A goal's continuation has `kind: "continue"` (its body, written by the server, is the whole turn text: the integrations pass it on as it is). |
 
 The turn: the person's delivered messages after the agent's last message before them (`store.TurnMessages`);
 it ends when the agent reports `idle` or new messages of the person are delivered.
 
-Every message is about a task (redesign.md §13 revision 7). When a turn ends (`working` → `idle`) and
-messages of the session are in no task (not counting the person's messages not delivered yet),
-minbox adds a `kind: "place"` message to the stream after `placeSettle` (1.5 s): the unplaced messages
-(id, author, time, excerpt), the agent's open tasks, and how to place them. Its `turn_of` lists the
-messages it asks about; once they are all in tasks, it is about those tasks too (it is not counted in
-a task's `message_count`). Asked again after every turn that leaves messages in no task, with no
-limit; asking again about the same messages waits 30 s, doubling to at most 10 min
-(`MINBOX_PLACE_WAIT_S` sets the first wait). Not while the agent is in a turn, has messages on their
-way, or one of its questions waits on the person. minbox never puts a message in a task by itself.
+Every message is about a task (redesign.md §13 revision 7). The agent places them: send_message
+`task_id`, and `message_ids` on create_task / update_task. minbox never puts a message in a task by
+itself, and does not ask the agent after a turn to place the messages it left in no task (it used to,
+with `kind: "place"` messages; that was dropped: agents place their messages well on their own).
+Older `place` messages stay stored: they are never delivered (undelivered ones are marked delivered
+at startup) and the v3 views leave them out.
 
 ## Migration
 
