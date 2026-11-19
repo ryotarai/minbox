@@ -15,6 +15,7 @@ import { CommandMessage } from '../components/CommandMessage'
 import { RunCommandsCard } from '../components/RunCommandsCard'
 import { IconBack, IconCheck, IconClose, IconFork, IconGoal, IconMoreV, IconPlus, IconRefresh, IconTerminal, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
+import { isMac } from '../lib/format'
 import {
   STATUS_LABEL,
   answerChoice,
@@ -424,6 +425,18 @@ export async function sendAnswers(m: V3Message): Promise<Answer[]> {
   return list
 }
 
+/** The send shortcut inside a send button, after its label: ⌘↵ (Ctrl+↵ off a Mac); with shift, ⇧⌘↵ (Shift+Ctrl+↵).
+ *  Subdued in the button's own colour; hidden on phones and touch screens, where there is no such key. Not part of the
+ *  button's accessible name (the button's title says the key). */
+export function SendKey({ shift = false }: { shift?: boolean }) {
+  const k = isMac() ? `${shift ? '⇧' : ''}⌘↵` : `${shift ? 'Shift+' : ''}Ctrl+↵`
+  return (
+    <kbd className="v-btnkbd" aria-hidden="true" data-testid="send-key">
+      {k}
+    </kbd>
+  )
+}
+
 /** "N answered · Send": under a message's questions (stream, task view). */
 export function AnswerBar({ m, onSent, testid = 'answers-send' }: { m: V3Message; onSent: (answers: Answer[]) => void; testid?: string }) {
   const { error } = useApp()
@@ -448,9 +461,9 @@ export function AnswerBar({ m, onSent, testid = 'answers-send' }: { m: V3Message
       <button type="button" className="v-link" onClick={clear}>
         Clear
       </button>
-      <span className="v-kbd v-hide-phone">⌘↵</span>
-      <button type="button" className="v-btn pri" data-testid={testid} disabled={busy} onClick={send}>
+      <button type="button" className="v-btn pri" data-testid={testid} disabled={busy} onClick={send} title={`Send the picked answers (${isMac() ? '⌘↵' : 'Ctrl+Enter'})`}>
         Send {n > 1 ? `${n} answers` : 'answer'}
+        <SendKey />
       </button>
     </div>
   )

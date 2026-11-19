@@ -19,7 +19,7 @@ import { ReplyHelpPanel, useReplyHelp, withReplyHelp } from '../components/Reply
 import { IconCheck, IconClose, IconComment, IconExpand, IconPaperclip, IconPlus, IconSketch } from '../components/icons'
 import { Popover } from '../components/ui'
 import { v3, type Task, type V3Message } from './data'
-import { TaskChip, TaskPicker, agentHint, clearAnswers, draftedAnswers, openQuestions, useAnswersVersion } from './parts'
+import { SendKey, TaskChip, TaskPicker, agentHint, clearAnswers, draftedAnswers, openQuestions, useAnswersVersion } from './parts'
 import { useQuoteTarget } from './quote'
 
 /** What the composer sends: the words, the recipient, more tasks it is about, the uploaded files,
@@ -394,11 +394,12 @@ export function Composer({
             title={`Send to ${plainName}'s stream without tying it to this task (${plainKey})`}
           >
             {isPhone ? 'No task' : 'Send without task'}
+            <SendKey shift />
           </button>
         )}
-        <span className="v-kbd v-hide-phone">⌘↵</span>
         <button type="button" ref={sendRef} className="v-btn pri" data-testid="composer-send" disabled={!canSend} onClick={() => void send()} title={cmd ? 'Run as a command' : 'Send'}>
           {busy ? (cmd ? 'Running…' : 'Sending…') : cmd ? 'Run' : 'Send'}
+          <SendKey />
         </button>
       </div>
       <Popover anchor={menu} open={!!menu} onClose={() => setMenu(null)} side="top" align="start" className="w-[240px] p-1.5">

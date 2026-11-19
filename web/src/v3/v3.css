@@ -231,6 +231,10 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-composer .v-tb .v-plainsend { border-color: transparent; background: transparent; color: var(--mb-subtle); font-weight: 500; }
 .v-composer .v-tb .v-plainsend:hover:not(:disabled) { color: var(--mb-fg); background: var(--mb-rowsel); }
 .v-composer .v-tb .v-plainsend:disabled { opacity: 0.5; }
+/* The shortcut inside a send button (SendKey): small and subdued, in the button's own colour so it reads on the
+   accent fill and on the ghost button alike, in both themes. No key on a phone or a touch screen: hidden there. */
+.v-btnkbd { display: inline-block; margin-left: 6px; padding: 0 4px; border: 0; border-radius: 3px; background: color-mix(in srgb, currentColor 13%, transparent); color: inherit; opacity: .78; font-family: inherit; font-size: 10.5px; font-weight: 500; line-height: 15px; vertical-align: 1px; }
+@media (max-width: 699px), (pointer: coarse) { .v-btnkbd { display: none; } }
 
 /* tag picker */
 .v-tagpop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; background: var(--mb-overlay); border: 1px solid var(--mb-line2); border-radius: 8px; box-shadow: var(--mb-shadow); padding: 6px; text-align: left; }
