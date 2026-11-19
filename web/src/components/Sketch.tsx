@@ -15,6 +15,8 @@ import {
   rasterize,
   shapeBounds,
   sketchName,
+  TEXT_LINE_HEIGHT,
+  textLines,
   textSize,
   type Scene,
   type Shape,
@@ -73,8 +75,13 @@ function Geom({ s, paint, hit }: { s: Shape; paint: Paint; hit?: boolean }) {
       return (
         <>
           {hit && <rect x={tb.x} y={tb.y} width={tb.w} height={tb.h} fill="transparent" stroke="none" pointerEvents="all" />}
-          <text x={s.x1} y={s.y1} fontSize={textSize(s)} fontFamily={FONT} fill={hit ? 'transparent' : s.stroke} stroke="none" pointerEvents={hit ? 'all' : undefined}>
-          {s.text}
+          <text x={s.x1} y={s.y1} fontSize={textSize(s)} fontFamily={FONT} fill={hit ? 'transparent' : s.stroke} stroke="none" pointerEvents={hit ? 'all' : undefined} style={{ whiteSpace: 'pre' }}>
+            {/* SVG text has no line breaks: one tspan per line, each placed on its own baseline. */}
+            {textLines(s.text).map((line, i) => (
+              <tspan key={i} x={s.x1} y={s.y1 + i * textSize(s) * TEXT_LINE_HEIGHT}>
+                {line || ' '}
+              </tspan>
+            ))}
           </text>
         </>
       )
@@ -405,6 +412,8 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   // Keys: handled here, and kept from the app's own shortcuts.
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {})
   keyRef.current = (e) => {
+    // Never act on a key that belongs to an IME composition (Esc would cancel the text edit).
+    if (e.isComposing || e.keyCode === 229) return
     const inField = (e.target as Element | null)?.closest('input, textarea') != null
     const mod = e.metaKey || e.ctrlKey
     if (e.key === 'Escape') {
@@ -600,10 +609,10 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
               </g>
             )}
           </svg>
-          {editing && ctm && <TextInput ed={editing} ctm={ctm} onChange={(text) => setEditing({ ...editing, text })} onCommit={() => finishEdit(true)} onCancel={() => finishEdit(false)} host={svgRef.current!.parentElement!} />}
+          {editing && ctm && <TextInput ed={editing} ctm={ctm} isPhone={isPhone} onChange={(text) => setEditing({ ...editing, text })} onCommit={() => finishEdit(true)} onCancel={() => finishEdit(false)} host={svgRef.current!.parentElement!} />}
         </div>
         <div className="text-[12px] text-subtle">
-          {bg ? 'Drawing on an image. ' : ''}Shift constrains lines to 45° and shapes to squares. Double-click text to edit. Drag empty canvas to select several (Shift-click adds, ⌘/Ctrl+A selects all); Option/Alt-drag duplicates; arrows nudge; Delete removes the selection. {isPhone ? '' : '⌘/Ctrl+Enter is Done, Esc cancels.'}
+          {bg ? 'Drawing on an image. ' : ''}Shift constrains lines to 45° and shapes to squares. Double-click text to edit{isPhone ? '' : ' (Enter adds a line, ⌘/Ctrl+Enter finishes it)'}. Drag empty canvas to select several (Shift-click adds, ⌘/Ctrl+A selects all); Option/Alt-drag duplicates; arrows nudge; Delete removes the selection. {isPhone ? '' : '⌘/Ctrl+Enter is Done, Esc cancels.'}
         </div>
       </div>
     </div>,
@@ -611,11 +620,16 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   )
 }
 
-/** The inline text box, placed over the canvas where the text will be. */
-function TextInput({ ed, ctm, host, onChange, onCommit, onCancel }: { ed: Editing; ctm: DOMMatrix; host: HTMLElement; onChange: (t: string) => void; onCommit: () => void; onCancel: () => void }) {
+/** The inline text box, placed over the canvas where the text will be. Multi-line:
+ * Enter adds a line; ⌘/Ctrl+Enter, a click outside (blur) or a tool change finishes it;
+ * Esc cancels. An Enter that confirms an IME conversion never finishes it. */
+function TextInput({ ed, ctm, host, isPhone, onChange, onCommit, onCancel }: { ed: Editing; ctm: DOMMatrix; host: HTMLElement; isPhone: boolean; onChange: (t: string) => void; onCommit: () => void; onCancel: () => void }) {
   const size = textSize(ed) * ctm.a
   const r = host.getBoundingClientRect()
-  const ref = useRef<HTMLInputElement>(null)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  // Composition state: Safari fires the confirming Enter keydown right after compositionend.
+  const composing = useRef(false)
+  const justEnded = useRef(false)
   // Focus after the pointer's own focus change, which would blur it at once.
   useEffect(() => {
     const t = setTimeout(() => {
@@ -624,35 +638,69 @@ function TextInput({ ed, ctm, host, onChange, onCommit, onCancel }: { ed: Editin
     }, 0)
     return () => clearTimeout(t)
   }, [])
+  const lines = textLines(ed.text)
+  const longest = Math.max(...lines.map((l) => l.length))
+  const left = ctm.a * ed.x + ctm.e - r.left
+  const top = ctm.d * ed.y + ctm.f - r.top - size * 1.05
   return (
-    <input
-      ref={ref}
-      data-testid="sketch-text-input"
-      aria-label="Text"
-      value={ed.text}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={onCommit}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          onCommit()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          onCancel()
-        }
-      }}
-      className="absolute m-0 border-0 border-b border-dashed border-[#2563eb] bg-transparent p-0 outline-none"
-      style={{
-        left: ctm.a * ed.x + ctm.e - r.left,
-        top: ctm.d * ed.y + ctm.f - r.top - size * 0.85,
-        width: Math.max(120, ed.text.length * size * 0.65 + 20),
-        fontSize: size,
-        fontFamily: FONT,
-        lineHeight: 1.2,
-        color: ed.stroke,
-      }}
-    />
+    <>
+      <textarea
+        ref={ref}
+        data-testid="sketch-text-input"
+        aria-label="Text"
+        rows={lines.length}
+        wrap="off"
+        enterKeyHint="enter"
+        value={ed.text}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onCommit}
+        onCompositionStart={() => {
+          composing.current = true
+        }}
+        onCompositionEnd={() => {
+          composing.current = false
+          justEnded.current = true
+          setTimeout(() => {
+            justEnded.current = false
+          }, 0)
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          const ne = e.nativeEvent
+          // Keys of an IME composition (the Enter that confirms a conversion) are the IME's.
+          if (ne.isComposing || ne.keyCode === 229 || composing.current) return
+          if (e.key === 'Enter') {
+            // The Enter right after compositionend confirmed the conversion (Safari): ignore it.
+            if (justEnded.current) {
+              e.preventDefault()
+              return
+            }
+            if (e.metaKey || e.ctrlKey) {
+              e.preventDefault()
+              onCommit()
+            }
+            // A plain Enter inserts a newline (the textarea's default).
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        className="absolute m-0 resize-none overflow-hidden whitespace-pre border-0 border-b border-dashed border-[#2563eb] bg-transparent p-0 outline-none"
+        style={{
+          left,
+          top,
+          width: Math.max(120, longest * size * 0.65 + 20),
+          height: size * TEXT_LINE_HEIGHT * lines.length + 2,
+          fontSize: size,
+          fontFamily: FONT,
+          lineHeight: TEXT_LINE_HEIGHT,
+          color: ed.stroke,
+        }}
+      />
+      <div data-testid="sketch-text-hint" aria-hidden="true" className="pointer-events-none absolute whitespace-nowrap rounded bg-raised px-1 text-[11px] text-subtle" style={{ left, top: top + size * TEXT_LINE_HEIGHT * lines.length + 6 }}>
+        {isPhone ? 'Tap outside to finish' : '⌘↵ to finish · Esc cancels'}
+      </div>
+    </>
   )
 }
 
