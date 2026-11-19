@@ -109,11 +109,11 @@ func TestToolCallsGoThroughTheAgentAPI(t *testing.T) {
 	if o := p.tool("mcp__minbox__send_message", map[string]any{"body": "  "}); o["ok"] != false || o["error"] != "body is required." {
 		t.Fatal(o)
 	}
-	o := p.tool("send_message", map[string]any{"body": "Pick one\n\n:::question\nA or B?\n- [ ] A\n- [ ] B\n:::", "subject": "Old"})
+	o := p.tool("send_message", map[string]any{"task_status": "working", "body": "Pick one\n\n:::question\nA or B?\n- [ ] A\n- [ ] B\n:::", "subject": "Old"})
 	if o["ok"] != true || !strings.HasPrefix(o["text"].(string), "Sent to the person in minbox asking 1 question.") || !strings.Contains(o["text"].(string), `Questions the inbox shows: "A or B?".`) {
 		t.Fatal(o)
 	}
-	if o := p.tool("send_message", map[string]any{"body": "x", "task_ids": []any{"tsk_nope"}}); o["ok"] != false || !strings.HasPrefix(o["error"].(string), "minbox: ") {
+	if o := p.tool("send_message", map[string]any{"task_status": "working", "body": "x", "task_ids": []any{"tsk_nope"}}); o["ok"] != false || !strings.HasPrefix(o["error"].(string), "minbox: ") {
 		t.Fatalf("unknown task: %v", o)
 	}
 	if o := p.tool("set_session_title", map[string]any{"title": "  Fix   login "}); o["text"] != "Session title set: Fix login" || o["effects"].(map[string]any)["session_title"] != "Fix   login" {
@@ -203,7 +203,7 @@ func TestPendingTextAndTurnReminders(t *testing.T) {
 	// The person typed before it went in: the reminder is dropped (the next turn is theirs).
 	p.event(map[string]any{"type": "prompt", "origin": "composer"})
 	p.event(map[string]any{"type": "turn.start"})
-	p.tool("send_message", map[string]any{"body": "Which one?"})
+	p.tool("send_message", map[string]any{"task_status": "working", "body": "Which one?"})
 	if o := p.event(map[string]any{"type": "turn.complete", "reason": "answer", "answer": "Which one?"}); o["submit_when_idle"] != nil {
 		t.Fatal(o)
 	}
@@ -235,7 +235,7 @@ func TestPromptContextFollowsTheConversation(t *testing.T) {
 		t.Fatalf("every 3rd: %v", got)
 	}
 	// After a compaction: the instructions and the open threads, once.
-	p.do("POST", "/api/agent/messages", map[string]any{"body": "A or B?\n\n:::question\nA or B?\n- [ ] A\n- [ ] B\n:::"}, bearer(p.sess))
+	p.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "A or B?\n\n:::question\nA or B?\n- [ ] A\n- [ ] B\n:::"}, bearer(p.sess))
 	p.event(map[string]any{"type": "session.compact"})
 	got := ctx("")
 	if len(got) != 2 || !strings.Contains(got[1].(string), "Your open minbox threads (1)") {
@@ -391,7 +391,7 @@ func TestNoPlaceRequestOverProtocol1(t *testing.T) {
 	p := newProto(t)
 	u := p.personSays(p.sess, "thanks!")
 	p.event(map[string]any{"type": "turn.start"})
-	o := p.tool("send_message", map[string]any{"body": "You're welcome."})
+	o := p.tool("send_message", map[string]any{"task_status": "working", "body": "You're welcome."})
 	p.event(map[string]any{"type": "turn.complete", "reason": "answer", "answer": "Done."})
 	if text := o["text"].(string); !strings.Contains(text, "in no task") || !strings.Contains(text, u) {
 		t.Fatalf("send_message text = %q", text)
@@ -457,9 +457,10 @@ func TestToolSchemasStayOpen(t *testing.T) {
 func TestUnknownToolArgsAreIgnored(t *testing.T) {
 	p := newProto(t)
 	o := p.tool("send_message", map[string]any{
-		"body":       "Please allow this.",
-		"commands":   []any{map[string]any{"command": "true", "description": "nothing", "later_field": 1}},
-		"some_param": map[string]any{"added": "later"},
+		"body":        "Please allow this.",
+		"task_status": "working",
+		"commands":    []any{map[string]any{"command": "true", "description": "nothing", "later_field": 1}},
+		"some_param":  map[string]any{"added": "later"},
 	})
 	if o["ok"] != true || !strings.Contains(o["text"].(string), "with 1 command for them to approve") {
 		t.Fatalf("send with commands and an unknown key: %v", o)

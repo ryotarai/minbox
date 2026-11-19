@@ -182,7 +182,7 @@ func TestAgentMessageNotifies(t *testing.T) {
 	}
 	sess := e.createSession()
 	long := "# Plan\n\nThe **full** body with <tags> & more.\n\n" + strings.Repeat("A long paragraph of text. ", 400)
-	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": long, "thread_title": "The plan"}, bearer(sess))
+	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": long, "thread_title": "The plan"}, bearer(sess))
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, sent)
 	}
@@ -206,7 +206,7 @@ func TestAgentMessageNotifies(t *testing.T) {
 
 	// A message with a question reaches both; the person's own reply reaches neither.
 	q := "Which one?\n\n:::question\nA or B?\n- [ ] A\n- [ ] B\nRecommended: A\n:::"
-	code, sent, _ = e.do("POST", "/api/agent/messages", map[string]any{"body": q, "thread_id": sent["thread_id"]}, bearer(sess))
+	code, sent, _ = e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": q, "thread_id": sent["thread_id"]}, bearer(sess))
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, sent)
 	}

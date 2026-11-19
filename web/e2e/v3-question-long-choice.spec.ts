@@ -30,14 +30,14 @@ async function cards(minbox: any) {
   const a = await startAgent(minbox, 'api')
   await say(minbox, a, 'hello')
   await agentReply(minbox, a, /./)
-  await as(minbox, a, 'POST', '/api/agent/messages', { body: BODY('Answered one.') })
+  await as(minbox, a, 'POST', '/api/agent/messages', { body: BODY('Answered one.'), task_status: 'needs_you' })
   const done = await agentReply(minbox, a, /Answered one\./)
   const ans = await api(minbox, 'POST', `/api/v3/sessions/${a.id}/messages`, {
     words: '',
     answers_for: done.id,
     answers: done.questions.map((q: any) => ({ key: q.key, selected: [LONG] })),
   })
-  await as(minbox, a, 'POST', '/api/agent/messages', { body: BODY('Open one.') })
+  await as(minbox, a, 'POST', '/api/agent/messages', { body: BODY('Open one.'), task_status: 'needs_you' })
   const open = await agentReply(minbox, a, /Open one\./)
   return { a, done, open, ans }
 }

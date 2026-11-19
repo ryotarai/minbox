@@ -1,10 +1,10 @@
 {
   "protocol": 1,
-  "version": "592a8e3e3180",
+  "version": "0ac5f008e6e2",
   "tools": [
     {
       "name": "minbox_send_message",
-      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes. commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so), as [{command, cwd?, description?}]; the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
+      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task, list_tasks or the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one,. Without task_id it goes in the one task you created in this turn, else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are legacy, not needed. Pass `task_status` (required): that task's status once the person reads this message (as update_task sets it): needs_you when it asks them something and your work waits on it; done when it reports finished work; working when your work goes on; blocked when you wait on something outside them. A call without it is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes. commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so), as [{command, cwd?, description?}]; the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -104,6 +104,16 @@
             },
             "type": "array"
           },
+          "task_status": {
+            "description": "Required: the status of this message's task once the person reads it. needs_you: the message asks them something and your work waits on the answer. done: it reports finished work. working: your work goes on. blocked: you wait on something outside them (CI, another session).",
+            "enum": [
+              "working",
+              "needs_you",
+              "blocked",
+              "done"
+            ],
+            "type": "string"
+          },
           "thread_id": {
             "description": "Legacy, not needed: the id of an older thread; the message goes to your conversation with the person, about that thread's task.",
             "type": "string"
@@ -114,7 +124,8 @@
           }
         },
         "required": [
-          "body"
+          "body",
+          "task_status"
         ],
         "type": "object"
       },
@@ -260,7 +271,7 @@
     },
     {
       "name": "minbox_update_task",
-      "description": "Update a task or goal of your project by its task_id (from minbox_create_task or minbox_list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with minbox_send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step. A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only. Parameters: task_id (required), title, summary, detail, report, status, steps, check_steps, uncheck_steps, criteria, check_criteria, goal_id, message_ids.",
+      "description": "Update a task or goal of your project by its task_id (from minbox_create_task or minbox_list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Each minbox_send_message sets its task's status (task_status); set status here when it changes between messages: needs_you only while you are truly blocked on the person (and ask them with minbox_send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step. A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only. Parameters: task_id (required), title, summary, detail, report, status, steps, check_steps, uncheck_steps, criteria, check_criteria, goal_id, message_ids.",
       "input_schema": {
         "additionalProperties": true,
         "properties": {

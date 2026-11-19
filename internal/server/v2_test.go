@@ -28,7 +28,7 @@ func TestAttachmentsAndReview(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(repo, "plan.md"), []byte("# Plan\n"), 0o644)
 
 	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{
-		"body": "see the plan", "subject": "Plan", "name": "plan-tag",
+		"body": "see the plan", "subject": "Plan", "name": "plan-tag", "task_status": "working",
 		"attachments": []string{"plan.md"},
 		"review":      map[string]any{"title": "Review", "summary": "s", "sections": []any{map[string]any{"title": "one", "files": []string{"a.go", "new.go"}}}},
 	}, bearer(sess))
@@ -66,7 +66,7 @@ func TestAttachmentsAndReview(t *testing.T) {
 	if !strings.Contains(f0["diff"].(string), "+func A() {}") || f1["additions"].(float64) != 2 || f1["path"] != "new.go" {
 		t.Fatalf("review = %v", review)
 	}
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "attachments": []string{"missing.md"}}, bearer(sess)); code != 400 {
+	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "attachments": []string{"missing.md"}}, bearer(sess)); code != 400 {
 		t.Fatalf("missing attachment: %d", code)
 	}
 }
@@ -98,7 +98,7 @@ func TestReviewOfAWorktreeShowsItsCommittedChanges(t *testing.T) {
 
 	review := func(rv map[string]any) map[string]any {
 		t.Helper()
-		code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "review", "subject": "R", "review": rv}, bearer(sess))
+		code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "review", "subject": "R", "review": rv}, bearer(sess))
 		if code != 201 {
 			t.Fatalf("send: %d %v", code, sent)
 		}
@@ -130,7 +130,7 @@ func TestReviewOfAWorktreeShowsItsCommittedChanges(t *testing.T) {
 		t.Fatalf("worktree diff against HEAD = %q", d)
 	}
 	// A base the worktree does not know: an error, not an empty review.
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "review": map[string]any{"title": "R", "cwd": wt, "base": "nope", "sections": []any{map[string]any{"title": "s", "files": []string{"a.go"}}}}}, bearer(sess)); code != 400 {
+	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "review": map[string]any{"title": "R", "cwd": wt, "base": "nope", "sections": []any{map[string]any{"title": "s", "files": []string{"a.go"}}}}}, bearer(sess)); code != 400 {
 		t.Fatalf("unknown base: %d", code)
 	}
 }
@@ -139,7 +139,7 @@ func TestThreadOpsReplyExtrasAndSearch(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	other := e.createSession()
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "検索の範囲\n\n:::question\nGo?\nStopped: waiting\n- [ ] Yes\n- [ ] No\n:::", "subject": "検索の範囲"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "検索の範囲\n\n:::question\nGo?\nStopped: waiting\n- [ ] Yes\n- [ ] No\n:::", "subject": "検索の範囲"}, bearer(sess))
 	tid := sent["thread_id"].(string)
 	_, th, _ := e.do("GET", "/api/threads/"+tid, nil, nil)
 	if th["section"] != "stopped" {

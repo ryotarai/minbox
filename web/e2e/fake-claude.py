@@ -8,8 +8,8 @@ old integrations keep working; fake-pi.py and fake-opencode.py speak protocol 1 
 Typed commands (one per line):
   ask        send a message with a question block
   say <text> send a plain message
-  mark <status> [text]  set the typed task's status with update_task (working|needs_you|blocked|done),
-             then send a plain message about it (send_message has no status: minbox refuses one)
+  mark <status> [text]  send a plain message about the typed task with that task_status
+             (working|needs_you|blocked|done): send_message sets its task's status
   work       status working: queued messages wait (idle ends it)
   nobeat     stop the heartbeat (beat starts it again); the poll carries on
   tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
@@ -65,6 +65,25 @@ def api(method, path, body=None, timeout=30):
             return json.loads(r.read() or b"null")
     except urllib.error.HTTPError as e:
         return {"error": e.read().decode()}
+
+
+def status_of(task_id):
+    """A task's status now (working when it is not found): a message that does not mean to change it
+    passes it as its task_status (send_message requires one)."""
+    for path in ("/api/agent/tasks", "/api/agent/tasks?all=1"):
+        for t in (api("GET", path) or {}).get("tasks") or []:
+            if t.get("id") == task_id:
+                return t.get("status") or "working"
+    return "working"
+
+
+def send(m, status=None):
+    """POST /api/agent/messages with task_status: status, else the named task's status as it is
+    (working when the message names none)."""
+    if "task_status" not in m:
+        ids = ([m["task_id"]] if m.get("task_id") else []) + list(m.get("task_ids") or [])
+        m["task_status"] = status or (status_of(ids[0]) if ids else "working")
+    return api("POST", "/api/agent/messages", m)
 
 
 def out(s):
@@ -132,11 +151,11 @@ def title_from(text):
     return s[:64]
 
 
-def say(body, task_ids=None, **extra):
+def say(body, task_ids=None, status=None, **extra):
     m = {"body": body, **extra}
     if task_ids:
         m["task_ids"] = task_ids
-    r = api("POST", "/api/agent/messages", m)
+    r = send(m, status)
     out(f"replied {r.get('decision', '')} {r.get('task_ids')}")
     return r
 
@@ -182,9 +201,9 @@ def turn(p, body):
             g = api("GET", "/api/agent/tasks?all=1")
             crit = next((t.get("criteria") or [] for t in g.get("tasks") or [] if t["id"] == gid), [])
             api("PATCH", "/api/agent/tasks/" + gid, {"check_criteria": list(range(1, len(crit) + 1))})
-            say("All criteria are met; the goal is done.", [gid])
+            say("All criteria are met; the goal is done.", [gid], "done")
         else:
-            say(f"Goal progress: step {continued[gid]} done.", [gid])
+            say(f"Goal progress: step {continued[gid]} done.", [gid], "working")
         return
     if body.startswith("## Answers") or "Answers to your questions" in body:
         say("Thanks, carrying on with that.")
@@ -202,7 +221,7 @@ def turn(p, body):
         # update_task with only a status: the task waits on the person, with no question asked.
         named = [t["id"] for t in tasks if any(w in words(body) for w in words(t["title"]) if len(w) >= 4 and w not in STOP)]
         api("PATCH", "/api/agent/tasks/" + named[0], {"status": "needs_you"})
-        say("I need you to look at the gauge before I go on.", named[:1])
+        say("I need you to look at the gauge before I go on.", named[:1], "needs_you")
         return
     if "TODOS" in body:
         # Only things for the person to do (no question): the Board's ask is the first one, +n.
@@ -214,14 +233,13 @@ def turn(p, body):
         say("One decision first.\n\n:::question\nWhich region should it deploy to?\n- [ ] Tokyo\n- [ ] Oregon\nRecommended: Tokyo\n:::", named[:1])
         return
     if p.get("tasks") and "REOPEN" in body:
-        # More work on a done task: the agent reopens it (a message alone leaves it done).
+        # More work on a done task: the agent reopens it (its reply's task_status working).
         t0 = p["tasks"][0]
-        api("PATCH", "/api/agent/tasks/" + t0["task_id"], {"status": "working"})
-        say(f"Reopened “{t0['title']}”.", [t0["task_id"]])
+        say(f"Reopened “{t0['title']}”.", [t0["task_id"]], "working")
         return
     if p.get("tasks"):
         t0 = p["tasks"][0]
-        say(f"Noted for “{t0['title']}”.")
+        say(f"Noted for “{t0['title']}”.", status=t0.get("status") or "working")
         return
     ws = words(body)
     hits = []
@@ -244,7 +262,7 @@ def turn(p, body):
         say("Sure — noted.")
         return
     api("POST", "/api/agent/tasks", {"title": title_from(body), "status": "done"})
-    say("Sure — noted.")
+    say("Sure — noted.", status="done")
 
 
 def poll():
@@ -339,7 +357,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         api("POST", "/api/agent/status", {"status": "working" if busy else "idle"})
         out(f"status {line}")
     elif line == "ask":
-        r = api("POST", "/api/agent/messages", {
+        r = send({
             "subject": "Pick a database",
             "body": "I need a decision.\n\n:::question\nWhich database should we use?\n\nWe store small records.\n\n- [ ] SQLite — simplest\n- [ ] Postgres — needs a server\n\nRecommended: SQLite\n:::\n\n:::question-text\nAnything else?\n:::",
         })
@@ -347,13 +365,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         out(f"sent question in {r['thread_id']}")
     elif line == "ask region":
         # A second question in the last thread: it moves the thread on past the earlier one.
-        r = api("POST", "/api/agent/messages", {
+        r = send({
             "thread_id": last_thread,
             "body": "One more while you decide.\n\n:::question\nWhich region?\n- [ ] Tokyo\n- [ ] Oregon\n:::",
         })
         out(f"sent region in {r['thread_id']}")
     elif line == "stop":
-        r = api("POST", "/api/agent/messages", {
+        r = send({
             "subject": "Archive rules",
             "name": "archive-search",
             "body": "Two things before the migration.\n\n:::question\nShould an archived thread come back when Claude writes?\nStopped: migration 0007 waits on this.\n- [ ] Come back — like mail\n- [ ] Stay archived\nRecommended: Come back\n:::\n\n:::question-multi\nWhat should search cover?\nHolds up: search API; search UI\n- [ ] Subjects\n- [ ] Bodies\n- [ ] File names\nRecommended: Bodies\n:::",
@@ -361,7 +379,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         last_thread = r["thread_id"]
         out(f"sent stop in {r['thread_id']}")
     elif line == "actions":
-        r = api("POST", "/api/agent/messages", {
+        r = send({
             "subject": "Before the deploy",
             "body": "Please do these by hand.\n\n:::actions\nDeploy prep\n- [ ] Add the GitHub labels\n- [ ] Check the staging DNS\n:::",
         })
@@ -373,7 +391,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             spec = json.load(f)
         if last_thread and "subject" not in spec and "thread_id" not in spec:
             spec["thread_id"] = last_thread
-        r = api("POST", "/api/agent/messages", spec)
+        r = send(spec)
         last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
     elif line.startswith("transcript "):
@@ -392,7 +410,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
     elif line == "attach":
         with open("plan.md", "w") as f:
             f.write("# Archive plan\n\nAdd `archived_at` to threads and sessions.\n\n## Changes\n\n- Archived threads leave the list and come back when Claude writes.\n- Search uses LIKE first, capped at 50.\n")
-        r = api("POST", "/api/agent/messages", {"subject": "The plan", "body": "I wrote the plan; have a look.", "attachments": ["plan.md"]})
+        r = send({"subject": "The plan", "body": "I wrote the plan; have a look.", "attachments": ["plan.md"]})
         last_thread = r["thread_id"]
         out(f"sent attach in {r['thread_id']}")
     elif line == "kinds":
@@ -412,7 +430,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             f.write(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR42mNk+M9Qz0AEYBxVSF8ADY0BBQqqP0kAAAAASUVORK5CYII="))
         with open("blob.bin", "wb") as f:
             f.write(bytes([0, 1, 2, 3, 255]))
-        r = api("POST", "/api/agent/messages", {"subject": "Many kinds", "body": "Files of every kind.",
+        r = send({"subject": "Many kinds", "body": "Files of every kind.",
             "attachments": list(files) + ["pic.png", "blob.bin"]})
         last_thread = r["thread_id"]
         out(f"sent kinds in {r['thread_id']} {len(r.get('attachments', []))}")
@@ -424,13 +442,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             f.write("# Plan\n\nDo it.\n")
         body = ("A diagram:\n\n```mermaid\ngraph LR\n  X --> Y\n```\n\nA picture:\n\n```svg\n<svg xmlns='http://www.w3.org/2000/svg' width='40' height='20'><rect width='40' height='20' fill='teal'/></svg>\n```\n\nA page:\n\n```html\n<div id=chart style='color:var(--foreground)'>Live chart</div>\n```\n\n"
                 "A screenshot: ![shot](shot.png)\n\nSee [the plan](plan.md) and [missing](nope.md).")
-        r = api("POST", "/api/agent/messages", {"subject": "Rich body", "body": body, "attachments": ["plan.md"]})
+        r = send({"subject": "Rich body", "body": body, "attachments": ["plan.md"]})
         last_thread = r["thread_id"]
         out(f"sent rich in {r['thread_id']} not_shown={len(r.get('images_not_shown') or [])}")
     elif line == "review":
         with open("derive.go", "w") as f:
             f.write("package store\n\nfunc Section(archived bool) string {\n\tif archived {\n\t\treturn \"archived\"\n\t}\n\treturn \"quiet\"\n}\n")
-        r = api("POST", "/api/agent/messages", {"subject": "Review the store change", "body": "Ready for review.",
+        r = send({"subject": "Review the store change", "body": "Ready for review.",
             "review": {"title": "Archive in the store", "summary": "Sections are derived in one place.",
                        "sections": [{"title": "Section rules", "summary": "The first rule that matches wins.", "files": ["derive.go"]}]}})
         last_thread = r["thread_id"]
@@ -454,14 +472,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         sys.stdout.write("\x1b[?1002l\x1b[?1006l\x1b[?1000l\x1b[?1049l")
         out("mouse got: " + repr(got))
     elif line.startswith("retitle "):
-        r = api("POST", "/api/agent/messages", {"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
+        r = send({"body": "The topic moved on.", "thread_id": last_thread, "thread_title": line[8:]})
         out(f"retitled {r['thread_id']}")
     elif line.startswith("mark "):
-        # mark <status> [text]: the typed task's status (update_task), then a message about it
+        # mark <status> [text]: a message about the typed task that sets its status (task_status)
         status, _, text = line[5:].partition(" ")
         task = typed_task()[0]
-        api("PATCH", "/api/agent/tasks/" + task, {"status": status})
-        r = api("POST", "/api/agent/messages", {"body": text or f"Marked {status}", "task_id": task})
+        r = send({"body": text or f"Marked {status}", "task_id": task}, status)
         last_thread = r["thread_id"]
         out(f"marked {task}")
     elif line.startswith("burst "):
@@ -472,7 +489,7 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
                 body["thread_id"] = last_thread
             else:
                 body["subject"] = "Burst"
-            r = api("POST", "/api/agent/messages", body)
+            r = send(body)
             last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
     elif line.startswith("say "):
@@ -481,13 +498,13 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
             body["thread_id"] = last_thread
         else:
             body["subject"] = "Note"
-        r = api("POST", "/api/agent/messages", body)
+        r = send(body)
         last_thread = r["thread_id"]
         out(f"sent in {r['thread_id']}")
     elif line.startswith("cmds "):
         # cmds <json>: a message asking the person to run commands (send_message `commands`), e.g.
         # cmds [{"command": "echo hi", "description": "say hi"}]
-        r = api("POST", "/api/agent/messages", {"body": "Please allow these commands.", "commands": json.loads(line[5:]), "task_ids": typed_task()})
+        r = send({"body": "Please allow these commands.", "commands": json.loads(line[5:]), "task_ids": typed_task()})
         last_thread = r.get("thread_id", last_thread)
         out(f"commands sent {r.get('message_id', r)} " + " ".join(c["id"] for c in r.get("commands", [])))
     elif line.startswith("tui "):

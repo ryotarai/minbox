@@ -95,7 +95,7 @@ func TestV3IgnoreKeepsExplicitNeedsYou(t *testing.T) {
 	sess := e.createSession()
 	e.personSays(sess, "ship it")
 	_, tk, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Ship", "status": "needs_you"}, bearer(sess))
-	q := e.agentSays(sess, map[string]any{"body": ":::question\nShip now?\n- [ ] Yes\n- [ ] No\n:::"})
+	q := e.agentSays(sess, map[string]any{"task_status": "needs_you", "body": ":::question\nShip now?\n- [ ] Yes\n- [ ] No\n:::"})
 	if code, _, _ := e.do("POST", "/api/v3/messages/"+q["message_id"].(string)+"/ignore", nil, nil); code != 200 {
 		t.Fatalf("ignore: %d", code)
 	}
@@ -119,7 +119,7 @@ func TestBoardNeedsYouIsTaskStatusOnly(t *testing.T) {
 	if code, obj, _ := e.do("PATCH", "/api/agent/tasks/"+waits, map[string]any{"status": "needs_you"}, bearer(sess)); code != 200 {
 		t.Fatalf("needs_you: %d %v", code, obj)
 	}
-	e.agentSays(sess, map[string]any{"task_id": waits, "body": "Please check the gauge."})
+	e.agentSays(sess, map[string]any{"task_id": waits, "task_status": "needs_you", "body": "Please check the gauge."})
 
 	_, board, _ := e.do("GET", "/api/v3/board", nil, nil)
 	if _, ok := board["questions"]; ok {

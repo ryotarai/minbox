@@ -132,9 +132,9 @@ var sendDescription = strings.Join([]string{
 	"Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`).",
 	"It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat.",
 	"It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids.",
-	"Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id).",
-	"`thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
-	"It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused.",
+	"Pass `task_id`: the one task this message is about (from create_task, list_tasks or the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one,. Without task_id it goes in the one task you created in this turn, else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id).",
+	"`thread_id` and `thread_title` are legacy, not needed.",
+	"Pass `task_status` (required): that task's status once the person reads this message (as update_task sets it): needs_you when it asks them something and your work waits on it; done when it reports finished work; working when your work goes on; blocked when you wait on something outside them. A call without it is refused.",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
 	"commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so), as [{command, cwd?, description?}]; the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
 }, " ")
@@ -189,6 +189,11 @@ func sendSchema() jobj {
 				"items":       jobj{"type": "string"},
 				"description": "Legacy: the older name of task_id, as a list of one id.",
 			},
+			"task_status": jobj{
+				"type":        "string",
+				"enum":        taskStatuses,
+				"description": "Required: the status of this message's task once the person reads it. needs_you: the message asks them something and your work waits on the answer. done: it reports finished work. working: your work goes on. blocked: you wait on something outside them (CI, another session).",
+			},
 			"thread_id": jobj{
 				"type":        "string",
 				"description": "Legacy, not needed: the id of an older thread; the message goes to your conversation with the person, about that thread's task.",
@@ -237,7 +242,7 @@ func sendSchema() jobj {
 				"required": []string{"title", "sections"},
 			},
 		},
-		"required":             []string{"body"},
+		"required":             []string{"body", "task_status"},
 		"additionalProperties": true,
 	}
 }
@@ -358,8 +363,8 @@ func tasksLine(p wakeMsg) string {
 }
 
 // doneTaskLine: the person wrote about a done task, which stays done unless the agent reopens it.
-func doneTaskLine(updateTool string) string {
-	return "The task is done: reopen it with " + updateTool + " status working only if their message asks for more work (a remark or a quick question leaves it done)."
+func doneTaskLine(sendTool string) string {
+	return "The task is done: reply with " + sendTool + " task_status done, unless their message asks for more work (then task_status working reopens it); a remark or a quick question leaves it done."
 }
 
 // wakeText is the turn text of one of the person's messages.
@@ -378,7 +383,7 @@ func wakeText(p wakeMsg, sendTool, readTool string) string {
 		if tl != "" {
 			lines = append(lines, tl+" (they wrote it about this task; reply with its task_id).")
 			if p.Tasks[0].Status == "done" {
-				lines = append(lines, doneTaskLine(strings.TrimSuffix(sendTool, toolSend)+"update_task"))
+				lines = append(lines, doneTaskLine(sendTool))
 			}
 		} else {
 			lines = append(lines, streamLine)
@@ -454,7 +459,7 @@ func replyNudgeText(sendTool string) string {
 func nudgeText(sendTool string) string {
 	return strings.Join([]string{
 		"minbox: your last reply asks the person for something (an opinion, a decision or an action) in the chat only, and they follow this session through the inbox.",
-		"Send it now with " + sendTool + ": what you need, with enough context to answer cold, each decision as a :::question block. Do not repeat the chat reply here; after sending, end your turn.",
+		"Send it now with " + sendTool + ": what you need, with enough context to answer cold, each decision as a :::question block, with task_status needs_you when your work waits on the answer. Do not repeat the chat reply here; after sending, end your turn.",
 	}, " ")
 }
 
@@ -535,6 +540,9 @@ func sentText(r any) string {
 			ids[i] = jtext(x)
 		}
 		about = " About task" + s + " " + strings.Join(ids, ", ") + "."
+		if st := jstr(jget(r, "task_status")); st != "" {
+			about += " Its status is now " + st + "."
+		}
 	}
 	cmds := jarr(jget(r, "commands"))
 	if len(cmds) > 0 {

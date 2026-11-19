@@ -132,12 +132,18 @@ test('README screenshots', async ({ page, minbox, browser }) => {
     aged(task, ago)
   }
   const agent = async (a: Agent, body: string, task: string, ago: number, extra: Record<string, unknown> = {}) => {
-    const r = await as(minbox, a, 'POST', '/api/agent/messages', { body, task_id: task, ...extra })
+    // Each message keeps its task's status as created (send_message's task_status).
+    const r = await as(minbox, a, 'POST', '/api/agent/messages', { body, task_id: task, task_status: statusOf[task] ?? 'working', ...extra })
     ages.push([r.message_id ?? r.id, ago])
     aged(task, ago)
     return r
   }
-  const task = async (a: Agent, fields: Record<string, unknown>) => (await as(minbox, a, 'POST', '/api/agent/tasks', fields)).task_id as string
+  const statusOf: Record<string, string> = {} // task id -> the status it was created with
+  const task = async (a: Agent, fields: Record<string, unknown>) => {
+    const id = (await as(minbox, a, 'POST', '/api/agent/tasks', fields)).task_id as string
+    statusOf[id] = (fields.status as string) ?? 'working'
+    return id
+  }
 
   // api-gateway / audit-log
   const tAudit = await task(audit, { title: 'Store the audit log for admin actions', summary: 'Writer and tests done; waiting on the database choice before the migration', steps: steps([['Find every admin action that changes state', true], ['Write events through one interface', true], ['Pick the store', false], ['Migration and retention job', false], ['Open the PR', false]]) })

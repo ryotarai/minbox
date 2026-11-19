@@ -232,7 +232,7 @@ func TestSuggestionsEndpoint(t *testing.T) {
 		}
 		return help("Yes", "No"), nil
 	})
-	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Done."}, bearer(sess))
+	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "Done."}, bearer(sess))
 	id := obj["thread_id"].(string)
 	get := func() map[string]any {
 		code, o, _ := e.do("GET", "/api/threads/"+id+"/suggestions", nil, nil)
@@ -267,7 +267,7 @@ func TestSuggestionsEndpoint(t *testing.T) {
 		t.Fatalf("not_needed: %v", o)
 	}
 	fail.Store(true)
-	e.do("POST", "/api/agent/messages", map[string]any{"body": "More.", "thread_id": id}, bearer(sess))
+	e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "More.", "thread_id": id}, bearer(sess))
 	o := get()
 	if o["error"] == nil || len(o["questions"].([]any)) != 0 {
 		t.Fatalf("error case: %v", o)
@@ -304,7 +304,7 @@ func TestSuggestionsV3StreamAndTask(t *testing.T) {
 	}
 	_, tk, _ := e.do("POST", "/api/agent/tasks", map[string]any{"title": "Fix the login page"}, bearer(sess))
 	task := tk["task_id"].(string)
-	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Login fixed.", "task_id": task}, bearer(sess))
+	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "Login fixed.", "task_id": task}, bearer(sess))
 	stream := obj["thread_id"].(string)
 	get := func(path string) map[string]any {
 		t.Helper()

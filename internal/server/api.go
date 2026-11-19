@@ -810,7 +810,10 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		Name        string     `json:"name"`
 		Attachments []string   `json:"attachments"`
 		Review      *reviewReq `json:"review"`
-		Status      string     `json:"status"` // refused: send_message has no status (sendStatusError)
+		// TaskStatus: the status of the message's task after it (required; replyStatus). Status is its
+		// older name, kept as an alias.
+		TaskStatus string `json:"task_status"`
+		Status     string `json:"status"`
 		// TaskID (v3): the one task the message is about; the turn's person's messages in no task get
 		// it too. TaskIDs is its older name, kept as an alias: one element.
 		TaskID  string   `json:"task_id"`
@@ -827,10 +830,11 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		httpError(w, 400, msg)
 		return
 	}
-	// send_message has no status (it used to set the named task's status, which reopened done tasks
-	// by accident): refuse the call, store nothing, and tell the agent where status is set.
-	if strings.TrimSpace(req.Status) != "" {
-		httpError(w, 400, sendStatusError)
+	// send_message says what is true of its task after it (task_status, required): a call without
+	// one is refused and nothing is stored, so an agent whose schema predates it learns it here.
+	taskStatus, msg := replyStatus(req.TaskStatus, req.Status)
+	if msg != "" {
+		httpError(w, 400, msg)
 		return
 	}
 	taskIDs, msg := s.sameProjectTasks(r.Context(), sess, named)
@@ -961,10 +965,16 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	}
 	tagged, decision := s.v3AgentReply(ctx, sess, messageID, taskIDs)
 	note := ""
+	statusOut := ""
 	if len(tagged) == 0 {
+		// No task to set task_status on: the message is stored, and the note says where it and its
+		// status go (update_task / create_task).
 		cand, _ := s.store.TurnMessages(ctx, sess.ID)
 		unplaced, _ := s.untaggedOf(ctx, append([]string{messageID}, cand...))
-		note = unplacedNote(unplaced)
+		note = unplacedNote(unplaced) + " Its task_status (" + taskStatus + ") was not applied: set it on that task (status " + taskStatus + ")."
+	} else if t, err := s.setReplyTaskStatus(ctx, sess, tagged[0], taskStatus); err == nil {
+		statusOut = t.Status
+		s.publishTasks()
 	}
 	s.publishThread(sess.ID, threadID)
 	if subject == "" {
@@ -994,7 +1004,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	for _, c := range runCmds {
 		cmdsOut = append(cmdsOut, cmdInfo{c.ID, c.Command, c.Cwd, c.State})
 	}
-	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_id": firstNonEmpty(tagged...), "task_ids": tagged, "decision": decision,
+	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_id": firstNonEmpty(tagged...), "task_ids": tagged, "decision": decision, "task_status": statusOut,
 		"attachments": attsOut, "images_not_shown": notShown, "note": note, "commands": cmdsOut})
 }
 

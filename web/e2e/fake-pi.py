@@ -89,12 +89,12 @@ for raw in sys.stdin:
         out(f"status {line}")
     elif line == "ask":
         r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {
-            "thread_title": "Pick a database",
+            "thread_title": "Pick a database", "task_status": "needs_you",
             "body": "I need a decision.\n\n:::question\nWhich database should we use?\n\n- [ ] SQLite — simplest\n- [ ] Postgres — needs a server\n\nRecommended: SQLite\n:::",
         }})
         out(f"sent question: {r.get('text') or r.get('error')}")
     elif line.startswith("say "):
-        r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {"body": line[4:]}})
+        r = api("POST", "/api/agent/tool", {"tool": "minbox_send_message", "args": {"body": line[4:], "task_status": "working"}})
         out(f"sent: {r.get('text') or r.get('error')}")
     elif line.startswith("title "):
         r = api("POST", "/api/agent/tool", {"tool": "minbox_set_session_title", "args": {"title": line[len("title "):]}})

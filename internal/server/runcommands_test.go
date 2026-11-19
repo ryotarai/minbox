@@ -21,7 +21,7 @@ func sendCommands(t *testing.T, e *env, sess *store.Session, cmds ...map[string]
 	for i, c := range cmds {
 		list[i] = c
 	}
-	code, o, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Please allow these.", "commands": list}, bearer(sess))
+	code, o, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "Please allow these.", "commands": list}, bearer(sess))
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, o)
 	}
@@ -176,7 +176,7 @@ func TestRunCommandsOnlyThePerson(t *testing.T) {
 		t.Fatalf("handler without a device: %d", rec.Code)
 	}
 	// A tool call can only add commands, pending.
-	if code, _, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"body": "x", "commands": []any{map[string]any{"command": "true"}}}}, map[string]string{"Authorization": "Bearer " + sess.Token, "Cookie": ""}); code != 200 {
+	if code, _, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"task_status": "working", "body": "x", "commands": []any{map[string]any{"command": "true"}}}}, map[string]string{"Authorization": "Bearer " + sess.Token, "Cookie": ""}); code != 200 {
 		t.Fatalf("tool: %d", code)
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -290,7 +290,7 @@ func TestRunCommandsValidationAndTimeout(t *testing.T) {
 		many = append(many, map[string]any{"command": "true"})
 	}
 	for _, cmds := range [][]any{many, {map[string]any{"command": "  "}}, {map[string]any{"command": strings.Repeat("x", runCmdMaxRunes+1)}}} {
-		if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "b", "commands": cmds}, bearer(sess)); code != 400 {
+		if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "b", "commands": cmds}, bearer(sess)); code != 400 {
 			t.Fatalf("bad commands: %d", code)
 		}
 	}
@@ -345,7 +345,7 @@ func TestRemoteArgvKeepsPlaceholders(t *testing.T) {
 func TestRunCommandsToolAndSlackText(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	code, o, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "mcp__minbox__send_message", "args": map[string]any{"body": "Run the migration?", "commands": []any{map[string]any{"command": "echo migrate", "description": "the migration"}}}}, bearer(sess))
+	code, o, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "mcp__minbox__send_message", "args": map[string]any{"task_status": "needs_you", "body": "Run the migration?", "commands": []any{map[string]any{"command": "echo migrate", "description": "the migration"}}}}, bearer(sess))
 	if code != 200 || o["ok"] != true || !strings.Contains(o["text"].(string), "with 1 command for them to approve") || !strings.Contains(o["text"].(string), "Do not wait or poll for them") {
 		t.Fatalf("tool: %d %v", code, o)
 	}

@@ -243,11 +243,11 @@ func TestAgentNeedsItsToken(t *testing.T) {
 	if code, _, _ := e.do("GET", "/api/agent/pending", nil, nil); code != 401 {
 		t.Fatalf("no token: %d", code)
 	}
-	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "hi", "subject": "S"}, bearer(a))
+	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "hi", "subject": "S"}, bearer(a))
 	thread := obj["thread_id"].(string)
 	// Session b cannot write into a's thread (it may read it: read_thread works across sessions):
 	// its message goes to its own stream.
-	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": thread}, bearer(b)); code != 201 || obj["thread_id"] == thread {
+	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "x", "thread_id": thread}, bearer(b)); code != 201 || obj["thread_id"] == thread {
 		t.Fatalf("cross-session write: %d %v", code, obj)
 	}
 	if code, _, _ := e.do("GET", "/api/agent/threads/"+thread, nil, bearer(b)); code != 200 {
@@ -259,7 +259,7 @@ func TestQuestionReplyIsComposedAndDelivered(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	body := ":::question\nWhich DB?\n- [ ] SQLite\n- [ ] Postgres\nRecommended: SQLite\n:::"
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": body, "subject": "DB"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": body, "subject": "DB"}, bearer(sess))
 	thread, msg := sent["thread_id"].(string), sent["message_id"].(string)
 	qs := sent["questions"].([]any)
 	key := qs[0].(map[string]any)["key"].(string)
@@ -306,11 +306,11 @@ func TestAnswerToAnEarlierMessageNamesIt(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	body := "Two ways to store it.\n\n:::question\nWhich DB?\n- [ ] SQLite\n- [ ] Postgres\n:::"
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": body, "subject": "DB"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": body, "subject": "DB"}, bearer(sess))
 	thread, msg := sent["thread_id"].(string), sent["message_id"].(string)
 	key := sent["questions"].([]any)[0].(map[string]any)["key"].(string)
 	// A later message moves the thread on; the earlier question still takes an answer.
-	e.do("POST", "/api/agent/messages", map[string]string{"body": "Meanwhile, the build is green.", "thread_id": thread}, bearer(sess))
+	e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "Meanwhile, the build is green.", "thread_id": thread}, bearer(sess))
 	code, _, _ := e.do("POST", "/api/threads/"+thread+"/reply", map[string]any{"words": "", "answers_for": msg,
 		"answers": []map[string]any{{"key": key, "selected": []string{"Postgres"}}}}, nil)
 	if code != 201 {
@@ -335,7 +335,7 @@ func TestAnswerToAnEarlierMessageNamesIt(t *testing.T) {
 func TestPendingLongPollWakesOnReply(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "done", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "done", "subject": "S"}, bearer(sess))
 	thread := sent["thread_id"].(string)
 
 	got := make(chan []any, 1)

@@ -62,7 +62,7 @@ func TestModSeenAndSilent(t *testing.T) {
 func TestRepliesAreUrgentAndCloseEndsPolls(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "done", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "done", "subject": "S"}, bearer(sess))
 	thread := sent["thread_id"].(string)
 	_, msg, _ := e.do("POST", "/api/threads/"+thread+"/reply", map[string]any{"words": "hello"}, nil)
 	// The person's reply is urgent by default; Send now (an old page) still answers and keeps it so.

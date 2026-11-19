@@ -261,7 +261,7 @@ func TestWithoutAnyAgentTheHelpersAreOffNotBroken(t *testing.T) {
 	claudeAbsent(t)
 	e := newEnv(t)
 	sess := e.createSession() // the fake host spawns; a real one would fail with exec's message
-	_, m, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "Done."}, bearer(sess))
+	_, m, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "Done."}, bearer(sess))
 	id := m["thread_id"].(string)
 	code, o, _ := e.do("GET", "/api/threads/"+id+"/suggestions", nil, nil)
 	if code != 200 || o["reason"] != "no_agent" || o["error"] != nil || len(o["questions"].([]any)) != 0 {

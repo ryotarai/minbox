@@ -31,6 +31,9 @@ func (e *env) personSays(sess *store.Session, words string, taskIDs ...string) s
 
 func (e *env) agentSays(sess *store.Session, body map[string]any) map[string]any {
 	e.t.Helper()
+	if _, ok := body["task_status"]; !ok {
+		body["task_status"] = "working"
+	}
 	code, obj, _ := e.do("POST", "/api/agent/messages", body, bearer(sess))
 	if code != 201 {
 		e.t.Fatalf("agent: %d %v", code, obj)
@@ -110,7 +113,7 @@ func TestV3AgentDecides(t *testing.T) {
 	}
 
 	// An unknown task is refused.
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "task_ids": []string{"tsk_nope"}}, bearer(sess)); code != 404 {
+	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "task_ids": []string{"tsk_nope"}}, bearer(sess)); code != 404 {
 		t.Fatalf("unknown task: %d", code)
 	}
 	// update_task: check a step (numbered in reading order), tag an older message, report.

@@ -100,12 +100,23 @@ sends it to `/api/agent/messages` as it always did); more than one id is refused
 tells the agent to pick one and send another message for another task. The pending text of the
 person's message names its task on one line, `Task: <id> "<title>"`.
 
-`send_message` has no `status` (it used to set the named task's status, which reopened done tasks by
-accident): a call that carries a non-empty `status` is refused and nothing is stored or delivered.
-Protocol 1 answers `{ok: false, error: "minbox: send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status."}`; protocol 0
-(`POST /api/agent/messages`) answers 400 with that text as `error`. An older integration whose schema
-still offers `status` gets the text and sends the message again without it. A task's status is set
-with `update_task`.
+`send_message` carries `task_status` (required; `working | needs_you | blocked | done`): the status
+of the message's task once the person reads it (needs_you when it asks them something and the work
+waits on the answer, done when it reports finished work, working when the work goes on, blocked when
+the agent waits on something outside the person). The server sets it on the task the message goes to
+(the named `task_id`, else the task the reply resolves to) in the same request, exactly as
+`update_task`'s status: a status event on the task, a goal's run stopped on done, the Board updated.
+The answer carries `task_status` (the task's status now) and the tool result says "Its status is now
+<status>". A call without it is refused and nothing is stored or delivered; protocol 1 answers
+`{ok: false, error: "minbox: send_message needs task_status: ... Nothing was sent: send the same
+message again with task_status (working | needs_you | blocked | done)."}` and protocol 0
+(`POST /api/agent/messages`) answers 400 with that text as `error`. The schema lists `task_status`
+in `required` and the description names it, but a conversation pinned to an older schema learns it
+only from the refreshed description and this refusal, so the server enforces it. `status`, the key
+older schemas offered, is accepted as an alias of `task_status` (both given and different: refused).
+A message that goes in no task is still stored, its `task_status` is not applied, and the `note`
+says to place it (update_task / create_task `message_ids`) and set the status there. `update_task`
+still changes status too, between messages.
 
 ### `POST /api/agent/event {type, ...}`
 

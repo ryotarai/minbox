@@ -212,7 +212,7 @@ func TestRemoteHost(t *testing.T) {
 	// An attachment read on that machine.
 	file := filepath.Join(work, "plan.md")
 	os.WriteFile(file, []byte("# Plan\n"), 0o644)
-	code, sent, _ := relay("POST", "/api/agent/messages", `{"subject":"Plan","body":"see","attachments":["plan.md"]}`)
+	code, sent, _ := relay("POST", "/api/agent/messages", `{"subject":"Plan","body":"see","task_status":"working","attachments":["plan.md"]}`)
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, sent)
 	}

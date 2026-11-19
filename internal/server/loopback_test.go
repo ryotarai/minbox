@@ -57,7 +57,7 @@ func TestGuardRefusesPairAccept(t *testing.T) {
 func TestLoopbackWithoutADeviceIsRefused(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "Which one?", "subject": "Q"}, with(bearer(sess), "Cookie", ""))
+	_, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "Which one?", "subject": "Q"}, with(bearer(sess), "Cookie", ""))
 	thread, _ := obj["thread_id"].(string)
 	if thread == "" {
 		t.Fatalf("the agent's message (bearer only): %v", obj)

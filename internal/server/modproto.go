@@ -291,7 +291,8 @@ func (s *Server) runTool(ctx context.Context, sess *store.Session, names toolNam
 		} else if v, ok := e["task_ids"].(string); ok && strings.TrimSpace(v) != "" {
 			req["task_ids"] = []any{v}
 		}
-		for _, k := range []string{"status", "thread_id"} {
+		// task_status (required; the server refuses a call without it), status its older name.
+		for _, k := range []string{"task_status", "status", "thread_id"} {
 			if v, ok := e[k].(string); ok && strings.TrimSpace(v) != "" {
 				req[k] = v
 			}

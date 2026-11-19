@@ -161,7 +161,7 @@ func TestStuckAfterATurnThatDiedOnAnAPIError(t *testing.T) {
 	if k, h := stuckJSON(e, sess.ID); k != stuckError || h != "API error: authentication failed" {
 		t.Fatalf("answer-shaped error: stuck %q hint %q", k, h)
 	}
-	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"subject": "Hi", "body": "I am back"}, bearer(sess)); code >= 300 {
+	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "subject": "Hi", "body": "I am back"}, bearer(sess)); code >= 300 {
 		t.Fatalf("send: %d %v", code, obj)
 	}
 	if k, _ := stuckJSON(e, sess.ID); k != "" {

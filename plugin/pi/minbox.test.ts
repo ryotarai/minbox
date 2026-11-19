@@ -84,7 +84,7 @@ test("session_start says hello (protocol 1) and registers the server's tools as 
   assert.deepEqual([...t.tools.keys()], MANIFEST.tools.map((x: any) => x.name))
   const send = t.tools.get('minbox_send_message')
   assert.equal(send.label, 'minbox: send message')
-  assert.deepEqual(send.parameters.required, ['body'])
+  assert.deepEqual(send.parameters.required, ['body', 'task_status'])
   assert.equal(send.parameters.additionalProperties, true, 'the schema stays open: Pi validates against it')
   assert.match(t.tools.get('minbox_create_task').description, /minbox_update_task/)
   t.ext!.stop()

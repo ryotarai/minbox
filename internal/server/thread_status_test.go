@@ -6,6 +6,7 @@ func TestThreadStatusAPI(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
 	send := func(m map[string]any) (int, map[string]any) {
+		m["task_status"] = "working"
 		code, obj, _ := e.do("POST", "/api/agent/messages", m, bearer(sess))
 		return code, obj
 	}

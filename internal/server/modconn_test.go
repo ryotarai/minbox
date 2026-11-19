@@ -214,7 +214,7 @@ func TestLegacyModWithoutHeartbeatsIsJudgedByItsCalls(t *testing.T) {
 func TestDeliveryAndUndeliveredLines(t *testing.T) {
 	logs := captureLog(t)
 	e, clk, sess := connEnv(t)
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "hi", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "hi", "subject": "S"}, bearer(sess))
 	tid := sent["thread_id"].(string)
 	_, reply, _ := e.do("POST", "/api/threads/"+tid+"/reply", map[string]any{"words": "SECRET-WORDS"}, nil)
 	mid := reply["id"].(string)
@@ -263,7 +263,7 @@ func TestDeliveryAndUndeliveredLines(t *testing.T) {
 func TestBusyModDoesNotLogUndelivered(t *testing.T) {
 	logs := captureLog(t)
 	e, clk, sess := connEnv(t)
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "hi", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "hi", "subject": "S"}, bearer(sess))
 	e.do("POST", "/api/threads/"+sent["thread_id"].(string)+"/reply", map[string]any{"words": "x"}, nil)
 	clk.add(40 * time.Second)
 	beat(e, sess, 1, "working")

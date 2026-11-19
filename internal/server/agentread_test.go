@@ -236,7 +236,7 @@ func TestAgentReadThreadPagesAcrossSessions(t *testing.T) {
 	if code != 200 || th["own"] != false || th["session_name"] != "s" {
 		t.Fatalf("cross-session read: %d %v", code, th)
 	}
-	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"body": "x", "thread_id": tid}, bearer(b)); code != 201 || obj["thread_id"] == tid {
+	if code, obj, _ := e.do("POST", "/api/agent/messages", map[string]string{"task_status": "working", "body": "x", "thread_id": tid}, bearer(b)); code != 201 || obj["thread_id"] == tid {
 		t.Fatalf("cross-session write: %d %v", code, obj)
 	}
 	msgs := rows(t, th, "messages")

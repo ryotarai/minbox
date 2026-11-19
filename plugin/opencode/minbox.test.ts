@@ -166,7 +166,7 @@ test("registers the server's tools as direct tools, as served", async () => {
   const cleanup = await setupLocation(t.oc.ctx, t.core)
   assert.deepEqual([...t.oc.tools.keys()], MANIFEST.tools.map((x: any) => x.name))
   for (const tool of t.oc.tools.values()) assert.deepEqual(tool.options, { codemode: false }, tool.name)
-  assert.deepEqual(t.oc.tools.get('minbox_send_message').input.required, ['body'])
+  assert.deepEqual(t.oc.tools.get('minbox_send_message').input.required, ['body', 'task_status'])
   assert.equal(t.oc.tools.get('minbox_send_message').input.additionalProperties, true, 'the schema stays open')
   assert.match(t.oc.tools.get('minbox_update_task').description, /minbox_send_message/)
   t.core.stop()

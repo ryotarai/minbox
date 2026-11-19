@@ -9,8 +9,9 @@ import (
 )
 
 // A message from the person about a done task leaves it done (it used to reopen it, "Reopened by
-// your message"): the wake text says the task is done and that the agent reopens it with
-// update_task only if the message asks for more work; the agent's update_task status working does.
+// your message"): the wake text says the task is done and that the agent replies with task_status
+// done unless the message asks for more work (then working); the agent's update_task status working
+// reopens it too.
 func TestPersonMessageKeepsDoneTaskDone(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -54,7 +55,7 @@ func TestPersonMessageKeepsDoneTaskDone(t *testing.T) {
 		t.Fatalf("pending: %v", pend)
 	}
 	text := items[0].(map[string]any)["text"].(string)
-	want := "The task is done: reopen it with mcp__minbox__update_task status working only if their message asks for more work (a remark or a quick question leaves it done)."
+	want := "The task is done: reply with mcp__minbox__send_message task_status done, unless their message asks for more work (then task_status working reopens it); a remark or a quick question leaves it done."
 	if !strings.Contains(text, `"Fix the gauge" (done)`) || !strings.Contains(text, want) {
 		t.Fatalf("wake text:\n%s", text)
 	}
@@ -89,7 +90,7 @@ func TestQuestionOnDoneTaskStaysDone(t *testing.T) {
 	if code, obj, _ := e.do("PATCH", "/api/agent/tasks/"+a, map[string]any{"status": "done"}, bearer(sess)); code != 200 {
 		t.Fatalf("done: %d %v", code, obj)
 	}
-	sent := e.agentSays(sess, map[string]any{"task_id": a, "body": ":::question\nPublish too?\n- [ ] Yes\n- [ ] No\n:::"})
+	sent := e.agentSays(sess, map[string]any{"task_id": a, "task_status": "done", "body": ":::question\nPublish too?\n- [ ] Yes\n- [ ] No\n:::"})
 	thread, msg := sent["thread_id"].(string), sent["message_id"].(string)
 	key := sent["questions"].([]any)[0].(map[string]any)["key"].(string)
 

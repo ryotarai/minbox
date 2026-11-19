@@ -79,12 +79,12 @@ func TestAgentAttachmentRules(t *testing.T) {
 		{"dir", "a folder. Attach the files in it, or a zip of them."},
 		{"nope.md", "nope.md: no such file."},
 	} {
-		code, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "attachments": []string{c.path}}, bearer(sess))
+		code, obj, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "attachments": []string{c.path}}, bearer(sess))
 		if code != 400 || !strings.Contains(obj["error"].(string), c.want) {
 			t.Errorf("%s: %d %v", c.path, code, obj)
 		}
 	}
-	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "attachments": []string{".env.example", "big.log", "link.log"}}, bearer(sess))
+	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "attachments": []string{".env.example", "big.log", "link.log"}}, bearer(sess))
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, sent)
 	}
@@ -114,7 +114,7 @@ func TestRawDownloadAndView(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(e.dir, ".secret"), []byte("no"), 0o644)
 	_ = os.WriteFile(filepath.Join(e.dir, "doc.pdf"), []byte("%PDF-1.4 x"), 0o644)
 
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "x", "attachments": []string{"shot.png", "page.html", "doc.pdf"}}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "x", "attachments": []string{"shot.png", "page.html", "doc.pdf"}}, bearer(sess))
 	ids := []string{}
 	for _, a := range sent["attachments"].([]any) {
 		ids = append(ids, a.(map[string]any)["id"].(string))
@@ -182,7 +182,7 @@ func TestInlineImagesCapturedAtSend(t *testing.T) {
 	sess := e.createSession()
 	pngFile(t, filepath.Join(e.dir, "ok.png"), 2, 2)
 	body := "Look: ![shot](ok.png) and <img src='missing.png'> and ![r](https://x/y.png)\n\n```\n![code](ok.png)\n```\n![t](notes.txt)"
-	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": body}, bearer(sess))
+	code, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": body}, bearer(sess))
 	if code != 201 {
 		t.Fatalf("send: %d %v", code, sent)
 	}
@@ -209,7 +209,7 @@ func TestInlineImagesCapturedAtSend(t *testing.T) {
 func TestUploadsBecomeReplyAttachments(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "hello", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "hello", "subject": "S"}, bearer(sess))
 	tid := sent["thread_id"].(string)
 
 	for _, name := range []string{".env", "a/b.txt", "", "x‮y.txt"} {
@@ -279,7 +279,7 @@ func TestFeedbackComposition(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(e.dir, "src"), 0o755)
 	_ = os.WriteFile(filepath.Join(e.dir, "src", "retry.go"), []byte("package src\n"), 0o644)
 	pngFile(t, filepath.Join(e.dir, "shot.png"), 100, 50)
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "look", "attachments": []string{"src/retry.go", "shot.png"}}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "look", "attachments": []string{"src/retry.go", "shot.png"}}, bearer(sess))
 	atts := sent["attachments"].([]any)
 	code := atts[0].(map[string]any)["id"].(string)
 	img := atts[1].(map[string]any)["id"].(string)

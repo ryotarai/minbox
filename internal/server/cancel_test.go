@@ -5,7 +5,7 @@ import "testing"
 func TestCancelQueuedMessage(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
-	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "hi", "subject": "S"}, bearer(sess))
+	_, sent, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "hi", "subject": "S"}, bearer(sess))
 	tid := sent["thread_id"].(string)
 
 	_, a, _ := e.do("POST", "/api/threads/"+tid+"/reply", map[string]any{"words": "first"}, nil)

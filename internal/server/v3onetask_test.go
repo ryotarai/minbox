@@ -93,23 +93,23 @@ func TestV3ReplyNamesOneTask(t *testing.T) {
 	e.personSays(sess, "and A again")
 	r5 := e.agentSays(sess, map[string]any{"body": "A it is.", "task_ids": []string{a}})
 	oneOf(t, e, r5["message_id"].(string), a)
-	code, bad, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "both", "task_ids": []string{a, c}}, bearer(sess))
+	code, bad, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "both", "task_ids": []string{a, c}}, bearer(sess))
 	if code != 400 || !strings.Contains(bad["error"].(string), "exactly one task") || !strings.Contains(bad["error"].(string), "task_id") {
 		t.Fatalf("two tasks: %d %v", code, bad)
 	}
-	code, bad, _ = e.do("POST", "/api/agent/messages", map[string]any{"body": "both", "task_id": a, "task_ids": []string{c}}, bearer(sess))
+	code, bad, _ = e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "both", "task_id": a, "task_ids": []string{c}}, bearer(sess))
 	if code != 400 {
 		t.Fatalf("task_id + another task_ids: %d %v", code, bad)
 	}
-	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"body": "same", "task_id": a, "task_ids": []string{a}}, bearer(sess)); code != 201 {
+	if code, _, _ := e.do("POST", "/api/agent/messages", map[string]any{"task_status": "working", "body": "same", "task_id": a, "task_ids": []string{a}}, bearer(sess)); code != 201 {
 		t.Fatalf("the same task twice: %d", code)
 	}
 	// Through the thin integrations' tool call: the error is the text the agent reads.
-	code, tool, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"body": "both", "task_ids": []any{a, c}}}, bearer(sess))
+	code, tool, _ := e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"task_status": "working", "body": "both", "task_ids": []any{a, c}}}, bearer(sess))
 	if code != 200 || tool["ok"] != false || !strings.Contains(tool["error"].(string), "pass task_id with the one task") {
 		t.Fatalf("tool: %d %v", code, tool)
 	}
-	code, tool, _ = e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"body": "one", "task_id": c}}, bearer(sess))
+	code, tool, _ = e.do("POST", "/api/agent/tool", map[string]any{"tool": "send_message", "args": map[string]any{"task_status": "working", "body": "one", "task_id": c}}, bearer(sess))
 	if code != 200 || tool["ok"] != true || !strings.Contains(tool["text"].(string), "About task "+c+".") {
 		t.Fatalf("tool task_id: %d %v", code, tool)
 	}

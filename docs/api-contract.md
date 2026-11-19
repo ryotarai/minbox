@@ -963,7 +963,7 @@ Every thread has a stored `status` (thread JSON `status`; also `top_thread.statu
 Set by:
 
 1. The person's message (reply, answers, new thread, forwarded reply) -> `working`. A note (`kind: note`: re-ask, thumbs up) does not count.
-2. An agent message (`POST /api/agent/messages`): `finished`, except that a message with questions (`:::question` blocks) sets `need_action`. `send_message` has no `status`: a call that carries a non-empty one is refused with 400 and nothing is stored (`send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status.`); a task's status is set with `update_task`.
+2. An agent message (`POST /api/agent/messages`): `finished`, except that a message with questions (`:::question` blocks) sets `need_action`. `send_message` carries `task_status` (required, `working | needs_you | blocked | done`; `status` is its older name): it is set on the message's task as `update_task`'s status sets it; a call without it is refused with 400 and nothing is stored (`send_message needs task_status: ...`). A message in no task is stored and its `task_status` is not applied (the `note` says so).
 3. By hand: `POST /api/threads/{id}/status {status}` (aliases accepted; 400 on unknown). The thread view's More menu has "Mark as ...".
 
 Migration (idempotent, only rows with a NULL status): a thread with an open question or action -> `need_action`, otherwise `finished`. Archived/snoozed state is independent.

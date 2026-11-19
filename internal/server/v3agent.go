@@ -63,9 +63,49 @@ func (t *turns) end(sessionID string) {
 	delete(t.m, sessionID)
 }
 
-// sendStatusError is what send_message answers when it carries a status: it has none (a task's
-// status is set with update_task), and nothing is stored or delivered for that call.
-const sendStatusError = "send_message has no status: a task's status is set with update_task (status working | needs_you | blocked | done). Send the message again without status."
+// sendStatusMissing is what send_message answers when it carries no task_status (an agent whose
+// tool schema predates it learns it here): nothing is stored or delivered for that call.
+const sendStatusMissing = "send_message needs task_status: the status of this message's task once the person reads it. " +
+	"needs_you when the message asks the person something (a decision, an answer, an approval, an action) and your work waits on it; " +
+	"done when it reports finished work; working when your work goes on; blocked when you wait on something outside the person (CI, another session). " +
+	"Nothing was sent: send the same message again with task_status (working | needs_you | blocked | done)."
+
+// sendStatusInvalid is what send_message answers when task_status is not a task status.
+const sendStatusInvalid = "task_status must be working, needs_you, blocked or done (the status of this message's task after it). Nothing was sent: send the message again with one of them."
+
+// sendStatusConflict: the older key status (an alias of task_status) disagrees with task_status.
+const sendStatusConflict = "task_status and status (its older name) disagree: pass task_status only. Nothing was sent: send the message again."
+
+// replyStatus reads send_message's task_status (status is its older name, kept as an alias) and
+// answers the normalized status, or the refusal the agent reads.
+func replyStatus(taskStatus, status string) (string, string) {
+	a, b := strings.TrimSpace(taskStatus), strings.TrimSpace(status)
+	if a == "" && b == "" {
+		return "", sendStatusMissing
+	}
+	var na, nb string
+	if a != "" {
+		v, ok := store.NormalizeTaskStatus(a)
+		if !ok {
+			return "", sendStatusInvalid
+		}
+		na = v
+	}
+	if b != "" {
+		v, ok := store.NormalizeTaskStatus(b)
+		if !ok {
+			return "", sendStatusInvalid
+		}
+		nb = v
+	}
+	switch {
+	case na != "" && nb != "" && na != nb:
+		return "", sendStatusConflict
+	case na != "":
+		return na, ""
+	}
+	return nb, ""
+}
 
 // oneTaskError is what send_message answers when it names more than one task.
 const oneTaskError = "a message belongs to exactly one task: pass task_id with the one task this message is about (task_ids, its older name, takes one id). Pick the task it is mainly about; send another message for another task"
@@ -197,7 +237,7 @@ func (s *Server) v3AgentReply(ctx context.Context, sess *store.Session, messageI
 
 // v3TagPersonMessage puts the person's new message in its task: the task of the view they wrote
 // from, else, for answers, the task of the message they answer. A done task they write to stays
-// done: the agent reopens it (update_task status working) when the message asks for more work.
+// done: the agent reopens it (send_message task_status working) when the message asks for more work.
 func (s *Server) v3TagPersonMessage(ctx context.Context, sessionID, messageID string, taskIDs []string, answersFor string) {
 	changed := false
 	if len(taskIDs) > 1 {
@@ -497,6 +537,20 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 	if added, _ := s.store.LinkMessages(ctx, t.ID, s.withTurns(ctx, ids), store.LinkAgent); len(added) > 0 {
 		_ = s.store.AddTaskEvent(ctx, t.ID, "link", strconv.Itoa(len(added))+" earlier message(s) added by "+sess.Name, sess.ID, "")
 	}
+	t = s.agentTaskUpdated(ctx, sess, t, b.Autonomous, b.MaxTurns)
+	s.modLog(sess.ID, "task-update", "task=%q status=%s", t.ID, t.Status)
+	s.publishTasks()
+	res := map[string]any{"task_id": t.ID, "task": t, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
+	if note != "" {
+		res["note"] = note
+	}
+	writeJSON(w, 200, res)
+}
+
+// agentTaskUpdated runs after the agent changed a task (update_task, or send_message task_status):
+// the agent becomes involved in it, and a goal follows its state (all criteria met: done; done: its
+// run stops; autonomous starts or stops a run). It returns the task as it is now.
+func (s *Server) agentTaskUpdated(ctx context.Context, sess *store.Session, t *store.Task, autonomous *bool, maxTurns int) *store.Task {
 	_, _ = s.store.AddTaskAgent(ctx, t.ID, sess.ID, store.RoleInvolved)
 	if t.Kind == store.KindGoal {
 		allMet := len(t.Criteria) > 0
@@ -510,22 +564,30 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 		if t.Status == store.TaskDone && t.Auto.State == store.AutoRunning {
 			s.stopAuto(ctx, t, store.AutoReasonMet, "met")
 		}
-		if b.Autonomous != nil {
-			if *b.Autonomous && t.Auto.State != store.AutoRunning && t.Status != store.TaskDone {
-				s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
-			} else if !*b.Autonomous && t.Auto.State == store.AutoRunning {
+		if autonomous != nil {
+			if *autonomous && t.Auto.State != store.AutoRunning && t.Status != store.TaskDone {
+				s.startAuto(ctx, t, sess.ID, maxTurns, "")
+			} else if !*autonomous && t.Auto.State == store.AutoRunning {
 				s.stopAuto(ctx, t, store.AutoReasonByAgent, "by the agent")
 			}
 		}
 	}
-	t, _ = s.store.GetTask(ctx, t.ID)
-	s.modLog(sess.ID, "task-update", "task=%q status=%s", t.ID, t.Status)
-	s.publishTasks()
-	res := map[string]any{"task_id": t.ID, "task": t, "id": t.ID, "title": t.Title, "status": t.Status, "kind": t.Kind, "steps": t.Steps, "criteria": t.Criteria}
-	if note != "" {
-		res["note"] = note
+	if cur, err := s.store.GetTask(ctx, t.ID); err == nil {
+		t = cur
 	}
-	writeJSON(w, 200, res)
+	return t
+}
+
+// setReplyTaskStatus applies send_message's task_status to the message's task, as update_task's
+// status does (events, a goal's run, the Board). It returns the task as it is now.
+func (s *Server) setReplyTaskStatus(ctx context.Context, sess *store.Session, taskID, status string) (*store.Task, error) {
+	t, err := s.store.UpdateTask(ctx, taskID, sess.ID, store.TaskFields{Status: &status})
+	if err != nil {
+		return nil, err
+	}
+	t = s.agentTaskUpdated(ctx, sess, t, nil, 0)
+	s.modLog(sess.ID, "task-update", "task=%q status=%s (send_message)", t.ID, t.Status)
+	return t, nil
 }
 
 // GET /api/agent/tasks?all=1: the tasks and goals the caller is an agent of (open ones, and the ones

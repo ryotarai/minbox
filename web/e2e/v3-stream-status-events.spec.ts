@@ -1,6 +1,6 @@
 // The agent's stream shows its tasks' status changes between the messages, in time order: a new
-// task, the agent's update_task to needs you, the person's done, the agent's reopening (a message of
-// the person about the done task leaves it done).
+// task, the agent's update_task to needs you, the person's done, the agent's reopening with its
+// reply's task_status (a message of the person about the done task leaves it done).
 // Each line's title opens the task. Step ticks get no line; the task view gets no status lines.
 import type { Locator } from '@playwright/test'
 import { test, expect } from './fixtures'
@@ -50,14 +50,15 @@ test('agent stream: task status changes as lines between the messages, live, ope
   await expect(stream.getByTestId('v3-message')).toHaveCount(6)
   expect((await order(stream)).slice(6)).toEqual(['ev:status:done', 'user:one more thing a', 'agent:Noted for “Fix t'])
   expect((await api(minbox, 'GET', `/api/v3/tasks/${gauge.id}`)).task.status).toBe('done')
-  // The agent decides there is more work and reopens it (update_task status working).
+  // The agent decides there is more work and reopens it (its reply's task_status working): the
+  // status line follows the reply that set it.
   await say(minbox, a, 'REOPEN the gauge, it drifts again', [gauge.id])
   await agentReply(minbox, a, /Reopened “Fix the gauge reading”/)
   const reopened = stream.locator('[data-testid="stream-event"][data-status="working"]')
   await expect(reopened).toContainText(/Fix the gauge reading reopened/)
   await expect(reopened).not.toContainText('by you')
   await expect(stream.getByTestId('v3-message')).toHaveCount(8)
-  expect((await order(stream)).slice(9)).toEqual(['user:REOPEN the gauge', 'ev:status:working', 'agent:Reopened “Fix th'])
+  expect((await order(stream)).slice(9)).toEqual(['user:REOPEN the gauge', 'agent:Reopened “Fix th', 'ev:status:working'])
 
   // A step tick is no line.
   const t = await api(minbox, 'GET', `/api/v3/tasks/${gauge.id}`)
