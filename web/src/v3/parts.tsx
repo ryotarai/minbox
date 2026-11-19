@@ -86,6 +86,8 @@ export function routeLabel(r: Route | null, tasks: { id: string; title: string }
     case 'agents':
       // The Agents page is the phone's tab; wider, #v=agents shows the Board (the sidebar lists the agents).
       return isPhoneWidth() ? 'Agents' : 'Board'
+    case 'alltasks':
+      return 'All agents'
     case 'search':
       return 'Search'
     case 'settings':

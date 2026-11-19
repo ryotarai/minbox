@@ -9,13 +9,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
 import { ago, standing, STATUS_LABEL, unreadCls, v3, type BoardTask } from './data'
 import { Composer, type Outgoing } from './Composer'
-import { Bar, StatusDot, useNav } from './parts'
+import { BackButton, Bar, StatusDot, agentHint, taskOwner, useNav } from './parts'
+import type { Session } from '../api'
 import { IconCheck, IconCheckSquare, IconFoldLeft, IconGoal, IconTasks } from '../components/icons'
 import { TriBox, useColumnPick, type ColumnPickState } from './Columns'
 
-/** The tasks an agent works on: open first, then done. */
-export function agentTasks(tasks: BoardTask[], sessionId: string) {
-  const mine = tasks.filter((t) => t.agents.some((a) => a.session_id === sessionId))
+/** The tasks an agent works on (or any of several agents: the All agents view): open first, then done. */
+export function agentTasks(tasks: BoardTask[], sessionId: string | string[]) {
+  const ids = new Set(typeof sessionId === 'string' ? [sessionId] : sessionId)
+  const mine = tasks.filter((t) => t.agents.some((a) => ids.has(a.session_id)))
   return { open: mine.filter((t) => t.status !== 'done'), done: mine.filter((t) => t.status === 'done') }
 }
 
@@ -48,7 +50,7 @@ function useMinute() {
 /** The list itself (OPEN TASKS, then RECENTLY DONE muted, then DONE THIS WEEK folded). onOpen runs before the task opens. pick: a
  *  checkbox per task (shown as a column on the agent's page). onSelect: a task opens there (in the
  *  agent's page, selected: the one shown; clicking it again closes it) instead of the task view. */
-export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected }: { tasks: BoardTask[]; sessionId: string; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null }) {
+export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, selected, owner }: { tasks: BoardTask[]; sessionId: string | string[]; onOpen?: () => void; pick?: ColumnPickState; onSelect?: (id: string) => void; selected?: string | null; owner?: (t: BoardTask) => string | null }) {
   const nav = useNav()
   const { open, done: allDone } = agentTasks(tasks, sessionId)
   const now = useMinute()
@@ -57,6 +59,15 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
     onOpen?.()
     if (onSelect) onSelect(id)
     else nav.task(id)
+  }
+  // The All agents view: each row names its agent (the one whose page the task opens in).
+  const badge = (t: BoardTask) => {
+    const name = owner?.(t)
+    return name ? (
+      <span className="v-agbadge" data-testid="task-agent-badge" title={'Agent: ' + name}>
+        {name}
+      </span>
+    ) : null
   }
   const sel = (t: BoardTask) => (selected === t.id ? { 'aria-current': true as const, className: 'v-mt sel' } : { className: 'v-mt' })
   // With checkboxes: the box beside the row (the row still opens the task).
@@ -84,6 +95,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
           </div>
           <TaskSubtitle t={t} />
           <div className="v-b">
+            {badge(t)}
             <Bar t={t} />
             <span className="v-cnt2">
               {STATUS_LABEL[t.status]}
@@ -103,6 +115,7 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
               <div className={'v-a' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
                 <IconCheck size={12} className="v-rd-check" />
                 <span className="v-rd-t">{t.title}</span>
+                {badge(t)}
                 <span className="v-rd-ago">{ago(t.done_at ?? t.updated_at)}</span>
               </div>
             </button>,
@@ -118,13 +131,45 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
             <button type="button" key={t.id} {...sel(t)} data-testid="agent-task" data-task={t.id} onClick={() => go(t.id)}>
               <div className={'v-a' + unreadCls(t)} data-unread={(t.unread ?? 0) > 0 || undefined}>
                 <StatusDot t={t} />
-                {t.title}
+                <span className="v-done-t">{t.title}</span>
+                {badge(t)}
               </div>
               <TaskSubtitle t={t} />
             </button>,
           ))}
         </details>
       )}
+    </div>
+  )
+}
+
+/**
+ * All agents (the top of the agents list): one list of the tasks of every agent shown there (the
+ * project's live agents), with the agent's list's sections and rules, each row naming the agent whose
+ * page it opens in (see taskOwner). A task opens there, selected, as from that agent's Tasks pane.
+ */
+export function AllAgentsTasks({ tasks, agents, projectName }: { tasks: BoardTask[]; agents: Session[]; projectName?: string }) {
+  const { sessions } = useApp()
+  const all = sessions ?? []
+  const byId = new Map(all.map((s) => [s.id, s]))
+  const owner = (t: BoardTask) => {
+    const a = byId.get(taskOwner(t, all) ?? '')
+    if (!a) return null
+    const hint = agentHint(all, a)
+    return a.name + (hint ? ` (${hint})` : '')
+  }
+  return (
+    <div className="v-col" data-testid="all-agents-view">
+      <div className="v-head">
+        <div className="v-r1">
+          <BackButton />
+          <h1>All agents</h1>
+        </div>
+        <div className="v-r2">Tasks of every agent{projectName ? ' in ' + projectName : ''}</div>
+      </div>
+      <div className="v-scroll v-alltasks">
+        <AgentTaskList tasks={tasks} sessionId={agents.map((a) => a.id)} owner={owner} />
+      </div>
     </div>
   )
 }
