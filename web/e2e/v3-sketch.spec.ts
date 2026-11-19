@@ -558,3 +558,141 @@ test('rubber-band select, group move, shift-click, delete, alt-duplicate, undo',
   await page.getByTestId('sketch-undo').click()
   await expect(shapes(page)).toHaveCount(3)
 })
+
+/** Waits until the selection is exactly these kinds of shape, in drawing order. */
+async function expectSel(page: Page, kinds: string[]) {
+  await expect
+    .poll(() => modal(page).locator('[data-testid="sketch-shape"][data-selected="true"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-kind'))))
+    .toEqual(kinds)
+}
+
+test('picking shapes: tolerance around strokes, inside closed shapes, smallest inside wins, topmost wins, drag from the box, text, hover', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  await page.goto(minbox.url)
+  await openStream(page, minbox, 'sk-pick')
+  await page.getByTestId('compose-draw').click()
+  await expect(modal(page)).toBeVisible()
+  const b = await canvasBox(page)
+  const click = (x: number, y: number) => page.mouse.click(b.x + x, b.y + y)
+
+  // A thin pen stroke, a small ellipse with a big unfilled rectangle drawn over it, two crossing
+  // lines, a diagonal arrow and a text.
+  await modal(page).getByTestId('sketch-width-0').click()
+  await tool(page, 'pen')
+  await drag(page, [80, 100], [300, 100])
+  await modal(page).getByTestId('sketch-width-1').click()
+  await tool(page, 'ellipse')
+  await drag(page, [600, 200], [660, 260])
+  await tool(page, 'rect')
+  await drag(page, [500, 100], [800, 400])
+  await tool(page, 'line')
+  await drag(page, [100, 600], [300, 600])
+  await drag(page, [200, 500], [200, 700])
+  await tool(page, 'arrow')
+  await drag(page, [900, 100], [1100, 300])
+  await tool(page, 'text')
+  await click(900, 600)
+  await page.getByTestId('sketch-text-input').fill('Hello world')
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(shapes(page)).toHaveCount(7)
+  await tool(page, 'select')
+  await click(1250, 500)
+  await expectSel(page, [])
+
+  // 8px from a 2px pen stroke picks it (the old hit area reached 7px); 14px away is empty canvas.
+  await click(200, 108)
+  await expectSel(page, ['pen'])
+  await click(200, 114)
+  await expectSel(page, [])
+
+  // Inside the unfilled rectangle picks it; inside the small ellipse in it picks the ellipse,
+  // although the rectangle was drawn over it.
+  await click(540, 360)
+  await expectSel(page, ['rect'])
+  await click(630, 230)
+  await expectSel(page, ['ellipse'])
+
+  // Where the two lines cross, the topmost (the vertical one, drawn last) wins.
+  await click(200, 600)
+  await expectSel(page, ['line'])
+  expect(await num(modal(page).locator('[data-selected="true"]'), 'data-w')).toBe(0)
+
+  // The text: anywhere in its box, also on its last letters.
+  const tb = (await shapes(page).nth(6).boundingBox())!
+  await page.mouse.click(tb.x + tb.width - 3, tb.y + tb.height / 2)
+  await expectSel(page, ['text'])
+
+  // Hover: in select mode the shape a click would pick gets an outline, with a move cursor.
+  await click(1250, 500)
+  await page.mouse.move(b.x + 1000, b.y + 208)
+  await expect(modal(page).getByTestId('sketch-hover')).toHaveCount(1)
+  await expect(modal(page).getByTestId('sketch-canvas')).toHaveCSS('cursor', 'move')
+  if (process.env.SKETCH_SHOT) await page.screenshot({ path: process.env.SKETCH_SHOT })
+  await page.mouse.move(b.x + 1250, b.y + 500)
+  await expect(modal(page).getByTestId('sketch-hover')).toHaveCount(0)
+  await expect(modal(page).getByTestId('sketch-canvas')).toHaveCSS('cursor', 'default')
+
+  // A selected arrow drags from anywhere in its box, far from its line.
+  await click(1000, 200)
+  await expectSel(page, ['arrow'])
+  const arrow = modal(page).locator('[data-kind="arrow"]')
+  const ay = await num(arrow, 'data-y')
+  await drag(page, [1060, 130], [1060, 230])
+  await expect(arrow).toHaveAttribute('data-y', String(ay + 100))
+  await expectSel(page, ['arrow'])
+  // Unselected, it is not picked there: that press is on empty canvas.
+  await click(1250, 500)
+  await click(1060, 230)
+  await expectSel(page, [])
+  // A click (no drag) inside a selected rectangle, on the ellipse in it, picks the ellipse.
+  await click(540, 360)
+  await expectSel(page, ['rect'])
+  await click(630, 230)
+  await expectSel(page, ['ellipse'])
+  // A rectangle picked by its inside drags from there.
+  await click(540, 360)
+  await expectSel(page, ['rect'])
+  const rect = modal(page).locator('[data-kind="rect"]')
+  const rx = await num(rect, 'data-x')
+  await drag(page, [540, 360], [560, 360])
+  await expect(rect).toHaveAttribute('data-x', String(rx + 20))
+
+  // With a drawing tool, a click on a shape selects it (and switches to select); a drag still draws.
+  await tool(page, 'pen')
+  await click(250, 104)
+  await expect(modal(page).getByTestId('sketch-tool-select')).toHaveAttribute('aria-pressed', 'true')
+  await expectSel(page, ['pen'])
+  await expect(shapes(page)).toHaveCount(7)
+  await tool(page, 'pen')
+  await drag(page, [150, 90], [150, 160])
+  await expect(shapes(page)).toHaveCount(8)
+  await tool(page, 'rect')
+  await page.mouse.click(tb.x + 5, tb.y + tb.height / 2)
+  await expectSel(page, ['text'])
+  await expect(shapes(page)).toHaveCount(8)
+  // A pen click inside an unfilled shape (not on its line) still leaves a dot.
+  await tool(page, 'pen')
+  await click(700, 330)
+  await expect(shapes(page)).toHaveCount(9)
+})
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true })
+  test('a tap picks a thin line with a wider touch tolerance', async ({ page, minbox }) => {
+    await page.setViewportSize({ width: 1500, height: 900 })
+    await page.goto(minbox.url)
+    await openStream(page, minbox, 'sk-touch')
+    await page.getByTestId('compose-draw').click()
+    await expect(modal(page)).toBeVisible()
+    await modal(page).getByTestId('sketch-width-0').click()
+    await tool(page, 'line')
+    await drag(page, [100, 200], [400, 200])
+    await tool(page, 'select')
+    const b = await canvasBox(page)
+    // 14px off the line: too far for a mouse, near enough for a finger.
+    await page.mouse.click(b.x + 250, b.y + 214)
+    await expectSel(page, [])
+    await page.touchscreen.tap(b.x + 250, b.y + 214)
+    await expectSel(page, ['line'])
+  })
+})

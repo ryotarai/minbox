@@ -81,6 +81,13 @@ export function moveShape(s: Shape, dx: number, dy: number): Shape {
 
 export const textSizeOf = (s: Pick<Shape, 'width'>) => textSize(s)
 
+/** An estimate of a line's width in ems: wide (CJK, full-width) characters count 1, others 0.6. */
+export function textEms(line: string): number {
+  let n = 0
+  for (const ch of line) n += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{20000}-\u{3fffd}]/u.test(ch) ? 1 : 0.6
+  return n
+}
+
 /** An estimate of the bounds (text width is approximated). */
 export function shapeBounds(s: Shape) {
   if (s.kind === 'pen' && s.pts?.length) {
@@ -93,10 +100,117 @@ export function shapeBounds(s: Shape) {
   if (s.kind === 'text') {
     const size = textSize(s)
     const lines = textLines(s.text)
-    const longest = Math.max(...lines.map((l) => l.length))
-    return { x: s.x1, y: s.y1 - size, w: Math.max(size, longest * size * 0.6), h: size * 1.25 + (lines.length - 1) * size * TEXT_LINE_HEIGHT }
+    const longest = Math.max(...lines.map(textEms))
+    return { x: s.x1, y: s.y1 - size, w: Math.max(size, longest * size), h: size * 1.25 + (lines.length - 1) * size * TEXT_LINE_HEIGHT }
   }
   return normBox(s)
+}
+
+// Hit-testing: which shape a press at a point picks. Tolerances are in screen pixels
+// (divided by the canvas scale), so picking feels the same at any zoom and stroke width.
+
+/** Screen-pixel tolerance around strokes: a mouse is precise, a finger is not. */
+export const hitTolerance = (pointerType: string) => (pointerType === 'touch' ? 16 : 8)
+
+/** How a point hits a shape, best first: its ink (stroke, outline, text box), inside the box
+ * of a selected shape, or inside a closed shape (filled or not). */
+export type HitKind = 'ink' | 'selected' | 'inside'
+export type Hit = { id: string; kind: HitKind; area: number; z: number }
+
+function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax
+  const dy = by - ay
+  const l2 = dx * dx + dy * dy
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+function distToPolyline(px: number, py: number, pts: [number, number][]): number {
+  if (pts.length === 1) return Math.hypot(px - pts[0][0], py - pts[0][1])
+  let d = Infinity
+  for (let i = 1; i < pts.length; i++) d = Math.min(d, distToSeg(px, py, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]))
+  return d
+}
+
+/** The distance from a point to a shape's drawn line (Infinity for text), and whether the point is inside it. */
+export function shapeDistance(s: Shape, px: number, py: number): { d: number; inside: boolean } {
+  switch (s.kind) {
+    case 'pen':
+      return { d: s.pts?.length ? distToPolyline(px, py, s.pts) : Infinity, inside: false }
+    case 'line':
+      return { d: distToSeg(px, py, s.x1, s.y1, s.x2, s.y2), inside: false }
+    case 'arrow': {
+      const [a, c] = arrowHead(s.x1, s.y1, s.x2, s.y2, s.width)
+      return { d: Math.min(distToSeg(px, py, s.x1, s.y1, s.x2, s.y2), distToPolyline(px, py, [a, [s.x2, s.y2], c])), inside: false }
+    }
+    case 'rect': {
+      const b = normBox(s)
+      const c: [number, number][] = [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h], [b.x, b.y]]
+      return { d: distToPolyline(px, py, c), inside: px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h }
+    }
+    case 'ellipse': {
+      const b = normBox(s)
+      const rx = b.w / 2
+      const ry = b.h / 2
+      const cx = b.x + rx
+      const cy = b.y + ry
+      // A flat ellipse is a line.
+      if (rx < 0.5 || ry < 0.5) return { d: distToSeg(px, py, b.x, b.y, b.x + b.w, b.y + b.h), inside: false }
+      const dx = px - cx
+      const dy = py - cy
+      const k = Math.hypot(dx / rx, dy / ry)
+      const r = Math.hypot(dx, dy)
+      // Radial distance to the outline: close to the true distance, exact on the axes.
+      const d = k === 0 ? Math.min(rx, ry) : r * Math.abs(1 - 1 / k)
+      return { d, inside: k <= 1 }
+    }
+    case 'text':
+      return { d: Infinity, inside: false }
+  }
+}
+
+/** Every shape at a point, with how it is hit. `tol` is in scene units. */
+export function hitsAt(shapes: Shape[], p: [number, number], tol: number, opts: { selected?: string[]; inside?: boolean } = {}): Hit[] {
+  const out: Hit[] = []
+  shapes.forEach((s, z) => {
+    const b = shapeBounds(s)
+    const area = Math.max(1, b.w * b.h)
+    const inBox = (pad: number) => p[0] >= b.x - pad && p[0] <= b.x + b.w + pad && p[1] >= b.y - pad && p[1] <= b.y + b.h + pad
+    // Cheap reject: far outside the box (plus stroke and tolerance) is no hit at all.
+    if (!inBox(tol + s.width)) return
+    if (s.kind === 'text') {
+      if (inBox(tol / 2)) out.push({ id: s.id, kind: 'ink', area, z })
+      return
+    }
+    const { d, inside } = shapeDistance(s, p[0], p[1])
+    if (d <= s.width / 2 + tol) out.push({ id: s.id, kind: 'ink', area, z })
+    else if (opts.selected?.includes(s.id) && inBox(tol / 2)) out.push({ id: s.id, kind: 'selected', area, z })
+    else if (inside && (opts.inside !== false || s.fill)) out.push({ id: s.id, kind: 'inside', area, z })
+  })
+  return out
+}
+
+const RANK: Record<HitKind, number> = { ink: 0, selected: 1, inside: 2 }
+
+/** The best hit: ink beats a selected shape's box, which beats the inside of a shape. Among
+ * ink and selected hits the topmost (last drawn) wins; among insides the smallest, so a shape
+ * drawn inside a big rectangle stays pickable. */
+export function bestHit(hits: Hit[]): Hit | null {
+  let best: Hit | null = null
+  for (const h of hits) {
+    if (!best) best = h
+    else if (RANK[h.kind] !== RANK[best.kind]) {
+      if (RANK[h.kind] < RANK[best.kind]) best = h
+    } else if (h.kind === 'inside' ? h.area < best.area || (h.area === best.area && h.z > best.z) : h.z > best.z) best = h
+  }
+  return best
+}
+
+/** The shape a press at `point` (scene units) picks, or null. `tolerancePx` is in screen pixels,
+ * `scale` the screen pixels per scene unit. With `selected`, a press anywhere in the box of a
+ * selected shape keeps it; `inside: false` skips the inside of unfilled shapes (the eraser). */
+export function hitTest(shapes: Shape[], point: [number, number], tolerancePx: number, scale: number, opts: { selected?: string[]; inside?: boolean } = {}): string | null {
+  return bestHit(hitsAt(shapes, point, tolerancePx / (scale || 1), opts))?.id ?? null
 }
 
 export function pathOf(pts: [number, number][]): string {
