@@ -24,7 +24,7 @@ async function walk(page: Page, dir: string, phone: boolean) {
   await box.fill('\\!echo hi')
   await expect(page.getByTestId('command-hint')).toHaveCount(0)
   await box.fill('!echo hi; echo oops >&2; pwd')
-  await expect(page.getByTestId('composer-send')).toHaveText('Run')
+  await expect(page.getByTestId('composer-send')).toHaveText(/^Run(⌘↵|Ctrl\+↵)?$/)
   await page.getByTestId('composer-send').click()
 
   const block = page.locator('[data-testid="message"][data-kind="command"]')

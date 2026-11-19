@@ -28,7 +28,7 @@ import { AllTasksPane, TasksPane, agentTasks } from './AgentTasks'
 import { AllAgentsView } from './AllAgents'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
-import { BackButton, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
+import { BackButton, SendKey, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
 import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconSearch, IconTasks } from '../components/icons'
@@ -827,13 +827,14 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
               e.target.value = ''
             }}
           />
-          <span className="v-hide-phone">The agent files it under a task when it is work. ⌘↵ send · Esc close</span>
+          <span className="v-hide-phone">The agent files it under a task when it is work. Esc closes.</span>
           <span className="v-sp" />
           <button type="button" className="v-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="v-btn pri" data-testid="new-send" disabled={!canSend} onClick={() => void send()}>
+          <button type="button" className="v-btn pri" data-testid="new-send" disabled={!canSend} onClick={() => void send()} title={`Send (${isMac() ? '⌘↵' : 'Ctrl+Enter'})`}>
             Send
+            <SendKey />
           </button>
         </div>
       </div>

@@ -29,7 +29,7 @@ async function sentTo(minbox: M, a: Agent, words: string): Promise<string[] | nu
 
 /** Waits until the box has finished sending (a key pressed meanwhile does nothing). */
 async function sent(box: Locator) {
-  await expect(box.getByTestId('composer-send')).toHaveText('Send')
+  await expect(box.getByTestId('composer-send')).toHaveText(/^Send(⌘↵|Ctrl\+↵)?$/)
 }
 
 test('an agent page with a task picked: one box; Send is about the task, ⇧⌘↵ and "Send without task" go to the agent untagged; IME Enter does not send', async ({ page, minbox }) => {
@@ -46,7 +46,11 @@ test('an agent page with a task picked: one box; Send is about the task, ⇧⌘�
   const box = page.getByTestId('task-composer')
   const text = box.getByTestId('composer-text')
   const plain = box.getByTestId('composer-send-untagged')
-  await expect(plain).toHaveText('Send without task')
+  // The shortcuts sit inside the buttons, not beside them (and stay out of the buttons' accessible names).
+  await expect(plain).toHaveText(/^Send without task(⇧⌘↵|Shift\+Ctrl\+↵)$/)
+  await expect(plain.getByTestId('send-key')).toBeVisible()
+  await expect(box.getByTestId('composer-send').getByTestId('send-key')).toHaveText(/^(⌘↵|Ctrl\+↵)$/)
+  await expect(box.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
   await expect(plain).toHaveAttribute('title', /⇧⌘↵|Shift\+Ctrl\+Enter/)
   await expect(plain).toBeDisabled()
   await text.fill('draft for the shot')
@@ -143,6 +147,9 @@ test('a phone with a task picked: one box, both buttons in reach, no horizontal 
     expect(bb.x + bb.width).toBeLessThanOrEqual(390)
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  // No keyboard shortcut on a phone: the keys inside the buttons are hidden.
+  await expect(send.getByTestId('send-key')).toBeHidden()
+  await expect(plain.getByTestId('send-key')).toBeHidden()
   await shot(page, 'phone-task')
   await plain.click()
   await expect.poll(() => sentTo(minbox, a, 'from the phone, no task')).toEqual([])
