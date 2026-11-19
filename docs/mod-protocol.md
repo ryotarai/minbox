@@ -86,6 +86,7 @@ What happened in the agent; the answer says what to do.
 | --- | --- | --- |
 | `turn.start` | | status working |
 | `turn.complete` | `reason`, `aborted`, `answer` (Claude Code; Pi and OpenCode send none) | status idle; `submit_when_idle: text` when the turn handled the person's message without `send_message`, or asked the person in the chat only (Claude Code). The integration submits it once the agent is idle; the person typing first drops it. |
+| `turn.error` | `error`: the API error's class (`model_not_found`, `authentication_failed`, `rate_limit`, ...; Claude Code's StopFailure) | `ok`; the agent shows as stuck ("error") until a turn completes normally or it posts a message. A `turn.complete` with `reason: "error"` (or an answer that is only "API Error: ...") does the same without the class. |
 | `session.end` | | the conversation's state starts over (`/clear`, resume); status idle |
 | `session.compact` | | the next prompt carries the open threads |
 | `prompt` | `origin` (`composer`: the person typed) | `context: [text]`: the standing instructions on the first prompt of a conversation, after a hello, after a compaction (with the open threads) and every 20th prompt (`MINBOX_ORCHESTRATOR_EVERY` on the server overrides); else `[]` |

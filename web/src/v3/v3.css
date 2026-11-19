@@ -450,4 +450,8 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-stale-txt { flex: 1 1 220px; min-width: 0; }
 .v-stale-acts { display: inline-flex; gap: 6px; flex: none; margin-left: auto; }
 .v-stale .v-btn[disabled] { opacity: .6; }
+.v-stuck { background: color-mix(in srgb, var(--mb-wait) 16%, var(--mb-surface)); color: var(--mb-fg); }
+.v-stuck-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--mb-wait); color: var(--mb-surface); font-weight: 700; font-size: 11px; flex: none; }
+.v-stuck-hint { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--mb-wait) 10%, var(--mb-surface)); color: var(--mb-fg2); overflow-wrap: anywhere; }
+.v-tline > .v-stuck-mark, .v-stuck-mark { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; min-width: 13px; border-radius: 50%; background: var(--mb-wait); color: var(--mb-surface); font-size: 9.5px; font-weight: 700; line-height: 1; flex: none; align-self: center; overflow: visible; }
 .v-tline > .v-stale-mark, .v-stale-mark { display: inline-block; width: 6px; height: 6px; min-width: 6px; border-radius: 50%; background: var(--mb-wait); flex: none; align-self: center; overflow: visible; }

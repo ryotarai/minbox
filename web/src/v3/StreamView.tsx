@@ -33,6 +33,7 @@ import { TaskView } from './TaskView'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 import { Resizer, type PaneKind, type SidePane } from './layout'
 import { StaleAgentBanner } from './StaleAgent'
+import { StuckAgentBanner } from './StuckAgent'
 
 /** The agent's side panes as V3App fits them: the ones showing (in order) and their widths, and the
  *  actions on them (see useSidePanes). */
@@ -282,6 +283,8 @@ export function StreamView({
           </div>
         </div>
         <StaleAgentBanner session={sess} />
+        {/* Phone: the terminal is a view of its own (a history entry); else the pane beside the stream. */}
+        <StuckAgentBanner session={sess} onOpenTerminal={() => (isPhone ? navigate({ tab: 'terminal' }, { push: true }) : side.show('terminal'))} />
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">

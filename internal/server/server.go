@@ -96,6 +96,13 @@ type Server struct {
 	modStaleAfter       time.Duration
 	modUndeliveredAfter time.Duration
 	clock               func() time.Time // nil: time.Now (tests inject one)
+	// Stuck agents (stuck.go): per-agent state, thresholds, the watch's wake-up, the terminal reader.
+	stuckMu           sync.Mutex
+	stuck             map[string]*stuckState
+	stuckStartupAfter time.Duration
+	stuckMessageAfter time.Duration
+	stuckWake         chan struct{}
+	stuckTail         func(ctx context.Context, sess *store.Session) ([]byte, error)
 	// The mod protocol (modproto.go): the in-process agent API and the sessions' turn state.
 	innerOnce sync.Once
 	inner     *http.ServeMux
@@ -157,6 +164,10 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		modConns:            map[string]*modConn{},
 		modStaleAfter:       modSilentAfterFromEnv(),
 		modUndeliveredAfter: modUndeliveredDefault,
+		stuck:               map[string]*stuckState{},
+		stuckStartupAfter:   durationFromEnv("MINBOX_STUCK_STARTUP_S", stuckStartupDefault),
+		stuckMessageAfter:   durationFromEnv("MINBOX_STUCK_MESSAGE_S", stuckMessageDefault),
+		stuckWake:           make(chan struct{}, 1),
 		closing:             make(chan struct{}),
 		files:               newFileState(),
 		devAuth:             newDeviceAuth(),
@@ -171,6 +182,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		},
 	}
 	s.sessions.modLog, s.sessions.modForget = s.modLog, s.modForget
+	s.sessions.spawned = s.stuckSpawned
+	s.stuckTail = s.sessions.tail
 	s.lin = newLinearSvc(s)
 	s.slack = newSlackSvc(s)
 	s.poller = notify.NewPoller(st, slackInbound{s})
@@ -212,6 +225,7 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	s.reportPendingRunResults()
 	s.handler = s.routes()
 	go s.runGoals(2 * time.Second)
+	go s.runStuck()
 	return s
 }
 

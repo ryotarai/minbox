@@ -14,6 +14,7 @@ import { projectHueStyle } from '../lib/projectColor'
 import { V3Palette, type PaletteCtx } from './Palette'
 import { RenameAgentDialog } from './AgentActions'
 import { StaleMark } from './StaleAgent'
+import { StuckMark } from './StuckAgent'
 import { MIN_PANE, MIN_STREAM, Resizer, clamp, fitPanes, useSidePanes, useWindowWidth, useZoom, type PaneKind } from './layout'
 import { agentKindLabel } from '../lib/agents'
 import { selectProject, useSelectedProject } from '../lib/projects'
@@ -649,6 +650,7 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
         <span className="v-nm v-tline">
           <span>{a.name}</span>
           <StaleMark session={a} />
+          <StuckMark session={a} />
           <small>
             {hint ? hint + ' · ' : ''}
             {shell ? 'shell' : agentKindLabel(a.agent)}

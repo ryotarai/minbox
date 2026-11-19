@@ -100,6 +100,12 @@ export type Session = {
   stale_reasons?: string[]
   /** What the agent runs (plugin id and instructions hash): a dismissed stale notice stays hidden for it. */
   run_version?: string
+  /** The agent seems to wait for input in its terminal (internal/server/stuck.go): 'startup' (no hello since
+   *  its start), 'message' (a message not taken), 'error' (its last turn ended on an API error). */
+  stuck?: 'startup' | 'message' | 'error'
+  stuck_since?: string
+  /** The matching line of its terminal (a prompt or an error), when one is known. */
+  stuck_hint?: string
   last_activity?: string
   top_thread?: TopThread | null
   host_id?: string

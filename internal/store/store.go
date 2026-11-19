@@ -195,7 +195,13 @@ type Session struct {
 	ModBeatAt *time.Time `json:"mod_beat_at"`
 	// ModOutdated: the session's integration speaks an older mod protocol (docs/mod-protocol.md); it
 	// keeps working, and a restart of the session loads the current one.
-	ModOutdated  bool       `json:"mod_outdated,omitempty"`
+	ModOutdated bool `json:"mod_outdated,omitempty"`
+	// Stuck (filled by the server, internal/server/stuck.go): the agent seems to wait for input in its
+	// terminal ("startup": no hello since its start; "message": a message not taken; "error": its
+	// last turn ended on an API error). StuckHint: the matching line of its screen, when one is known.
+	Stuck        string     `json:"stuck,omitempty"`
+	StuckSince   *time.Time `json:"stuck_since,omitempty"`
+	StuckHint    string     `json:"stuck_hint,omitempty"`
 	LastActivity time.Time  `json:"last_activity"`
 	TopThread    *TopThread `json:"top_thread"`
 }

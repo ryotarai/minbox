@@ -15,7 +15,8 @@
  *   message is claimed (so one mod instance delivers it), its text (the server's) is submitted as a
  *   plugin turn with `$.prompt.submit`, then acknowledged as delivered. A failed submit releases the
  *   claim; nothing is delivered twice.
- * - Events: turn.start / turn.complete (main loop), session.end, session.compact and each prompt go
+ * - Events: turn.start / turn.complete (main loop), a turn's API error (StopFailure, as turn.error),
+ *   session.end, session.compact and each prompt go
  *   to POST /api/agent/event. The answer says what to add to the prompt (context) and what to submit once
  *   idle (a reminder), which the person typing first cancels.
  * - Heartbeat every HEARTBEAT_MS (its state, last poll / delivery, protocol, and a tail of its own
@@ -447,6 +448,13 @@ export const register: Register = (on) => {
         if (typeof text === 'string' && text) held = text
       })
     }
+    return next(e)
+  })
+
+  // A turn that died on an API error (a model that does not exist, a refused key, a rate limit): its
+  // class goes to the server, which shows the person that the agent did not reply and why.
+  on('classic.StopFailure', async ($, e: any, next) => {
+    if (conn && !e.agent_id) void event($, { type: 'turn.error', error: String(e.error ?? '') })
     return next(e)
   })
 

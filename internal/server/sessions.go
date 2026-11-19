@@ -45,6 +45,9 @@ type sessionManager struct {
 	hosts     *hostSet
 	localFS   *hostfs.Local
 
+	// spawned: an agent's process was started (stuck.go); nil in a bare manager.
+	spawned func(id string)
+
 	mu sync.Mutex
 	// shellMu serialises starting companion shells (two attaches must not spawn twice).
 	shellMu sync.Mutex
@@ -820,6 +823,9 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	if sess.Kind == store.KindShell {
 		// No mod reports in: a shell is ready for the person at once.
 		return m.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
+	}
+	if m.spawned != nil {
+		m.spawned(sess.ID)
 	}
 	if err := m.store.SetSessionRun(ctx, sess.ID, runPlugin, runPrompt); err != nil {
 		log.Printf("session %s (%s): record the started version: %v", sess.ID, sess.Name, err)
