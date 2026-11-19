@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -45,12 +46,13 @@ func identsOf(obj map[string]any) []string {
 
 func TestIssuesListAssignedPagesGroupsAndCaches(t *testing.T) {
 	e := newLinEnv(t)
+	// set before anything runs; the link's background work reads it too, so a locked clock
+	clock := &fakeClock{t: time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)}
+	e.srv.lin.now = clock.now
 	e.connect()
 	e.f.assigned = fakeAssigned()
 	e.f.issuePage = 2
 	e.f.ignoreAssignee = true // the tool ignores the filter and returns Bob's issue too
-	clock := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-	e.srv.lin.now = func() time.Time { return clock }
 	// a thread linked to ENG-123 shows up on the row
 	sess := e.createSession()
 	tid := e.newThread(sess, "working")
@@ -109,13 +111,13 @@ func TestIssuesListAssignedPagesGroupsAndCaches(t *testing.T) {
 	if n := len(e.f.callsOf("list_issues")); n != 3 {
 		t.Errorf("debounce: %d calls", n)
 	}
-	clock = clock.Add(10 * time.Second)
+	clock.add(10 * time.Second)
 	e.issues("&refresh=1")
 	if n := len(e.f.callsOf("list_issues")); n != 6 {
 		t.Errorf("refresh after the debounce: %d calls", n)
 	}
 	// stale-while-revalidate: cached=1 answers from the cache, flagged stale, without calling Linear
-	clock = clock.Add(2 * time.Minute)
+	clock.add(2 * time.Minute)
 	_, obj = e.issues("&cached=1")
 	if obj["stale"] != true || len(identsOf(obj)) != 3 || len(e.f.callsOf("list_issues")) != 6 {
 		t.Errorf("cached read: %v", obj)
@@ -328,8 +330,14 @@ func TestStartThreadFromIssue(t *testing.T) {
 		t.Fatalf("linear link %v", th["linear"])
 	}
 	link, err := e.st.GetThreadLink(context.Background(), tid)
-	if err != nil || !link.Baselined || len(link.SeenCommentIDs) != 1 {
+	if err != nil || !link.Baselined || !slices.Contains(link.SeenCommentIDs, "c1") {
 		t.Fatalf("link %+v %v", link, err)
+	}
+	// besides the baseline, only minbox's own progress comment (posted in the background) is seen
+	for _, c := range link.SeenCommentIDs {
+		if c != "c1" && c != link.ProgressCommentID {
+			t.Fatalf("seen comment %q is neither the baseline nor ours: %+v", c, link)
+		}
 	}
 	// the visible message is the person's request only
 	msgs := th["messages"].([]any)

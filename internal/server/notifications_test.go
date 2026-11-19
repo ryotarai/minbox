@@ -1,10 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,9 +68,7 @@ func (e *env) addDest(f *slackSink, cfg map[string]any) map[string]any {
 func TestNotificationsAPISecretMasked(t *testing.T) {
 	e := newEnv(t)
 	f := newSlackSink(t)
-	var logs bytes.Buffer
-	log.SetOutput(&logs)
-	defer log.SetOutput(io.Discard)
+	logs := captureLog(t) // locked: the server's goroutines log too
 
 	d := e.addDest(f, nil)
 	raw, _ := json.Marshal(d)

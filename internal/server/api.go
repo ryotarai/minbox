@@ -645,7 +645,7 @@ func (s *Server) publishThread(sessionID, threadID string) {
 	s.hub.publish(Event{Type: "threads", SessionID: sessionID})
 	s.hub.publish(Event{Type: "sessions"})
 	if s.lin != nil && s.store.HasThreadLink(context.Background(), threadID) {
-		go s.lin.threadChanged(threadID)
+		s.lin.threadChanged(threadID)
 	}
 }
 

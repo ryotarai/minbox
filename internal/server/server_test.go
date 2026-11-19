@@ -110,6 +110,9 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { st.Close() })
 	cfg := Config{DataDir: dir, ClaudeCommand: []string{"claude"}, PluginDir: "/plugin", ServerFile: filepath.Join(dir, "server.json"), ScratchDir: filepath.Join(dir, "scratch")}
 	srv := New(cfg, st, fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}})
+	// Stop the server's background loops (goals, stuck watch) before the store closes (cleanups run
+	// last first): otherwise they outlive the test and log into whatever a later test captures.
+	t.Cleanup(srv.Close)
 	host := newFakeHost()
 	srv.sessions.setHost(host)
 	// Never a real model in tests: the agent pick falls back unless a test answers for the helper.

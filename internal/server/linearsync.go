@@ -202,27 +202,61 @@ func (l *linearSvc) dropTimer(threadID string) {
 
 // threadChanged is called whenever a thread changed (publishThread). It acts only on a change of
 // the thread's status: work starting moves the issue to a started state; a meaningful transition
-// updates the progress comment (debounced). Everything runs off the request path.
+// updates the progress comment (debounced). The status is read now, on the caller's path, and
+// handled off it, one status after another in the order they were seen: a turn that ends and
+// work that resumes right after are two transitions, even when the handler runs only after both.
 func (l *linearSvc) threadChanged(threadID string) {
-	ctx := context.Background()
-	th, err := l.s.store.GetThread(ctx, threadID)
+	th, err := l.s.store.GetThread(context.Background(), threadID)
 	if err != nil || th.Linear == nil {
 		return
 	}
+	l.seenMu.Lock()
+	q, running := l.seen[threadID]
+	if n := len(q); n > 0 && q[n-1] == th.Status {
+		l.seenMu.Unlock()
+		return
+	}
+	l.seen[threadID] = append(q, th.Status)
+	l.seenMu.Unlock()
+	if !running {
+		go l.handleSeen(threadID)
+	}
+}
+
+// handleSeen handles a thread's observed statuses in order until none is left.
+func (l *linearSvc) handleSeen(threadID string) {
+	for {
+		l.seenMu.Lock()
+		q := l.seen[threadID]
+		if len(q) == 0 {
+			delete(l.seen, threadID)
+			l.seenMu.Unlock()
+			return
+		}
+		status := q[0]
+		l.seen[threadID] = q[1:]
+		l.seenMu.Unlock()
+		l.statusSeen(threadID, status)
+	}
+}
+
+// statusSeen handles one observed status of a linked thread.
+func (l *linearSvc) statusSeen(threadID, status string) {
+	ctx := context.Background()
 	if l.loadAuth(ctx) == nil {
 		return
 	}
 	changed := false
 	l.updateLink(ctx, threadID, func(k *store.ThreadLink) {
-		if k.LastStatus != th.Status {
-			k.LastStatus = th.Status
+		if k.LastStatus != status {
+			k.LastStatus = status
 			changed = true
 		}
 	})
 	if !changed {
 		return
 	}
-	if th.Status == store.ThreadWorking {
+	if status == store.ThreadWorking {
 		if err := l.ensureStarted(ctx, threadID); err != nil {
 			l.setError(ctx, threadID, err)
 			l.publishLink(threadID)

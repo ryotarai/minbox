@@ -444,6 +444,9 @@ func TestLinearCreateValidatesAgainstLazilyLoadedLists(t *testing.T) {
 	}
 	// Without a state or labels no team lists are needed at all.
 	e2, _, id2 := newDraftEnv(t)
+	// not working: linking a working thread starts the issue in the background, which reads the
+	// team's states on its own
+	e2.setStatus(id2, "finished")
 	body = goodCreate()
 	delete(body, "state_id")
 	delete(body, "label_ids")

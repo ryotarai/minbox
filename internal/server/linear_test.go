@@ -492,9 +492,13 @@ func TestLinearProgressEditFailureCreatesANewCommentOnce(t *testing.T) {
 	e.f.failUpdate = true
 	e.setStatus(id, "finished")
 	eventually(t, "a new comment", func() bool { return len(e.comments()) == 2 })
-	lk, _ := e.st.GetThreadLink(context.Background(), id)
-	if lk.ProgressCommentID != "cmt-2" {
-		t.Errorf("progress comment id %q", lk.ProgressCommentID)
+	// the link records the new comment's id right after Linear answered the create
+	eventually(t, "the link names the new comment", func() bool {
+		lk, _ := e.st.GetThreadLink(context.Background(), id)
+		return lk != nil && lk.ProgressCommentID == "cmt-2"
+	})
+	if n := len(e.comments()); n != 2 {
+		t.Errorf("%d comments, want the first and one new", n)
 	}
 }
 

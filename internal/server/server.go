@@ -107,6 +107,8 @@ type Server struct {
 	stuckStartupAfter time.Duration
 	stuckMessageAfter time.Duration
 	stuckWake         chan struct{}
+	stuckStop         chan struct{} // closed: the watch returns (tests that run the passes themselves)
+	stuckDone         chan struct{} // closed when the watch has returned
 	stuckTail         func(ctx context.Context, sess *store.Session) ([]byte, error)
 	// The mod protocol (modproto.go): the in-process agent API and the sessions' turn state.
 	innerOnce sync.Once
@@ -173,6 +175,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 		stuckStartupAfter:   durationFromEnv("MINBOX_STUCK_STARTUP_S", stuckStartupDefault),
 		stuckMessageAfter:   durationFromEnv("MINBOX_STUCK_MESSAGE_S", stuckMessageDefault),
 		stuckWake:           make(chan struct{}, 1),
+		stuckStop:           make(chan struct{}),
+		stuckDone:           make(chan struct{}),
 		closing:             make(chan struct{}),
 		files:               newFileState(),
 		devAuth:             newDeviceAuth(),

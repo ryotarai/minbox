@@ -10,9 +10,13 @@ import (
 )
 
 // stuckEnv: a server with a settable clock, short thresholds and a terminal screen the test sets.
+// The background watch is stopped first: the test runs every pass itself (stuckJSON), so a pass of
+// the watch can neither interleave with the test's nor read the fields set here.
 func stuckEnv(t *testing.T) (*env, *fakeClock, *string) {
 	t.Helper()
 	e := newEnv(t)
+	close(e.srv.stuckStop)
+	<-e.srv.stuckDone
 	clk := &fakeClock{t: time.Now()}
 	e.srv.clock = clk.now
 	e.srv.stuckStartupAfter = 20 * time.Second

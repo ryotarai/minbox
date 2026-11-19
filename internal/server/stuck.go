@@ -151,6 +151,7 @@ func (s *Server) stuckKick() {
 
 // runStuck is the watch: a pass every tick, and at once when kicked.
 func (s *Server) runStuck() {
+	defer close(s.stuckDone)
 	tick := min(stuckTickMax, s.stuckStartupAfter/4, s.stuckMessageAfter/4)
 	tick = max(tick, 100*time.Millisecond)
 	t := time.NewTicker(tick)
@@ -158,6 +159,8 @@ func (s *Server) runStuck() {
 	for {
 		select {
 		case <-s.closing:
+			return
+		case <-s.stuckStop:
 			return
 		case <-t.C:
 		case <-s.stuckWake:

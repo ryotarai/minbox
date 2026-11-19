@@ -111,8 +111,12 @@ type linearSvc struct {
 	// My issues (linearissues.go).
 	iss issuesState
 
-	mu          sync.Mutex
-	syncing     map[string]bool
+	mu      sync.Mutex
+	syncing map[string]bool
+	// seen: per thread, the statuses observed by threadChanged and not handled yet, in order;
+	// a thread has an entry while its handler runs (linearsync.go).
+	seenMu      sync.Mutex
+	seen        map[string][]string
 	lastRefresh map[string]time.Time
 	timers      map[string]*time.Timer
 
@@ -130,7 +134,7 @@ func newLinearSvc(s *Server) *linearSvc {
 		hc:        &http.Client{Timeout: 30 * time.Second},
 		teamCache: map[string]teamEntry{}, teamInflight: map[string]*teamCall{}, draftCache: map[string]draftEntry{}, draftInflight: map[string]*draftCall{}, draftSem: make(chan struct{}, draftParallel),
 		creates: map[string]*createCall{}, draftRun: s.runLinearDraft, iss: newIssuesState(),
-		outcomes: map[string]*loginOutcome{}, syncing: map[string]bool{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
+		outcomes: map[string]*loginOutcome{}, syncing: map[string]bool{}, seen: map[string][]string{}, lastRefresh: map[string]time.Time{}, timers: map[string]*time.Timer{},
 		refreshEvery: 45 * time.Second, progressEvery: 60 * time.Second, loginTTL: 20 * time.Minute, now: time.Now,
 	}
 }
@@ -841,7 +845,7 @@ func (l *linearSvc) linkIssue(ctx context.Context, th *store.Thread, is *linear.
 		}
 	}
 	s.publishThread(th.SessionID, id)
-	go l.threadChanged(id)
+	l.threadChanged(id)
 	return s.store.GetThreadLink(ctx, id)
 }
 
