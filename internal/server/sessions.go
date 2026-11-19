@@ -495,6 +495,11 @@ func (m *sessionManager) instructions(ctx context.Context, sess *store.Session) 
 	if err != nil {
 		stored = nil
 	}
+	return instructionsWith(stored, sess)
+}
+
+// instructionsWith is instructions with the settings read already.
+func instructionsWith(stored map[string]json.RawMessage, sess *store.Session) string {
 	a := agent.Must(sess.Agent)
 	// The orchestrator prompt tells the main agent to start subagents: only for agents that have them.
 	text := buildInstructionsFor(a, settingOn(stored, "orchestrator_prompt", true) && a.Caps().Subagents, settingString(stored, "prompt_extra"))
@@ -795,9 +800,13 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 		// machine (TrustClaudeFolder).
 		claudetrust.EnsureLogged(sess.Cwd, env, "session "+sess.ID)
 	}
+	argv := m.argv(ctx, sess, resume)
+	// What this start loads, for telling later whether a restart would load something newer
+	// (stale.go). Read right after argv, from the same settings and folders.
+	runPlugin, runPrompt := m.runVersion(ctx, sess)
 	_, err = host.Spawn(ctx, termhost.SpawnRequest{
 		ID:                sess.ID,
-		Argv:              m.argv(ctx, sess, resume),
+		Argv:              argv,
 		Cwd:               sess.Cwd,
 		Env:               env,
 		InheritEnv:        m.remote(sess.HostID) || sess.Kind == store.KindShell,
@@ -811,6 +820,9 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	if sess.Kind == store.KindShell {
 		// No mod reports in: a shell is ready for the person at once.
 		return m.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
+	}
+	if err := m.store.SetSessionRun(ctx, sess.ID, runPlugin, runPrompt); err != nil {
+		log.Printf("session %s (%s): record the started version: %v", sess.ID, sess.Name, err)
 	}
 	return m.store.SetSessionStatus(ctx, sess.ID, store.StatusStarting)
 }

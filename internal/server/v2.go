@@ -510,6 +510,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.publish(Event{Type: "settings"})
+	// The instructions follow some settings (prompt_extra, orchestrator_prompt): running agents may
+	// have become stale (stale.go).
+	s.hub.publish(Event{Type: "sessions"})
 	s.getSettings(w, r)
 }
 

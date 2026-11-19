@@ -32,6 +32,7 @@ import { AgentColumns, useColumnPick } from './Columns'
 import { TaskView } from './TaskView'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 import { Resizer, type PaneKind, type SidePane } from './layout'
+import { StaleAgentBanner } from './StaleAgent'
 
 /** The agent's side panes as V3App fits them: the ones showing (in order) and their widths, and the
  *  actions on them (see useSidePanes). */
@@ -280,6 +281,7 @@ export function StreamView({
             </button>
           </div>
         </div>
+        <StaleAgentBanner session={sess} />
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">

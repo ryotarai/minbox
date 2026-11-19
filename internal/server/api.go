@@ -31,9 +31,11 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := s.hostNames(r.Context())
+	stored, _ := s.store.Settings(r.Context())
 	for i := range sessions {
 		sessions[i].HostName = names[sessions[i].HostID]
 		s.withModSeen(&sessions[i])
+		s.withStale(stored, &sessions[i])
 	}
 	writeJSON(w, 200, sessions)
 }

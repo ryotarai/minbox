@@ -94,6 +94,12 @@ export type Session = {
   mod_beat_at?: string | null
   /** The session's integration speaks an older mod protocol: it works; a restart loads the current one (docs/mod-protocol.md). */
   mod_outdated?: boolean
+  /** The running agent loaded an older minbox mod or older instructions than a restart would: restart it to pick them up (internal/server/stale.go). */
+  stale?: boolean
+  /** Which: 'plugin' (the mod / extension) and/or 'prompt' (minbox's instructions). */
+  stale_reasons?: string[]
+  /** What the agent runs (plugin id and instructions hash): a dismissed stale notice stays hidden for it. */
+  run_version?: string
   last_activity?: string
   top_thread?: TopThread | null
   host_id?: string
