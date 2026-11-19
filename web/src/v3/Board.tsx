@@ -87,7 +87,7 @@ export function BoardView({
   /** Rename a task (its row menu): the dialog is the app's, as for E / F2 on the focused row. */
   onRename?: (t: BoardTask) => void
 }) {
-  const { setOverlay, error } = useApp()
+  const { setOverlay, error, toast } = useApp()
   const { project } = useSelectedProject()
   const byId = useSessionsById()
   const nav = useNav()
@@ -228,6 +228,9 @@ export function BoardView({
           <button type="button" className="v-btn" data-testid="new-message" onClick={() => setOverlay({ kind: 'v3-new' } as never)}>
             <IconPlus size={14} /> New message <span className="v-kbd v-hide-phone">⇧N</span>
           </button>
+          <button type="button" className="v-btn" data-testid="new-goal" title="A goal: an outcome an agent keeps working toward until its criteria are met" onClick={() => setOverlay({ kind: 'v3-new', mode: 'goal' } as never)}>
+            <IconGoal size={14} /> New goal
+          </button>
         </div>
         <div className="v-r2 v-sum">
           {project?.name ?? 'All projects'} · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working{g.blocked.length ? ` · ${g.blocked.length} blocked` : ''} · {openN} open
@@ -283,6 +286,15 @@ export function BoardView({
           onRename={() => onRename?.(menu.t)}
           onOpen={() => nav.task(menu.t.id)}
           onToggleDone={() => setStatus(menu.t, menu.t.status === 'done' ? 'working' : 'done')}
+          onMakeGoal={() =>
+            v3
+              .patchTask(menu.t.id, { kind: 'goal' })
+              .then(() => {
+                toast('Made it a goal · add its criteria on the goal')
+                reload()
+              })
+              .catch(error)
+          }
         />
       )}
     </div>

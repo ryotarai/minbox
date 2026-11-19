@@ -703,6 +703,7 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	}
 	s.modProtocolSeen(sess.ID, req.Protocol)
 	s.stuckKick() // a start waiting for this hello is no longer stuck
+	s.goalResumeKick(sess.ID)
 	if req.Protocol >= 1 {
 		// A new conversation (or a new integration): the next prompt carries the instructions.
 		s.proxyUpdate(sess.ID, func(p *proxyState) { p.fresh = true })

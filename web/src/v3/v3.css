@@ -284,6 +284,35 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-dialog textarea { width: 100%; min-height: 110px; border: 1px solid var(--mb-line2); border-radius: 8px; padding: 8px 10px; outline: 0; resize: vertical; background: var(--mb-surface); }
 .v-dialog .v-foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; color: var(--mb-faint); }
 .v-dialog .v-foot .v-sp { flex: 1; }
+/* ⇧N: the title row with the Message / Goal switch; New goal's fields */
+.v-dialog .v-dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.v-dialog .v-dhead h3 { margin: 0; flex: 1; }
+.v-seg { display: inline-flex; border: 1px solid var(--mb-line2); border-radius: 7px; padding: 2px; gap: 2px; background: var(--mb-surface); }
+.v-seg button { border: 0; background: none; border-radius: 5px; padding: 2px 10px; font-size: 12.5px; color: var(--mb-subtle); }
+.v-seg button.on { background: var(--mb-chip); color: var(--mb-fg); font-weight: 600; }
+.v-newgoal .v-ng-title { width: 100%; font-size: 14px; padding: 6px 10px !important; margin-bottom: 10px; background: var(--mb-surface); outline: 0; }
+.v-newgoal .v-ng-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--mb-fg2); margin-bottom: 4px; }
+.v-newgoal .v-ng-hint { font-weight: 400; color: var(--mb-faint); }
+.v-newgoal .v-ng-criteria { min-height: 92px; margin-bottom: 8px; }
+.v-newgoal .v-ng-run label { display: inline-flex; align-items: center; gap: 6px; }
+.v-newgoal .v-ng-run input[type=number] { width: 64px; border: 1px solid var(--mb-line2); border-radius: 6px; padding: 2px 6px; background: var(--mb-surface); }
+.v-newgoal select { max-width: 100%; min-width: 0; flex: 1 1 200px; }
+@media (max-width: 699px) {
+  .v-overlay:has(.v-newgoal) { padding-top: 16px; }
+  .v-newgoal .v-ng-title, .v-newgoal textarea, .v-newgoal select { font-size: 16px; }
+}
+/* A goal's criteria, edited in the task card */
+.v-crit-row { display: flex; align-items: center; gap: 4px; }
+.v-crit-row > .v-st { flex: 1; min-width: 0; }
+.v-crit-acts { display: inline-flex; gap: 1px; flex: none; opacity: 0; transition: opacity .1s; }
+.v-crit-row:hover .v-crit-acts, .v-crit-row:focus-within .v-crit-acts { opacity: 1; }
+@media (hover: none) { .v-crit-acts { opacity: .7; } }
+.v-crit-btn { border: 0; background: none; padding: 3px; border-radius: 4px; color: var(--mb-subtle); display: grid; place-items: center; }
+.v-crit-btn:hover { background: var(--mb-rowsel); color: var(--mb-fg); }
+.v-crit-input, .v-crit-add { width: 100%; font: inherit; font-size: 12.5px; border: 1px solid var(--mb-line2); border-radius: 6px; padding: 2px 6px; background: var(--mb-surface); color: var(--mb-fg); outline: 0; }
+.v-crit-input:focus, .v-crit-add:focus { border-color: var(--mb-accent); }
+.v-crit-add { margin-top: 4px; border-style: dashed; background: none; }
+.v-crit-add:focus { border-style: solid; background: var(--mb-surface); }
 .v-help table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .v-help td { padding: 3px 6px; border-bottom: 1px solid var(--mb-line); }
 .v-help td:first-child { white-space: nowrap; width: 120px; }

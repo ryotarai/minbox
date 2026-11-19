@@ -138,8 +138,25 @@ export function RenameTaskDialog({ task, onClose, onShow, onSaved }: { task: Tas
   )
 }
 
-/** A Board row's menu (⋯ or right-click): rename, open, done / reopen. */
-export function TaskRowMenu({ t, at, onClose, onRename, onOpen, onToggleDone }: { t: Task; at: MenuAt | null; onClose: () => void; onRename: () => void; onOpen: () => void; onToggleDone: () => void }) {
+/** A Board row's menu (⋯ or right-click): rename, open, done / reopen, make a task a goal. */
+export function TaskRowMenu({
+  t,
+  at,
+  onClose,
+  onRename,
+  onOpen,
+  onToggleDone,
+  onMakeGoal,
+}: {
+  t: Task
+  at: MenuAt | null
+  onClose: () => void
+  onRename: () => void
+  onOpen: () => void
+  onToggleDone: () => void
+  /** Make the task a goal (its criteria are then added on the goal). */
+  onMakeGoal?: () => void
+}) {
   const pick = (f: () => void) => () => {
     onClose()
     f()
@@ -155,6 +172,11 @@ export function TaskRowMenu({ t, at, onClose, onRename, onOpen, onToggleDone }: 
       <MenuItem testid="menu-done-task" hint="X" onClick={pick(onToggleDone)}>
         {t.status === 'done' ? 'Reopen' : 'Mark done'}
       </MenuItem>
+      {onMakeGoal && t.kind !== 'goal' && (
+        <MenuItem testid="menu-make-goal" onClick={pick(onMakeGoal)}>
+          <IconGoal size={14} /> Make it a goal
+        </MenuItem>
+      )}
     </Popover>
   )
 }

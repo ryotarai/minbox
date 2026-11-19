@@ -338,6 +338,16 @@ limit (default 4 h) runs out, or when the person stops it. "Met" is the agent's 
 - `update_task {task_id: <goal>, check_criteria: [n], criteria?, status?}`; all criteria checked or
   `status: done` ends the goal (and its run).
 - The person: Start / Pause / Stop on the goal (Board row and goal view), and edits the criteria.
+- The person sets goals too: the Board's "New goal", ⇧N's Message / Goal switch and ⌘K › New goal open
+  one dialog (title, criteria one per line, the agent, optionally its run started at once with its
+  turn budget); a task's ⋯ menu makes it a goal. In the goal's card the "Done when" list is edited in
+  place (add, edit, delete, move up, tick); the person ticking the last criterion ends the goal (done,
+  the run stops), as the agent's `check_criteria` does.
+- After a server restart minbox knows no agent's idle time (it is kept in memory). A running goal goes
+  on once its agent is known idle: its stored status is idle with nothing queued and its mod, heard from
+  since the start (hello or heartbeat), does not say it is working; then the usual settle time. An
+  agent in a turn is left alone until it reports idle. That idle is no turn's end for the guards (the
+  restart is never a fast turn); the turn count, recent continuations and progress mark carry over.
 
 ---
 

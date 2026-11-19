@@ -15,6 +15,7 @@ import { Bar, MessageView, StatusDot, Steps, agentName, answersNearQuestions, sh
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
+import { CriteriaEditor } from './Criteria'
 import { TaskTitle } from './RenameTask'
 import { StuckAgentBanners } from './StuckAgent'
 import { DeliveryLine } from '../components/ThreadView'
@@ -310,7 +311,8 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
     const cur = el.querySelector<HTMLElement>('.v-st.doing')
     if (cur) el.scrollTop = Math.max(0, cur.offsetTop - el.offsetTop - 24)
   }, [t.id, all, long, folded])
-  if (!n) return null
+  // A goal always shows its criteria (editable, with the field to add one), even with none yet.
+  if (!n && !goal) return null
   return (
     <div className="v-taskcheck" data-testid="task-checklist" role="group" aria-label={goal ? 'Done when' : 'Checklist'}>
       {/* No heading, bar or count: the first step is the first row, level with the task's title. On a
@@ -331,11 +333,11 @@ function TaskChecklist({ t, reload }: { t: BoardTask; reload: () => void }) {
       )}
       {!folded && (
       <div ref={box} className={'v-taskcheck-list' + (long && !all ? ' folded' : '')} data-testid="task-checklist-list">
-        <Steps
-          t={t}
-          criteria={goal}
-          onToggle={(path) => v3.patchTask(t.id, goal ? { criteria: toggled(t.criteria, path) } : { steps: toggled(t.steps, path) }).then(reload).catch(error)}
-        />
+        {goal ? (
+          <CriteriaEditor t={t} reload={reload} />
+        ) : (
+          <Steps t={t} onToggle={(path) => v3.patchTask(t.id, { steps: toggled(t.steps, path) }).then(reload).catch(error)} />
+        )}
       </div>
       )}
       {long && !folded && (

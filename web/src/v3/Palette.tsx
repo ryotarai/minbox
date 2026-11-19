@@ -99,7 +99,7 @@ export type PaletteCtx = {
   togglePane: (p: PaneKind) => void
   /** The agent's Tasks pane (desktop and tablet): shown, and show or fold it. */
   tasksPane?: { shown: boolean; show: (show: boolean) => void }
-  openNew: (to?: string) => void
+  openNew: (to?: string, mode?: 'message' | 'goal') => void
   openNewAgent: () => void
   openHelp: () => void
   rename: (s: Session) => void
@@ -139,6 +139,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     const list: Item[] = []
     const act = (id: string, title: string, run: () => void, o: Partial<Item> = {}) => list.push({ kind: 'action', id, title, run, ...o })
     act('new-message', 'New message', () => ctx.openNew(cur && cur.kind !== 'shell' ? cur.id : undefined), { keywords: 'compose write ask tell start task', shortcut: '⇧N' })
+    act('new-goal', 'New goal', () => ctx.openNew(cur && cur.kind !== 'shell' ? cur.id : undefined, 'goal'), { keywords: 'goal outcome criteria done when autonomous run keep going objective' })
     act('new-agent', 'New agent', () => ctx.openNewAgent(), { keywords: 'new session create start claude pi opencode folder host' })
     act('board', 'Open Board', () => go({ view: 'main', k: null, s: null, m: null }), { keywords: 'home tasks questions needs you', shortcut: 'g b' })
     act('search', 'Search tasks and messages', () => go({ view: 'search' }), { keywords: 'find', shortcut: '/' })
