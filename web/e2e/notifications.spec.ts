@@ -103,7 +103,8 @@ test('add a Slack destination, send a test, and get a full agent message', async
     expect(t).toContain('The *full* body: a &lt; b &amp; c, see <https://x.io/d|docs> end-of-message')
     const last = slack.hits[before].json.blocks.at(-1)
     expect(last.type).toBe('actions')
-    expect(last.elements[0].url).toMatch(/^https:\/\/box\.example\.ts\.net\/#s=ses_\w+&t=thr_\w+$/)
+    // The message is about a task: the link opens the task at the message.
+    expect(last.elements[0].url).toMatch(/^https:\/\/box\.example\.ts\.net\/#v=task&k=tsk_\w+&m=msg_\w+$/)
 
     // Disabled: nothing is sent.
     await page.goto(`${minbox.url}/#v=settings&ss=notifications`)
@@ -182,7 +183,7 @@ async function addSlackApp(page: Page, name: string, token: string, channel: str
   await expect(page.getByTestId('notif-row').filter({ hasText: name })).toBeVisible()
 }
 
-test('Slack app: help text, token masked, test reports the bot, messages group in one Slack thread, failures show', async ({ page, minbox }) => {
+test('Slack app: help text, token masked, test reports the bot, a task\'s messages group in its Slack thread, failures show', async ({ page, minbox }) => {
   const api = minbox.slackApi
   await openNotifications(page, minbox.url)
   await page.getByTestId('notif-add').click()
@@ -208,7 +209,8 @@ test('Slack app: help text, token masked, test reports the bot, messages group i
   expect(api.calls[0].auth).toBe('Bearer xoxb-111-SECRETvalue-wxyz')
   expect(api.posts[0].json.thread_ts).toBeUndefined()
 
-  // Two agent messages of one thread: parent, then a reply to it.
+  // Two agent messages about one task: the task's parent (its title and agent), then both
+  // messages as replies in its Slack thread.
   const dir = join(minbox.dataDir, 'work', 'proj')
   mkdirSync(dir, { recursive: true })
   await page.goto(minbox.url)
@@ -217,16 +219,29 @@ test('Slack app: help text, token masked, test reports the bot, messages group i
   const before = api.posts.length
   await typeInTerminal(page, 'say first note')
   await expectTerminal(page, /sent .*thr_/)
-  await expect.poll(() => api.posts.length).toBe(before + 1)
-  await typeInTerminal(page, 'say second note')
   await expect.poll(() => api.posts.length).toBe(before + 2)
-  const [parent, reply] = api.posts.slice(before)
+  await typeInTerminal(page, 'say second note')
+  await expect.poll(() => api.posts.length).toBe(before + 3)
+  const [parent, first, second] = api.posts.slice(before)
   expect(parent.json.thread_ts).toBeUndefined()
   expect(parent.json.channel).toBe('#alerts')
-  expect(JSON.stringify(parent.json.blocks)).toContain('first note')
-  expect(reply.json.thread_ts).toBe('1700000000.000002') // the test message was ts ...001
-  expect(reply.json.channel).toBe('C0123ABCD')
-  expect(JSON.stringify(reply.json.blocks)).toContain('second note')
+  expect(JSON.stringify(parent.json.blocks)).toContain('Typed in the terminal') // the task's title
+  expect(JSON.stringify(parent.json.blocks)).toContain('gamma') // its agent
+  expect(JSON.stringify(parent.json.blocks)).not.toContain('first note')
+  for (const [reply, words] of [[first, 'first note'], [second, 'second note']] as const) {
+    expect(reply.json.thread_ts).toBe('1700000000.000002') // the test message was ts ...001
+    expect(reply.json.channel).toBe('C0123ABCD')
+    expect(JSON.stringify(reply.json.blocks)).toContain(words)
+  }
+
+  // The task is done: its parent is edited to show it.
+  await typeInTerminal(page, 'mark done all finished')
+  await expect.poll(() => api.calls.filter((c) => c.method === 'chat.update').length).toBe(1)
+  const update = api.calls.find((c) => c.method === 'chat.update')!
+  expect(update.json.ts).toBe('1700000000.000002')
+  expect(JSON.stringify(update.json.blocks)).toContain(':white_check_mark: *Typed in the terminal*')
+  await expect.poll(() => api.posts.length).toBe(before + 4)
+  expect(api.posts[before + 3].json.thread_ts).toBe('1700000000.000002')
 
   // A failing token shows in the list.
   api.postError = 'invalid_auth'

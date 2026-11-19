@@ -203,6 +203,8 @@ func New(cfg Config, st *store.Store, web fs.FS) *Server {
 	}
 	s.notifier = notify.NewDispatcher(st)
 	s.notifier.Changed = func() { h.publish(Event{Type: "notifications"}) }
+	// A renamed or finished task shows it on the parent of its Slack thread.
+	st.OnTaskChange(func(_, cur store.Task) { s.notifyTaskChanged(cur) })
 	s.watchStartup()
 	if err := st.FailRunningCommands(context.Background()); err != nil {
 		log.Printf("commands: %v", err)

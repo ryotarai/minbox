@@ -568,7 +568,11 @@ func (s *Store) UpdateTask(ctx context.Context, id, by string, f TaskFields) (*T
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return s.GetTask(ctx, id)
+	out, err := s.GetTask(ctx, id)
+	if err == nil && s.onTaskChange != nil && (out.Title != cur.Title || out.Status != cur.Status) {
+		s.onTaskChange(*cur, *out)
+	}
+	return out, err
 }
 
 func firstLineOf(s string) string {
@@ -582,6 +586,7 @@ func firstLineOf(s string) string {
 
 // DeleteTask removes a task, its tags and its timeline.
 func (s *Store) DeleteTask(ctx context.Context, id string) error {
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE task_id=? AND task_id!=''`, id)
 	return s.exec(ctx, `DELETE FROM tasks WHERE id=?`, id)
 }
 

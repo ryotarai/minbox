@@ -109,20 +109,111 @@ type SlackThread struct {
 	TS        string
 }
 
-// GetSlackThread finds the stored Slack parent (ok=false when there is none).
+// GetSlackThread finds the stored Slack parent of a minbox thread's messages that are about no task
+// (ok=false when there is none).
 func (s *Store) GetSlackThread(ctx context.Context, destID, threadID string) (SlackThread, bool, error) {
 	var t SlackThread
-	err := s.db.QueryRowContext(ctx, `SELECT channel_id, ts FROM notification_slack_threads WHERE destination_id=? AND minbox_thread_id=?`, destID, threadID).Scan(&t.ChannelID, &t.TS)
+	err := s.db.QueryRowContext(ctx, `SELECT channel_id, ts FROM notification_slack_threads WHERE destination_id=? AND minbox_thread_id=? AND task_id=''`, destID, threadID).Scan(&t.ChannelID, &t.TS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SlackThread{}, false, nil
 	}
 	return t, err == nil, err
 }
 
-// PutSlackThread stores (or replaces) the Slack parent of a minbox thread.
+// PutSlackThread stores (or replaces) the Slack parent of a minbox thread's messages that are about
+// no task.
 func (s *Store) PutSlackThread(ctx context.Context, destID, threadID string, t SlackThread) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, last_notified_at) VALUES(?,?,?,?,?,?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO notification_slack_threads(destination_id, minbox_thread_id, task_id, channel_id, ts, created_at, last_notified_at) VALUES(?,?,'',?,?,?,?)`,
 		destID, threadID, t.ChannelID, t.TS, ms(s.now()), ms(s.now()))
+	return err
+}
+
+// SlackTaskThread is the Slack thread of a task: its parent message, and the minbox thread (an
+// agent's stream) the person's replies in it go to.
+type SlackTaskThread struct {
+	SlackThread
+	ThreadID string
+}
+
+// GetSlackTaskThread finds the Slack thread of a task (ok=false when there is none).
+func (s *Store) GetSlackTaskThread(ctx context.Context, destID, taskID string) (SlackTaskThread, bool, error) {
+	var t SlackTaskThread
+	if taskID == "" {
+		return t, false, nil
+	}
+	err := s.db.QueryRowContext(ctx, `SELECT channel_id, ts, minbox_thread_id FROM notification_slack_threads WHERE destination_id=? AND task_id=?`, destID, taskID).Scan(&t.ChannelID, &t.TS, &t.ThreadID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SlackTaskThread{}, false, nil
+	}
+	return t, err == nil, err
+}
+
+// PutSlackTaskThread stores (or replaces) the Slack thread of a task; replies in it go to threadID.
+func (s *Store) PutSlackTaskThread(ctx context.Context, destID, taskID, threadID string, t SlackThread) error {
+	if taskID == "" {
+		return errors.New("no task")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notification_slack_threads WHERE destination_id=? AND task_id=?`, destID, taskID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO notification_slack_threads(destination_id, minbox_thread_id, task_id, channel_id, ts, created_at, last_notified_at) VALUES(?,?,?,?,?,?,?)`,
+		destID, threadID, taskID, t.ChannelID, t.TS, ms(s.now()), ms(s.now())); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// TouchSlackTaskThread records that the task's Slack thread was notified now by the agent whose
+// stream is threadID: the person's replies in it go there from now on.
+func (s *Store) TouchSlackTaskThread(ctx context.Context, destID, taskID, threadID string) error {
+	return s.exec2(ctx, `UPDATE notification_slack_threads SET last_notified_at=?, minbox_thread_id=? WHERE destination_id=? AND task_id=?`, ms(s.now()), threadID, destID, taskID)
+}
+
+// migrateSlackTaskThreads gives notification_slack_threads a task_id (a task's Slack thread): the
+// primary key becomes (destination, minbox thread, task), so the table is rebuilt once; the rows
+// of before are threads about no task (an empty task_id). One Slack thread per task and destination.
+func migrateSlackTaskThreads(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('notification_slack_threads') WHERE name='task_id'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, q := range []string{
+			`CREATE TABLE notification_slack_threads_new (
+  destination_id TEXT NOT NULL,
+  minbox_thread_id TEXT NOT NULL,
+  task_id TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_notified_at INTEGER NOT NULL DEFAULT 0,
+  reply_cursor TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (destination_id, minbox_thread_id, task_id)
+)`,
+			`INSERT INTO notification_slack_threads_new(destination_id, minbox_thread_id, task_id, channel_id, ts, created_at, last_notified_at, reply_cursor)
+  SELECT destination_id, minbox_thread_id, '', channel_id, ts, created_at, last_notified_at, reply_cursor FROM notification_slack_threads ORDER BY rowid`,
+			`DROP TABLE notification_slack_threads`,
+			`ALTER TABLE notification_slack_threads_new RENAME TO notification_slack_threads`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS notification_slack_threads_task ON notification_slack_threads(destination_id, task_id) WHERE task_id != ''`)
 	return err
 }
 

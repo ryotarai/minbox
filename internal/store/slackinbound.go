@@ -14,6 +14,7 @@ import (
 // SlackThreadRef is a Slack thread of a destination with its poll state.
 type SlackThreadRef struct {
 	ThreadID     string
+	TaskID       string // the task whose Slack thread it is ("" for a thread about no task)
 	ChannelID    string
 	TS           string // the parent's ts
 	ReplyCursor  string // latest reply ts handled ("" none)
@@ -27,12 +28,12 @@ func (s *Store) exec2(ctx context.Context, q string, args ...any) error {
 
 // TouchSlackThread records that the thread was notified now (it is polled for replies for a while).
 func (s *Store) TouchSlackThread(ctx context.Context, destID, threadID string) error {
-	return s.exec2(ctx, `UPDATE notification_slack_threads SET last_notified_at=? WHERE destination_id=? AND minbox_thread_id=?`, ms(s.now()), destID, threadID)
+	return s.exec2(ctx, `UPDATE notification_slack_threads SET last_notified_at=? WHERE destination_id=? AND minbox_thread_id=? AND task_id=''`, ms(s.now()), destID, threadID)
 }
 
 // RecentSlackThreads lists the destination's Slack threads notified since `since`, most recent first.
 func (s *Store) RecentSlackThreads(ctx context.Context, destID string, since time.Time, limit int) ([]SlackThreadRef, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT minbox_thread_id, channel_id, ts, reply_cursor, last_notified_at FROM notification_slack_threads
+	rows, err := s.db.QueryContext(ctx, `SELECT minbox_thread_id, task_id, channel_id, ts, reply_cursor, last_notified_at FROM notification_slack_threads
 		WHERE destination_id=? AND last_notified_at>=? ORDER BY last_notified_at DESC, rowid DESC LIMIT ?`, destID, ms(since), limit)
 	if err != nil {
 		return nil, err
@@ -42,7 +43,7 @@ func (s *Store) RecentSlackThreads(ctx context.Context, destID string, since tim
 	for rows.Next() {
 		var r SlackThreadRef
 		var at int64
-		if err := rows.Scan(&r.ThreadID, &r.ChannelID, &r.TS, &r.ReplyCursor, &at); err != nil {
+		if err := rows.Scan(&r.ThreadID, &r.TaskID, &r.ChannelID, &r.TS, &r.ReplyCursor, &at); err != nil {
 			return nil, err
 		}
 		r.LastNotified = fromMs(at)
@@ -51,9 +52,17 @@ func (s *Store) RecentSlackThreads(ctx context.Context, destID string, since tim
 	return out, rows.Err()
 }
 
-// SetSlackReplyCursor stores the latest reply ts handled in a thread.
+// SetSlackReplyCursor stores the latest reply ts handled in a thread about no task.
 func (s *Store) SetSlackReplyCursor(ctx context.Context, destID, threadID, ts string) error {
-	return s.exec2(ctx, `UPDATE notification_slack_threads SET reply_cursor=? WHERE destination_id=? AND minbox_thread_id=?`, ts, destID, threadID)
+	return s.exec2(ctx, `UPDATE notification_slack_threads SET reply_cursor=? WHERE destination_id=? AND minbox_thread_id=? AND task_id=''`, ts, destID, threadID)
+}
+
+// SetSlackRefCursor stores the latest reply ts handled in a Slack thread (a task's or not).
+func (s *Store) SetSlackRefCursor(ctx context.Context, destID string, ref SlackThreadRef, ts string) error {
+	if ref.TaskID != "" {
+		return s.exec2(ctx, `UPDATE notification_slack_threads SET reply_cursor=? WHERE destination_id=? AND task_id=?`, ts, destID, ref.TaskID)
+	}
+	return s.SetSlackReplyCursor(ctx, destID, ref.ThreadID, ts)
 }
 
 // GetSlackState reads a state value ("" when unset).

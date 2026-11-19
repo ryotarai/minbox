@@ -1047,19 +1047,35 @@ message). Test notifications carry no files.
 App Home Messages tab must be enabled). Slack answers with the real `D…` channel; that is what is stored, so thread replies go
 to the `D…` channel. Extra error codes: `user_not_found`, `cannot_dm_bot`, `messages_tab_disabled` (final, actionable text).
 
-**Mention.** With `mention_me` on and a known ID, the PARENT post of a Slack thread (the first notification of a minbox thread,
-and the "Send test" sample) starts with `<@U…>`: the `channel` when it is a user ID, else the first valid ID of `allowed_users`,
+**Mention.** With `mention_me` on and a known ID, the PARENT post of a Slack thread (a task's parent, the first notification
+of a minbox thread about no task, and the "Send test" sample) starts with `<@U…>`: the `channel` when it is a user ID, else the first valid ID of `allowed_users`,
 else no mention. It is put at the start of both `text` (the push-notification fallback) and the first block's text. Replies in
 the thread (`thread_ts` set) never mention. With `thread_replies` off there are no threads, so nothing is mentioned (except the
 test sample).
 
-**Grouping.** Table `notification_slack_threads(destination_id, minbox_thread_id, channel_id, ts, created_at, PRIMARY
-KEY(destination_id, minbox_thread_id))`. The first notification of a minbox thread is posted at the top level; the `ts` and the
-channel ID Slack returns are stored; later ones are posted with `thread_ts=<ts>` in that channel ID. `thread_not_found` /
-`message_not_found` (parent deleted in Slack): the message is posted as a new parent and the stored `ts` replaced. With
-`thread_replies` off everything is top-level. Sends of one (destination, minbox thread) are serialized, so two simultaneous
-notifications never both become parents. Rows go when the destination or the minbox thread is deleted, and when a PATCH changes
-the channel or token.
+**Grouping.** Table `notification_slack_threads(destination_id, minbox_thread_id, task_id DEFAULT '', channel_id, ts,
+created_at, last_notified_at, reply_cursor, PRIMARY KEY(destination_id, minbox_thread_id, task_id))`, plus a unique index on
+`(destination_id, task_id) WHERE task_id != ''` (one Slack thread per task and destination; the table was rebuilt once to add
+`task_id`, older rows have `task_id ''`).
+
+- *A message about a task* (v3: the task it is tagged with when the agent sends it) goes to the task's Slack thread. The first
+  one posts a top-level parent that names the task, not the message: `:clipboard: *<task title>*`, a context line
+  `<project> / <agent> · <status>`, and an "Open task" button (`<public_url>/#v=task&k=<task id>`) when a public URL is set
+  (the mention goes on the parent). The `ts` and channel ID Slack returns are stored with the task id and the agent's stream
+  thread id; the message itself is then posted as the first reply (its files are uploaded to the thread). Later messages about
+  the task, from any agent, are replies in that thread; each one moves `minbox_thread_id` to the stream of the agent that wrote
+  it, so the person's replies go to the agent that wrote last. The message's own "Open thread" button opens the task at the
+  message (`#v=task&k=<task>&m=<message>`).
+- *A task renamed or its status changed* (any `UpdateTask`): the parent is edited with `chat.update` (same layout;
+  `:white_check_mark:` and "done" once done). Nothing happens for a task this destination never started a thread for;
+  `message_not_found` / `cant_update_message` are ignored.
+- *A message about no task* (and threads started from a DM to the bot) keeps the thread of its minbox thread, as before: the
+  first notification of a minbox thread is the parent, later ones are replies.
+
+`thread_not_found` / `message_not_found` on a reply (parent deleted in Slack): a new parent is posted and the stored `ts`
+replaced. With `thread_replies` off everything is top-level. Sends of one (destination, minbox thread) and of one (destination,
+task) are serialized, so two simultaneous notifications never both become parents. Rows go when the destination, the minbox
+thread or the task is deleted, and when a PATCH changes the channel or token.
 
 **Errors** (Slack answers 200 `{ok:false, error}`): shown in `last_error` as actionable text, e.g. `not_in_channel` -> "The bot is
 not in that channel: invite it with /invite @<app name>…", `invalid_auth`/`token_revoked` -> "The token is invalid…",
@@ -1081,7 +1097,9 @@ log line; relabelled "Fallback project (when Claude cannot tell)"), `pick_projec
 `receive` is on), `poll_interval` (select `30|60|120|300` seconds, default 60). Transport is polling of the Web API with the bot token
 (no Socket Mode, no public URL). Code: `internal/notify/slackinbound.go` (poller), `internal/server/slackinbound.go` (turns a
 message into the person's message: `AddMessage` as `POST /api/threads/{id}/reply` does; `CreateThread` as `POST
-/api/sessions/{id}/threads` does; messages are stored as the person's own words, no source marker), started by `main.go`
+/api/sessions/{id}/threads` does; messages are stored as the person's own words, no source marker; a reply in a task's Slack
+thread goes to the stream of the agent that wrote there last and is tagged with the task, as a reply sent from the task's view
+with `task_id` is), started by `main.go`
 (`RunSlackInbound`), stopped with the server.
 
 - **Watching**: each cycle makes ONE `conversations.history(<D… channel>, limit=200)` call: the latest 200 top-level messages

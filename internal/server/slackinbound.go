@@ -16,7 +16,7 @@ import (
 // web UI: the same store calls as POST /api/threads/{id}/reply and POST /api/sessions/{id}/threads.
 type slackInbound struct{ s *Server }
 
-func (in slackInbound) DeliverReply(ctx context.Context, threadID, text string, files []notify.InFile) error {
+func (in slackInbound) DeliverReply(ctx context.Context, threadID, taskID, text string, files []notify.InFile) error {
 	s := in.s
 	th, err := s.store.GetThread(ctx, threadID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -33,6 +33,10 @@ func (in slackInbound) DeliverReply(ctx context.Context, threadID, text string, 
 	}
 	if err := s.attachUploads(ctx, ups, threadID, msg.ID); err != nil {
 		return err
+	}
+	if taskID != "" {
+		// Written in a task's Slack thread: about that task, as a reply sent from the task's view.
+		s.v3TagPersonMessage(ctx, th.SessionID, msg.ID, []string{taskID}, "")
 	}
 	s.publishThread(th.SessionID, threadID)
 	s.wakePending(th.SessionID)
