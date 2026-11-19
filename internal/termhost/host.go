@@ -586,6 +586,28 @@ func (h *Host) Kill(id string) error {
 	return nil
 }
 
+// maxTail bounds what Tail answers.
+const maxTail = 64 << 10
+
+// Tail is the last n bytes (at most maxTail) of the terminal's output as it was written, escape
+// sequences and all: what the server reads a hint from when an agent seems stuck at a prompt.
+func (h *Host) Tail(id string, n int) ([]byte, error) {
+	t := h.get(id)
+	if t == nil {
+		return nil, errNotFound
+	}
+	if n <= 0 || n > maxTail {
+		n = maxTail
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	b := t.scrollback
+	if len(b) > n {
+		b = b[len(b)-n:]
+	}
+	return append([]byte(nil), b...), nil
+}
+
 // Remove forgets an exited terminal.
 func (h *Host) Remove(id string) {
 	h.mu.Lock()
@@ -687,6 +709,15 @@ func (h *Host) Handler() http.Handler {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /terminals/{id}/attach", h.attach)
+	mux.HandleFunc("GET /terminals/{id}/tail", func(w http.ResponseWriter, r *http.Request) {
+		n, _ := strconv.Atoi(r.URL.Query().Get("bytes"))
+		b, err := h.Tail(r.PathValue("id"), n)
+		if err != nil {
+			httpError(w, 404, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"tail": string(b)})
+	})
 	mux.HandleFunc("GET /events", h.events)
 	mux.HandleFunc("POST /shutdown", func(w http.ResponseWriter, r *http.Request) {
 		h.KillAll()

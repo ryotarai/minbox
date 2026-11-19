@@ -301,7 +301,7 @@ export class Minbox {
 
 }
 
-export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox }>({
+export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: Minbox; piOnlyMinbox: Minbox; ocMinbox: Minbox; ocOnlyMinbox: Minbox; ocV1Minbox: Minbox; allAgentsMinbox: Minbox; stuckMinbox: Minbox }>({
   // The test's own browser is this machine's paired browser (contexts made with browser.newContext() are not).
   context: async ({ context }, use) => {
     await trustBrowser(context)
@@ -351,6 +351,17 @@ export const test = base.extend<{ minbox: Minbox; connMinbox: Minbox; piMinbox: 
   connMinbox: async ({ context }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
     const m = new Minbox(dir, await freePort(), undefined, undefined, { MINBOX_MOD_SILENT_S: '4', FAKE_HEARTBEAT_S: '1' })
+    m.browserContext = context
+    await m.start()
+    await use(m)
+    if (testInfo.status !== testInfo.expectedStatus) console.log(`--- minbox log (${testInfo.title}) ---\n${m.log.slice(-4000)}`)
+    await m.cleanup()
+  },
+  // A minbox that calls an agent stuck after 3 s without a hello, or with a message not taken (20 s and
+  // 30 s by default; internal/server/stuck.go).
+  stuckMinbox: async ({ context }, use, testInfo) => {
+    const dir = mkdtempSync(join(tmpdir().length > 40 ? '/tmp' : tmpdir(), 'mbx-'))
+    const m = new Minbox(dir, await freePort(), undefined, undefined, { MINBOX_STUCK_STARTUP_S: '3', MINBOX_STUCK_MESSAGE_S: '3' })
     m.browserContext = context
     await m.start()
     await use(m)

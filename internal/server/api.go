@@ -36,6 +36,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		sessions[i].HostName = names[sessions[i].HostID]
 		s.withModSeen(&sessions[i])
 		s.withStale(stored, &sessions[i])
+		s.withStuck(&sessions[i])
 	}
 	writeJSON(w, 200, sessions)
 }
@@ -701,6 +702,7 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 		_ = s.store.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
 	}
 	s.modProtocolSeen(sess.ID, req.Protocol)
+	s.stuckKick() // a start waiting for this hello is no longer stuck
 	if req.Protocol >= 1 {
 		// A new conversation (or a new integration): the next prompt carries the instructions.
 		s.proxyUpdate(sess.ID, func(p *proxyState) { p.fresh = true })
@@ -732,6 +734,9 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 		return
 	}
 	if req.Status == store.StatusIdle {
+		if sess.Status != store.StatusIdle {
+			s.stuckIdle(sess.ID)
+		}
 		v3Turns.end(sess.ID)
 		noteIdle(sess.ID)
 		// A turn is over: messages it left in no task are asked about (v3place.go).
@@ -818,6 +823,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if !decode(w, r, &req) {
 		return
 	}
+	s.stuckReplied(sess.ID) // the agent got as far as writing: an error of its last turn is behind it
 	named, msg := oneTask(req.TaskID, req.TaskIDs)
 	if msg != "" {
 		httpError(w, 400, msg)
@@ -1108,6 +1114,7 @@ func (s *Server) agentDelivered(w http.ResponseWriter, r *http.Request, sess *st
 		return
 	}
 	s.modDelivery(sess.ID, "delivered", r.PathValue("id"))
+	s.stuckKick()
 	// The next turn answers the delivered message's thread; minbox's own request to place messages in
 	// tasks is no message of the person to answer (no "you did not reply" reminder after it).
 	if m, err := s.store.GetMessage(r.Context(), r.PathValue("id")); err == nil && m.Kind != store.KindPlace && m.Kind != store.KindRunResult {

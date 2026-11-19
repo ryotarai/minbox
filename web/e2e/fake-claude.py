@@ -14,6 +14,12 @@ Typed commands (one per line):
   nobeat     stop the heartbeat (beat starts it again); the poll carries on
   tui <kb>   draw a screen, then only what changes (kb KB of it), on the main screen (fake_tui.py)
   agent off|on  stop / start answering the person's stream messages by itself (v3; on by default)
+  fail on|off   each stream message's turn dies on an API error (model not found): the error is
+             printed, turn.error and turn.complete (reason error) are reported, nothing is replied
+             (FAKE_TURN_ERROR=1 starts with it on)
+
+FAKE_TRUST_PROMPT=1: before saying hello it shows Claude Code's trust-folder prompt and waits for a
+line typed in its terminal (the hello, the poll and the heartbeat start only then).
   exit       quit
 
 v3 (docs/v3): a message the person writes in an agent's stream is answered by itself, deciding like
@@ -40,6 +46,7 @@ deaf = False  # "deaf": the mod stopped answering (no polling) until "listen"
 beating = True  # "nobeat": the heartbeat stops until "beat"
 beat_seq = 0
 answering = os.environ.get("FAKE_AGENT", "1") != "0"  # "agent off": stream messages are not answered
+failing = os.environ.get("FAKE_TURN_ERROR") == "1"  # "fail on": each stream message's turn dies on an API error
 continued = {}  # goal id -> continuations taken
 ignore_left = 0  # requests to place messages still to ignore ("IGNORE")
 PLACE_ID = re.compile(r"^- (msg_[0-9A-Za-z]+) \(", re.M)
@@ -157,6 +164,14 @@ def decide(p):
         api("POST", "/api/agent/status", {"status": "idle"})
 
 
+def fail_turn():
+    """A turn that dies on an API error, as Claude Code with a model that does not exist."""
+    api("POST", "/api/agent/status", {"status": "working"})
+    out("\x1b[31m  \u23bf  API Error: 404 {\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: claude-bogus\"}}\x1b[0m")
+    api("POST", "/api/agent/event", {"type": "turn.error", "error": "model_not_found"})
+    api("POST", "/api/agent/event", {"type": "turn.complete", "reason": "error", "aborted": False, "answer": ""})
+
+
 def place(body):
     global ignore_left
     if ignore_left > 0:
@@ -267,7 +282,9 @@ def poll():
                         keep_tasks(p)
                     except Exception as e:
                         out(f"tasks: {e}")
-                    if answering and p.get("stream"):
+                    if failing and p.get("stream"):
+                        fail_turn()
+                    elif answering and p.get("stream"):
                         try:
                             decide(p)
                         except Exception as e:
@@ -301,6 +318,15 @@ out(f"fake-claude {mode} session={session_id} cwd={os.getcwd()}")
 if os.environ.get("E2E_ENV_DUMP"):
     with open(os.environ["E2E_ENV_DUMP"], "w") as f:
         json.dump({k: v for k, v in os.environ.items() if k.startswith("E2E_")}, f)
+if os.environ.get("FAKE_TRUST_PROMPT") == "1":
+    # Claude Code's first screen in a folder it was never told to trust: nothing goes on until answered.
+    out("\x1b[1m\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\x1b[0m")
+    out("\u2502 \x1b[1mDo you trust the files in this folder?\x1b[0m \u2502")
+    out("\u2502 \u276f 1. Yes, proceed \u2502")
+    out("\u2502   2. No, exit \u2502")
+    out("Enter to confirm \u00b7 Esc to exit")
+    sys.stdin.readline()
+    out("trusted")
 api("POST", "/api/agent/hello", {"claude_session_id": session_id})
 api("POST", "/api/agent/status", {"status": "idle"})
 threading.Thread(target=poll, daemon=True).start()
@@ -317,6 +343,9 @@ for raw in sys.stdin:  # the PTY is in cooked mode: it echoes and gives lines
         out(f"status {line}")
     elif line in ("deaf", "listen"):
         deaf = line == "deaf"
+        out(f"status {line}")
+    elif line in ("fail on", "fail off"):
+        failing = line == "fail on"
         out(f"status {line}")
     elif line in ("agent off", "agent on"):
         answering = line == "agent on"

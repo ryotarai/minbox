@@ -174,6 +174,15 @@ func (c *Client) Remove(ctx context.Context, id string) error {
 	return c.do(ctx, "DELETE", "/terminals/"+id, nil, nil)
 }
 
+// Tail is the last n bytes of a terminal's output (Host.Tail). A host from before it answers 404.
+func (c *Client) Tail(ctx context.Context, id string, n int) ([]byte, error) {
+	var out struct {
+		Tail string `json:"tail"`
+	}
+	err := c.do(ctx, "GET", "/terminals/"+url.PathEscape(id)+"/tail?bytes="+strconv.Itoa(n), nil, &out)
+	return []byte(out.Tail), err
+}
+
 func (c *Client) Shutdown(ctx context.Context) error {
 	return c.do(ctx, "POST", "/shutdown", nil, nil)
 }

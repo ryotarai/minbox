@@ -204,6 +204,18 @@ test('compaction and session.end are forwarded', async ($, on) => {
   expect(types).toContain('session.end')
 })
 
+test('a turn that died on an API error forwards its class (StopFailure) as turn.error', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  on('classic.StopFailure', () => ({}))
+  await start($)
+  await ($ as any).classic.StopFailure({ error: 'model_not_found', error_details: 'model: claude-bogus' })
+  await $.turn.complete({ turnId: 't1', answer: '', reason: 'error', isAborted: false, durationMs: 1 } as any)
+  expect(server.events()).toContainEqual({ type: 'turn.error', error: 'model_not_found' })
+  expect(server.events()).toContainEqual({ type: 'turn.complete', reason: 'error', aborted: false, answer: '' })
+})
+
 test("the server's reminder after a turn is submitted once idle, once; the person typing first drops it", async ($, on) => {
   const clock = mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })

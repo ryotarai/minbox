@@ -457,6 +457,8 @@ type eventReq struct {
 	Answer  string `json:"answer"`
 	// prompt: who submitted it ("composer": the person typed).
 	Origin string `json:"origin"`
+	// turn.error (Claude Code's StopFailure): the API error's class (model_not_found, rate_limit, ...).
+	Error string `json:"error"`
 }
 
 // POST /api/agent/event {type, ...}: what happened in the agent, forwarded by a protocol-1
@@ -465,7 +467,8 @@ type eventReq struct {
 // the person types first).
 //
 //	turn.start                         the main loop started a turn (status working)
-//	turn.complete {reason, aborted, answer}  it ended (status idle)
+//	turn.complete {reason, aborted, answer}  it ended (status idle); reason "error": on an API error
+//	turn.error {error}                 the turn died on an API error of this class (Claude Code's StopFailure)
 //	session.end                        the conversation ended (/clear, resume): its state starts over
 //	session.compact                    the conversation was compacted
 //	prompt {origin}                    a prompt is being submitted
@@ -493,8 +496,14 @@ func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.
 		status(store.StatusWorking)
 	case "turn.complete":
 		nudge := ""
+		failed := turnFailed(req.Reason, req.Answer)
+		if failed {
+			s.stuckTurnError(sess.ID, "")
+		} else if req.Reason == "answer" && !req.Aborted {
+			s.stuckReplied(sess.ID)
+		}
 		s.proxyUpdate(sess.ID, func(p *proxyState) {
-			answered := req.Reason == "answer" && !req.Aborted
+			answered := req.Reason == "answer" && !req.Aborted && !failed
 			quiet := answered && !p.nudging && !p.sent
 			if quiet && len(p.turn) > 0 {
 				nudge = replyNudgeText(names.of(toolSend))
@@ -509,6 +518,8 @@ func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.
 		if nudge != "" {
 			out["submit_when_idle"] = nudge
 		}
+	case "turn.error":
+		s.stuckTurnError(sess.ID, req.Error)
 	case "session.end":
 		s.proxyUpdate(sess.ID, func(p *proxyState) {
 			*p = proxyState{remind: true}
@@ -526,6 +537,16 @@ func (s *Server) agentEvent(w http.ResponseWriter, r *http.Request, sess *store.
 		return
 	}
 	writeJSON(w, 200, out)
+}
+
+// turnFailed tells a turn that died on an API error: reason "error", or (a Claude Code that shows
+// an API error as the turn's answer) an answer that is only that error.
+func turnFailed(reason, answer string) bool {
+	if reason == "error" {
+		return true
+	}
+	a := strings.TrimSpace(answer)
+	return reason == "answer" && len(a) < 400 && strings.HasPrefix(strings.ToLower(a), "api error")
 }
 
 // promptContext is what a prompt carries: the instructions on the first prompt of a conversation,

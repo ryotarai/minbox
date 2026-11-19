@@ -16,6 +16,7 @@ import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
+import { StuckAgentBanners } from './StuckAgent'
 import { DeliveryLine } from '../components/ThreadView'
 import { IconAskStatus, IconCheck, IconChevronDown, IconClose, IconGoal } from '../components/icons'
 
@@ -216,6 +217,8 @@ export function TaskView({
     <>
       <div className="v-col v-column" data-testid="task-column" data-task={t.id} data-detail={detail || undefined} data-quote-scope="">
         {head}
+        {/* All agents: the task's agents that wait in their terminals (an agent's own page shows its own above). */}
+        {detail && !home && <StuckAgentBanners ids={t.agents.map((a) => a.session_id)} />}
         <div className="v-convwrap">
           <NewPill n={follow.unseen} onClick={follow.toBottom} />
           <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>
