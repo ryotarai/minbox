@@ -22,6 +22,8 @@ task's keyword -> in that task (task_ids, the one-id legacy form a protocol-0 mo
 quick exchange: a small task of its own, done (create_task status done), then a plain reply. Every
 message belongs to exactly one task. "GOAL: <title>" + "- <criterion>" lines -> a goal with an autonomous run;
 "ASK" -> a question; a goal's continuation -> progress, and on the second one the criteria are met.
+"GOAL: <title> (stuck)" -> such a goal whose continuations end at once with nothing done (no message, no
+progress): minbox's guards pause its run.
 minbox's request to place messages in tasks (kind "place") -> put them in the newest open task, else a
 done "Quick questions" task. "IGNORE" -> a plain reply in no task, and the next two requests to place
 it are ignored (the third is done).
@@ -41,6 +43,7 @@ beating = True  # "nobeat": the heartbeat stops until "beat"
 beat_seq = 0
 answering = os.environ.get("FAKE_AGENT", "1") != "0"  # "agent off": stream messages are not answered
 continued = {}  # goal id -> continuations taken
+stuck = set()  # goals whose continuations do nothing ("(stuck)")
 ignore_left = 0  # requests to place messages still to ignore ("IGNORE")
 PLACE_ID = re.compile(r"^- (msg_[0-9A-Za-z]+) \(", re.M)
 
@@ -180,6 +183,9 @@ def turn(p, body):
     if p.get("kind") == "continue":
         gid = re.search(r"Goal (tsk_[0-9a-f]+)", body).group(1)
         continued[gid] = continued.get(gid, 0) + 1
+        if gid in stuck:
+            out(f"stuck on {gid}: nothing done")
+            return
         if continued[gid] >= 2:
             g = api("GET", "/api/agent/tasks?all=1")
             crit = next((t.get("criteria") or [] for t in g.get("tasks") or [] if t["id"] == gid), [])
@@ -195,7 +201,9 @@ def turn(p, body):
     if body.startswith("GOAL:"):
         lines = body.split("\n")
         crit = [{"text": l[2:].strip()} for l in lines[1:] if l.startswith("- ")]
-        g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].replace("(manual)", "").strip(), "kind": "goal", "criteria": crit, "autonomous": "(manual)" not in lines[0]})
+        g = api("POST", "/api/agent/tasks", {"title": lines[0][5:].replace("(manual)", "").replace("(stuck)", "").strip(), "kind": "goal", "criteria": crit, "autonomous": "(manual)" not in lines[0]})
+        if "(stuck)" in lines[0]:
+            stuck.add(g["task_id"])
         say(f"Goal set: {g['task']['title']}. I will keep going until it is met.")
         return
     if "NEEDYOU" in body:

@@ -39,3 +39,38 @@ test('a goal runs by itself until its criteria are met; pause and stop from the 
   await expect(run).toHaveAttribute('data-state', 'stopped')
   await expect(run.getByTestId('goal-start')).toHaveText('Start run')
 })
+
+// A goal whose turns end at once with nothing done: minbox's guard pauses the run by itself (too_fast:
+// three turns in a row ended within 10 seconds), the Board says why next to Resume, the timeline has
+// the event, and Resume starts it again.
+test('a run whose turns end at once pauses by itself and says why; Resume goes on', async ({ page, minbox }) => {
+  test.setTimeout(90_000)
+  const a = await startAgent(minbox, 'api')
+  await page.goto(minbox.url)
+  await say(minbox, a, 'GOAL: Release notes drafted (stuck)\n- notes merged')
+  const row = page.getByTestId('group-goals').locator('[data-testid="task-row"][data-kind="goal"]')
+  await expect(row).toContainText('Release notes drafted', { timeout: 20_000 })
+  const run = row.getByTestId('goal-run')
+  await expect(run).toHaveAttribute('data-state', 'paused', { timeout: 40_000 })
+  const reason = run.getByTestId('goal-reason')
+  await expect(reason).toHaveAttribute('data-reason', 'too_fast')
+  await expect(reason).toHaveText('Paused: 3 turns in a row ended within 10 seconds')
+  await expect(run.getByTestId('goal-start')).toHaveText('Resume')
+  const id = await row.getAttribute('data-task')
+  const s = await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)
+  const sent = s.messages.filter((m: any) => m.kind === 'continue').length
+  expect(sent).toBe(3)
+  const d = await api(minbox, 'GET', `/api/v3/tasks/${id}`)
+  expect(d.task.auto.reason_text).toBe('3 turns in a row ended within 10 seconds')
+  expect(d.events.map((e: any) => e.text)).toContain('Autonomous run paused: 3 turns in a row ended within 10 seconds')
+  if (process.env.GOAL_GUARD_SHOT) await page.screenshot({ path: process.env.GOAL_GUARD_SHOT })
+
+  await run.getByTestId('goal-start').click()
+  await expect(run).toHaveAttribute('data-state', 'running')
+  await expect(run.getByTestId('goal-reason')).toHaveCount(0)
+  // It goes on (a new continuation), and the guard pauses it again.
+  await expect
+    .poll(async () => (await api(minbox, 'GET', `/api/v3/sessions/${a.id}/stream`)).messages.filter((m: any) => m.kind === 'continue').length, { timeout: 20_000 })
+    .toBeGreaterThan(sent)
+  await expect(run).toHaveAttribute('data-state', 'paused', { timeout: 40_000 })
+})

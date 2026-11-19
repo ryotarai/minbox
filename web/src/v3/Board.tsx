@@ -437,6 +437,8 @@ export function BoardView({
 export function GoalRun({ t, reload }: { t: BoardTask; reload: () => void }) {
   const { error } = useApp()
   const run = t.auto?.state ?? ''
+  // Why it paused or stopped, as the server says it ("continued 5 times in 2 minutes").
+  const why = t.auto?.reason_text || t.auto?.reason || ''
   const act = (a: 'start' | 'pause' | 'stop') => (e: React.MouseEvent) => {
     e.stopPropagation()
     v3.auto(t.id, a).then(reload).catch(error)
@@ -449,7 +451,12 @@ export function GoalRun({ t, reload }: { t: BoardTask; reload: () => void }) {
           running · {t.auto.turns ?? 0}/{t.auto.max_turns ?? 20}
         </span>
       )}
-      {run === 'paused' && <span className="v-pill pause">paused</span>}
+      {run === 'paused' && !why && <span className="v-pill pause">paused</span>}
+      {(run === 'paused' || run === 'stopped') && why && (
+        <span className={run === 'paused' ? 'v-pill pause v-run-reason' : 'v-run-reason'} data-testid="goal-reason" data-reason={t.auto.reason ?? ''} title={why}>
+          {run === 'paused' ? 'Paused' : 'Stopped'}: {why}
+        </span>
+      )}
       {run === 'running' ? (
         <>
           <button type="button" className="v-btn sm" data-testid="goal-pause" onClick={act('pause')}>

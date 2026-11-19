@@ -539,7 +539,7 @@ func (s *Server) v3PatchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Kind == store.KindGoal && t.Status == store.TaskDone && t.Auto.State == store.AutoRunning {
-		s.stopAuto(ctx, t, "done")
+		s.stopAuto(ctx, t, store.AutoReasonMet, "done")
 	}
 	s.publishTasks()
 	writeJSON(w, 200, t)

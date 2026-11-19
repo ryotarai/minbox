@@ -120,6 +120,8 @@ select.v-chip { padding: 1px 4px; }
 .v-ans-n { color: var(--mb-fg2); white-space: pre-wrap; }
 .v-pill { font-size: 10.5px; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
 .v-pill.run { color: var(--mb-purple); } .v-pill.pause { color: var(--mb-wait); }
+.v-run-reason { font-size: 11px; color: var(--mb-muted); display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 260px; }
+.v-pill.v-run-reason { font-size: 10.5px; color: var(--mb-wait); }
 .v-sec { font-size: 11px; letter-spacing: .08em; font-weight: 600; color: var(--mb-subtle); margin: 12px 0 7px; display: flex; gap: 8px; align-items: center; }
 .v-sec .v-x { margin-left: auto; letter-spacing: 0; font-weight: 500; color: var(--mb-faint); }
 

@@ -11,7 +11,9 @@ export type Step = { text: string; done: boolean; steps?: Step[] }
 /** A task a message is about; source: how that link was made (by the agent, a rule, or the person). */
 export type TaskRef = { task_id: string; title: string; status: TaskStatus; source: 'agent' | 'auto' | 'person' }
 export type TaskAgent = { session_id: string; role: 'assigned' | 'involved'; since: string }
-export type AutoRun = { state: '' | 'running' | 'paused' | 'stopped'; session_id?: string; max_turns?: number; turns?: number; until?: string; reason?: string; last_at?: string }
+export type AutoRun = { state: '' | 'running' | 'paused' | 'stopped'; session_id?: string; max_turns?: number; turns?: number; until?: string; reason?: AutoReason | string; reason_text?: string; last_at?: string }
+/** Why a goal's run paused or stopped (see store.AutoReason*). */
+export type AutoReason = 'met' | 'by_you' | 'by_agent' | 'agent_gone' | 'turn_limit' | 'time_limit' | 'too_fast' | 'no_progress'
 export type TaskLink = { kind: string; label: string; url: string; state?: string }
 
 export type Task = {

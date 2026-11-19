@@ -2,13 +2,17 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ryotarai/minbox/internal/notify"
 	"github.com/ryotarai/minbox/internal/store"
 )
 
@@ -24,6 +28,25 @@ const (
 
 // goalSettle: the agent must have been idle this long before the next continuation (tests shorten it).
 var goalSettle = 1500 * time.Millisecond
+
+// The run's guards pause it (state paused, Reason too_fast or no_progress; the person resumes it)
+// when it spins or stalls, as Claude Code pauses a session resumed too often. They are checked each
+// time minbox is about to continue the agent, so they count the turns minbox started:
+//   - too_fast: goalFastCount continuations were sent within goalFastWindow (the next one would make
+//     more), or goalFastStreak turns in a row ended within goalFastTurn of their continuation (the
+//     agent went idle again almost at once: an error, a refusal, a no-op).
+//   - no_progress: goalStillTurns turns in a row ended with no progress. Progress is any change to
+//     the goal's criteria (text or ticks), its status or steps, or its tasks (a new one, a status or
+//     a ticked step). Messages alone are not progress: a stuck agent still writes "working on it".
+//
+// Tests lower them.
+var (
+	goalFastCount  = 5
+	goalFastWindow = 2 * time.Minute
+	goalFastStreak = 3
+	goalFastTurn   = 10 * time.Second
+	goalStillTurns = 3
+)
 
 // KindContinue marks minbox's continuation message of a goal's run (a message from the person's
 // side, delivered like theirs, shown as a small note).
@@ -74,7 +97,9 @@ func (s *Server) startAuto(ctx context.Context, t *store.Task, sessionID string,
 	until := time.Now().Add(goalDefaultFor)
 	a := t.Auto
 	if a.State == store.AutoPaused && a.SessionID == sessionID {
-		a.State, a.Reason = store.AutoRunning, ""
+		// Resume: the guards start over.
+		a.State, a.Reason, a.ReasonText = store.AutoRunning, "", ""
+		a.Recent, a.FastTurns, a.StillTurns, a.Mark = nil, 0, 0, ""
 	} else {
 		a = store.AutoRun{State: store.AutoRunning, SessionID: sessionID, MaxTurns: maxTurns, Until: &until}
 	}
@@ -89,20 +114,61 @@ func (s *Server) startAuto(ctx context.Context, t *store.Task, sessionID string,
 	go s.goalTick()
 }
 
-func (s *Server) stopAuto(ctx context.Context, t *store.Task, reason string) {
+// stopAuto ends a run: reason is a code (store.AutoReason*), text says it for the person.
+func (s *Server) stopAuto(ctx context.Context, t *store.Task, reason, text string) {
 	a := t.Auto
-	a.State, a.Reason = store.AutoStopped, reason
+	a.State, a.Reason, a.ReasonText = store.AutoStopped, reason, text
 	_ = s.store.SetAuto(ctx, t.ID, a)
-	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run ended: "+reason, a.SessionID, "")
+	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run ended: "+text, a.SessionID, "")
 	s.publishTasks()
 }
 
-func (s *Server) pauseAuto(ctx context.Context, t *store.Task, reason string) {
+// pauseAuto pauses a run (the person resumes it): reason is a code, text says it for the person.
+func (s *Server) pauseAuto(ctx context.Context, t *store.Task, reason, text string) {
 	a := t.Auto
-	a.State, a.Reason = store.AutoPaused, reason
+	a.State, a.Reason, a.ReasonText = store.AutoPaused, reason, text
 	_ = s.store.SetAuto(ctx, t.ID, a)
-	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run paused: "+reason, a.SessionID, "")
+	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run paused: "+text, a.SessionID, "")
 	s.publishTasks()
+}
+
+// haltAuto pauses or stops a run that halted by itself without meeting the goal, and tells the
+// person through the notification destinations (as a message that needs them), since the goal now
+// waits on them.
+func (s *Server) haltAuto(ctx context.Context, t *store.Task, pause bool, reason, text string) {
+	verb := "stopped"
+	if pause {
+		verb = "paused"
+		s.pauseAuto(ctx, t, reason, text)
+	} else {
+		s.stopAuto(ctx, t, reason, text)
+	}
+	sess, err := s.store.GetSession(ctx, t.Auto.SessionID)
+	if err != nil {
+		return
+	}
+	stream, _ := s.store.StreamThread(ctx, sess.ID)
+	next := "Start a new run from the goal when you are ready."
+	if pause {
+		next = "Resume it from the goal when you are ready."
+	}
+	n := notify.Notification{
+		Session: sess.Name, Title: t.Title, ThreadID: stream, From: "minbox", NeedsAction: true,
+		Body:   fmt.Sprintf("The autonomous run of the goal \"%s\" %s: %s. %s", t.Title, verb, text, next),
+		TaskID: t.ID, TaskTitle: t.Title, TaskStatus: t.Status,
+	}
+	if sess.ProjectID != "" {
+		if p, err := s.store.GetProject(ctx, sess.ProjectID); err == nil {
+			n.Project = p.Name
+		}
+	}
+	pub := s.publicURL(ctx)
+	n.TaskLink = taskLinkURL(pub, t.ID, "")
+	n.Link = n.TaskLink
+	if n.Link == "" {
+		n.Link = threadLinkURL(pub, sess.ID, stream)
+	}
+	s.notifier.Dispatch(n)
 }
 
 // POST /api/v3/tasks/{id}/auto {action: start|pause|stop, session_id?, max_turns?}: the person runs a goal.
@@ -145,10 +211,10 @@ func (s *Server) v3Auto(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 409, "the run is not on")
 			return
 		}
-		s.pauseAuto(ctx, t, "by you")
+		s.pauseAuto(ctx, t, store.AutoReasonByYou, "by you")
 	case "stop":
 		if t.Auto.State == store.AutoRunning || t.Auto.State == store.AutoPaused {
-			s.stopAuto(ctx, t, "stopped by you")
+			s.stopAuto(ctx, t, store.AutoReasonByYou, "by you")
 		}
 	default:
 		httpError(w, 400, "action must be start, pause or stop")
@@ -202,18 +268,18 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 			d := store.TaskDone
 			_, _ = s.store.UpdateTask(ctx, g.ID, a.SessionID, store.TaskFields{Status: &d})
 		}
-		s.stopAuto(ctx, g, "met")
+		s.stopAuto(ctx, g, store.AutoReasonMet, "met")
 		return
 	case a.Until != nil && now.After(*a.Until):
-		s.stopAuto(ctx, g, "time limit")
+		s.haltAuto(ctx, g, false, store.AutoReasonTimeLimit, "time limit")
 		return
 	case a.MaxTurns > 0 && a.Turns >= a.MaxTurns:
-		s.stopAuto(ctx, g, fmt.Sprintf("turn limit (%d)", a.MaxTurns))
+		s.haltAuto(ctx, g, false, store.AutoReasonTurnLimit, fmt.Sprintf("turn limit (%d)", a.MaxTurns))
 		return
 	}
 	sess, err := s.store.GetSession(ctx, a.SessionID)
 	if err != nil || sess.ArchivedAt != nil {
-		s.stopAuto(ctx, g, "its agent is gone")
+		s.stopAuto(ctx, g, store.AutoReasonAgentGone, "its agent is gone")
 		return
 	}
 	if sess.Status != store.StatusIdle || sess.Undelivered > 0 {
@@ -225,6 +291,12 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 	}
 	// Waiting on the person: a question tagged with the goal or its tasks is open.
 	if s.goalNeedsYou(ctx, g) {
+		return
+	}
+	// The agent has ended a turn: the guards decide whether it may go on.
+	if reason, text := goalGuard(&a, now, idle, s.goalMark(ctx, g)); reason != "" {
+		g.Auto = a
+		s.haltAuto(ctx, g, true, reason, text)
 		return
 	}
 	stream, err := s.store.StreamThread(ctx, sess.ID)
@@ -240,6 +312,7 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 	_, _ = s.store.LinkMessages(ctx, g.ID, []string{msg.ID}, store.LinkAuto)
 	a.Turns++
 	a.LastAt = &now
+	a.Recent = append(a.Recent, now)
 	_ = s.store.SetAuto(ctx, g.ID, a)
 	s.publishThread(sess.ID, stream)
 	s.publishTasks()
@@ -316,4 +389,80 @@ func goalPrompt(g *store.Task, turn, max int) string {
 	}
 	b.WriteString("\nDo the next useful step now. When a criterion is met, tick it (update_task with check_criteria); when all are met, or the goal cannot be reached, set the goal's status to done and report with send_message. If you need the person, ask with a :::question block: the run waits for their answer. Report progress with send_message (task_id: the goal or its task).")
 	return b.String()
+}
+
+// goalGuard counts the turn that just ended (idle: when the agent went idle; mark: the goal's
+// progress mark now) and says why the run must pause ("" when it may go on). See goalFastCount.
+// The turn before the first continuation of a run (or of a resume) is not minbox's: only its mark
+// is taken.
+func goalGuard(a *store.AutoRun, now, idle time.Time, mark string) (reason, text string) {
+	if a.Mark != "" && a.LastAt != nil {
+		if idle.Sub(*a.LastAt) < goalFastTurn {
+			a.FastTurns++
+		} else {
+			a.FastTurns = 0
+		}
+		if mark == a.Mark {
+			a.StillTurns++
+		} else {
+			a.StillTurns = 0
+		}
+	}
+	a.Mark = mark
+	recent := a.Recent[:0:0]
+	for _, t := range a.Recent {
+		if now.Sub(t) < goalFastWindow {
+			recent = append(recent, t)
+		}
+	}
+	a.Recent = recent
+	switch {
+	case len(a.Recent) >= goalFastCount:
+		return store.AutoReasonTooFast, fmt.Sprintf("continued %d times in %s", len(a.Recent), spanText(goalFastWindow))
+	case a.FastTurns >= goalFastStreak:
+		return store.AutoReasonTooFast, fmt.Sprintf("%d turns in a row ended within %s", a.FastTurns, spanText(goalFastTurn))
+	case a.StillTurns >= goalStillTurns:
+		return store.AutoReasonNoProgress, fmt.Sprintf("no progress in %d turns", a.StillTurns)
+	}
+	return "", ""
+}
+
+// goalMark sums up a goal's progress: it changes when a criterion is ticked or changed, the goal's
+// status or steps change, or one of its tasks is added, changes status or ticks a step.
+func (s *Server) goalMark(ctx context.Context, g *store.Task) string {
+	h := sha256.New()
+	w := func(parts ...string) { fmt.Fprintln(h, strings.Join(parts, "\x1f")) }
+	var steps func(ss []store.TaskStep)
+	steps = func(ss []store.TaskStep) {
+		for _, c := range ss {
+			w(c.Text, fmt.Sprint(c.Done))
+			steps(c.Steps)
+		}
+	}
+	w("goal", g.Status)
+	steps(g.Criteria)
+	w("steps")
+	steps(g.Steps)
+	if ts, err := s.store.ListTasks(ctx, store.TaskQuery{ProjectID: g.ProjectID}); err == nil {
+		sort.Slice(ts, func(i, j int) bool { return ts[i].ID < ts[j].ID })
+		for _, t := range ts {
+			if t.ParentID == g.ID {
+				w("task", t.ID, t.Status)
+				steps(t.Steps)
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// spanText says a duration in words: "2 minutes", "10 seconds".
+func spanText(d time.Duration) string {
+	n, unit := int(d/time.Second), "second"
+	if d >= time.Minute && d%time.Minute == 0 {
+		n, unit = int(d/time.Minute), "minute"
+	}
+	if n != 1 {
+		unit += "s"
+	}
+	return fmt.Sprintf("%d %s", n, unit)
 }
