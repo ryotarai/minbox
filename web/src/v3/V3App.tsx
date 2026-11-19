@@ -23,13 +23,13 @@ import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, needsCount, useBoard } from './Board'
 import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
-import { TasksPane } from './AgentTasks'
+import { AllAgentsTasks, TasksPane, agentTasks } from './AgentTasks'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
-import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconSearch } from '../components/icons'
+import { IconBoard, IconCommand, IconMenu, IconPaperclip, IconSearch, IconTasks } from '../components/icons'
 // The phone's bottom tabs: Lucide icons, one module each (not the barrel), so only these three ship.
 import IconTabBoard from 'lucide-react/icons/square-kanban'
 import IconTabAgents from 'lucide-react/icons/bot'
@@ -68,7 +68,7 @@ export function V3App() {
   // phone it is the Agents page again.
   // #v=task&k=… (the task page is gone: old links, bookmarks, notifications) is on its way to the task's
   // agent (see the redirect below).
-  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' && isPhone ? 'agents' : route.view === 'search' ? 'search' : 'board'
+  const view = route.view === 'task' && route.k ? 'task' : route.view === 'agent' && route.s ? 'agent' : route.view === 'agents' && isPhone ? 'agents' : route.view === 'alltasks' ? 'alltasks' : route.view === 'search' ? 'search' : 'board'
   const current = view === 'agent' ? sessions?.find((s) => s.id === route.s) : undefined
   const side = useSidePanes(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
@@ -342,7 +342,8 @@ export function V3App() {
   if (view === 'task') main = <div className="v-empty" data-testid="task-redirect">Opening the task…</div>
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
-  else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} onNewAgent={newAgentIn} onRename={setRenaming} />
+  else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} tasks={tasks} onNewAgent={newAgentIn} onRename={setRenaming} />
+  else if (view === 'alltasks') main = <AllAgentsTasks tasks={tasks} agents={agents} projectName={project?.name} />
   else
     main = (
       <BoardView
@@ -363,7 +364,7 @@ export function V3App() {
   // A viewer pushed on top of the view goes back (no duplicate entry of the view stays behind).
   const closeViewer = () => (history.state?.viewer ? history.back() : app.navigate({ f: null }, { push: false }))
   // Tablet: two panes. On a task or an agent the sidebar folds away (the rail's ☰ shows it again).
-  const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
+  const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || view === 'alltasks' || sbOpen)
   // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
   const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
   const wide = view === 'agent' && (shownPanes.length > 0 || sheet)
@@ -430,6 +431,7 @@ export function V3App() {
             {project && <NewAgentButton project={project} onNewAgent={newAgentIn} />}
           </div>
           <div className="v-agents" data-testid="agents">
+            {agents.length > 0 && <AllAgentsRow agents={agents} tasks={tasks} sel={view === 'alltasks'} counts={board?.agents ?? {}} />}
             <AgentGroups agents={agents} shells={shells} sel={view === 'agent' ? route.s : null} counts={board?.agents ?? {}} grouped={!projectId} onRename={setRenaming} onNewAgent={newAgentIn} />
             {agents.length === 0 && shells.length === 0 && <NoAgents noProjects={!project && !app.projects?.length} onNewAgent={newAgentIn} />}
           </div>
@@ -461,7 +463,7 @@ export function V3App() {
               type="button"
               key={v}
               data-testid={'tab-' + v}
-              className={view === v || (v === 'agents' && view === 'agent') || (v === 'board' && view === 'task') ? 'on' : ''}
+              className={view === v || (v === 'agents' && (view === 'agent' || view === 'alltasks')) || (v === 'board' && view === 'task') ? 'on' : ''}
               onClick={() => (v === 'board' ? nav.board() : v === 'agents' ? nav.agents() : nav.search())}
             >
               <I size={22} strokeWidth={1.75} aria-hidden />
@@ -574,6 +576,33 @@ function AgentGroups({ agents, shells, sel, counts, grouped, head, onRename, onN
   )
 }
 
+/** All agents, at the top of the agents list: the tasks of every agent listed, in one list (#v=alltasks). */
+function AllAgentsRow({ agents, tasks, sel, counts }: { agents: Session[]; tasks: BoardTask[]; sel: boolean; counts: Counts }) {
+  const { navigate } = useApp()
+  const ids = agents.map((a) => a.id)
+  const open = agentTasks(tasks, ids).open.length
+  const u = ids.reduce((n, id) => n + (counts[id]?.unread ?? 0), 0)
+  return (
+    <button
+      type="button"
+      className={'v-ag v-ag-all' + (sel ? ' sel' : '')}
+      data-testid="all-agents-row"
+      aria-current={sel || undefined}
+      title="The tasks of every agent in one list"
+      onClick={() => navigate({ view: 'alltasks', s: null, k: null, m: null, tab: 'inbox' }, { push: !sel })}
+    >
+      <IconTasks size={12} className="v-ag-all-i" />
+      <span className="v-nm v-tline">
+        <span>All agents</span>
+      </span>
+      {u > 0 ? <span className="v-badge u">{u}</span> : <span />}
+      <span className="v-doing">
+        {open} open {open === 1 ? 'task' : 'tasks'} · {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
+      </span>
+    </button>
+  )
+}
+
 function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; counts?: { unread: number; open_questions: number }; onRename: (s: Session) => void }) {
   const { sessions, navigate } = useApp()
   const hint = agentHint(sessions ?? [], a)
@@ -621,7 +650,7 @@ function AgentRow({ a, sel, counts, onRename }: { a: Session; sel: boolean; coun
   )
 }
 
-function AgentsList({ agents, shells, counts, onNewAgent, onRename }: { agents: Session[]; shells: Session[]; counts: Counts; onNewAgent: (projectId?: string) => void; onRename: (s: Session) => void }) {
+function AgentsList({ agents, shells, counts, tasks, onNewAgent, onRename }: { agents: Session[]; shells: Session[]; counts: Counts; tasks: BoardTask[]; onNewAgent: (projectId?: string) => void; onRename: (s: Session) => void }) {
   const { navigate, setOverlay, projects } = useApp()
   const { id, project } = useSelectedProject()
   return (
@@ -642,6 +671,7 @@ function AgentsList({ agents, shells, counts, onNewAgent, onRename }: { agents: 
         </div>
       </div>
       <div className="v-scroll" style={{ background: 'var(--mb-surface)' }}>
+        {agents.length > 0 && <AllAgentsRow agents={agents} tasks={tasks} sel={false} counts={counts} />}
         <AgentGroups agents={agents} shells={shells} sel={null} counts={counts} grouped={!id} head={project ? { id: project.id, name: project.name } : undefined} onRename={onRename} onNewAgent={onNewAgent} />
         {agents.length === 0 && shells.length === 0 && <NoAgents noProjects={!project && !projects?.length} onNewAgent={onNewAgent} />}
       </div>
