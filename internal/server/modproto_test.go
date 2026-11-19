@@ -341,61 +341,15 @@ func TestNoPlaceholderSends(t *testing.T) {
 	}
 }
 
-func TestBashOutcomesReportDeniedCommands(t *testing.T) {
+// TestBashOutcomesAreIgnored: integrations of before the "Run yourself" offer was retired still report
+// shell call outcomes; the event is accepted and changes nothing.
+func TestBashOutcomesAreIgnored(t *testing.T) {
 	p := newProto(t)
-	ctx := context.Background()
-	stream, _ := p.st.StreamThread(ctx, p.sess.ID)
-	latest := func() string {
-		c, ok := p.srv.denied.latest(stream)
-		if !ok {
-			return ""
-		}
-		return c.Command + " | " + c.Reason
+	if code, o, _ := p.do("POST", "/api/agent/event", map[string]any{"type": "bash", "phase": "result", "id": "t1", "command": "go test", "is_error": true, "text": "The user doesn't want to proceed with this tool use."}, bearer(p.sess)); code != 200 || o["ok"] != true {
+		t.Fatalf("bash event: %d %v", code, o)
 	}
-	// A message delivered: the turn answers the stream, so the denial belongs to it.
-	p.do("POST", "/api/threads/"+stream+"/reply", map[string]any{"words": "run the tests"}, nil)
-	_, _, arr := p.do("GET", "/api/agent/pending?owner=o", nil, bearer(p.sess))
-	id := arr[0].(map[string]any)["id"].(string)
-	p.do("POST", "/api/agent/pending/"+id+"/claim?owner=o", nil, bearer(p.sess))
-	p.do("POST", "/api/agent/pending/"+id+"/delivered?owner=o", nil, bearer(p.sess))
-	p.event(map[string]any{"type": "turn.start"})
-
-	// A failed run is no denial; a refusal worded as an error is.
-	p.event(map[string]any{"type": "bash", "phase": "result", "id": "t0", "command": "go test", "is_error": true, "text": "exit 1: Permission denied"})
-	if latest() != "" {
-		t.Fatal(latest())
-	}
-	p.event(map[string]any{"type": "bash", "phase": "result", "id": "t1", "command": " go test ./... ", "is_error": true, "text": "The user doesn't want to proceed with this tool use. The tool use was rejected."})
-	if got := latest(); got != "go test ./... | The user doesn't want to proceed with this tool use. The tool use was rejected." {
-		t.Fatal(got)
-	}
-	// The same call seen again (check, then result) is reported once; a later run clears it.
-	p.event(map[string]any{"type": "bash", "phase": "check", "id": "t2", "command": "rm -rf build", "decision": "deny", "rule": "Bash(rm:*)"})
-	p.event(map[string]any{"type": "bash", "phase": "result", "id": "t2", "command": "rm -rf build", "deny": "no"})
-	if got := latest(); got != "rm -rf build | denied by the rule Bash(rm:*)" {
-		t.Fatal(got)
-	}
-	p.event(map[string]any{"type": "bash", "phase": "result", "id": "t3", "command": "rm -rf build"})
-	if got := latest(); got != "go test ./... | The user doesn't want to proceed with this tool use. The tool use was rejected." {
-		t.Fatal(got)
-	}
-	// minbox's own refusal is not offered; Pi's block and OpenCode's rejection are.
-	p.event(map[string]any{"type": "bash", "phase": "result", "id": "t4", "command": "open https://x", "deny": openDeny("mcp__minbox__open_url")})
-	p.event(map[string]any{"type": "bash", "phase": "end", "id": "t5", "command": "make", "is_error": true, "text": "Operation aborted"})
-	if !strings.HasPrefix(latest(), "go test") {
-		t.Fatal(latest())
-	}
-	p.event(map[string]any{"type": "bash", "phase": "end", "id": "t6", "command": "make deploy", "is_error": true, "text": "Blocked by policy"})
-	if got := latest(); got != "make deploy | Blocked by policy" {
-		t.Fatal(got)
-	}
-	p.event(map[string]any{"type": "bash", "phase": "failed", "id": "t7", "command": "npm publish", "error_type": "permission.rejected", "message": "denied by config"})
-	if got := latest(); got != "npm publish | denied by config" {
-		t.Fatal(got)
-	}
-	p.event(map[string]any{"type": "bash", "phase": "success", "command": "npm publish"})
-	if got := latest(); got != "make deploy | Blocked by policy" {
-		t.Fatal(got)
+	if code, _, _ := p.do("POST", "/api/agent/denied-commands", map[string]any{"command": "go test"}, bearer(p.sess)); code != 404 {
+		t.Fatalf("the denied-commands report is gone: %d", code)
 	}
 }
 

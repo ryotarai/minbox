@@ -12,7 +12,8 @@ import { MessageBody } from '../components/MessageBody'
 import { AttachmentTiles } from '../components/AttachmentTiles'
 import { ActionItems, QuestionCard, answerIsEmpty } from '../components/QuestionCard'
 import { CommandMessage } from '../components/CommandMessage'
-import { IconBack, IconCheck, IconClose, IconFork, IconGoal, IconMoreV, IconPlus, IconRefresh, IconThumb } from '../components/icons'
+import { RunCommandsCard } from '../components/RunCommandsCard'
+import { IconBack, IconCheck, IconClose, IconFork, IconGoal, IconMoreV, IconPlus, IconRefresh, IconTerminal, IconThumb } from '../components/icons'
 import { parseTaskMessage } from '../lib/taskContext'
 import {
   STATUS_LABEL,
@@ -565,6 +566,15 @@ export function MessageView({
       </div>
     )
   }
+  if (m.kind === 'run_result') {
+    return (
+      <div className="v-msg cont" data-testid="v3-message" data-kind="run_result" data-message-id={m.id}>
+        <div className="v-bd" title={m.body}>
+          <IconTerminal size={12} /> Sent the command results to {name} ({hhmm(m.created_at)}){m.delivery && m.delivery !== 'delivered' ? ' · waiting to be delivered' : ''}
+        </div>
+      </div>
+    )
+  }
   if (m.kind === ('continue' as string)) {
     return (
       <div className="v-msg cont" data-testid="v3-message" data-kind="continue" data-message-id={m.id}>
@@ -728,6 +738,7 @@ export function MessageView({
         {(m.answers?.length ?? 0) > 0 && !questionNear && <AnswerContent m={m} name={name} inTask={inTask} baseDir={sess?.cwd ?? ''} onOpen={(a) => onOpenAttachment(a, m)} />}
         {(m.answers?.length ?? 0) > 0 && questionNear && <SentAnswers m={m} />}
         {(m.attachments?.length ?? 0) > 0 && <AttachmentTiles items={m.attachments!} annotations={[]} onOpen={(a) => onOpenAttachment(a, m)} openId={null} newestId={null} />}
+        {!me && (m.run_commands?.length ?? 0) > 0 && <RunCommandsCard m={m} phone={isPhoneWidth()} />}
         {!me && questions.length > 0 && <AnswerBar m={m} onSent={onChanged} testid="send-answers" />}
       </div>
     </div>

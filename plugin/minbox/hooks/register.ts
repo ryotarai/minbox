@@ -15,9 +15,8 @@
  *   message is claimed (so one mod instance delivers it), its text (the server's) is submitted as a
  *   plugin turn with `$.prompt.submit`, then acknowledged as delivered. A failed submit releases the
  *   claim; nothing is delivered twice.
- * - Events: turn.start / turn.complete (main loop), session.end, session.compact, each prompt, and
- *   Bash outcomes (tool.check verdicts, auto mode's PermissionDenied, tool results) go to POST
- *   /api/agent/event. The answer says what to add to the prompt (context) and what to submit once
+ * - Events: turn.start / turn.complete (main loop), session.end, session.compact and each prompt go
+ *   to POST /api/agent/event. The answer says what to add to the prompt (context) and what to submit once
  *   idle (a reminder), which the person typing first cancels.
  * - Heartbeat every HEARTBEAT_MS (its state, last poll / delivery, protocol, and a tail of its own
  *   event log) so the server can tell a live mod from a silent one; see docs/mod-connection.md.
@@ -393,12 +392,6 @@ async function tick($: any): Promise<void> {
   }
 }
 
-/** A Bash outcome, for the server to tell a refusal (offered as "Run yourself") from a run. */
-function bash($: any, body: Record<string, unknown>): void {
-  if (!conn || typeof body.command !== 'string' || !body.command.trim()) return
-  void event($, { type: 'bash', ...body })
-}
-
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const token = await $.env.get('MINBOX_TOKEN')
@@ -477,8 +470,8 @@ export const register: Register = (on) => {
     return next({ ...e, context: [...(e.context ?? []), ...added] })
   })
 
-  // Every tool call: the server's tools are answered by the server; the host's own pass its guards;
-  // a Bash call's outcome is forwarded (see bash). Any call also shows the turn is alive (BUSY_STALE_TICKS).
+  // Every tool call: the server's tools are answered by the server; the host's own pass its guards.
+  // Any call also shows the turn is alive (BUSY_STALE_TICKS).
   on('tool.call', async ($, e: any, next) => {
     busyTicks = 0
     if (!conn) return next(e)
@@ -492,34 +485,6 @@ export const register: Register = (on) => {
     const command = typeof e.command === 'string' ? e.command : ''
     const refused = guardDeny(manifest?.guards, e.tool, command)
     if (refused !== null) return { deny: refused }
-    if (e.tool !== 'Bash') return next(e)
-    const res: any = await next(e)
-    const id = typeof e.tool_use_id === 'string' ? e.tool_use_id : ''
-    const isError = res?.isError === true
-    bash($, {
-      phase: 'result',
-      id,
-      command,
-      deny: typeof res?.deny === 'string' ? res.deny : undefined,
-      is_error: isError,
-      // Only an error's start: the server reads Claude Code's wording of a refusal from it.
-      text: isError && typeof res?.text === 'string' ? res.text.slice(0, 2000) : undefined,
-    })
-    return res
-  })
-
-  // The verdict of the permission check: a deny from a rule, the mode or a PreToolUse hook.
-  on('tool.check', { tool: 'Bash' }, async ($, e: any, next) => {
-    const v = await next(e)
-    if (conn && typeof e.tool_use_id === 'string' && e.tool_use_id && v?.decision === 'deny') {
-      bash($, { phase: 'check', id: e.tool_use_id, command: e.input?.command, decision: 'deny', rule: v.rule, hook: v.hook, message: v.reason })
-    }
-    return v
-  })
-
-  // Auto mode's classifier refused the call.
-  on('classic.PermissionDenied', async ($, e: any, next) => {
-    if (conn && e.tool_name === 'Bash') bash($, { phase: 'denied', id: typeof e.tool_use_id === 'string' ? e.tool_use_id : '', command: e.tool_input?.command, message: e.reason })
     return next(e)
   })
 }

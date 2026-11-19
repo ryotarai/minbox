@@ -808,6 +808,8 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		// it too. TaskIDs is its older name, kept as an alias: one element.
 		TaskID  string   `json:"task_id"`
 		TaskIDs []string `json:"task_ids"`
+		// Commands the agent asks the person to run (runcommands.go): they run after the person allows them.
+		Commands []runCommandReq `json:"commands"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -849,6 +851,11 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		env, _ := fsys.Env(ctx)
 		home = env.Home
 	}
+	runSpecs, err := runCommandSpecs(req.Commands, sess.Cwd, home)
+	if err != nil {
+		httpError(w, 400, err.Error())
+		return
+	}
 	// Snapshot first: a bad path refuses the whole message.
 	var snaps []*attachmentSnapshot
 	for i, p := range req.Attachments {
@@ -868,12 +875,13 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 		snaps = append(snaps, snap)
 	}
 	questions := question.Parse(body)
-	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions}
+	m := store.NewMessage{Author: store.AuthorAgent, Body: body, Questions: questions, RunCommands: runSpecs}
 	title := cleanTitle(req.ThreadTitle)
 	if title == "" {
 		title = cleanTitle(req.Subject)
 	}
 	var threadID, messageID, subject string
+	var runCmds []store.RunCommand
 	isNew := false
 	// v3: every message goes to the session's stream. The older contract's thread_id (a thread of
 	// before v3) says which task the message is about; its thread_title names an open task of the
@@ -908,9 +916,8 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 			return
 		}
 		threadID, messageID, subject = th.ID, msg.ID, title
+		runCmds = msg.RunCommands
 	}
-	// Denied commands reported without a thread belong to the thread the agent writes to next.
-	s.denied.assign(sess.ID, threadID)
 	type attInfo struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -955,7 +962,7 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if subject == "" {
 		subject = firstLine(body)
 	}
-	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body, len(questions) > 0, s.artifactFiles(snaps, inline))
+	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body+runCommandsNote(runSpecs), len(questions) > 0 || len(runSpecs) > 0, s.artifactFiles(snaps, inline))
 	type qInfo struct {
 		Key    string `json:"key"`
 		Kind   string `json:"kind"`
@@ -965,8 +972,18 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	for _, q := range questions {
 		qs = append(qs, qInfo{q.Key, q.Kind, q.Prompt})
 	}
+	type cmdInfo struct {
+		ID      string `json:"id"`
+		Command string `json:"command"`
+		Cwd     string `json:"cwd"`
+		State   string `json:"state"`
+	}
+	cmdsOut := []cmdInfo{}
+	for _, c := range runCmds {
+		cmdsOut = append(cmdsOut, cmdInfo{c.ID, c.Command, c.Cwd, c.State})
+	}
 	writeJSON(w, 201, map[string]any{"thread_id": threadID, "message_id": messageID, "new_thread": isNew, "questions": qs, "task_id": firstNonEmpty(tagged...), "task_ids": tagged, "decision": decision,
-		"attachments": attsOut, "images_not_shown": notShown, "note": note})
+		"attachments": attsOut, "images_not_shown": notShown, "note": note, "commands": cmdsOut})
 }
 
 func appendNew(ids []string, id string) []string {
@@ -1085,7 +1102,7 @@ func (s *Server) agentDelivered(w http.ResponseWriter, r *http.Request, sess *st
 	s.modDelivery(sess.ID, "delivered", r.PathValue("id"))
 	// The next turn answers the delivered message's thread; minbox's own request to place messages in
 	// tasks is no message of the person to answer (no "you did not reply" reminder after it).
-	if m, err := s.store.GetMessage(r.Context(), r.PathValue("id")); err == nil && m.Kind != store.KindPlace {
+	if m, err := s.store.GetMessage(r.Context(), r.PathValue("id")); err == nil && m.Kind != store.KindPlace && m.Kind != store.KindRunResult {
 		s.noteDelivered(sess.ID, m.ThreadID)
 	}
 	s.publishMessageChange(r.Context(), sess.ID, r.PathValue("id"))

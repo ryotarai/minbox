@@ -74,8 +74,7 @@ type replyHelp struct {
 // SuggestResult is the endpoint's answer.
 type SuggestResult struct {
 	Questions []ReplyQuestion `json:"questions"`
-	Command   string          `json:"command,omitempty"` // "!command": a shell command the agent tried and was denied (denied.go), to run yourself
-	Reason    string          `json:"reason,omitempty"`  // not_needed | disabled | no_agent (no coding agent is installed)
+	Reason    string          `json:"reason,omitempty"` // not_needed | disabled | no_agent (no coding agent is installed)
 	Error     string          `json:"error,omitempty"`
 }
 
@@ -465,7 +464,7 @@ func runHelperEnv(ctx context.Context, name string, argv, env []string, prompt s
 func helpMessages(ms []store.Message) []store.Message {
 	out := make([]store.Message, 0, len(ms))
 	for _, m := range ms {
-		if m.Kind == store.KindPlace || m.Kind == KindContinue {
+		if m.Kind == store.KindPlace || m.Kind == KindContinue || m.Kind == store.KindRunResult {
 			continue
 		}
 		out = append(out, m)
@@ -473,10 +472,8 @@ func helpMessages(ms []store.Message) []store.Message {
 	return out
 }
 
-// GET /api/threads/{id}/suggestions: the helper's questions, and the latest shell command the agent
-// tried in this thread and was denied (reported by its integration, denied.go) as "!command". The
-// command never comes from the helper or the message text; it rides every answer, also when the
-// questions are off, not needed or failed. In v3 the thread is an agent's stream.
+// GET /api/threads/{id}/suggestions: the helper's questions for the thread's latest agent message. In
+// v3 the thread is an agent's stream.
 func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	th, err := s.store.GetThread(r.Context(), id)
@@ -485,12 +482,11 @@ func (s *Server) threadSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	th.Messages = helpMessages(th.Messages)
-	s.writeSuggestions(w, r, id, th, id)
+	s.writeSuggestions(w, r, id, th)
 }
 
 // GET /api/v3/tasks/{id}/suggestions: the reply help of a task's view: the questions for the task's
-// latest agent message (the prompt holds the task's messages, from every agent), and the denied
-// command of that message's stream.
+// latest agent message (the prompt holds the task's messages, from every agent).
 func (s *Server) v3TaskSuggestions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	t, err := s.store.GetTask(ctx, r.PathValue("id"))
@@ -517,28 +513,21 @@ func (s *Server) v3TaskSuggestions(w http.ResponseWriter, r *http.Request) {
 	}
 	ms = helpMessages(ms)
 	th := &store.Thread{ID: "task:" + t.ID, Subject: t.Title, Messages: ms}
-	cmdThread := ""
 	if n := len(ms); n > 0 && ms[n-1].Author == store.AuthorAgent {
-		cmdThread = ms[n-1].ThreadID
-		if st, err := s.store.GetThread(ctx, cmdThread); err == nil {
+		if st, err := s.store.GetThread(ctx, ms[n-1].ThreadID); err == nil {
 			th.SessionID = st.SessionID
 		}
 	}
-	s.writeSuggestions(w, r, th.ID, th, cmdThread)
+	s.writeSuggestions(w, r, th.ID, th)
 }
 
 // writeSuggestions answers a suggestions request for th's messages (key: the cache's, per last
-// message), with the denied command of cmdThread.
-func (s *Server) writeSuggestions(w http.ResponseWriter, r *http.Request, key string, th *store.Thread, cmdThread string) {
-	command := ""
-	if cmdThread != "" {
-		command = s.denied.offer(cmdThread)
-	}
+// message).
+func (s *Server) writeSuggestions(w http.ResponseWriter, r *http.Request, key string, th *store.Thread) {
 	empty := func(res SuggestResult) {
 		if res.Questions == nil {
 			res.Questions = []ReplyQuestion{}
 		}
-		res.Command = command
 		writeJSON(w, 200, res)
 	}
 	st, err := s.settings(r.Context())

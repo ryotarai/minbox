@@ -20,8 +20,6 @@
  *   claim.
  * - A long minbox_subagent run (plugin/pi/subagent.ts) keeps the status working: its partial results
  *   are tool_execution_update events, and busy.ts is a marker the two extensions share.
- * - Bash outcomes (tool_execution_end) go to the server, which offers a blocked command as "Run
- *   yourself" and withdraws it when it later runs.
  * - The hello at every session start (also after /new or /resume, which restart the extension)
  *   reports the conversation id and file, so minbox resumes the right conversation later.
  *
@@ -241,46 +239,9 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     if (busy) busyAt = deps.now()
     const command = typeof e?.input?.command === 'string' ? e.input.command : ''
     const reason = guardDeny(manifest?.guards, String(e?.toolName ?? ''), command)
-    if (reason !== null) {
-      if (typeof e.toolCallId === 'string') ownBlocks.add(e.toolCallId)
-      return { block: true, reason }
-    }
+    if (reason !== null) return { block: true, reason }
     return undefined
   })
-
-  // ---- bash outcomes ----
-  // Pi has no permission prompt of its own: a bash call is denied when an extension's tool_call
-  // handler blocks it. tool_execution_start carries the command; tool_execution_end the outcome
-  // (no durationMs: it never ran). The server decides what counts as a block.
-
-  /** bash commands of running calls, by call id. */
-  const bashCalls = new Map<string, string>()
-  /** Calls this extension blocked itself: not reported. */
-  const ownBlocks = new Set<string>()
-
-  function onToolStart(e: any): void {
-    if (e?.toolName === 'bash' && typeof e.toolCallId === 'string' && typeof e.args?.command === 'string' && e.args.command.trim()) bashCalls.set(e.toolCallId, e.args.command)
-  }
-
-  function onToolEnd(e: any): void {
-    if (e?.toolName !== 'bash' || typeof e.toolCallId !== 'string') return
-    const command = bashCalls.get(e.toolCallId) ?? ''
-    bashCalls.delete(e.toolCallId)
-    if (ownBlocks.delete(e.toolCallId) || !command) return
-    const isError = e.isError === true
-    const ran = typeof e.durationMs === 'number'
-    const content = Array.isArray(e.result?.content) ? e.result.content : []
-    // Only a block's reason (an error that never ran) goes to the server, never a run's output.
-    const text =
-      isError && !ran
-        ? content
-            .filter((c: any) => c?.type === 'text' && typeof c.text === 'string')
-            .map((c: any) => c.text)
-            .join('\n')
-            .slice(0, 2000)
-        : undefined
-    void event({ type: 'bash', phase: 'end', id: e.toolCallId, command, is_error: isError, ran, text })
-  }
 
   // ---- status ----
 
@@ -290,11 +251,7 @@ export function install(pi: any, deps: Deps): { stop(): void } | null {
     if (busy) busyAt = deps.now()
   }
   pi.on('turn_start', alive)
-  pi.on('tool_execution_start', async (e: any) => {
-    await alive()
-    onToolStart(e)
-  })
-  pi.on('tool_execution_end', async (e: any) => onToolEnd(e))
+  pi.on('tool_execution_start', alive)
   // A long tool (minbox_subagent) streams partial results as tool_execution_update.
   pi.on('tool_execution_update', alive)
   pi.on('input', async (e: any) => {

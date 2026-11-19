@@ -341,7 +341,7 @@ test('the heartbeat carries agent opencode and the protocol', async () => {
   assert.ok(Array.isArray(hb.body.events))
 })
 
-test('shell outcomes go to the server: rejections with their reason, successes; other tools not', async () => {
+test('shell calls are not reported to the server', async () => {
   const t = setup()
   await setupLocation(t.oc.ctx, t.core)
   await settle()
@@ -349,20 +349,8 @@ test('shell outcomes go to the server: rejections with their reason, successes; 
   ev('session.tool.input.started', { id: 'call_1', name: 'bash' })
   ev('session.tool.called', { id: 'call_1', input: { command: 'git push origin main' } })
   ev('session.tool.failed', { id: 'call_1', error: { type: 'permission.rejected', message: 'a rule prevents it' } })
-  ev('session.tool.input.started', { id: 'call_2', name: 'edit' })
-  ev('session.tool.called', { id: 'call_2', input: { filePath: '/etc/hosts' } })
-  ev('session.tool.failed', { id: 'call_2', error: { type: 'permission.rejected', message: 'no' } })
-  ev('session.tool.input.started', { id: 'call_3', name: 'bash' })
-  ev('session.tool.called', { id: 'call_3', input: { command: 'git push origin main' } })
-  ev('session.tool.success', { id: 'call_3', content: [] })
   await settle()
-  assert.deepEqual(
-    t.events().filter((e) => e.type === 'bash'),
-    [
-      { type: 'bash', phase: 'failed', id: 'call_1', command: 'git push origin main', error_type: 'permission.rejected', message: 'a rule prevents it' },
-      { type: 'bash', phase: 'success', id: 'call_3', command: 'git push origin main' },
-    ],
-  )
+  assert.deepEqual(t.events().filter((e) => e.type === 'bash'), [])
 })
 
 test('the entry is a plain V2 plugin object', () => {

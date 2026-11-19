@@ -105,7 +105,7 @@ export function TaskView({
         nav.board()
       })
       .catch(error)
-  const lastUser = [...d.messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command')
+  const lastUser = [...d.messages].reverse().find((m) => m.author === 'user' && m.kind !== 'note' && m.kind !== 'command' && m.kind !== 'run_result')
   const send = async (o: Outgoing) => {
     const words = o.words
     const toSel = o.to

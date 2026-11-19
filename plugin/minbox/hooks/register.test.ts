@@ -223,42 +223,22 @@ test("the server's reminder after a turn is submitted once idle, once; the perso
   expect(server.submitted.filter((t) => t === 'REMIND').length).toBe(1)
 })
 
-test("the server's guards refuse a Bash call; other calls run and their outcome is forwarded", async ($, on) => {
+test("the server's guards refuse a Bash call; other calls run and nothing is reported", async ($, on) => {
   mock.clock(on)
   mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
   const server = fakeServer(on, [])
-  const results: Record<string, any> = {
-    'git push': { isError: true, result: undefined, text: "The user doesn't want to proceed with this tool use." },
-    'make': { result: 'ok', text: 'ok' },
-  }
   let ran = ''
   on('tool.call', { tool: 'Bash' }, (_: any, e: any) => {
     ran = e.command
-    return results[e.command] ?? { result: 'ok' }
+    return { result: 'ok' }
   })
   await start($)
   const denied: any = await $.tool.call({ tool: 'Bash', command: 'open https://github.com/o/r/pull/12' } as any)
   expect(denied.deny).toBe(OPEN_DENY)
   expect(ran).toBe('')
-  await $.tool.call({ tool: 'Bash', command: 'git push', tool_use_id: 'tu1' } as any)
   await $.tool.call({ tool: 'Bash', command: 'make', tool_use_id: 'tu2' } as any)
-  const bash = server.events().filter((e) => e.type === 'bash')
-  expect(bash[0]).toEqual({ type: 'bash', phase: 'result', id: 'tu1', command: 'git push', is_error: true, text: "The user doesn't want to proceed with this tool use." })
-  expect(bash[1]).toEqual({ type: 'bash', phase: 'result', id: 'tu2', command: 'make', is_error: false })
-})
-
-test("a deny verdict of the permission check and auto mode's denial are forwarded raw", async ($, on) => {
-  mock.clock(on)
-  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
-  const server = fakeServer(on, [])
-  on('tool.check', { tool: 'Bash' }, () => ({ decision: 'deny', rule: 'Bash(rm:*)' }))
-  on('classic.PermissionDenied', () => ({}))
-  await start($)
-  await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf /tmp/x' }, tool_use_id: 'tu9' } as any)
-  await ($ as any).classic.PermissionDenied({ tool_name: 'Bash', tool_use_id: 'tu8', tool_input: { command: 'curl x' }, reason: 'risky' })
-  const bash = server.events().filter((e) => e.type === 'bash')
-  expect(bash).toContainEqual({ type: 'bash', phase: 'check', id: 'tu9', command: 'rm -rf /tmp/x', decision: 'deny', rule: 'Bash(rm:*)' })
-  expect(bash).toContainEqual({ type: 'bash', phase: 'denied', id: 'tu8', command: 'curl x', message: 'risky' })
+  expect(ran).toBe('make')
+  expect(server.events().filter((e) => e.type === 'bash')).toEqual([])
 })
 
 test('a heartbeat goes out at start and every 15 s, carrying the mod state and its own event log', async ($, on) => {

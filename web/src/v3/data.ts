@@ -1,7 +1,7 @@
 // minbox v3 data: the Board, a task's view, an agent's stream (docs/v3/api.md), and the hooks that
 // keep them live (the server's tasks / thread events arrive as window "minbox:v3" events).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { call, type Answer, type Message, type Question, type ReplyRequest, type SuggestResult } from '../api'
+import { call, type Answer, type Message, type Question, type ReplyRequest, type RunCommand, type SuggestResult } from '../api'
 import type { StreamTaskEvent } from './StreamEvents'
 
 export type TaskStatus = 'working' | 'needs_you' | 'blocked' | 'done'
@@ -108,6 +108,8 @@ export const v3 = {
   ignore: (msg: string, keys?: string[]) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/ignore`, { keys: keys ?? [] }),
   /** Reopen ignored questions (keys; none: all of them). */
   unignore: (msg: string, keys?: string[]) => call<{ ok: boolean }>('POST', `/api/v3/messages/${msg}/unignore`, { keys: keys ?? [] }),
+  /** Allow or deny commands an agent message asks to run, by id (a paired browser only). */
+  decideCommands: (msg: string, body: { allow?: string[]; deny?: string[] }) => call<{ run_commands: RunCommand[] }>('POST', `/api/v3/messages/${msg}/commands`, body),
   search: (qs: string, project: string) => call<SearchResult>('GET', '/api/v3/search' + q({ q: qs, project })),
 }
 

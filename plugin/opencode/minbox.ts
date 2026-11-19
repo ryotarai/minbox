@@ -22,8 +22,6 @@
  *   An urgent one (Send now) goes into a running turn too (delivery "steer").
  * - The server's guards deny host tool calls through the permission hook (a shell command that opens a
  *   page on the host; OpenCode's `question` tool in the main session).
- * - Shell outcomes (session.tool.failed / success) go to the server, which offers a rejected command
- *   as "Run yourself" and withdraws it when it later runs.
  * - Creates the session if it is missing and moves it to MINBOX_OPENCODE_DIR when the project's folder
  *   changed (OpenCode sessions can move between folders).
  * - Follows a new top-level session the person starts in the TUI (/new): the hello reports its id.
@@ -53,8 +51,6 @@ const HEARTBEAT_MS = 15_000
 
 const EXECUTION_EVENTS = ['session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']
 const ALIVE_EVENTS = ['session.step.started', 'session.step.ended', 'session.tool.input.started', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed']
-/** The tool events read for shell outcomes. */
-const TOOL_EVENTS = ['session.tool.input.started', 'session.tool.called', 'session.tool.success', 'session.tool.failed']
 
 /** What the plugin needs from the outside; replaced in tests. */
 export type Deps = {
@@ -361,41 +357,6 @@ export function createCore(deps: Deps) {
     if (type === 'session.execution.started') setBusy(true)
     else if (EXECUTION_EVENTS.includes(type)) setBusy(false)
     else if (busy) busyAt = deps.now()
-    if (TOOL_EVENTS.includes(type)) onToolEvent(type, ev.data)
-  }
-
-  // ---- shell outcomes ----
-  // A shell call refused by a permission rule or a plugin's permission hook ends as
-  // session.tool.failed with error.type "permission.rejected". Its tool name comes with
-  // session.tool.input.started, its command with session.tool.called. Only the main session is
-  // followed (not subagent sessions). The server decides what counts as a refusal.
-
-  /** Tool calls of the session: name and shell command, by call id. */
-  const toolCalls = new Map<string, { name?: string; command?: string }>()
-
-  function onToolEvent(type: string, d: any): void {
-    const id = typeof d?.id === 'string' ? d.id : ''
-    if (!id) return
-    const call = toolCalls.get(id) ?? {}
-    if (type === 'session.tool.input.started') {
-      if (typeof d.name === 'string') call.name = d.name
-      toolCalls.set(id, call)
-      return
-    }
-    if (type === 'session.tool.called') {
-      if (typeof d.input?.command === 'string' && d.input.command.trim()) call.command = d.input.command
-      toolCalls.set(id, call)
-      return
-    }
-    toolCalls.delete(id)
-    if (toolCalls.size > 500) toolCalls.clear() // calls whose end never came
-    const shell = call.name === undefined || call.name === 'bash' || call.name === 'shell'
-    if (!shell || !call.command) return
-    if (type === 'session.tool.failed') {
-      void event({ type: 'bash', phase: 'failed', id, command: call.command, error_type: d.error?.type, message: typeof d.error?.message === 'string' ? d.error.message : undefined })
-    } else if (type === 'session.tool.success') {
-      void event({ type: 'bash', phase: 'success', id, command: call.command })
-    }
   }
 
   /** session hook "context": the server's instructions in the system prompt of every request of the session. */

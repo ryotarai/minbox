@@ -160,6 +160,12 @@ func (s *Server) loadView(ctx context.Context, ths []store.Thread) (*v3View, err
 		if th.Kind == store.ThreadStream || th.Section == store.SectionStopped || th.Section == store.SectionHolding || th.Section == store.SectionWaiting {
 			vm.Open = openOf(&m)
 		}
+		// Commands waiting for the person's Allow or Deny wait on them like questions.
+		for _, c := range m.RunCommands {
+			if c.State == store.RunPending {
+				vm.Open++
+			}
+		}
 		if m.Author == store.AuthorUser && m.AnswersFor != "" && len(m.Answers) > 0 {
 			if qi, ok := v.byID[m.AnswersFor]; ok {
 				vm.AnswersTo = answersTo(&v.msgs[qi], m.Answers)
@@ -212,7 +218,7 @@ func (v *v3View) boardTask(t store.Task, tasks []store.Task) BoardTask {
 				break
 			}
 		}
-		if !has || m.Kind == store.KindPlace {
+		if !has || m.Kind == store.KindPlace || m.Kind == store.KindRunResult {
 			continue
 		}
 		b.MessageCount++

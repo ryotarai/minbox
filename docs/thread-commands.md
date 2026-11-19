@@ -59,25 +59,11 @@ together, oldest first.
 Commands need no input: stdin is empty and the 60 s limit applies. A command that waits for you (for example a sign-in
 that opens the browser) works while it finishes within the limit; the agent hears of it when it ends.
 
-## Denied commands
+## Commands the agent asks to run
 
-When the agent tried to run a shell command and could not because it was denied, a "Run yourself" chip above the reply
-box (with the reply questions) offers `!<command>`, so one click (the pencil edits it first) runs it yourself. Only real
-denials count: the agent's integration reports each one as it happens (`POST /api/agent/denied-commands`), and a message
-that merely mentions a command, or says something was denied, offers nothing.
-
-| Agent | What is detected |
-| --- | --- |
-| Claude Code (the mod, `plugin/minbox/hooks/register.ts`, `denied.ts`) | Bash calls refused by a deny rule, the mode or a PreToolUse hook (a `tool.check` deny verdict), by auto mode's classifier (`classic.PermissionDenied`), by you rejecting the permission prompt, or by a plugin's `tool.call` deny (the result the model reads: "The user doesn't want to proceed with this tool use…", "Permission to use Bash … has been denied") |
-| Pi (`plugin/pi/minbox.ts`) | `bash` calls another extension's `tool_call` handler blocked (Pi has no permission prompt of its own): `tool_execution_end` in error without having run |
-| OpenCode (`plugin/opencode/minbox.ts`) | shell calls whose permission was rejected (a `deny` rule in the config, a plugin's permission hook): `session.tool.failed` with `error.type: "permission.rejected"`; main session only. minbox runs OpenCode with `--auto`, so there is no prompt to reject |
-
-minbox's own refusals (a command that would open a page on the host) are not offered. The command goes to the thread of
-the message the agent's turn answers; when that is not known (you typed in the terminal, or several threads were delivered
-at once) to the thread of the agent's next message. The latest one is shown; it goes away when you run it with `!`, when
-the agent later runs the same command successfully, or when you dismiss the reply help. The list is kept in memory, so a
-minbox restart forgets it. A command that runs but fails (a sandbox's "Operation not permitted", a non-zero exit) is not a
-denial and is not offered. See "Reply suggestions" in [api-contract.md](api-contract.md).
+The agent does not ask you to copy commands into the reply box: it sends them with its message (`send_message`
+`commands`), and you allow or deny each one there. See [agent-commands.md](agent-commands.md). (The "Run yourself" chip,
+which offered a command the agent had been denied as `!<command>`, is retired.)
 
 ## Safety
 
