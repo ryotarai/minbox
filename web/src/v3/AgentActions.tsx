@@ -51,6 +51,14 @@ function AgentInfo({ session }: { session: Session }) {
         <dd className="m-0 select-text break-all font-mono" title={session.cwd}>
           {session.cwd}
         </dd>
+        {!!session.env_keys?.length && (
+          <>
+            <dt className="text-subtle">Env</dt>
+            <dd className="m-0 select-text break-all font-mono" data-testid="agent-info-env" title="Environment variables set when the agent was created (values are not shown)">
+              {session.env_keys.join(', ')}
+            </dd>
+          </>
+        )}
         <dt className="text-subtle">Started</dt>
         <dd className="m-0">{session.created_at ? new Date(session.created_at).toLocaleDateString() : '—'}</dd>
       </dl>

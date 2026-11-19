@@ -162,6 +162,10 @@ type Session struct {
 	PrevClaudeSessionID string `json:"prev_claude_session_id,omitempty"`
 	// PrevChain: the conversations before that one (oldest first), from earlier moves.
 	PrevChain []PrevConv `json:"prev_chain,omitempty"`
+	// Env: variables the person set when creating the agent, added to its environment at every
+	// start. The values may be secrets: never serialized (no API returns them); EnvKeys names them.
+	Env     map[string]string `json:"-"`
+	EnvKeys []string          `json:"env_keys,omitempty"`
 	// Derived.
 	Unread        int    `json:"unread"`
 	OpenQuestions int    `json:"open_questions"`
@@ -475,6 +479,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "prev_dir", "TEXT NOT NULL DEFAULT ''"},               // where the conversation before the move ran
 	{"sessions", "prev_claude_session_id", "TEXT NOT NULL DEFAULT ''"}, // that conversation's Claude Code id
 	{"sessions", "prev_chain", "TEXT NOT NULL DEFAULT ''"},             // JSON [PrevConv]: the conversations before that one
+	{"sessions", "env", "TEXT NOT NULL DEFAULT ''"},                    // JSON {key: value}: the person's variables for the agent (Session.Env)
 	{"projects", "main_session_id", "TEXT"},
 	{"projects", "default_agent", "TEXT NOT NULL DEFAULT ''"}, // '' = the settings' default agent
 	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"},     // '' | 'emoji' | 'image'
@@ -721,14 +726,14 @@ func (s *Store) CreateSessionAgent(ctx context.Context, projectID, kind, agentKi
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent, env`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
-	var chain string
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent); err != nil {
+	var chain, env string
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent, &env); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -736,6 +741,10 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	}
 	if chain != "" {
 		_ = json.Unmarshal([]byte(chain), &sess.PrevChain)
+	}
+	if env != "" {
+		_ = json.Unmarshal([]byte(env), &sess.Env)
+		sess.EnvKeys = EnvKeys(sess.Env)
 	}
 	if exit.Valid {
 		v := int(exit.Int64)
@@ -863,6 +872,29 @@ func (s *Store) RelocateSession(ctx context.Context, id, cwd, claudeID, prevDir,
 	}
 	return s.exec(ctx, `UPDATE sessions SET cwd=?, relocate_to='', claude_session_id=?, prev_dir=?, prev_claude_session_id=?, prev_chain=?, updated_at=? WHERE id=?`,
 		cwd, claudeID, prevDir, prevClaudeID, cj, ms(s.now()), id)
+}
+
+// SetSessionEnv records the person's variables for a session (see Session.Env); empty clears them.
+func (s *Store) SetSessionEnv(ctx context.Context, id string, env map[string]string) error {
+	v := ""
+	if len(env) > 0 {
+		b, err := json.Marshal(env)
+		if err != nil {
+			return err
+		}
+		v = string(b)
+	}
+	return s.exec(ctx, `UPDATE sessions SET env=? WHERE id=?`, v, id)
+}
+
+// EnvKeys are env's keys, sorted.
+func EnvKeys(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (s *Store) RenameSession(ctx context.Context, id, name string) error {

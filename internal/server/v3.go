@@ -474,17 +474,18 @@ func (s *Server) v3Send(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, r)
 }
 
-// POST /api/v3/new {to: <session id> | "new" | "", project_id, agent?, name?, words, task_id?, uploads?}:
+// POST /api/v3/new {to: <session id> | "new" | "", project_id, agent?, name?, env?, words, task_id?, uploads?}:
 // the composer's message: to an agent's stream, or to a new agent (session) started for it. Without
 // to, the helper picks one of the project's live agents for the words, else a new agent starts.
 func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req struct {
-		To        string `json:"to"`
-		ProjectID string `json:"project_id"`
-		Agent     string `json:"agent"`
-		Name      string `json:"name"`
-		Words     string `json:"words"`
+		To        string   `json:"to"`
+		ProjectID string   `json:"project_id"`
+		Agent     string   `json:"agent"`
+		Name      string   `json:"name"`
+		Words     string   `json:"words"`
+		Env       agentEnv `json:"env"` // to "new": the new agent's environment variables (see agentEnv)
 	}
 	body, ok := peekJSON(w, r, &req)
 	if !ok {
@@ -505,7 +506,7 @@ func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 		}
 		to = sess.ID
 	case "new":
-		sess, err := s.sessions.CreateAgent(ctx, store.KindClaude, strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), "", "", strings.TrimSpace(req.ProjectID))
+		sess, err := s.sessions.CreateAgentEnv(ctx, store.KindClaude, strings.TrimSpace(req.Agent), strings.TrimSpace(req.Name), "", "", strings.TrimSpace(req.ProjectID), req.Env)
 		if err != nil {
 			httpError(w, 400, err.Error())
 			return

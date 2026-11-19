@@ -71,6 +71,8 @@ export type Session = {
   relocate_to?: string // the project folder changed: starts there next time
   prev_dir?: string
   prev_claude_session_id?: string
+  /** The names of the environment variables set when the agent was created (never their values). */
+  env_keys?: string[]
   exit_code: number | null
   created_at: string
   updated_at: string
@@ -956,9 +958,11 @@ export type ReplyRequest = {
 
 export const api = {
   sessions: () => call<Session[]>('GET', '/api/sessions'),
-  createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind, agent }),
-  /** A session inside a project: its host and folder. */
-  createSessionIn: (project_id: string, name: string, kind?: SessionKind, agent?: AgentKind) => call<Session>('POST', '/api/sessions', { project_id, name, kind, agent }),
+  createSession: (cwd: string, name: string, host_id?: string, kind?: SessionKind, agent?: AgentKind, env?: Record<string, string>) =>
+    call<Session>('POST', '/api/sessions', { cwd, name, host_id, kind, agent, env }),
+  /** A session inside a project: its host and folder. env: the agent's environment variables. */
+  createSessionIn: (project_id: string, name: string, kind?: SessionKind, agent?: AgentKind, env?: Record<string, string>) =>
+    call<Session>('POST', '/api/sessions', { project_id, name, kind, agent, env }),
   agents: (hostId?: string, fresh?: boolean) =>
     call<AgentsInfo>('GET', `/api/agents${hostId ? `?host_id=${encodeURIComponent(hostId)}${fresh ? '&fresh=1' : ''}` : ''}`),
   setProjectEmoji: (id: string, emoji: string) => call<Project>('PUT', `/api/projects/${id}/icon`, { emoji }),
