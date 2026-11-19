@@ -31,6 +31,13 @@ type Notification struct {
 	Link string
 	// Test marks the sample notification of "Send test".
 	Test bool
+	// TaskID is the task the message is about ("" when none). A Slack app destination that groups
+	// messages in threads gives every task its own Slack thread, headed by a parent that names the
+	// task (TaskTitle, TaskStatus) and links to it (TaskLink).
+	TaskID     string
+	TaskTitle  string
+	TaskStatus string
+	TaskLink   string
 	// Files are the artifacts (files the agent attached, images its message shows) of the
 	// message, as files on the server. Destinations that can carry files send them too.
 	Files []File
@@ -87,6 +94,13 @@ type Type struct {
 type Env struct {
 	Store  *store.Store
 	DestID string
+}
+
+// TaskUpdater is implemented by notifiers that show a task somewhere they can change later (the
+// parent message of a task's Slack thread): UpdateTask shows the task's new title and status. It
+// does nothing when the destination never showed the task.
+type TaskUpdater interface {
+	UpdateTask(ctx context.Context, n Notification) error
 }
 
 // Tester is implemented by notifiers that do more than Send on "Send test": it verifies the

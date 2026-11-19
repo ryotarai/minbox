@@ -962,7 +962,11 @@ func (s *Server) agentSend(w http.ResponseWriter, r *http.Request, sess *store.S
 	if subject == "" {
 		subject = firstLine(body)
 	}
-	s.notifyAgentMessage(ctx, sess, threadID, messageID, subject, body+runCommandsNote(runSpecs), len(questions) > 0 || len(runSpecs) > 0, s.artifactFiles(snaps, inline))
+	notifyTask := ""
+	if len(tagged) > 0 {
+		notifyTask = tagged[0]
+	}
+	s.notifyAgentMessage(ctx, sess, threadID, messageID, notifyTask, subject, body+runCommandsNote(runSpecs), len(questions) > 0 || len(runSpecs) > 0, s.artifactFiles(snaps, inline))
 	type qInfo struct {
 		Key    string `json:"key"`
 		Kind   string `json:"kind"`

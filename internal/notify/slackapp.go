@@ -45,8 +45,8 @@ var slackAppType = Type{
 		{Key: "channel", Label: "Channel or user", Kind: "text", Required: true, Placeholder: "C0123ABCD, #alerts or U0123ABCD",
 			Hint: "A channel ID (C0123ABCD), a name (#alerts), or a user ID (U0123ABCD; Slack profile → ⋮ → Copy member ID) for a DM with the bot. A channel needs the bot in it unless it has chat:write.public; a DM needs no invite.", validate: validChannel},
 		{Key: "include_body", Label: "Send full message", Kind: "bool", Default: true, Hint: "Off: only the thread title."},
-		{Key: "thread_replies", Label: "Group a thread's messages in one Slack thread", Kind: "bool", Default: true,
-			Hint: "The first notification of a minbox thread is the parent; later ones are replies to it."},
+		{Key: "thread_replies", Label: "One Slack thread per task", Kind: "bool", Default: true,
+			Hint: "The first message about a task posts a parent naming the task and its agent; that message and later ones about the task are replies to it, and the parent shows when the task is done. Your replies there go to the task."},
 		{Key: "mention_me", Label: "Mention me when starting a thread", Kind: "bool", Default: true,
 			Hint: "The first message of a Slack thread mentions you (the user ID in Channel, else the first Allowed Slack user ID), because Slack only notifies about replies in a thread you take part in or are mentioned in. Later messages of the thread do not repeat it."},
 		{Key: "send_artifacts", Label: "Send artifacts (images, HTML, files)", Kind: "bool", Default: true,
@@ -244,7 +244,8 @@ type slackFile struct {
 	URLPrivate         string `json:"url_private"`
 }
 
-// Send posts the notification (grouped in the Slack thread of its minbox thread when enabled).
+// Send posts the notification, grouped when enabled: a message about a task goes to the task's Slack
+// thread (slacktask.go), any other to the Slack thread of its minbox thread.
 // Errors never contain the token.
 func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 	if n.Test || !s.ThreadReplies || s.Store == nil || n.ThreadID == "" {
@@ -253,6 +254,9 @@ func (s *SlackApp) Send(ctx context.Context, n Notification) error {
 			return err
 		}
 		return s.uploadFiles(ctx, n, r.Channel, "") // top level: the message is not a thread
+	}
+	if n.TaskID != "" {
+		return s.sendTask(ctx, n)
 	}
 	mu := slackThreadLock(s.DestID, n.ThreadID)
 	mu.Lock()

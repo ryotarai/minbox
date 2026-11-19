@@ -322,7 +322,13 @@ type Region struct {
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+	// onTaskChange is called after UpdateTask changed a task's title or status (nil: nothing).
+	onTaskChange func(old, cur Task)
 }
+
+// OnTaskChange sets what is called after a task's title or status changed (UpdateTask). Set it once,
+// before the store is used.
+func (s *Store) OnTaskChange(f func(old, cur Task)) { s.onTaskChange = f }
 
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -420,10 +426,13 @@ CREATE TABLE IF NOT EXISTS notification_destinations (
 CREATE TABLE IF NOT EXISTS notification_slack_threads (
   destination_id TEXT NOT NULL,
   minbox_thread_id TEXT NOT NULL,
+  task_id TEXT NOT NULL DEFAULT '',
   channel_id TEXT NOT NULL,
   ts TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  PRIMARY KEY (destination_id, minbox_thread_id)
+  last_notified_at INTEGER NOT NULL DEFAULT 0,
+  reply_cursor TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (destination_id, minbox_thread_id, task_id)
 );
 CREATE TABLE IF NOT EXISTS notification_slack_state (
   destination_id TEXT NOT NULL,
@@ -531,6 +540,9 @@ func migrate(db *sql.DB) error {
 	}
 	if err := addColumns(db, append(addedColumns[:len(addedColumns):len(addedColumns)], topicAddedColumns...)); err != nil {
 		return err
+	}
+	if err := migrateSlackTaskThreads(db); err != nil {
+		return fmt.Errorf("notification_slack_threads: %w", err)
 	}
 	if err := migrateProjects(context.Background(), db); err != nil {
 		return fmt.Errorf("projects: %w", err)

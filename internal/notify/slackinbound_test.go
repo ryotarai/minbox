@@ -41,12 +41,15 @@ func (f *fakeInbound) PickProject(_ context.Context, text string) (string, error
 	return f.pick, f.pickErr
 }
 
-func (f *fakeInbound) DeliverReply(_ context.Context, threadID, text string, files []InFile) error {
+func (f *fakeInbound) DeliverReply(_ context.Context, threadID, taskID, text string, files []InFile) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.failNext {
 		f.failNext = false
 		return fmt.Errorf("boom")
+	}
+	if taskID != "" {
+		threadID += "#" + taskID // a reply in a task's Slack thread
 	}
 	f.replies = append(f.replies, threadID+":"+text)
 	for _, x := range files {

@@ -76,6 +76,44 @@ func (d *Dispatcher) Dispatch(n Notification) {
 	}()
 }
 
+// DispatchTask tells the destinations that showed a task about its new title or status (n carries
+// TaskID, TaskTitle, TaskStatus, TaskLink, Project). It returns at once.
+func (d *Dispatcher) DispatchTask(n Notification) {
+	if n.TaskID == "" {
+		return
+	}
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		dests, err := d.Store.ListDestinations(d.Ctx)
+		if err != nil {
+			log.Printf("notify: %v", err)
+			return
+		}
+		for _, dest := range dests {
+			if !dest.Enabled {
+				continue
+			}
+			nt, err := d.build(&dest)
+			if err != nil {
+				continue
+			}
+			tu, ok := nt.(TaskUpdater)
+			if !ok {
+				continue
+			}
+			dest := dest
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				if err := d.retry(d.Ctx, func() error { return tu.UpdateTask(d.Ctx, n) }); err != nil {
+					d.record(&dest, err)
+				}
+			}()
+		}
+	}()
+}
+
 // Test sends once, without retries, and returns the failure (a destination can be disabled).
 func (d *Dispatcher) Test(ctx context.Context, dest *store.Destination, n Notification) error {
 	_, err := d.TestInfo(ctx, dest, n)
@@ -120,9 +158,14 @@ func (d *Dispatcher) send(ctx context.Context, dest *store.Destination, n Notifi
 }
 
 func (d *Dispatcher) sendWithRetry(ctx context.Context, dest *store.Destination, n Notification) error {
+	return d.retry(ctx, func() error { return d.send(ctx, dest, n) })
+}
+
+// retry runs f until it succeeds, fails for good, or the delays run out.
+func (d *Dispatcher) retry(ctx context.Context, f func() error) error {
 	var err error
 	for attempt := 0; ; attempt++ {
-		err = d.send(ctx, dest, n)
+		err = f()
 		if err == nil {
 			return nil
 		}

@@ -33,9 +33,33 @@ func threadLinkURL(publicURL, sessionID, threadID string) string {
 	return base + "/#s=" + url.QueryEscape(sessionID) + "&t=" + url.QueryEscape(threadID)
 }
 
+// taskLinkURL is the URL that opens a task (at a message when messageID is set), "" when no public
+// URL is set.
+func taskLinkURL(publicURL, taskID, messageID string) string {
+	base := strings.TrimRight(strings.TrimSpace(publicURL), "/")
+	if base == "" || taskID == "" {
+		return ""
+	}
+	u := base + "/#v=task&k=" + url.QueryEscape(taskID)
+	if messageID != "" {
+		u += "&m=" + url.QueryEscape(messageID)
+	}
+	return u
+}
+
+func (s *Server) publicURL(ctx context.Context) string {
+	st, err := s.settings(ctx)
+	if err != nil {
+		return ""
+	}
+	pub, _ := st["public_url"].(string)
+	return pub
+}
+
 // notifyAgentMessage tells the destinations about a message the agent just stored; the sending
-// happens in the background.
-func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, threadID, messageID, subject, body string, needsAction bool, files []notify.File) {
+// happens in the background. taskID is the task the message is about ("" none): a Slack app
+// destination posts it in that task's Slack thread.
+func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, threadID, messageID, taskID, subject, body string, needsAction bool, files []notify.File) {
 	n := notify.Notification{
 		Session: sess.Name, Title: subject, ThreadID: threadID, MessageID: messageID,
 		From: "Claude", Body: question.Readable(body), NeedsAction: needsAction, Files: files,
@@ -48,11 +72,31 @@ func (s *Server) notifyAgentMessage(ctx context.Context, sess *store.Session, th
 	if th, err := s.store.GetThread(ctx, threadID); err == nil {
 		n.Status = th.Status
 	}
-	if st, err := s.settings(ctx); err == nil {
-		pub, _ := st["public_url"].(string)
-		n.Link = threadLinkURL(pub, sess.ID, threadID)
+	pub := s.publicURL(ctx)
+	n.Link = threadLinkURL(pub, sess.ID, threadID)
+	if taskID != "" {
+		if t, err := s.store.GetTask(ctx, taskID); err == nil {
+			n.TaskID, n.TaskTitle, n.TaskStatus = t.ID, t.Title, t.Status
+			n.TaskLink = taskLinkURL(pub, t.ID, "")
+			if l := taskLinkURL(pub, t.ID, messageID); l != "" {
+				n.Link = l
+			}
+		}
 	}
 	s.notifier.Dispatch(n)
+}
+
+// notifyTaskChanged tells the destinations that showed a task (the parent of its Slack thread)
+// about its new title or status.
+func (s *Server) notifyTaskChanged(t store.Task) {
+	ctx := context.Background()
+	n := notify.Notification{TaskID: t.ID, TaskTitle: t.Title, TaskStatus: t.Status, TaskLink: taskLinkURL(s.publicURL(ctx), t.ID, "")}
+	if t.ProjectID != "" {
+		if p, err := s.store.GetProject(ctx, t.ProjectID); err == nil {
+			n.Project = p.Name
+		}
+	}
+	s.notifier.DispatchTask(n)
 }
 
 type destView struct {

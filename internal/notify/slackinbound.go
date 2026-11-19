@@ -46,7 +46,9 @@ const (
 // code paths as the web UI.
 type Inbound interface {
 	// DeliverReply adds the person's reply to a minbox thread (ErrGone when the thread is gone).
-	DeliverReply(ctx context.Context, threadID, text string, files []InFile) error
+	// taskID is the task whose Slack thread it was written in ("" none): the reply is about it, as
+	// a reply written in the task's view is.
+	DeliverReply(ctx context.Context, threadID, taskID, text string, files []InFile) error
 	// NewThread starts a thread from a DM. project "" is the destination's default project;
 	// ErrUnknownProject when project names none, ErrNoTarget when there is no project to put it in.
 	NewThread(ctx context.Context, project, defaultProject, text string, files []InFile) (threadID string, err error)
@@ -582,7 +584,7 @@ func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cu
 		}
 		before := w.cyc.delivered
 		err := w.accept(ctx, t.ChannelID, m, func(ctx context.Context, text string, files []InFile) error {
-			return w.p.In.DeliverReply(ctx, t.ThreadID, text, files)
+			return w.p.In.DeliverReply(ctx, t.ThreadID, t.TaskID, text, files)
 		})
 		w.cyc.replies += w.cyc.delivered - before
 		if err != nil && !errors.Is(err, ErrGone) {
@@ -592,7 +594,7 @@ func (w *pollWorker) pollReplies(ctx context.Context, t store.SlackThreadRef, cu
 		newCursor = m.TS
 	}
 	if newCursor != cursor {
-		if err := w.p.Store.SetSlackReplyCursor(ctx, w.dest.ID, t.ThreadID, newCursor); err != nil {
+		if err := w.p.Store.SetSlackRefCursor(ctx, w.dest.ID, t, newCursor); err != nil {
 			return err
 		}
 	}
