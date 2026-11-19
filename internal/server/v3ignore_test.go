@@ -17,12 +17,6 @@ func boardTaskOf(t *testing.T, e *env, id any) map[string]any {
 	return nil
 }
 
-func boardQuestions(t *testing.T, e *env) int {
-	t.Helper()
-	_, board, _ := e.do("GET", "/api/v3/board", nil, nil)
-	return len(board["questions"].([]any))
-}
-
 func TestV3IgnoreQuestions(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()
@@ -34,7 +28,7 @@ func TestV3IgnoreQuestions(t *testing.T) {
 	for _, x := range q["questions"].([]any) {
 		keys = append(keys, x.(map[string]any)["key"].(string))
 	}
-	if bt := boardTaskOf(t, e, tk["task_id"]); bt["needs_you"] != true || bt["open_questions"].(float64) != 2 {
+	if bt := boardTaskOf(t, e, tk["task_id"]); bt["status"] != "working" || bt["open_questions"].(float64) != 2 {
 		t.Fatalf("before: %v", bt)
 	}
 
@@ -42,19 +36,16 @@ func TestV3IgnoreQuestions(t *testing.T) {
 	if code, obj, _ := e.do("POST", "/api/v3/messages/"+msgID+"/ignore", map[string]any{"key": keys[0]}, nil); code != 200 {
 		t.Fatalf("ignore: %d %v", code, obj)
 	}
-	if bt := boardTaskOf(t, e, tk["task_id"]); bt["needs_you"] != true || bt["open_questions"].(float64) != 1 {
+	if bt := boardTaskOf(t, e, tk["task_id"]); bt["status"] != "working" || bt["open_questions"].(float64) != 1 {
 		t.Fatalf("after one: %v", bt)
 	}
-	// The whole message: the task drops back to working, NEEDS YOU is empty.
+	// The whole message: no question left open; the status is untouched.
 	if code, _, _ := e.do("POST", "/api/v3/messages/"+msgID+"/ignore", nil, nil); code != 200 {
 		t.Fatalf("ignore all: %d", code)
 	}
 	bt := boardTaskOf(t, e, tk["task_id"])
-	if bt["needs_you"] != false || bt["open_questions"].(float64) != 0 || bt["status"] != "working" {
+	if bt["open_questions"].(float64) != 0 || bt["status"] != "working" {
 		t.Fatalf("after all: %v", bt)
-	}
-	if n := boardQuestions(t, e); n != 0 {
-		t.Fatalf("questions = %d", n)
 	}
 	// The message says ignored (closed reason and when).
 	m, err := e.st.GetMessage(context.Background(), msgID)
@@ -81,11 +72,8 @@ func TestV3IgnoreQuestions(t *testing.T) {
 	if code, _, _ := e.do("POST", "/api/v3/messages/"+msgID+"/unignore", map[string]any{"key": keys[1]}, nil); code != 200 {
 		t.Fatalf("unignore: %d", code)
 	}
-	if bt := boardTaskOf(t, e, tk["task_id"]); bt["needs_you"] != true || bt["open_questions"].(float64) != 1 {
+	if bt := boardTaskOf(t, e, tk["task_id"]); bt["status"] != "working" || bt["open_questions"].(float64) != 1 {
 		t.Fatalf("after unignore: %v", bt)
-	}
-	if n := boardQuestions(t, e); n != 1 {
-		t.Fatalf("questions = %d", n)
 	}
 
 	// An unknown key, a message without questions, a missing message.
@@ -112,7 +100,52 @@ func TestV3IgnoreKeepsExplicitNeedsYou(t *testing.T) {
 		t.Fatalf("ignore: %d", code)
 	}
 	bt := boardTaskOf(t, e, tk["task_id"])
-	if bt["needs_you"] != true || bt["status"] != "needs_you" || bt["open_questions"].(float64) != 0 {
+	if bt["status"] != "needs_you" || bt["open_questions"].(float64) != 0 {
 		t.Fatalf("task = %v", bt)
+	}
+}
+
+// NEEDS YOU is the tasks set to needs_you: an open question (however old) never puts a task or a
+// question there, and the per-agent count is the agent's needs_you tasks, not its open questions.
+func TestBoardNeedsYouIsTaskStatusOnly(t *testing.T) {
+	e := newEnv(t)
+	sess := e.createSession()
+	e.personSays(sess, "two things")
+	asked := e.newTask(sess, "Asked")
+	waits := e.newTask(sess, "Waits")
+	e.agentSays(sess, map[string]any{"task_id": asked, "body": ":::question\nShip now?\n- [ ] Yes\n- [ ] No\n:::"})
+	// A question with no task at all.
+	e.agentSays(sess, map[string]any{"body": ":::question\nAnything else?\n- [ ] Yes\n- [ ] No\n:::"})
+	if code, obj, _ := e.do("PATCH", "/api/agent/tasks/"+waits, map[string]any{"status": "needs_you"}, bearer(sess)); code != 200 {
+		t.Fatalf("needs_you: %d %v", code, obj)
+	}
+	e.agentSays(sess, map[string]any{"task_id": waits, "body": "Please check the gauge."})
+
+	_, board, _ := e.do("GET", "/api/v3/board", nil, nil)
+	if _, ok := board["questions"]; ok {
+		t.Fatalf("per-question entries on the Board: %v", board["questions"])
+	}
+	needs := []string{}
+	for _, x := range board["tasks"].([]any) {
+		bt := x.(map[string]any)
+		if _, ok := bt["needs_you"]; ok {
+			t.Fatalf("a derived needs_you on %v", bt)
+		}
+		if bt["status"] == "needs_you" {
+			needs = append(needs, bt["id"].(string))
+		}
+	}
+	if len(needs) != 1 || needs[0] != waits {
+		t.Fatalf("needs you = %v, want [%s]", needs, waits)
+	}
+	if bt := boardTaskOf(t, e, asked); bt["status"] != "working" || bt["open_questions"].(float64) != 1 {
+		t.Fatalf("asked = %v", bt)
+	}
+	a := board["agents"].(map[string]any)[sess.ID].(map[string]any)
+	if a["needs_you"].(float64) != 1 {
+		t.Fatalf("agent counts = %v", a)
+	}
+	if _, ok := a["open_questions"]; ok {
+		t.Fatalf("agent counts open questions: %v", a)
 	}
 }

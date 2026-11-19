@@ -54,10 +54,10 @@ test('add a host: Direct, find it, pair with a code accepted there, then run a s
     await expect(page.getByTestId('host-tag').first()).toHaveText('devbox')
     await expectTerminal(page, 'ready>')
 
-    // The mod's calls go through the host's relay: its question waits on the Board, a message from its stream reaches it.
+    // The mod's calls go through the host's relay: its question waits in its stream, a message from its stream reaches it.
     await typeInTerminal(page, 'ask')
     await expectTerminal(page, /sent question in thr_/)
-    await expect(page.getByTestId('board-badge')).toHaveText('1')
+    await expect(page.locator('[data-testid="question"][data-open="true"]').first()).toBeVisible()
     await page.getByTestId('composer-text').fill('SQLite it is')
     await page.getByTestId('composer-send').click()
     await expectTerminal(page, '<<< inbox')

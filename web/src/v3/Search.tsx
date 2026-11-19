@@ -72,7 +72,7 @@ export function SearchView() {
             {res.tasks.map((t) => (
               <button type="button" key={t.id} className="v-res" data-testid="search-task" onClick={() => nav.task(t.id)}>
                 <div>
-                  <StatusDot t={{ ...t, needs_you: t.status === 'needs_you' }} /> {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
+                  <StatusDot t={t} /> {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
                   <Hl s={t.title} q={qq} />
                 </div>
                 <div className="v-k">

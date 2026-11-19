@@ -357,7 +357,7 @@ func navThreadLine(t any) string {
 
 var taskStatuses = []string{"working", "needs_you", "blocked", "done"}
 
-const taskStatusGuide = "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take); asking a :::question already shows it. blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped."
+const taskStatusGuide = "working: you are on it (the default). needs_you: you are blocked on the person (a decision, an answer, an action only they can take), also while a question you asked waits on their answer (an open question alone does not put the task in NEEDS YOU). blocked: you wait on something outside them (CI, another session). done: finished, delivered, or dropped."
 
 func stepsSchema() jobj {
 	return jobj{

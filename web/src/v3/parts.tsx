@@ -175,7 +175,7 @@ export function TaskBadge({ task, tasks }: { task: TaskRef; tasks: Task[] }) {
   const t = tasks.find((x) => x.id === task.task_id)
   return (
     <span className="v-tbadge" data-testid="task-badge" data-task={task.task_id}>
-      <StatusDot t={{ status: t?.status ?? task.status, kind: t?.kind ?? '', needs_you: (t as BoardTask | undefined)?.needs_you }} />
+      <StatusDot t={{ status: t?.status ?? task.status, kind: t?.kind ?? '' }} />
       <TaskChip task={task} shortN={60} goal={t?.kind === 'goal'} />
     </span>
   )
@@ -198,8 +198,9 @@ export function WorkingLine({ name, after }: { name: string; after?: ReactNode }
   )
 }
 
-export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'> & { needs_you?: boolean; open_questions?: number }; live?: boolean }) {
-  const c = t.needs_you || (t.open_questions ?? 0) > 0 || t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : t.kind === 'goal' ? 'd-goal' : 'd-work'
+/** A task's status dot: amber only when it is set to needs you (its open questions do not change it). */
+export function StatusDot({ t, live }: { t: Pick<BoardTask, 'status' | 'kind'>; live?: boolean }) {
+  const c = t.status === 'needs_you' ? 'd-wait' : t.status === 'blocked' ? 'd-block' : t.status === 'done' ? 'd-done' : t.kind === 'goal' ? 'd-goal' : 'd-work'
   // A working task's blue dot pulses like a working agent's dot (v-live), wherever it is shown.
   return <span className={`v-dot ${c}${live || c === 'd-work' ? ' v-live' : ''}`} data-status={t.status} />
 }
@@ -210,7 +211,7 @@ export function Bar({ t, count = true }: { t: BoardTask | Task; count?: boolean 
   const items: Step[] = isGoal ? t.criteria : leaves(t.steps)
   if (!items.length) return null
   const cur = isGoal ? undefined : currentStep(t.steps)
-  const q = (t as BoardTask).needs_you
+  const q = t.status === 'needs_you'
   return (
     <>
       <div className="v-bar" data-testid="progress">
@@ -317,7 +318,7 @@ export function TaskPicker({ tasks, exclude, head, onPick, onClose }: { tasks: T
       />
       {opts.map((t, i) => (
         <button type="button" key={t.id} className={'v-opt' + (i === cur ? ' sel' : '')} data-testid="task-option" onClick={() => onPick({ task_id: t.id })}>
-          <StatusDot t={{ ...t, needs_you: t.status === 'needs_you' }} />
+          <StatusDot t={t} />
           {t.kind === 'goal' && <IconGoal size={14} className="v-goal" />}
           {t.title}
         </button>

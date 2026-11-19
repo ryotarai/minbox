@@ -1,26 +1,25 @@
-// The Board (home): "what needs me, and what is moving?" NEEDS YOU first (compact question rows, then tasks
-// set to needs you), then GOALS with their tasks, WORKING (active in the last 3 days), BLOCKED, and,
-// folded, QUIET (open but quiet longer) and DONE (the last 2 days).
+// The Board (home): "what needs me, and what is moving?" NEEDS YOU first (the tasks and goals set to
+// needs you: their status decides, an open question alone never puts anything there), then GOALS with
+// their tasks, WORKING (active in the last 3 days), BLOCKED, and, folded, QUIET (open but quiet longer)
+// and DONE (the last 2 days). Questions are answered where they were asked (the task, the agent's stream).
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
-import { ago, short, standing, unreadCls, v3, type Board, type BoardTask, type V3Message } from './data'
+import { ago, short, standing, unreadCls, v3, type Board, type BoardTask } from './data'
 import { TaskRowMenu } from './RenameTask'
 import { IconGoal, IconMore, IconPlus } from '../components/icons'
-import { MenuItem, Popover, type MenuAt } from '../components/ui'
-import type { Question } from '../api'
-import { Bar, StatusDot, agentName, openQuestions, useNav, useSessionsById } from './parts'
+import { type MenuAt } from '../components/ui'
+import { Bar, StatusDot, agentName, useNav, useSessionsById } from './parts'
 
 export type BoardFocus = { key: string | null }
 
 const QUIET_AFTER = 3 * 24 * 3600 * 1000
 const DONE_WINDOW = 2 * 24 * 3600 * 1000
 
-export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string>, showQuiet = false): string[] {
+export function boardKeys(b: Board | null, showDone: boolean, showQuiet = false): string[] {
   if (!b) return []
-  const g = groups(b, hidden)
+  const g = groups(b)
   return [
-    ...g.questions.map((m) => 'q:' + m.id),
     ...g.explicit.map((t) => 't:' + t.id),
     ...g.goals.flatMap((t) => ['t:' + t.id, ...g.childrenOf(t.id).map((c) => 't:' + c.id)]),
     ...g.working.map((t) => 't:' + t.id),
@@ -30,63 +29,36 @@ export function boardKeys(b: Board | null, showDone: boolean, hidden: Set<string
   ]
 }
 
-/** What NEEDS YOU counts: its question cards and its rows, the very entries it shows (the Board's header, the sidebar badge, the tab title). */
-export function needsCount(b: Board | null, hidden: Set<string>): number {
+/** What NEEDS YOU counts: its rows (tasks and goals set to needs you), the very entries it shows (the Board's header, the sidebar badge, the tab title). */
+export function needsCount(b: Board | null): number {
   if (!b) return 0
-  const g = groups(b, hidden)
-  return g.questions.length + g.explicit.length
+  return groups(b).explicit.length
 }
 
-/** What a task set to needs you without a question waits on: where it stands (summary, else report, else
+/** What a task set to needs you waits on: where it stands (summary, else report, else
  *  the agent's latest line about it; see standing), never its step. */
 export function needsWhat(t: BoardTask): string {
   const s = standing(t)
   return s && s.from !== 'step' ? s.text : 'Set to needs you — open it to see what it waits on'
 }
 
-/** A NEEDS YOU row's ask in one line: the first question's prompt (+n for the others), or the first thing to do (+n). Never empty. */
-export function askText(qs: Question[]): string {
-  const line = (q: Question) => q.prompt.trim().split('\n')[0]!.trim()
-  const asks = qs.filter((q) => q.kind !== 'action')
-  const acts = qs.filter((q) => q.kind === 'action')
-  if (asks.length) {
-    const more = asks.length - 1 + acts.length
-    const p = line(asks[0]!) || (asks[0]!.kind === 'text' ? 'an answer' : 'a choice')
-    return more ? `${p} +${more}` : p
-  }
-  if (!acts.length) return 'a question'
-  const p = line(acts[0]!) || (acts.length > 1 ? `${acts.length} things to do` : 'a thing to do')
-  return acts.length > 1 ? `${p} +${acts.length - 1}` : p
-}
-
-/** Where a question is answered: its task, at the question (else the agent's stream, at it). */
-export function openAsk(nav: ReturnType<typeof useNav>, m: V3Message) {
-  if (m.tasks[0]) nav.task(m.tasks[0].task_id, m.id)
-  else nav.agent(m.session_id, m.id)
-}
-
-export function groups(b: Board, hidden: Set<string>) {
-  // A message counts as a card only while it has a question left to show (a card with none would be empty).
-  const questions = b.questions.filter((m) => !hidden.has(m.id) && openQuestions(m).length > 0)
+export function groups(b: Board) {
   const open = b.tasks.filter((t) => t.status !== 'done')
   const goals = open.filter((t) => t.kind === 'goal')
   const goalIds = new Set(goals.map((g) => g.id))
   const loose = open.filter((t) => t.kind !== 'goal' && !(t.parent_id && goalIds.has(t.parent_id)))
-  const hasQ = (t: BoardTask) => questions.some((m) => m.tasks.some((tg) => tg.task_id === t.id))
   const byActivity = (a: BoardTask, z: BoardTask) => (a.last_activity < z.last_activity ? 1 : -1)
   const quietNow = (t: BoardTask) => Date.now() - new Date(t.last_activity).getTime() > QUIET_AFTER
-  // Set to needs you without a question card: a row in NEEDS YOU. A task whose question is on a card
-  // is not repeated as a row (the card is the thing to act on, and names the task).
-  const explicit = open.filter((t) => t.status === 'needs_you' && !hasQ(t) && !(t.parent_id && goalIds.has(t.parent_id))).sort(byActivity)
-  // A task whose question is on a card still shows in its group below (its progress, with "? n").
+  // Set to needs you (by the agent or the person): a row in NEEDS YOU. Open questions do not count: a
+  // task with one stays in its group below, with "? n" on its row.
+  const explicit = open.filter((t) => t.status === 'needs_you' && !(t.parent_id && goalIds.has(t.parent_id))).sort(byActivity)
   const rest = loose.filter((t) => !explicit.includes(t))
   return {
-    questions: questions.sort((a, z) => (a.created_at < z.created_at ? 1 : -1)),
     explicit,
     // A goal set to needs you is a row in NEEDS YOU (with its tasks), not again in GOALS.
     goals: goals.filter((t) => !explicit.includes(t)).sort(byActivity),
     childrenOf: (id: string) => open.filter((t) => t.parent_id === id && t.kind !== 'goal').sort(byActivity),
-    working: rest.filter((t) => (t.status === 'working' || t.status === 'needs_you') && !quietNow(t)).sort(byActivity),
+    working: rest.filter((t) => t.status === 'working' && !quietNow(t)).sort(byActivity),
     blocked: rest.filter((t) => t.status === 'blocked' && !quietNow(t)).sort(byActivity),
     quiet: rest.filter((t) => quietNow(t)).sort(byActivity),
     done: b.tasks.filter((t) => t.status === 'done' && Date.now() - new Date(t.done_at ?? t.updated_at).getTime() < DONE_WINDOW).sort((a, z) => ((a.done_at ?? '') < (z.done_at ?? '') ? 1 : -1)),
@@ -102,9 +74,7 @@ export function BoardView({
   setShowDone,
   showQuiet,
   setShowQuiet,
-  hidden,
   onRename,
-  onIgnore,
 }: {
   board: Board | null
   reload: () => void
@@ -114,11 +84,8 @@ export function BoardView({
   setShowDone: (v: boolean) => void
   showQuiet: boolean
   setShowQuiet: (v: boolean) => void
-  hidden: Set<string>
   /** Rename a task (its row menu): the dialog is the app's, as for E / F2 on the focused row. */
   onRename?: (t: BoardTask) => void
-  /** Ignore a question row's open questions (its menu, I on the focused row): the app's, with Undo. */
-  onIgnore?: (m: V3Message) => void
 }) {
   const { setOverlay, error } = useApp()
   const { project } = useSelectedProject()
@@ -126,99 +93,13 @@ export function BoardView({
   const nav = useNav()
   const [dropping, setDropping] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ t: BoardTask; at: MenuAt } | null>(null)
-  const [qmenu, setQmenu] = useState<{ m: V3Message; at: MenuAt } | null>(null)
   if (!board) return <div className="v-col"><div className="v-empty">Loading…</div></div>
-  const g = groups(board, hidden)
-  const needsN = needsCount(board, hidden)
+  const g = groups(board)
+  const needsN = needsCount(board)
   const openN = board.tasks.filter((t) => t.status !== 'done').length
 
   const setStatus = (t: BoardTask, status: BoardTask['status']) => {
     v3.patchTask(t.id, { status }).then(reload).catch(error)
-  }
-  // A question waiting on the person: one compact row like the others (the ask, its task, progress,
-  // links, age). It is answered in the task (or the agent's stream): a click or Enter opens the task
-  // at the question.
-  const qrow = (m: V3Message) => {
-    const k = 'q:' + m.id
-    const qs = openQuestions(m)
-    if (!qs.length) return null
-    const t = m.tasks.map((x) => board.tasks.find((bt) => bt.id === x.task_id)).find((x): x is BoardTask => !!x)
-    const title = t?.title ?? m.tasks[0]?.title
-    const live = byId.get(m.session_id)?.status === 'working'
-    const pr = t?.links?.find((l) => l.kind === 'pr') ?? t?.links?.[0]
-    const ask = askText(qs)
-    return (
-      <div
-        key={m.id}
-        className={'v-row' + (focus === k ? ' focus' : '')}
-        data-key={k}
-        data-testid="question-card"
-        data-message={m.id}
-        onContextMenu={(e) => {
-          if ((e.target as Element).closest('a[href], input, textarea, select') || e.defaultPrevented) return
-          e.preventDefault()
-          setFocus(k)
-          setQmenu({ m, at: { el: e.currentTarget, x: e.clientX, y: e.clientY } })
-        }}
-      >
-        <div
-          className="v-line"
-          onClick={() => {
-            setFocus(k)
-            openAsk(nav, m)
-          }}
-        >
-          <div>
-            <div className="v-ti">
-              <StatusDot t={{ status: 'needs_you', needs_you: true, kind: '' }} live={live} />
-              <span className="v-t" data-testid="ask" title={ask}>
-                <b className="v-you">you: </b>
-                {ask}
-              </span>
-            </div>
-            <div className="v-sub">
-              <span className={live ? 'v-livename' : ''}>
-                {agentName(byId, m.session_id)}
-                {live ? ' · working now' : ''}
-              </span>
-              {t && <Bar t={t} />}
-              {title && (
-                <span className="v-last" data-testid="ask-task" title={title}>
-                  {title}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="v-ext">
-            {pr && (
-              <a href={pr.url} target="_blank" rel="noreferrer" className="v-link" onClick={(e) => e.stopPropagation()}>
-                {pr.label}
-                {pr.state ? ` · ${pr.state}` : ''}
-              </a>
-            )}
-            {onIgnore && (
-              <button
-                type="button"
-                className="v-more"
-                data-testid="question-row-more"
-                aria-label="Question actions"
-                title="Open, ignore (right-click)"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setFocus(k)
-                  setQmenu({ m, at: { el: e.currentTarget } })
-                }}
-              >
-                <IconMore size={14} />
-              </button>
-            )}
-          </div>
-          <div className="v-age" title="asked">
-            {ago(m.created_at)}
-          </div>
-        </div>
-      </div>
-    )
   }
   const row = (t: BoardTask, child = false, needs = false) => {
     const k = 't:' + t.id
@@ -351,7 +232,7 @@ export function BoardView({
         <div className="v-r2 v-sum">
           {project?.name ?? 'All projects'} · <b data-testid="needs-count" style={needsN ? undefined : { color: 'inherit', fontWeight: 400 }}>{needsN} need you</b> · {g.working.length} working{g.blocked.length ? ` · ${g.blocked.length} blocked` : ''} · {openN} open
           <span className="v-hide-phone" style={{ marginLeft: 'auto' }}>
-            J/K move · ↵ open · X done · I ignore
+            J/K move · ↵ open · X done
           </span>
         </div>
       </div>
@@ -362,7 +243,6 @@ export function BoardView({
           'needs_you',
           needsN,
           <>
-            {g.questions.map(qrow)}
             {g.explicit.map((t) => row(t, false, true))}
             {needsN === 0 && <div className="v-empty">Nothing needs you. New work: ⇧N.</div>}
           </>,
@@ -404,30 +284,6 @@ export function BoardView({
           onOpen={() => nav.task(menu.t.id)}
           onToggleDone={() => setStatus(menu.t, menu.t.status === 'done' ? 'working' : 'done')}
         />
-      )}
-      {qmenu && (
-        <Popover anchor={null} at={qmenu.at} open onClose={() => setQmenu(null)} testid="question-row-menu">
-          <MenuItem
-            testid="menu-open-question"
-            hint="↵"
-            onClick={() => {
-              setQmenu(null)
-              openAsk(nav, qmenu.m)
-            }}
-          >
-            Open
-          </MenuItem>
-          <MenuItem
-            testid="menu-ignore-question"
-            hint="I"
-            onClick={() => {
-              setQmenu(null)
-              onIgnore?.(qmenu.m)
-            }}
-          >
-            Ignore{openQuestions(qmenu.m).length > 1 ? ` (${openQuestions(qmenu.m).length} questions)` : ''}
-          </MenuItem>
-        </Popover>
       )}
     </div>
   )
