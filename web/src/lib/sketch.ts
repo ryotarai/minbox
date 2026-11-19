@@ -31,6 +31,11 @@ export const WIDTHS = [2, 4, 7]
 export const TEXT_BASE = 18
 
 export const textSize = (s: Pick<Shape, 'width'>) => TEXT_BASE + s.width * 3
+/** Line height of multi-line text, as a multiple of the font size. */
+export const TEXT_LINE_HEIGHT = 1.25
+
+/** The lines of a text shape (it may hold newlines). */
+export const textLines = (text: string | undefined) => (text ?? '').split(/\r\n|\r|\n/)
 
 /** Snaps the vector a->b to the nearest 45 degree step. */
 export function snap45(ax: number, ay: number, bx: number, by: number): [number, number] {
@@ -87,7 +92,9 @@ export function shapeBounds(s: Shape) {
   }
   if (s.kind === 'text') {
     const size = textSize(s)
-    return { x: s.x1, y: s.y1 - size, w: Math.max(size, (s.text ?? '').length * size * 0.6), h: size * 1.25 }
+    const lines = textLines(s.text)
+    const longest = Math.max(...lines.map((l) => l.length))
+    return { x: s.x1, y: s.y1 - size, w: Math.max(size, longest * size * 0.6), h: size * 1.25 + (lines.length - 1) * size * TEXT_LINE_HEIGHT }
   }
   return normBox(s)
 }

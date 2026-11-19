@@ -73,7 +73,7 @@ test('draw shapes in the reply box, attach the PNG, and send it', async ({ page,
   const b = await canvasBox(page)
   await page.mouse.click(b.x + 60, b.y + 320)
   await page.getByTestId('sketch-text-input').fill('Hello')
-  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await expect(shapes(page)).toHaveCount(5)
   await expect(shapes(page).nth(0)).toHaveAttribute('data-kind', 'rect')
   await expect(shapes(page).nth(1)).toHaveAttribute('data-kind', 'ellipse')
@@ -356,7 +356,7 @@ test('double-click on a text edits it, from the select tool and from other tools
   await tool(page, 'text')
   await page.mouse.click(b.x + 100, b.y + 100)
   await page.getByTestId('sketch-text-input').fill('Hello')
-  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await tool(page, 'rect')
   await drag(page, [300, 200], [400, 260])
   await expect(shapes(page)).toHaveCount(2)
@@ -365,13 +365,13 @@ test('double-click on a text edits it, from the select tool and from other tools
   const at = { x: tb.x + tb.width / 2, y: tb.y + tb.height / 2 }
   const input = page.getByTestId('sketch-text-input')
 
-  // From the rectangle tool: edit, change, Enter commits.
+  // From the rectangle tool: edit, change, ⌘/Ctrl+Enter commits.
   await page.mouse.dblclick(at.x, at.y)
   await expect(input).toBeVisible()
   await expect(input).toHaveValue('Hello')
   await expect(modal(page).getByTestId('sketch-tool-select')).toHaveAttribute('aria-pressed', 'true')
   await input.fill('World')
-  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await expect(input).toBeHidden()
   await expect(shapes(page)).toHaveCount(2)
   await expect(shapes(page).nth(0)).toContainText('World')
@@ -390,7 +390,7 @@ test('double-click on a text edits it, from the select tool and from other tools
   await page.mouse.dblclick(at.x, at.y)
   await expect(input).toHaveValue('World')
   await input.fill('')
-  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await expect(shapes(page)).toHaveCount(1)
 
   // A double-click on a rectangle does nothing special.
@@ -398,6 +398,98 @@ test('double-click on a text edits it, from the select tool and from other tools
   await page.mouse.dblclick(b.x + 350, b.y + 200)
   await expect(input).toHaveCount(0)
   await expect(shapes(page)).toHaveCount(1)
+})
+
+test('text: an IME Enter never finishes it, Enter adds a line, ⌘/Ctrl+Enter finishes; two lines render and export', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  await page.goto(minbox.url)
+  await openStream(page, minbox, 'sk-ml')
+  await page.getByTestId('compose-draw').click()
+  await expect(modal(page)).toBeVisible()
+  const b = await canvasBox(page)
+  await tool(page, 'text')
+  await page.mouse.click(b.x + 100, b.y + 100)
+  const input = page.getByTestId('sketch-text-input')
+  await expect(input).toBeFocused()
+  await expect(modal(page).getByTestId('sketch-text-hint')).toContainText('to finish')
+  await page.keyboard.type('日本語')
+
+  // A composition: the Enter that confirms it (isComposing, keyCode 229, or Safari's Enter just
+  // after compositionend), with or without ⌘/Ctrl, and an Esc during it, all leave it editing.
+  await input.evaluate((el) => {
+    const key = (init: KeyboardEventInit) => el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+    key({ key: 'Enter', isComposing: true })
+    key({ key: 'Enter', isComposing: true, metaKey: true, ctrlKey: true })
+    key({ key: 'Escape', isComposing: true })
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本語' }))
+    key({ key: 'Enter', ctrlKey: true, metaKey: true })
+    key({ key: 'Enter', keyCode: 229 } as KeyboardEventInit)
+  })
+  await expect(input).toBeVisible()
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('日本語')
+  await expect(shapes(page)).toHaveCount(0)
+
+  // A plain Enter inserts a newline.
+  await page.keyboard.press('Enter')
+  await expect(input).toBeVisible()
+  await expect(input).toHaveValue('日本語\n')
+  await page.keyboard.type('second line')
+  await expect(input).toHaveValue('日本語\nsecond line')
+  if (process.env.SKETCH_SHOT) await page.screenshot({ path: process.env.SKETCH_SHOT })
+
+  // ⌘/Ctrl+Enter finishes it: one text shape, drawn on two lines.
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(input).toBeHidden()
+  await expect(modal(page)).toBeVisible()
+  await expect(shapes(page)).toHaveCount(1)
+  const text = shapes(page).nth(0)
+  const tspans = text.locator('text tspan')
+  await expect(tspans).toHaveCount(2)
+  await expect(tspans.nth(0)).toHaveText('日本語')
+  await expect(tspans.nth(1)).toHaveText('second line')
+  const y0 = Number(await tspans.nth(0).getAttribute('y'))
+  const y1 = Number(await tspans.nth(1).getAttribute('y'))
+  expect(y1 - y0).toBeGreaterThan(20)
+  // The bounds (selection, hit area) cover both lines.
+  expect(await num(text, 'data-h')).toBeGreaterThan(y1 - y0 + 20)
+  if (process.env.SKETCH_SHOT) await page.screenshot({ path: process.env.SKETCH_SHOT.replace(/\.png$/, '-committed.png') })
+
+  // A click on the second line hits it: double-click edits with the newline kept; Esc cancels.
+  await tool(page, 'select')
+  const l2 = (await tspans.nth(1).boundingBox())!
+  await page.mouse.dblclick(l2.x + l2.width / 2, l2.y + l2.height / 2)
+  await expect(input).toBeVisible()
+  await expect(input).toHaveValue('日本語\nsecond line')
+  await page.keyboard.press('Escape')
+  await expect(input).toBeHidden()
+  await expect(modal(page)).toBeVisible()
+  await expect(tspans).toHaveCount(2)
+
+  // Switching tool while editing finishes the text.
+  await tool(page, 'text')
+  await page.mouse.click(b.x + 400, b.y + 300)
+  await expect(input).toBeFocused()
+  await page.keyboard.type('a')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('b')
+  await tool(page, 'rect')
+  await expect(input).toBeHidden()
+  await expect(shapes(page)).toHaveCount(2)
+  await expect(shapes(page).nth(1).locator('text tspan')).toHaveCount(2)
+  await page.getByTestId('sketch-undo').click()
+  await expect(shapes(page)).toHaveCount(1)
+
+  // The exported PNG holds both lines: taller than one line of this size would make.
+  await page.getByTestId('sketch-done').click()
+  await expect(modal(page)).toBeHidden()
+  await expect(page.getByTestId('compose-file')).toHaveAttribute('data-state', 'done')
+  await page.getByTestId('composer-text').fill('Two lines')
+  await page.getByTestId('composer-send').click()
+  const img = await sentImage(page)
+  // Scale 2, 24px padding each side, 30px text with a 1.25 line height: one line is about 170px.
+  expect(img.h).toBeGreaterThan(215)
 })
 
 test('white is the 7th color; a white shape keeps #ffffff', async ({ page, minbox }) => {
