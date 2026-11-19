@@ -121,19 +121,56 @@ func TestStalePromptTextChange(t *testing.T) {
 	e.wantStale(sess.ID, "prompt")
 }
 
-// An agent started before minbox recorded what it loaded, a shell, a host that does not report
-// its plugins: never stale.
-func TestStaleUnknownNeverCounts(t *testing.T) {
+// A running agent started before minbox recorded what it loaded: stale for "unknown", with a stable
+// run_version for Dismiss; a restart records the current ones and clears it.
+func TestStaleUnrecordedRunningAgent(t *testing.T) {
 	e := newEnv(t)
+	ctx := context.Background()
 	sess := e.createSession()
-	_ = e.st.SetSessionRun(context.Background(), sess.ID, "", "")
+	_ = e.st.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
+	_ = e.st.SetSessionRun(ctx, sess.ID, "", "")
 	e.srv.sessions.cfg.PluginDir = "/elsewhere"
-	_ = e.st.PutSettings(context.Background(), map[string]json.RawMessage{"prompt_extra": json.RawMessage(`"x"`)})
+	_ = e.st.PutSettings(ctx, map[string]json.RawMessage{"prompt_extra": json.RawMessage(`"x"`)})
+	e.wantStale(sess.ID, "unknown")
+	if v := e.listed(sess.ID)["run_version"]; v != "unrecorded" {
+		t.Fatalf("run_version = %v", v)
+	}
+
+	// Ended: never stale, recorded or not.
+	_ = e.st.SetSessionEnded(ctx, sess.ID, 0)
 	e.wantStale(sess.ID)
 
-	shell := &store.Session{ID: "sh", Kind: store.KindShell, Status: store.StatusIdle, RunPlugin: "a", RunPrompt: "b"}
-	if r := e.srv.sessions.staleReasons(nil, shell); r != nil {
-		t.Fatalf("a shell is stale: %v", r)
+	// Restart: spawn records what it loaded, so the agent is current.
+	if code, _, _ := e.do("POST", "/api/sessions/"+sess.ID+"/restart", nil, nil); code != 200 {
+		t.Fatalf("restart: %d", code)
+	}
+	got, _ := e.st.GetSession(ctx, sess.ID)
+	if got.RunPlugin != termhost.PluginID("/elsewhere") || got.RunPrompt == "" {
+		t.Fatalf("restart did not record: plugin %q prompt %q", got.RunPlugin, got.RunPrompt)
+	}
+	_ = e.st.SetSessionStatus(ctx, sess.ID, store.StatusIdle)
+	e.wantStale(sess.ID)
+	if v := e.listed(sess.ID)["run_version"]; v != got.RunPlugin+"."+got.RunPrompt {
+		t.Fatalf("run_version after restart = %v", v)
+	}
+}
+
+// A shell (recorded or not) and an ended agent with nothing recorded: never stale.
+func TestStaleUnrecordedShellAndEndedAreNot(t *testing.T) {
+	e := newEnv(t)
+	m := e.srv.sessions
+	for _, sess := range []*store.Session{
+		{ID: "sh", Kind: store.KindShell, Status: store.StatusIdle},
+		{ID: "sh2", Kind: store.KindShell, Status: store.StatusWorking, RunPlugin: "a", RunPrompt: "b"},
+		{ID: "ended", Kind: store.KindClaude, Agent: agent.Claude, Status: store.StatusEnded},
+	} {
+		if r := m.staleReasons(nil, sess); r != nil {
+			t.Fatalf("%s is stale: %v", sess.ID, r)
+		}
+		e.srv.withStale(nil, sess)
+		if sess.Stale || (sess.ID == "sh" && sess.RunVersion != "") {
+			t.Fatalf("%s: stale %v run_version %q", sess.ID, sess.Stale, sess.RunVersion)
+		}
 	}
 }
 
@@ -166,5 +203,19 @@ func TestStaleRemoteHostPlugin(t *testing.T) {
 	c.setVersion(termhost.VersionInfo{}, 0)
 	if r := m.staleReasons(nil, sess); r != nil {
 		t.Fatalf("unknown host plugins count as stale: %v", r)
+	}
+	// A start there records only the instructions: still not stale.
+	fresh := &store.Session{ID: "r2", Kind: store.KindClaude, Agent: agent.Claude, HostID: "h1", Status: store.StatusIdle}
+	fresh.RunPlugin, fresh.RunPrompt = m.runVersion(context.Background(), fresh)
+	if fresh.RunPlugin != "" {
+		t.Fatalf("plugin of a host that reports none = %q", fresh.RunPlugin)
+	}
+	if r := m.staleReasons(nil, fresh); r != nil {
+		t.Fatalf("agent on a host without plugin reports is stale: %v", r)
+	}
+	// An agent there with nothing recorded was started before the record: unknown, as anywhere.
+	old := &store.Session{ID: "r3", Kind: store.KindClaude, Agent: agent.Claude, HostID: "h1", Status: store.StatusIdle}
+	if r := m.staleReasons(nil, old); !slices.Equal(r, []string{"unknown"}) {
+		t.Fatalf("unrecorded remote agent reasons = %v", r)
 	}
 }

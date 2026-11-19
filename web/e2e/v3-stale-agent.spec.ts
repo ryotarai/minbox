@@ -3,7 +3,8 @@
 // Dismiss for this version. The change here is the person's prompt setting (prompt_extra): it is
 // part of the instructions an agent gets at its start, so a running agent has the older text until
 // it restarts, the same as after a minbox upgrade with new prompts or a new mod.
-import { mkdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures'
@@ -68,6 +69,40 @@ test('Dismiss hides the notice for this version of the agent, across reloads', a
   await page.waitForTimeout(500)
   await expect(banner).toHaveCount(0)
   expect(await staleOf(minbox, a.id)).toBe(true)
+})
+
+// An agent started by a minbox from before the record (its run_plugin / run_prompt are empty): what
+// it loaded is not known, so it needs a restart too.
+test('an agent with nothing recorded shows the banner; Dismiss holds across reloads; Restart clears it', async ({ page, minbox }) => {
+  const a = await startAgent(minbox, 'api')
+  const db = readdirSync(minbox.dataDir).find((f) => f.endsWith('.db'))
+  if (!db) throw new Error('no database in ' + minbox.dataDir)
+  execFileSync('sqlite3', [join(minbox.dataDir, db)], { input: `.timeout 5000\nUPDATE sessions SET run_plugin='', run_prompt='' WHERE id='${a.id}';\n` })
+  await page.goto(minbox.url)
+  await page.getByTestId('agent-row').filter({ hasText: 'api' }).click()
+  const banner = page.getByTestId('stale-agent-banner')
+  const mark = page.getByTestId('agent-row').filter({ hasText: 'api' }).getByTestId('agent-stale-mark')
+  await expect(banner).toBeVisible()
+  await expect(banner).toHaveAttribute('data-reasons', 'unknown')
+  await expect(banner).toContainText('started by an older minbox')
+  await expect(mark).toBeVisible()
+  await snap(page, 'desktop-unknown')
+
+  // Dismiss: the key (run_version "unrecorded") is stable, so it holds across a reload.
+  await page.getByTestId('stale-agent-dismiss').click()
+  await expect(banner).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('stream-view')).toBeVisible()
+  await page.waitForTimeout(500)
+  await expect(banner).toHaveCount(0)
+  await expect(mark).toHaveCount(0)
+  expect(await staleOf(minbox, a.id)).toBe(true)
+
+  // Restart: spawn records what it loaded, so the agent is no longer stale.
+  await api(minbox, 'POST', `/api/sessions/${a.id}/restart`)
+  await expect.poll(() => minbox.log, { timeout: 20_000 }).toMatch(new RegExp(`modconn: spawn session=${a.id} resume=true`))
+  await expect.poll(() => staleOf(minbox, a.id), { timeout: 20_000 }).toBe(false)
+  expect((await api(minbox, 'GET', '/api/sessions')).find((x: any) => x.id === a.id)?.run_version).not.toBe('unrecorded')
 })
 
 test.describe('phone', () => {

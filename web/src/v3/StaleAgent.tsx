@@ -48,6 +48,11 @@ export function useStaleShown(s: Session): boolean {
   return !!s.stale && s.kind !== 'shell' && s.status !== 'ended' && dismissed[s.id] !== dismissKey(s)
 }
 
+/** Started by a minbox from before the record: what it loaded is not known. */
+function unknown(s: Session): boolean {
+  return (s.stale_reasons ?? []).includes('unknown')
+}
+
 /** What is older, in words. */
 function what(s: Session): string {
   const r = s.stale_reasons ?? []
@@ -71,7 +76,11 @@ export function StaleAgentBanner({ session }: { session: Session }) {
   return (
     <div className="v-stale" role="status" data-testid="stale-agent-banner" data-reasons={(session.stale_reasons ?? []).join(' ')}>
       <span className="v-stale-dot" aria-hidden="true" />
-      <span className="v-stale-txt">This agent is running {what(session)}. Restart it to pick up the changes.</span>
+      <span className="v-stale-txt">
+        {unknown(session)
+          ? 'This agent was started by an older minbox. Restart it to pick up the current mod and instructions.'
+          : `This agent is running ${what(session)}. Restart it to pick up the changes.`}
+      </span>
       <span className="v-stale-acts">
         <button type="button" className="v-btn pri" data-testid="stale-agent-restart" disabled={busy} title="Restart the agent: it resumes its conversation with the current minbox" onClick={restart}>
           {busy ? 'Restarting…' : 'Restart'}
@@ -88,5 +97,5 @@ export function StaleAgentBanner({ session }: { session: Session }) {
 export function StaleMark({ session }: { session: Session }) {
   const shown = useStaleShown(session)
   if (!shown) return null
-  return <span className="v-stale-mark" data-testid="agent-stale-mark" role="img" aria-label="Restart needed" title={`Running ${what(session)}: restart the agent to pick up the changes`} />
+  return <span className="v-stale-mark" data-testid="agent-stale-mark" role="img" aria-label="Restart needed" title={unknown(session) ? 'Started by an older minbox: restart the agent to pick up the current mod and instructions' : `Running ${what(session)}: restart the agent to pick up the changes`} />
 }
