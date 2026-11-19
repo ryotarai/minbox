@@ -213,7 +213,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
         detail: shortDir(p.dir, 40) + (p.host_id !== 'local' ? ` · ${p.host_name ?? p.host_id}` : ''),
         keywords: `project ${p.dir} ${p.host_name ?? ''}`,
         leading: <ProjectDot stat={stats.get(p.id)} size={8} />,
-        waiting: (stats.get(p.id)?.waiting ?? 0) > 0,
+        waiting: (stats.get(p.id)?.needsYou ?? 0) > 0,
         run: () => selectProject(p.id),
       })),
     [projects, stats],
