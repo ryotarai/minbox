@@ -25,14 +25,26 @@ import (
 //
 // spawn records both (store.Session.RunPlugin / RunPrompt); withStale compares them with what a
 // start would load now. Everything is content-based: restarting the server with the same binary
-// and settings changes nothing. An agent started before minbox recorded these, a shell, an ended
-// agent and a host that does not report its plugins never count as stale.
+// and settings changes nothing. A shell and an ended agent never count as stale, and a host that does
+// not report its plugins never makes an agent stale for its plugin.
+//
+// A running agent with nothing recorded (both empty) was started by a minbox from before this
+// record: what it loaded is not known, and it is older than any record, so it counts as stale for
+// "unknown". This holds on any host: spawn always records the instructions hash (the plugin id only
+// when known), so both empty means "started before the record", never "a host that does not report
+// its plugins". A restart records them and clears it.
 
 // Stale reasons, as the browser gets them.
 const (
 	staleReasonPlugin = "plugin"
 	staleReasonPrompt = "prompt"
+	// staleReasonUnknown: started by a minbox from before the record; what it loaded is not known.
+	staleReasonUnknown = "unknown"
 )
+
+// unrecordedRunVersion is the RunVersion of an agent with nothing recorded: stable until a restart
+// records the real one (the browser keys Dismiss by it).
+const unrecordedRunVersion = "unrecorded"
 
 // promptID is a short hash of an instructions text.
 func promptID(text string) string {
@@ -69,6 +81,9 @@ func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *s
 	if sess.Kind != store.KindClaude || sess.Status == store.StatusEnded {
 		return nil
 	}
+	if sess.RunPlugin == "" && sess.RunPrompt == "" {
+		return []string{staleReasonUnknown}
+	}
 	var out []string
 	if sess.RunPlugin != "" {
 		if cur := m.pluginID(sess); cur != "" && cur != sess.RunPlugin {
@@ -88,5 +103,7 @@ func (s *Server) withStale(stored map[string]json.RawMessage, sess *store.Sessio
 	sess.Stale = len(sess.StaleReasons) > 0
 	if sess.RunPlugin != "" || sess.RunPrompt != "" {
 		sess.RunVersion = sess.RunPlugin + "." + sess.RunPrompt
+	} else if sess.Kind != store.KindShell {
+		sess.RunVersion = unrecordedRunVersion
 	}
 }

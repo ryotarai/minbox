@@ -172,8 +172,9 @@ type Session struct {
 	RunPlugin string `json:"-"`
 	RunPrompt string `json:"-"`
 	// Stale (filled by the server): the running agent loaded an older minbox plugin or older
-	// instructions than a restart would give it; StaleReasons says which ("plugin", "prompt").
-	// RunVersion names what it runs (for "dismiss for this version").
+	// instructions than a restart would give it; StaleReasons says which ("plugin", "prompt", or
+	// "unknown" for an agent started before the record). RunVersion names what it runs (for "dismiss
+	// for this version"; "unrecorded" when nothing is recorded).
 	Stale        bool     `json:"stale,omitempty"`
 	StaleReasons []string `json:"stale_reasons,omitempty"`
 	RunVersion   string   `json:"run_version,omitempty"`
