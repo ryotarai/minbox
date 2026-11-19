@@ -20,6 +20,11 @@ import (
 //   - the instructions text (instructions: --append-system-prompt, and what the mod re-injects from
 //     hello), which follows minbox's prompt constants and the person's prompt settings.
 //
+// The person's environment variables for the agent (agentenv.go) are a third: they can be edited
+// while the agent runs (PATCH /api/sessions/{id}/env), and spawn records a salted hash of the ones
+// it started with (Session.RunEnv, envID); another set makes the agent stale for "env". An agent
+// started before that record is not counted for it.
+//
 // The tool manifest is not among them: the integrations fetch it again whenever a heartbeat's
 // answer names another tools_version, so new tools reach a running agent without a restart.
 //
@@ -38,6 +43,8 @@ import (
 const (
 	staleReasonPlugin = "plugin"
 	staleReasonPrompt = "prompt"
+	// staleReasonEnv: the person changed the agent's environment variables since it started.
+	staleReasonEnv = "env"
 	// staleReasonUnknown: started by a minbox from before the record; what it loaded is not known.
 	staleReasonUnknown = "unknown"
 )
@@ -92,6 +99,10 @@ func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *s
 	}
 	if sess.RunPrompt != "" && promptID(instructionsWith(stored, sess)) != sess.RunPrompt {
 		out = append(out, staleReasonPrompt)
+	}
+	// Not recorded (a start before the record): not known, so not counted.
+	if sess.RunEnv != "" && envID(sess) != sess.RunEnv {
+		out = append(out, staleReasonEnv)
 	}
 	return out
 }

@@ -53,11 +53,25 @@ function unknown(s: Session): boolean {
   return (s.stale_reasons ?? []).includes('unknown')
 }
 
+/** What is older, in words (without the environment variables). */
+function whatMinbox(r: string[]): string {
+  if (r.includes('plugin')) return r.includes('prompt') ? 'an older minbox mod and instructions' : 'an older minbox mod'
+  return r.includes('prompt') ? 'older minbox instructions' : ''
+}
+
 /** What is older, in words. */
 function what(s: Session): string {
   const r = s.stale_reasons ?? []
-  if (r.includes('plugin')) return r.includes('prompt') ? 'an older minbox mod and instructions' : 'an older minbox mod'
-  return 'older minbox instructions'
+  const m = whatMinbox(r)
+  if (!r.includes('env')) return m
+  return m ? `${m}, with its previous environment variables` : 'with its previous environment variables'
+}
+
+/** The banner's sentence. */
+function sentence(s: Session): string {
+  const r = s.stale_reasons ?? []
+  if (r.includes('env') && !whatMinbox(r)) return 'This agent is running with its previous environment variables. Restart it to apply the new environment variables.'
+  return `This agent is running ${what(s)}. Restart it to pick up the changes.`
 }
 
 /** The banner under the agent's header. */
@@ -79,7 +93,7 @@ export function StaleAgentBanner({ session }: { session: Session }) {
       <span className="v-stale-txt">
         {unknown(session)
           ? 'This agent was started by an older minbox. Restart it to pick up the current mod and instructions.'
-          : `This agent is running ${what(session)}. Restart it to pick up the changes.`}
+          : sentence(session)}
       </span>
       <span className="v-stale-acts">
         <button type="button" className="v-btn pri" data-testid="stale-agent-restart" disabled={busy} title="Restart the agent: it resumes its conversation with the current minbox" onClick={restart}>

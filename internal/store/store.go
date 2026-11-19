@@ -171,8 +171,12 @@ type Session struct {
 	// before minbox recorded them. Compared with the current ones for Stale.
 	RunPlugin string `json:"-"`
 	RunPrompt string `json:"-"`
+	// RunEnv: a salted hash of the person's variables the agent's last start had (SetSessionRunEnv);
+	// empty for a start before minbox recorded it. Compared with the current Env for Stale ("env").
+	RunEnv string `json:"-"`
 	// Stale (filled by the server): the running agent loaded an older minbox plugin or older
-	// instructions than a restart would give it; StaleReasons says which ("plugin", "prompt", or
+	// instructions, or other environment variables, than a restart would give it; StaleReasons says
+	// which ("plugin", "prompt", "env", or
 	// "unknown" for an agent started before the record). RunVersion names what it runs (for "dismiss
 	// for this version"; "unrecorded" when nothing is recorded).
 	Stale        bool     `json:"stale,omitempty"`
@@ -500,6 +504,7 @@ var addedColumns = []struct{ table, column, def string }{
 	{"sessions", "env", "TEXT NOT NULL DEFAULT ''"},                    // JSON {key: value}: the person's variables for the agent (Session.Env)
 	{"sessions", "run_plugin", "TEXT NOT NULL DEFAULT ''"},             // the plugin the running agent was started with (Session.RunPlugin)
 	{"sessions", "run_prompt", "TEXT NOT NULL DEFAULT ''"},             // the hash of the instructions it was started with (Session.RunPrompt)
+	{"sessions", "run_env", "TEXT NOT NULL DEFAULT ''"},                // the salted hash of the variables it was started with (Session.RunEnv)
 	{"projects", "main_session_id", "TEXT"},
 	{"projects", "default_agent", "TEXT NOT NULL DEFAULT ''"}, // '' = the settings' default agent
 	{"projects", "icon_kind", "TEXT NOT NULL DEFAULT ''"},     // '' | 'emoji' | 'image'
@@ -751,14 +756,14 @@ func (s *Store) CreateSessionAgent(ctx context.Context, projectID, kind, agentKi
 	return sess, nil
 }
 
-const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent, env, run_plugin, run_prompt`
+const sessionCols = `id, name, cwd, status, claude_session_id, token, exit_code, created_at, updated_at, archived_at, host_id, kind, title, COALESCE(project_id,''), relocate_to, prev_dir, prev_claude_session_id, prev_chain, agent, env, run_plugin, run_prompt, run_env`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var exit, archived sql.NullInt64
 	var created, updated int64
 	var chain, env string
-	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent, &env, &sess.RunPlugin, &sess.RunPrompt); err != nil {
+	if err := row.Scan(&sess.ID, &sess.Name, &sess.Cwd, &sess.Status, &sess.ClaudeSessionID, &sess.Token, &exit, &created, &updated, &archived, &sess.HostID, &sess.Kind, &sess.Title, &sess.ProjectID, &sess.RelocateTo, &sess.PrevDir, &sess.PrevClaudeSessionID, &chain, &sess.Agent, &env, &sess.RunPlugin, &sess.RunPrompt, &sess.RunEnv); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -915,6 +920,11 @@ func (s *Store) SetSessionEnv(ctx context.Context, id string, env map[string]str
 // SetSessionRun records what the agent's start loaded: its plugin id and instructions hash.
 func (s *Store) SetSessionRun(ctx context.Context, id, plugin, prompt string) error {
 	return s.exec(ctx, `UPDATE sessions SET run_plugin=?, run_prompt=? WHERE id=?`, plugin, prompt, id)
+}
+
+// SetSessionRunEnv records the (salted) hash of the variables the agent's start had.
+func (s *Store) SetSessionRunEnv(ctx context.Context, id, envHash string) error {
+	return s.exec(ctx, `UPDATE sessions SET run_env=? WHERE id=?`, envHash, id)
 }
 
 // EnvKeys are env's keys, sorted.

@@ -71,7 +71,7 @@ export type Session = {
   relocate_to?: string // the project folder changed: starts there next time
   prev_dir?: string
   prev_claude_session_id?: string
-  /** The names of the environment variables set when the agent was created (never their values). */
+  /** The names of the agent's environment variables (never their values; edited with patchSessionEnv). */
   env_keys?: string[]
   exit_code: number | null
   created_at: string
@@ -1014,6 +1014,9 @@ export const api = {
   retryHost: (id: string) => call<Ok>('POST', `/api/hosts/${id}/retry`),
   restartHost: (id: string, resume: boolean) => call<HostRestartResult>('POST', `/api/hosts/${id}/restart`, { resume }),
   renameSession: (id: string, name: string) => call<Ok>('PATCH', `/api/sessions/${id}`, { name }),
+  /** Changes the agent's environment variables: set adds or replaces, unset removes, the rest keep their values. Answers the keys only. */
+  patchSessionEnv: (id: string, change: { set?: Record<string, string>; unset?: string[] }) =>
+    call<{ ok: boolean; env_keys: string[] }>('PATCH', `/api/sessions/${id}/env`, change),
   stopSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/stop`),
   sessionConnection: (id: string) => call<ModConnectionInfo>('GET', `/api/sessions/${id}/connection`),
   restartSession: (id: string) => call<Ok>('POST', `/api/sessions/${id}/restart`),

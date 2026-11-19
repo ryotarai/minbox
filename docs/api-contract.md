@@ -1396,4 +1396,15 @@ every start (create, restart, resume, the companion shell), on this machine and 
 inherited (cleaned) environment and under minbox's own variables (`internal/server/agentenv.go`). Values are
 never logged nor returned: session JSON carries `env_keys` (sorted names) only, and the agents' API
 (`/api/agent/*`, the mod's tools) carries neither. The New agent dialog's Advanced section edits them as
-`KEY=value` lines; there is no editing after creation.
+`KEY=value` lines.
+
+`PATCH /api/sessions/{id}/env` (the browser only: a paired device; an agent's token gets 401, and nothing under
+`/api/agent/*` changes them) edits an agent's variables without the browser ever holding the stored values:
+`{"set": {"KEY": "value"}, "unset": ["KEY"]}`. `set` adds or replaces, `unset` removes (an unknown key is
+ignored), every other stored variable keeps its value; a key in both is 400. `set` is checked with the same rules
+as at creation (400 naming keys only). The answer is `{"ok": true, "env_keys": [...]}`. The change takes effect at
+the agent's next start (restart, resume, the companion shell's next start); meanwhile a running agent is stale with
+reason `env`: each start records a hash of its variables salted with the agent's token (`sessions.run_env`), and a
+different current set adds `env` to `stale_reasons` (an agent started before the record is not counted). The agent's
+⋯ menu has "Environment variables…": the keys with masked values, Replace value / Remove per row, Add as
+`KEY=value` lines, and Save or Save and restart.

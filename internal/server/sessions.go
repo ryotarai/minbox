@@ -830,6 +830,9 @@ func (m *sessionManager) spawn(ctx context.Context, sess *store.Session, resume 
 	if err := m.store.SetSessionRun(ctx, sess.ID, runPlugin, runPrompt); err != nil {
 		log.Printf("session %s (%s): record the started version: %v", sess.ID, sess.Name, err)
 	}
+	if err := m.store.SetSessionRunEnv(ctx, sess.ID, envID(sess)); err != nil {
+		log.Printf("session %s (%s): record the started environment: %v", sess.ID, sess.Name, err)
+	}
 	return m.store.SetSessionStatus(ctx, sess.ID, store.StatusStarting)
 }
 

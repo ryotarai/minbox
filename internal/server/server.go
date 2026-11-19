@@ -73,6 +73,8 @@ type Server struct {
 	hub      *hub
 	sessions *sessionManager
 	suggest  *suggester
+	// envMu serializes changes of an agent's environment variables (patchSessionEnv).
+	envMu sync.Mutex
 	// poller receives messages from Slack (RunSlackInbound runs it); its status feeds the Notifications API.
 	poller *notify.Poller
 	// pickRun runs the project-picking model (replaced in tests).
@@ -250,6 +252,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("POST /api/sessions", s.createSession)
 	mux.HandleFunc("PATCH /api/sessions/{id}", s.updateSession)
+	mux.HandleFunc("PATCH /api/sessions/{id}/env", s.patchSessionEnv)
 	mux.HandleFunc("GET /api/sessions/{id}/connection", s.getConnection)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 	mux.HandleFunc("POST /api/sessions/{id}/restart", s.restartSession)

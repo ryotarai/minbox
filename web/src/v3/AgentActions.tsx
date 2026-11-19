@@ -9,12 +9,14 @@ import { SessionMenu } from '../components/Sidebar'
 import { IconMore } from '../components/icons'
 import { MenuSep, Modal } from '../components/ui'
 import { agentKindLabel } from '../lib/agents'
+import { AgentEnvDialog } from './AgentEnvDialog'
 
 /** One element for StreamView's header row. */
 export function AgentActions({ session }: { session: Session }) {
   const { error } = useApp()
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const [editingEnv, setEditingEnv] = useState(false)
   return (
     <span className="v-agent-actions" data-testid="agent-actions" style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flex: 'none' }}>
       <ModConnection session={session} />
@@ -34,14 +36,18 @@ export function AgentActions({ session }: { session: Session }) {
       >
         <IconMore size={14} />
       </button>
-      <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(true)} top={<AgentInfo session={session} />} />
+      <SessionMenu s={session} anchor={menu} onClose={() => setMenu(null)} onRename={() => setRenaming(true)}
+        onEditEnv={() => setEditingEnv(true)}
+        top={<AgentInfo session={session} onEditEnv={() => (setMenu(null), setEditingEnv(true))} />}
+      />
       {renaming && <RenameAgentDialog session={session} onClose={() => setRenaming(false)} />}
+      {editingEnv && <AgentEnvDialog session={session} onClose={() => setEditingEnv(false)} />}
     </span>
   )
 }
 
 /** The agent's facts at the top of its ⋯ menu: kind, folder and when it started (not in the Tasks pane). */
-function AgentInfo({ session }: { session: Session }) {
+function AgentInfo({ session, onEditEnv }: { session: Session; onEditEnv: () => void }) {
   return (
     <>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-2.5 pb-1.5 pt-1 text-[12px]" data-testid="agent-info" style={{ maxWidth: 320 }}>
@@ -54,8 +60,11 @@ function AgentInfo({ session }: { session: Session }) {
         {!!session.env_keys?.length && (
           <>
             <dt className="text-subtle">Env</dt>
-            <dd className="m-0 select-text break-all font-mono" data-testid="agent-info-env" title="Environment variables set when the agent was created (values are not shown)">
-              {session.env_keys.join(', ')}
+            <dd className="m-0 select-text break-all font-mono" title="The agent's environment variables (values are not shown)">
+              <span data-testid="agent-info-env">{session.env_keys.join(', ')}</span>{' '}
+              <button type="button" data-testid="agent-info-env-edit" className="border-0 bg-transparent p-0 font-sans text-[12px] text-accent hover:underline" onClick={onEditEnv}>
+                Edit
+              </button>
             </dd>
           </>
         )}

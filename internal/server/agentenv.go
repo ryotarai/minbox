@@ -2,9 +2,12 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -129,4 +132,82 @@ func envPairs(env map[string]string) []string {
 		out = append(out, k+"="+env[k])
 	}
 	return out
+}
+
+// envID names the variables a start of sess gets (envPairs), for telling later whether they changed
+// since (stale.go, "env"). Salted with the session's token so that the stored hash says nothing about
+// the values; never empty ("" means "not recorded").
+func envID(sess *store.Session) string {
+	h := sha256.New()
+	h.Write([]byte(sess.Token))
+	for _, kv := range envPairs(sess.Env) {
+		h.Write([]byte{0})
+		h.Write([]byte(kv))
+	}
+	return "e" + hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// patchSessionEnv changes an agent's environment variables (PATCH /api/sessions/{id}/env; the
+// browser only: a paired device, never an agent's token). The values never travel back to the
+// browser, so the change names only what changes:
+//
+//	{"set": {"KEY": "value"}, "unset": ["KEY"]}
+//
+// set adds or replaces, unset removes, and every other stored variable keeps its value. The same
+// rules as at creation (validateAgentEnv). They take effect at the agent's next start (a restart, a
+// resume, the companion shell's next start); a running agent shows as stale ("env") until then.
+// The answer has the keys only. Values are never logged.
+func (s *Server) patchSessionEnv(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Set   agentEnv `json:"set"`
+		Unset []string `json:"unset"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	for _, k := range req.Unset {
+		if _, both := req.Set[k]; both {
+			httpError(w, 400, fmt.Sprintf("env: %s is both set and unset", k))
+			return
+		}
+	}
+	if err := validateAgentEnv(req.Set); err != nil {
+		httpError(w, 400, err.Error())
+		return
+	}
+	s.envMu.Lock()
+	defer s.envMu.Unlock()
+	ctx := r.Context()
+	sess, err := s.store.GetSession(ctx, r.PathValue("id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if sess.Kind == store.KindShell {
+		httpError(w, 400, "a shell has no environment variables of its own")
+		return
+	}
+	env := map[string]string{}
+	for k, v := range sess.Env {
+		// A stored key the rules refuse (an older rule) is never applied (envPairs): drop it.
+		if envKeyRe.MatchString(k) && !reservedEnvKey(k) {
+			env[k] = v
+		}
+	}
+	for _, k := range req.Unset {
+		delete(env, k)
+	}
+	for k, v := range req.Set {
+		env[k] = v
+	}
+	if err := validateAgentEnv(env); err != nil {
+		httpError(w, 400, err.Error())
+		return
+	}
+	if err := s.store.SetSessionEnv(ctx, sess.ID, env); err != nil {
+		storeError(w, err)
+		return
+	}
+	s.hub.publish(Event{Type: "sessions"})
+	writeJSON(w, 200, map[string]any{"ok": true, "env_keys": store.EnvKeys(env)})
 }

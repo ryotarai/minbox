@@ -68,6 +68,7 @@ export function SessionMenu({
   anchor,
   onClose,
   onRename,
+  onEditEnv,
   at,
   top,
 }: {
@@ -75,6 +76,8 @@ export function SessionMenu({
   anchor: HTMLElement | null
   onClose: () => void
   onRename: () => void
+  /** Opens the agent's environment variables editor (the stream header's menu). */
+  onEditEnv?: () => void
   /** Open as a context menu at this point instead of under `anchor`. */
   at?: MenuAt | null
   /** Shown above the items (the stream header's menu puts the agent's kind, folder and start there). */
@@ -99,6 +102,17 @@ export function SessionMenu({
       >
         Rename
       </MenuItem>
+      {onEditEnv && s.kind !== 'shell' && (
+        <MenuItem
+          testid="menu-edit-env"
+          onClick={() => {
+            onClose()
+            onEditEnv()
+          }}
+        >
+          Environment variables…
+        </MenuItem>
+      )}
       {s.status === 'ended' ? (
         <MenuItem testid="menu-restart" onClick={act(() => api.restartSession(s.id))}>
           Resume
