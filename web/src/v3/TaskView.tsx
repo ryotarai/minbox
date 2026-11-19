@@ -1,6 +1,8 @@
 // A task's (or goal's) conversation inside an agent's page: its tagged messages from every agent's stream
 // in time order with the events between them; "show context" opens the untagged messages around them.
 // The reply goes to the agent most recently active on it (switchable) and carries the task's tag.
+// The one task picked has the page's only reply box: its quieter "Send without task" (⇧⌘↵) sends to
+// the agent's stream untagged (the agent whose page it is; in All agents, the task's agent).
 // Two shapes: a column among the tasks checked in the agent's Tasks pane (a short header), or the one
 // task picked in the agent's page (#v=agent&s=…&k=…): a card with its title, status, agents and checklist.
 // (There is no task page of its own any more: every link to a task opens its agent's page with it.)
@@ -9,7 +11,7 @@ import type { Attachment } from '../api'
 import { useApp } from '../lib/app'
 import { leaves, standing, useLive, useMarkRead, v3, hhmm, STATUS_LABEL, type BoardTask, type TaskDetail, type TaskStatus, type V3Message } from './data'
 import { GoalRun } from './Board'
-import { Bar, MessageView, StatusDot, Steps, agentName, answersNearQuestions, shownEvent, toggled, useNav, useSessionsById, WorkingLine } from './parts'
+import { Bar, MessageView, StatusDot, Steps, agentName, answersNearQuestions, shownEvent, taskOwner, toggled, useNav, useSessionsById, WorkingLine } from './parts'
 import { Composer, type Outgoing } from './Composer'
 import { NewPill, markUnreadFrom, useConversationKeys, useFirstNew, useFollow } from './conversation'
 import { QuoteBubble } from './quote'
@@ -23,6 +25,7 @@ export function TaskView({
   tasks,
   onOpenAttachment,
   column,
+  home,
 }: {
   id: string
   highlight: string | null
@@ -31,6 +34,8 @@ export function TaskView({
   /** onRemove: a column among the checked ones (✕ unchecks it). detail: the one task picked in the
    *  agent's page (its card; the Tasks pane's row, clicked again, closes it). */
   column: { onRemove?: () => void; detail?: boolean }
+  /** The agent whose page shows the task: where "Send without task" goes (else the task's agent). */
+  home?: string
 }) {
   const { error, sessions, toast } = useApp()
   const byId = useSessionsById()
@@ -124,6 +129,20 @@ export function TaskView({
       setTimeout(() => setPending((p) => p.filter((x) => x !== tmp)), 1500)
     } catch (e) {
       setPending((p) => p.filter((x) => x !== tmp))
+      error(e)
+      throw e
+    }
+  }
+  // "Send without task" (the one task picked): to the agent's stream, untagged, as its stream's box sends.
+  const plainTo = detail ? (home ?? taskOwner(t, sessions ?? []) ?? '') : ''
+  const sendPlain = async (o: Outgoing) => {
+    try {
+      const { to: _to, tasks: _tasks, ...rest } = o
+      void _to
+      void _tasks
+      await v3.send(plainTo, { ...rest, uploads: o.uploads.length ? o.uploads : undefined })
+      if (!o.forward_to) toast(`Sent to ${agentName(byId, plainTo)} without the task`)
+    } catch (e) {
       error(e)
       throw e
     }
@@ -257,6 +276,7 @@ export function TaskView({
           messages={d.messages}
           annotationKeys={[...new Set(d.messages.map((m) => m.thread_id))]}
           helpTask={t.id}
+          untagged={plainTo ? { to: plainTo, onSend: sendPlain } : undefined}
         />
       </div>
       <QuoteBubble box={scroller} />

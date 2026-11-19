@@ -227,6 +227,10 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-composer textarea { width: 100%; border: 0; outline: 0; resize: none; min-height: 38px; background: transparent; }
 .v-composer .v-tb { display: flex; gap: 10px; align-items: center; color: var(--mb-faint); font-size: 12px; }
 .v-composer .v-tb .v-sp { flex: 1; }
+/* A task's quieter second send (without the task): a ghost button beside Send. */
+.v-composer .v-tb .v-plainsend { border-color: transparent; background: transparent; color: var(--mb-subtle); font-weight: 500; }
+.v-composer .v-tb .v-plainsend:hover:not(:disabled) { color: var(--mb-fg); background: var(--mb-rowsel); }
+.v-composer .v-tb .v-plainsend:disabled { opacity: 0.5; }
 
 /* tag picker */
 .v-tagpop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; background: var(--mb-overlay); border: 1px solid var(--mb-line2); border-radius: 8px; box-shadow: var(--mb-shadow); padding: 6px; text-align: left; }
