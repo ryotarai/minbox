@@ -719,8 +719,9 @@ func (s *Server) agentHello(w http.ResponseWriter, r *http.Request, sess *store.
 	if s.sessions.orchestratorPrompt(ctx) && agent.Must(sess.Agent).Caps().Subagents {
 		orch = OrchestratorPrompt
 	}
-	writeJSON(w, 200, map[string]any{"session_id": sess.ID, "name": sess.Name, "agent": agent.Must(sess.Agent).Kind(), "instructions": s.sessions.instructions(ctx, sess), "prompt_extra": extra, "orchestrator": orch,
-		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version})
+	instr := s.sessions.instructions(ctx, sess)
+	writeJSON(w, 200, map[string]any{"session_id": sess.ID, "name": sess.Name, "agent": agent.Must(sess.Agent).Kind(), "instructions": instr, "prompt_extra": extra, "orchestrator": orch,
+		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version, "instructions_version": promptID(instr)})
 }
 
 func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store.Session) {

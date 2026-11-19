@@ -245,7 +245,9 @@ themselves after a network drop or a server restart.
   `minbox_subagent` tool) and OpenCode's: [docs/agents.md](docs/agents.md), [docs/opencode.md](docs/opencode.md).
 
 - **Instructions.** minbox's instructions are one text, owned by the server, given at start
-  (`--append-system-prompt`) and re-injected on the first prompt, after a compaction and every 20th prompt. They ask
+  (`--append-system-prompt`; for Claude Code on the server's machine the mod keeps them in the system prompt and
+  sends a change to the running conversation, without a restart) and re-injected on the first prompt, after a
+  compaction and every 20th prompt. They ask
   the agent to send every question or request for action through minbox (if a turn still ends with a question asked
   only in the terminal, the mod reminds it once) and to keep its tasks current. By default (**Settings → Prompts**,
   the orchestrator prompt) they also ask Claude Code to work like an orchestrator: one subagent per task, writing

@@ -413,7 +413,9 @@ func (m *sessionManager) argv(ctx context.Context, sess *store.Session, resume b
 		}
 		req.Resume = exists
 	}
-	req.Instructions = m.instructions(ctx, sess)
+	if !m.liveInstructions(sess) {
+		req.Instructions = m.instructions(ctx, sess)
+	}
 	return a.Argv(req)
 }
 
@@ -488,11 +490,20 @@ func (m *sessionManager) prepareOpenCode(ctx context.Context, sess *store.Sessio
 	}
 }
 
+// liveInstructions reports whether the session's agent gets the instructions from its mod, as a
+// system prompt section the mod keeps up to date (GET /api/agent/instructions), instead of on the
+// command line: Claude Code on this machine, whose mod is this minbox's own. On another machine the
+// host's mod may be older, so the command line stays (as for Pi, and OpenCode's plugin).
+func (m *sessionManager) liveInstructions(sess *store.Session) bool {
+	return sess.Kind == store.KindClaude && agent.Must(sess.Agent).Kind() == agent.Claude && !m.remote(sess.HostID)
+}
+
 // instructions is the one text that tells the agent how to work with minbox:
 // AgentSystemPrompt, the orchestration prompt while the orchestrator_prompt
 // setting is on, and the person's prompt_extra setting. The command line
-// (--append-system-prompt) and the hello endpoint (which the mod re-injects
-// into prompts) both use it, so there is a single source.
+// (--append-system-prompt), the Claude Code mod's prompt section
+// (GET /api/agent/instructions) and the prompt context (which re-injects it
+// into prompts) all use it, so there is a single source.
 func (m *sessionManager) instructions(ctx context.Context, sess *store.Session) string {
 	stored, err := m.store.Settings(ctx)
 	if err != nil {

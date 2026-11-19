@@ -139,6 +139,14 @@ func (s *Server) agentTools(w http.ResponseWriter, r *http.Request, sess *store.
 	writeJSON(w, 200, manifestFor(sessKind(sess)))
 }
 
+// GET /api/agent/instructions: the session's instructions text and its version (the hash the
+// heartbeat and hello answers carry as instructions_version). section: the Claude Code mod puts the
+// text in the system prompt itself (the agent was started without it on the command line).
+func (s *Server) agentInstructions(w http.ResponseWriter, r *http.Request, sess *store.Session) {
+	text := s.sessions.instructions(r.Context(), sess)
+	writeJSON(w, 200, map[string]any{"text": text, "version": promptID(text), "section": s.sessions.liveInstructions(sess)})
+}
+
 // ---- calling the agent API from inside the server ----
 
 type sessCtxKey struct{}
@@ -156,6 +164,7 @@ func (s *Server) agentRoutes() []struct {
 		{"POST /api/agent/hello", s.agentHello},
 		{"POST /api/agent/status", s.agentStatus},
 		{"POST /api/agent/heartbeat", s.agentHeartbeat},
+		{"GET /api/agent/instructions", s.agentInstructions},
 		{"POST /api/agent/title", s.agentTitle},
 		{"POST /api/agent/open", s.agentOpen},
 		{"GET /api/agent/tasks", s.agentListTasks},

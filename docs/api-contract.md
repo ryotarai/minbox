@@ -830,7 +830,10 @@ needed, and a summary when work is done), session title and `open_url` guidance 
 `server.AgentSystemPrompt` (headings `# minbox: inbox`, `# minbox: replying to inbox messages`,
 `# minbox: session title`, `# minbox: tasks` and `# minbox: opening pages`), extended by `buildInstructions` with the
 orchestration prompt (setting `orchestrator_prompt`) and `prompt_extra`. It reaches Claude two ways:
-- the server starts Claude with `--append-system-prompt` set to it;
+- in the system prompt: on the server's machine the mod fetches it (`GET /api/agent/instructions`) and
+  appends it to the environment section (`prompt.section`), sending a changed text to the running
+  conversation (docs/mod-protocol.md); on another machine the server starts Claude with
+  `--append-system-prompt` set to it;
 - `hello` returns it as `instructions`, and the mod injects it into prompts (first, after a
   compaction, every 20th). The mod has no `prompt.compose` hook and no copy of the text.
 

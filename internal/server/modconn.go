@@ -50,6 +50,12 @@ type modConn struct {
 	lastPoll    string // the mod's own timestamps, passed through
 	lastDeliver string
 	modInfo     map[string]any // the rest of the mod's self-report (ticks, poll state, ...)
+	// liveInstr: the mod gives the agent the instructions as a system prompt section and sends
+	// changed ones to the running conversation (the Claude Code mod, heartbeat live_instructions);
+	// instrVersion: the version it last answered with. A restart is then not needed for new
+	// instructions (stale.go).
+	liveInstr    bool
+	instrVersion string
 	// protocol: the mod protocol the integration reported (hello, heartbeat); protoKnown: it reported.
 	protocol   int
 	protoKnown bool
@@ -238,11 +244,25 @@ type heartbeatReq struct {
 	Info           map[string]any `json:"info"`
 	// Protocol: the integration's mod protocol (0, absent, before protocol 1).
 	Protocol int `json:"protocol"`
-	Events   []struct {
+	// LiveInstructions: the mod keeps the instructions in the system prompt up to date itself
+	// (GET /api/agent/instructions); InstructionsVersion: the version it last answered with.
+	LiveInstructions    bool   `json:"live_instructions"`
+	InstructionsVersion string `json:"instructions_version"`
+	Events              []struct {
 		At   string `json:"at"`
 		Kind string `json:"kind"`
 		Msg  string `json:"msg"`
 	} `json:"events"`
+}
+
+// liveInstructions reports whether the session's mod said in its last heartbeat that it keeps the
+// instructions in the agent's system prompt up to date (the Claude Code mod, started without them
+// on the command line).
+func (s *Server) liveInstructions(id string) bool {
+	s.modMu.Lock()
+	defer s.modMu.Unlock()
+	c := s.modConns[id]
+	return c != nil && c.liveInstr
 }
 
 func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *store.Session) {
@@ -267,6 +287,8 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *st
 		c.modState = req.State
 	}
 	c.lastPoll, c.lastDeliver = truncate(req.LastPollAt, 40), truncate(req.LastDeliveryAt, 40)
+	liveChanged := c.liveInstr != req.LiveInstructions
+	c.liveInstr, c.instrVersion = req.LiveInstructions, truncate(req.InstructionsVersion, 40)
 	c.modInfo = nil
 	if len(req.Info) > 0 && len(req.Info) <= 30 {
 		c.modInfo = map[string]any{}
@@ -293,15 +315,16 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *st
 	}
 	s.armBeatTimerLocked(sess.ID, c)
 	s.modMu.Unlock()
-	if recovered || first {
-		s.hub.publish(Event{Type: "sessions"})
+	if recovered || first || liveChanged {
+		s.hub.publish(Event{Type: "sessions"}) // liveChanged: the stale "prompt" reason may change
 	}
 	s.modQueueCheck(sess.ID)
 	if req.State == store.StatusIdle {
 		s.goalResumeKick(sess.ID) // after a restart: a running goal may go on (resumeIdle)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "server_time": now.UTC().Format(time.RFC3339Nano),
-		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version})
+		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version,
+		"instructions_version": promptID(s.sessions.instructions(r.Context(), sess))})
 }
 
 // modQueueCheck logs, once per message, a queued message that has waited long while the mod

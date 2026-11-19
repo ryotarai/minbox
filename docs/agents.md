@@ -13,7 +13,7 @@ or only OpenCode (no `claude` binary), or only Claude Code. OpenCode specifics: 
 | Tool names the agent sees | `mcp__minbox__send_message`, … | `minbox_send_message`, … | `minbox_send_message`, … |
 | Subagents / orchestrator prompt | yes | no (the orchestrator prompt is never added) | yes (OpenCode's `subagent` tool; plus an OpenCode section) |
 | Conversation id | chosen by minbox, `--session-id`, later `--resume` | chosen by minbox, `--session-id` (create-or-continue) | chosen by minbox (`ses_…`), created by minbox before the start, `--session` |
-| Instructions | `--append-system-prompt` (+ the mod re-injects) | `--append-system-prompt` | the plugin's `context` hook, every request |
+| Instructions | on the server's machine the mod's system prompt section, sent again when it changes (docs/mod-protocol.md); elsewhere `--append-system-prompt`; the mod re-injects either way | `--append-system-prompt` | the plugin's `context` hook, every request |
 | Folder change | fresh conversation + note | fresh conversation + note | the session moves with the project |
 | Remote hosts | yes | yes: Pi and Node 22.19+ on that machine | yes: OpenCode 2 on that machine |
 | Permission prompts | none in minbox's setup | none: Pi has no permission system. It runs with your user's permissions. Use a container if you want a boundary | `--auto`: approved unless your OpenCode configuration denies it |

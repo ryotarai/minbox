@@ -164,7 +164,7 @@ func TestStaleUnrecordedShellAndEndedAreNot(t *testing.T) {
 		{ID: "sh2", Kind: store.KindShell, Status: store.StatusWorking, RunPlugin: "a", RunPrompt: "b"},
 		{ID: "ended", Kind: store.KindClaude, Agent: agent.Claude, Status: store.StatusEnded},
 	} {
-		if r := m.staleReasons(nil, sess); r != nil {
+		if r := m.staleReasons(nil, sess, false); r != nil {
 			t.Fatalf("%s is stale: %v", sess.ID, r)
 		}
 		e.srv.withStale(nil, sess)
@@ -186,14 +186,14 @@ func TestStaleRemoteHostPlugin(t *testing.T) {
 	if sess.RunPlugin != "aaa" {
 		t.Fatalf("remote plugin = %q", sess.RunPlugin)
 	}
-	if r := m.staleReasons(nil, sess); r != nil {
+	if r := m.staleReasons(nil, sess, false); r != nil {
 		t.Fatalf("fresh remote agent is stale: %v", r)
 	}
 	// The host was updated: its mod changed.
 	if !c.setVersion(termhost.VersionInfo{Plugins: map[string]string{agent.Claude: "bbb", agent.Pi: "ppp"}}, 0) {
 		t.Fatal("setVersion did not report the change")
 	}
-	if r := m.staleReasons(nil, sess); !slices.Equal(r, []string{"plugin"}) {
+	if r := m.staleReasons(nil, sess, false); !slices.Equal(r, []string{"plugin"}) {
 		t.Fatalf("reasons = %v", r)
 	}
 	// The same report again is no change; a host that reports nothing is unknown, never stale.
@@ -201,7 +201,7 @@ func TestStaleRemoteHostPlugin(t *testing.T) {
 		t.Fatal("setVersion reported a change for the same plugins")
 	}
 	c.setVersion(termhost.VersionInfo{}, 0)
-	if r := m.staleReasons(nil, sess); r != nil {
+	if r := m.staleReasons(nil, sess, false); r != nil {
 		t.Fatalf("unknown host plugins count as stale: %v", r)
 	}
 	// A start there records only the instructions: still not stale.
@@ -210,12 +210,43 @@ func TestStaleRemoteHostPlugin(t *testing.T) {
 	if fresh.RunPlugin != "" {
 		t.Fatalf("plugin of a host that reports none = %q", fresh.RunPlugin)
 	}
-	if r := m.staleReasons(nil, fresh); r != nil {
+	if r := m.staleReasons(nil, fresh, false); r != nil {
 		t.Fatalf("agent on a host without plugin reports is stale: %v", r)
 	}
 	// An agent there with nothing recorded was started before the record: unknown, as anywhere.
 	old := &store.Session{ID: "r3", Kind: store.KindClaude, Agent: agent.Claude, HostID: "h1", Status: store.StatusIdle}
-	if r := m.staleReasons(nil, old); !slices.Equal(r, []string{"unknown"}) {
+	if r := m.staleReasons(nil, old, false); !slices.Equal(r, []string{"unknown"}) {
 		t.Fatalf("unrecorded remote agent reasons = %v", r)
 	}
+}
+
+// A Claude Code agent whose mod keeps the instructions up to date (heartbeat live_instructions) is
+// not stale for "prompt": the running conversation gets the new text. An old mod's agent still is.
+func TestStalePromptNotForLiveInstructions(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	live, old := e.createSession(), e.createSession()
+	for _, s := range []*store.Session{live, old} {
+		_ = e.st.SetSessionStatus(ctx, s.ID, store.StatusIdle)
+	}
+	if code, _, _ := e.do("POST", "/api/agent/heartbeat", map[string]any{"seq": 1, "agent": "claude", "protocol": 1, "live_instructions": true, "instructions_version": "x"}, bearer(live)); code != 200 {
+		t.Fatalf("heartbeat: %d", code)
+	}
+	if code, _, _ := e.do("POST", "/api/agent/heartbeat", map[string]any{"seq": 1, "agent": "claude", "protocol": 1}, bearer(old)); code != 200 {
+		t.Fatalf("heartbeat: %d", code)
+	}
+	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"prompt_extra": "be brief"}, nil); code != 200 {
+		t.Fatalf("settings: %d", code)
+	}
+	e.wantStale(live.ID)
+	e.wantStale(old.ID, "prompt")
+	// The plugin still counts for a live agent.
+	e.srv.sessions.cfg.PluginDir = "/data/plugin/0123456789ab"
+	e.wantStale(live.ID, "plugin")
+	// A mod that stops saying so (an older one after a reload): the prompt counts again.
+	e.srv.sessions.cfg.PluginDir = "/plugin"
+	if code, _, _ := e.do("POST", "/api/agent/heartbeat", map[string]any{"seq": 2, "agent": "claude", "protocol": 1}, bearer(live)); code != 200 {
+		t.Fatalf("heartbeat: %d", code)
+	}
+	e.wantStale(live.ID, "prompt")
 }

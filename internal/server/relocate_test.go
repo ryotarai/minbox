@@ -61,7 +61,7 @@ func TestRelocatedSessionStartsFreshInNewFolder(t *testing.T) {
 	if !strings.Contains(strings.Join(last.Argv, " "), "--session-id "+got.ClaudeSessionID) {
 		t.Fatalf("argv %v", last.Argv)
 	}
-	p := lastPrompt(last.Argv)
+	p := e.agentInstructions(sess.ID)
 	for _, want := range []string{oldDir, oldID, "projects/" + projectDirName(oldDir) + "/" + oldID + ".jsonl", other} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("instructions lack %q: %s", want, p)
@@ -70,7 +70,7 @@ func TestRelocatedSessionStartsFreshInNewFolder(t *testing.T) {
 	// The hello carries the same text.
 	_, hello, _ = e.do("POST", "/api/agent/hello", map[string]any{}, bearer(sess))
 	if hello["instructions"] != p {
-		t.Fatalf("hello differs from argv")
+		t.Fatalf("hello differs from the instructions endpoint")
 	}
 
 	// Once: the next start resumes normally in the new folder (the new conversation has a transcript).
@@ -110,7 +110,7 @@ func TestReconcileRelocatesWithoutTranscript(t *testing.T) {
 		t.Fatalf("spawned %+v", fresh.spawned)
 	}
 	got, _ := e.st.GetSession(ctx, sess.ID)
-	if got.Cwd != other || got.ClaudeSessionID != sess.ClaudeSessionID || got.PrevDir != "" || strings.Contains(lastPrompt(fresh.spawned[0].Argv), "moved to a new folder") {
+	if got.Cwd != other || got.ClaudeSessionID != sess.ClaudeSessionID || got.PrevDir != "" || strings.Contains(e.agentInstructions(sess.ID), "moved to a new folder") {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -197,7 +197,7 @@ func TestRelocateTwiceBeforeRestart(t *testing.T) {
 		got.PrevDir != a || got.PrevClaudeSessionID != oldID || got.ClaudeSessionID == oldID || len(got.PrevChain) != 0 {
 		t.Fatalf("spawn %+v record %+v", req, got)
 	}
-	if p := lastPrompt(req.Argv); !strings.Contains(p, a) || strings.Contains(p, b) {
+	if p := r.e.agentInstructions(r.sess.ID); !strings.Contains(p, a) || strings.Contains(p, b) {
 		t.Fatalf("instructions: %s", p)
 	}
 }
@@ -222,7 +222,7 @@ func TestRelocateTwiceWithRestartBetween(t *testing.T) {
 	if len(g2.PrevChain) != 1 || g2.PrevChain[0].Dir != a || g2.PrevChain[0].ClaudeSessionID != oldID {
 		t.Fatalf("chain %+v", g2.PrevChain)
 	}
-	p := lastPrompt(req.Argv)
+	p := r.e.agentInstructions(r.sess.ID)
 	for _, want := range []string{b, n1, a, oldID} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("instructions lack %q: %s", want, p)
@@ -252,7 +252,7 @@ func TestRelocateTwiceWithoutTranscriptInMiddle(t *testing.T) {
 	if g2.Cwd != c || g2.RelocateTo != "" || g2.ClaudeSessionID != g1.ClaudeSessionID || g2.PrevDir != a || g2.PrevClaudeSessionID != oldID {
 		t.Fatalf("record %+v", g2)
 	}
-	p := lastPrompt(req.Argv)
+	p := r.e.agentInstructions(r.sess.ID)
 	if !strings.Contains(p, c) || !strings.Contains(p, a) || !strings.Contains(p, oldID) {
 		t.Fatalf("instructions: %s", p)
 	}

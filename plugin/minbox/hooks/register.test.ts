@@ -26,7 +26,7 @@ function manifest(version = 'v1', extra: any[] = []) {
 type Item = { id: string; text: string; urgent?: boolean }
 
 /** A minbox server in memory: answers the mod's HTTP calls. */
-function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?: boolean; failPaths?: RegExp; id?: { current: string }; manifest?: any; toolsVersion?: { current: string }; event?: (b: any) => any; tool?: (b: any) => any } = {}) {
+function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?: boolean; failPaths?: RegExp; id?: { current: string }; manifest?: any; toolsVersion?: { current: string }; instructions?: { current: { text: string; version: string; section?: boolean } }; event?: (b: any) => any; tool?: (b: any) => any } = {}) {
   const calls: Call[] = []
   const submitted: string[] = []
   const delivered = new Set<string>()
@@ -49,6 +49,7 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
     return { value: undefined }
   })
   on('tool.describe', (_: any, e: any) => ({ description: e.description }))
+  on('prompt.section', (_: any, e: any) => ({ text: e.text }))
   on('http.fetch', (_: any, e: any) => {
     const url = new URL(e.url)
     const body = e.init?.body ? JSON.parse(e.init.body) : undefined
@@ -56,7 +57,9 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
     calls.push({ method, path: url.pathname, query: url.search, body })
     if (opts.down || (opts.failPaths && opts.failPaths.test(url.pathname))) return { value: { status: 503, ok: false, headers: {}, text: '{"error":"down"}' } }
     const ok = (json: unknown) => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify(json) } })
+    const instr = opts.instructions?.current ?? { text: 'INSTR-1', version: 'i1', section: true }
     if (url.pathname === '/api/agent/tools') return ok(opts.manifest ?? manifest())
+    if (url.pathname === '/api/agent/instructions') return ok({ section: true, ...instr })
     if (url.pathname === '/api/agent/pending') {
       if (opts.hangPolls && opts.hangPolls > 0) {
         opts.hangPolls--
@@ -75,8 +78,8 @@ function fakeServer(on: any, pending: Item[], opts: { hangPolls?: number; down?:
       if (m[2] === 'delivered') delivered.add(m[1]!)
       return ok({ ok: true })
     }
-    if (url.pathname === '/api/agent/hello') return ok({ session_id: 's', protocol: 1, tools_version: opts.toolsVersion?.current ?? 'v1' })
-    if (url.pathname === '/api/agent/heartbeat') return ok({ ok: true, protocol: 1, tools_version: opts.toolsVersion?.current ?? 'v1' })
+    if (url.pathname === '/api/agent/hello') return ok({ session_id: 's', protocol: 1, tools_version: opts.toolsVersion?.current ?? 'v1', instructions_version: instr.version })
+    if (url.pathname === '/api/agent/heartbeat') return ok({ ok: true, protocol: 1, tools_version: opts.toolsVersion?.current ?? 'v1', instructions_version: instr.version })
     if (url.pathname === '/api/agent/event') return ok(opts.event?.(body) ?? { ok: true })
     if (url.pathname === '/api/agent/tool') return ok(opts.tool?.(body) ?? { ok: true, text: `RESULT ${body.tool}` })
     return ok({ ok: true })
@@ -239,6 +242,101 @@ test('a description changed back to the first one is answered plainly again', as
   const res: any = await describe($, server, 'send_message')
   expect(res.description).toBe('SEND-DESC')
   expect(res.breakPromptCache).toBeUndefined()
+})
+
+/** Raises prompt.section as Claude Code does when it composes the system prompt. */
+const section = ($: any, name = 'env_info_simple', text: string | null = 'ENV') => $.prompt.section({ name, text })
+
+test('at session start the instructions ride in the environment section, with no cache break', async ($, on) => {
+  mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [])
+  await start($)
+  expect(server.calls.filter((c) => c.path === '/api/agent/instructions').length).toBe(1)
+  expect(server.invalidated).toEqual([])
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-1' })
+  // Asked again (the engine composes again on its own): the same, still no break.
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-1' })
+  // Another section is left alone; an environment section core leaves out carries the text alone.
+  expect(await section($, 'memory', 'MEM')).toEqual({ text: 'MEM' })
+  expect(await section($, 'env_info_static', null)).toEqual({ text: 'INSTR-1' })
+})
+
+test('new instructions are fetched on a heartbeat and sent to the running conversation with breakPromptCache', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { instructions: { current: { text: 'INSTR-1', version: 'i1' } } }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  await section($)
+  await clock.advance(1000)
+  let beat = server.calls.filter((c) => c.path === '/api/agent/heartbeat').pop()!
+  expect(beat.body.live_instructions).toBe(true)
+  expect(beat.body.instructions_version).toBe('i1')
+  opts.instructions.current = { text: 'INSTR-2', version: 'i2' }
+  await clock.advance(15000)
+  expect(server.calls.filter((c) => c.path === '/api/agent/instructions').length).toBe(2)
+  expect(server.invalidated).toEqual(['prompt.section'])
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-2', breakPromptCache: true })
+  // Sent once: asked again, the same text breaks nothing.
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-2' })
+  await clock.advance(15000)
+  beat = server.calls.filter((c) => c.path === '/api/agent/heartbeat').pop()!
+  expect(beat.body.instructions_version).toBe('i2')
+  expect(server.calls.filter((c) => c.path === '/api/agent/instructions').length).toBe(2) // not again for the same version
+})
+
+test('instructions changed back to what the conversation was sent break nothing', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { instructions: { current: { text: 'INSTR-1', version: 'i1' } } }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  await section($)
+  // A change and back before the section was asked again: the conversation still has i1.
+  opts.instructions.current = { text: 'INSTR-2', version: 'i2' }
+  await clock.advance(15000)
+  opts.instructions.current = { text: 'INSTR-1', version: 'i1' }
+  await clock.advance(15000)
+  expect(server.calls.filter((c) => c.path === '/api/agent/instructions').length).toBe(3)
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-1' })
+})
+
+test('a change before any prompt was composed only changes what the first section carries', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { instructions: { current: { text: 'INSTR-1', version: 'i1' } } }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  opts.instructions.current = { text: 'INSTR-2', version: 'i2' }
+  await clock.advance(15000)
+  expect(server.invalidated).toEqual([])
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-2' })
+})
+
+test('instructions the server keeps on the command line are not added, and the heartbeat says so', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const server = fakeServer(on, [], { instructions: { current: { text: 'INSTR-1', version: 'i1', section: false } } })
+  await start($)
+  expect(await section($)).toEqual({ text: 'ENV' })
+  await clock.advance(15000)
+  const beat = server.calls.filter((c) => c.path === '/api/agent/heartbeat').pop()!
+  expect(beat.body.live_instructions).toBe(false)
+  expect(server.invalidated).toEqual([])
+})
+
+test('a section composed before the instructions could be fetched gets them once they arrive, over the cache', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { MINBOX_TOKEN: 'tok', MINBOX_SERVER_FILE: SERVER_FILE })
+  const opts: any = { failPaths: /\/api\/agent\/instructions$/ }
+  const server = fakeServer(on, [], opts)
+  await start($)
+  expect(await section($)).toEqual({ text: 'ENV' })
+  opts.failPaths = undefined
+  await clock.advance(1000)
+  expect(server.invalidated).toEqual(['prompt.section'])
+  expect(await section($)).toEqual({ text: 'ENV\n\nINSTR-1', breakPromptCache: true })
 })
 
 test("the server's text is delivered once Claude is idle, then acknowledged", async ($, on) => {

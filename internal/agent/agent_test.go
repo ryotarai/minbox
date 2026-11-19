@@ -36,6 +36,11 @@ func TestClaudeArgvIsTheOriginal(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("resume: %q", got)
 	}
+	// No instructions (the mod puts them in the system prompt): no flag.
+	got = a.Argv(ArgvReq{Command: []string{"claude"}, Extension: "/plugin", ConversationID: "abc"})
+	if want := []string{"claude", "--plugin-dir", "/plugin", "--session-id", "abc"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("no instructions: %q", got)
+	}
 	if got := a.Argv(ArgvReq{Command: []string{"claude"}, Extension: "/p", Instructions: "T"}); hasArg(got, "--session-id") || hasArg(got, "--resume") {
 		t.Fatalf("no id: %q", got)
 	}

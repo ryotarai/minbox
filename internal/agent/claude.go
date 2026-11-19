@@ -21,7 +21,8 @@ func (claude) Env(ArgvReq) []string      { return nil }
 func (claude) NewConversationID() string { return NewUUID() }
 
 // Argv: the person's claude command, our mod, and the conversation id (a new one, or --resume of
-// the existing one), then the instructions.
+// the existing one), then the instructions when given (none: the mod puts them in the system
+// prompt itself, as a prompt section it keeps up to date).
 func (claude) Argv(req ArgvReq) []string {
 	argv := append([]string{}, req.Command...)
 	argv = append(argv, "--plugin-dir", req.Extension)
@@ -29,6 +30,9 @@ func (claude) Argv(req ArgvReq) []string {
 		argv = append(argv, "--resume", req.ConversationID)
 	} else if req.ConversationID != "" {
 		argv = append(argv, "--session-id", req.ConversationID)
+	}
+	if req.Instructions == "" {
+		return argv
 	}
 	return append(argv, "--append-system-prompt", req.Instructions)
 }

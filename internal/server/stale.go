@@ -17,8 +17,12 @@ import (
 //   - the minbox plugin (the Claude Code mod, the Pi extension, the OpenCode plugin): extracted to a
 //     content-hash folder (plugin.Extract), so its path names its content. On another machine the
 //     host gives its own copy, which it reports in /version (termhost.VersionInfo.Plugins).
-//   - the instructions text (instructions: --append-system-prompt, and what the mod re-injects from
-//     hello), which follows minbox's prompt constants and the person's prompt settings.
+//   - the instructions text (instructions), which follows minbox's prompt constants and the
+//     person's prompt settings: on the command line (--append-system-prompt) for Pi, for Claude Code
+//     on another machine and for an agent an older minbox started. A Claude Code agent on this
+//     machine gets it from its mod instead, as a system prompt section that the mod sends again,
+//     changed, to the running conversation (live instructions, docs/mod-protocol.md): once its mod
+//     says so in a heartbeat, a changed text no longer makes it stale.
 //
 // The person's environment variables for the agent (agentenv.go) are a third: they can be edited
 // while the agent runs (PATCH /api/sessions/{id}/env), and spawn records a salted hash of the ones
@@ -83,8 +87,9 @@ func (m *sessionManager) runVersion(ctx context.Context, sess *store.Session) (p
 	return m.pluginID(sess), promptID(m.instructions(ctx, sess))
 }
 
-// staleReasons compares what the agent's start loaded with what a start would load now.
-func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *store.Session) []string {
+// staleReasons compares what the agent's start loaded with what a start would load now. live: the
+// agent's mod keeps its instructions up to date (Server.liveInstructions), so they never count.
+func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *store.Session, live bool) []string {
 	if sess.Kind != store.KindClaude || sess.Status == store.StatusEnded {
 		return nil
 	}
@@ -97,7 +102,7 @@ func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *s
 			out = append(out, staleReasonPlugin)
 		}
 	}
-	if sess.RunPrompt != "" && promptID(instructionsWith(stored, sess)) != sess.RunPrompt {
+	if !live && sess.RunPrompt != "" && promptID(instructionsWith(stored, sess)) != sess.RunPrompt {
 		out = append(out, staleReasonPrompt)
 	}
 	// Not recorded (a start before the record): not known, so not counted.
@@ -110,7 +115,7 @@ func (m *sessionManager) staleReasons(stored map[string]json.RawMessage, sess *s
 // withStale fills Stale, StaleReasons and RunVersion of a session for the browser. stored: the
 // settings (read once for a list).
 func (s *Server) withStale(stored map[string]json.RawMessage, sess *store.Session) {
-	sess.StaleReasons = s.sessions.staleReasons(stored, sess)
+	sess.StaleReasons = s.sessions.staleReasons(stored, sess, s.liveInstructions(sess.ID))
 	sess.Stale = len(sess.StaleReasons) > 0
 	if sess.RunPlugin != "" || sess.RunPrompt != "" {
 		sess.RunVersion = sess.RunPlugin + "." + sess.RunPrompt

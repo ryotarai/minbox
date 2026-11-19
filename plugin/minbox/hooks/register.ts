@@ -10,6 +10,11 @@
  *   is the result (or the refusal). A heartbeat answer naming another tools_version fetches the set
  *   again and registers what is new or changed (`$.tool.register` replaces a name registered again);
  *   a changed description goes out through the tool.describe hook with breakPromptCache.
+ * - Instructions: minbox's standing instructions come from GET /api/agent/instructions and ride in
+ *   the system prompt, appended to Claude Code's environment section (prompt.section), when the
+ *   server says `section` (an agent on the server's machine, started without them on the command
+ *   line). A heartbeat answer naming another instructions_version fetches them again and, when the
+ *   text changed, sends it to the running conversation (invalidate + breakPromptCache).
  * - Guards: the server's guards refuse host tool calls (a Bash command that would open a page on the
  *   host) with the server's text.
  * - Delivery: long-polls GET /api/agent/pending?proto=1. Once Claude has been idle for two ticks each
@@ -88,6 +93,24 @@ const baseDescriptions = new Map<string, string>()
 const registeredKeys = new Map<string, string>()
 /** Full names of tools whose current description differs from the baseline, with that description. */
 const redescribed = new Map<string, string>()
+/**
+ * The system prompt sections the instructions are appended to: Claude Code's environment section
+ * (`env_info_static` in place of `env_info_simple` for an SDK preset). One is in every full and lean
+ * prompt, on the session side of the cache boundary, for the main thread only (a subagent's prompt
+ * has its own environment text).
+ */
+const INSTRUCTIONS_SECTIONS = ['env_info_simple', 'env_info_static']
+/** The instructions as served: null until known, or when the server keeps them on the command line. */
+let instructions: { text: string; version: string } | null = null
+/** Whether the server has answered GET /api/agent/instructions once (instructions are then known). */
+let instructionsKnown = false
+let instructionsFetching: Promise<void> | null = null
+/**
+ * The instructions version the prompt section last answered with in this process: what the
+ * conversation was sent ('' when it was answered before the instructions were known); null while
+ * no section was asked for.
+ */
+let answeredInstructions: string | null = null
 /** The mod's recent events (see ModEvent); a tail goes with each heartbeat. */
 let events: ModEvent[] = []
 let heartbeatTimer: { cancel(): void } | null = null
@@ -271,6 +294,39 @@ function refreshTools($: any): Promise<void> {
   return registering
 }
 
+/**
+ * Fetches the instructions; when their text changed after the prompt section answered, asks Claude
+ * Code for the section again, so its answer (with breakPromptCache) reaches the running conversation.
+ */
+function refreshInstructions($: any): Promise<void> {
+  if (instructionsFetching) return instructionsFetching
+  instructionsFetching = (async () => {
+    const res = await api($, 'GET', '/api/agent/instructions')
+    const j = res.ok ? res.json : null
+    if (!j || typeof j.text !== 'string' || typeof j.version !== 'string') {
+      note($, 'instructions-failed', `the instructions could not be fetched (${res.status === 0 ? 'not reachable' : res.ok ? 'not an instructions answer' : 'HTTP ' + res.status}); retried`)
+      return
+    }
+    instructionsKnown = true
+    const before = instructions?.version
+    instructions = j.section === true ? { text: j.text, version: j.version } : null
+    if (before !== undefined && before !== instructions?.version) note($, 'instructions-updated', `instructions ${before} -> ${instructions?.version ?? '(command line)'}`)
+    if (instructions && answeredInstructions !== null && answeredInstructions !== instructions.version) {
+      note($, 'instructions-resent', `the prompt section is sent again with instructions ${instructions.version}`)
+      $.ui.invalidate('prompt.section')
+    }
+  })().finally(() => {
+    instructionsFetching = null
+  })
+  return instructionsFetching
+}
+
+/** A server answer (hello, heartbeat) naming instructions other than the ones held fetches them again. */
+function followInstructions($: any, json: any): void {
+  const want = json?.instructions_version
+  if (typeof want === 'string' && want !== '' && (!instructionsKnown || (instructions !== null && want !== instructions.version))) void refreshInstructions($)
+}
+
 async function hello($: any): Promise<void> {
   const id = await $.session.id().catch(() => null)
   if (typeof id === 'string' && id !== lastClaudeSessionId) {
@@ -279,6 +335,7 @@ async function hello($: any): Promise<void> {
     if (res.ok) {
       note($, 'hello', lastClaudeSessionId ? 'hello again (the conversation changed)' : 'hello ok')
       lastClaudeSessionId = id
+      followInstructions($, res.json)
     }
   }
 }
@@ -301,6 +358,10 @@ async function heartbeat($: any): Promise<void> {
       agent: 'claude',
       ext_version: MOD_VERSION,
       protocol: PROTOCOL,
+      // This mod keeps the instructions in the system prompt up to date (the server then does not
+      // count a changed text as a reason to restart), and the version it last answered with.
+      live_instructions: instructions !== null,
+      instructions_version: answeredInstructions ?? '',
       state: busy ? 'working' : 'idle',
       last_poll_at: lastPollAt ?? '',
       last_delivery_at: lastDeliveryAt ?? '',
@@ -321,6 +382,7 @@ async function heartbeat($: any): Promise<void> {
     if (res.status === 404 || res.status === 405) note($, 'heartbeat-unsupported', 'the server has no heartbeat endpoint (an older minbox)')
     const want = res.ok ? res.json?.tools_version : undefined
     if (typeof want === 'string' && want !== manifest?.version) void refreshTools($)
+    if (res.ok) followInstructions($, res.json)
   } finally {
     heartbeatInFlight = false
   }
@@ -360,6 +422,7 @@ async function tick($: any): Promise<void> {
     }
   }
   if (!manifest && !registering) void refreshTools($)
+  if (!instructionsKnown && !instructionsFetching) void refreshInstructions($)
   if (polling) {
     if (++pollTicks < POLL_STUCK_TICKS) return
     pollGen++ // abandon the stuck poll; its late results are dropped
@@ -441,6 +504,12 @@ export const register: Register = (on) => {
     baseDescriptions.clear()
     redescribed.clear()
     await refreshTools($)
+    // The instructions are known before the first prompt is composed: its section answers with them
+    // and breaks nothing.
+    instructions = null
+    instructionsKnown = false
+    answeredInstructions = null
+    await refreshInstructions($)
 
     timer?.cancel()
     timer = $.clock.every(TICK_MS, () => tick($))
@@ -525,6 +594,26 @@ export const register: Register = (on) => {
     const description = redescribed.get(e.tool)
     if (description === undefined) return next(e)
     return { ...(await next(e)), description, breakPromptCache: true }
+  })
+
+  // minbox's instructions, appended to Claude Code's environment section of the system prompt. The
+  // engine caches the answer; after refreshInstructions invalidated it, a text other than the one
+  // this conversation was sent carries breakPromptCache, so the running conversation gets it next
+  // turn. An answer before the instructions are known (the server was not reachable) records ''
+  // so that the text, once fetched, goes out the same way.
+  on('prompt.section', { name: INSTRUCTIONS_SECTIONS }, async ($, e, next) => {
+    if (!conn) return next(e)
+    if (instructionsFetching) await instructionsFetching.catch(() => {})
+    const res = await next(e)
+    if (!instructionsKnown) {
+      answeredInstructions ??= ''
+      return res
+    }
+    if (!instructions) return res // on the command line: nothing to add
+    const text = res.text ? `${res.text}\n\n${instructions.text}` : instructions.text
+    const changed = answeredInstructions !== null && answeredInstructions !== instructions.version
+    answeredInstructions = instructions.version
+    return changed ? { ...res, text, breakPromptCache: true } : { ...res, text }
   })
 
   // Every tool call: the server's tools are answered by the server; the host's own pass its guards.

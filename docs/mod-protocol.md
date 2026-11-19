@@ -17,7 +17,7 @@ sessions at once. Only a change to the protocol itself needs a restart, and the 
 | protocol | integrations | what they call |
 | --- | --- | --- |
 | 0 (absent) | sessions started before this change; `web/e2e/fake-claude.py` | the endpoints below without `?proto`, `/api/agent/messages`, `/title`, `/open`, `/tasks`, `/threads`, `/inbox`, `/projects`, `/sessions`, `/search`, `/status`, `/denied-commands`; they render text themselves |
-| 1 | `plugin/minbox/hooks/register.ts`, `plugin/pi/minbox.ts`, `plugin/opencode/minbox.ts` (shared helpers: `plugin/minbox/hooks/proxy.ts`); `fake-pi.py`, `fake-opencode.py` | `GET /api/agent/tools`, `POST /api/agent/tool`, `POST /api/agent/event`, `GET /api/agent/pending?proto=1`, plus hello, heartbeat, claim, release, delivered |
+| 1 | `plugin/minbox/hooks/register.ts`, `plugin/pi/minbox.ts`, `plugin/opencode/minbox.ts` (shared helpers: `plugin/minbox/hooks/proxy.ts`); `fake-pi.py`, `fake-opencode.py` | `GET /api/agent/tools`, `POST /api/agent/tool`, `POST /api/agent/event`, `GET /api/agent/pending?proto=1`, plus hello, heartbeat, claim, release, delivered (the Claude Code mod also `GET /api/agent/instructions`) |
 
 The server keeps serving protocol 0 unchanged (the protocol-1 endpoints call the same handlers
 in-process, `agentDo` in `internal/server/modproto.go`, so both see the same behaviour).
@@ -69,6 +69,21 @@ the third.
 `plugin/testdata/manifest-<agent>.json` hold the served sets; `TestManifestFixtures` keeps them equal
 (`MINBOX_UPDATE_FIXTURES=1 go test ./internal/server -run TestManifestFixtures` rewrites them) and the
 node tests of the integrations run against them (the guard patterns included, `plugin/pi/proxy.test.ts`).
+
+### `GET /api/agent/instructions`
+
+```
+{ text: "<the instructions>", version: "<12 hex>", section: true|false }
+```
+
+minbox's standing instructions for the session (`instructions` in `internal/server/sessions.go`:
+AgentSystemPrompt, the orchestration prompt, the person's `prompt_extra`, a relocation note) and
+`version`, a hash of the text (`promptID`). The hello and every heartbeat answer the same hash as
+`instructions_version`. `section: true` (a Claude Code agent on the server's machine,
+`liveInstructions`): the agent was started without the instructions on its command line, and the mod
+puts them in the system prompt itself (below, "Instructions in a running conversation"). `false`
+(Pi, OpenCode, Claude Code on another machine, whose host's mod may be older): the instructions are
+on the command line (`--append-system-prompt`), and the mod adds nothing.
 
 ### `POST /api/agent/tool {tool, args}`
 
@@ -177,6 +192,58 @@ changed). What the hosts allow:
   definitions are a snapshot of each rebuild, taken when a turn's context is prepared. The plugin's
   callback reads the current set; a changed set calls `reload()` on every location's context.
   `transform` also returns `{dispose}`, and the editor has `remove`.
+
+### Instructions in a running conversation (Claude Code)
+
+The instructions used to go on the command line only (`--append-system-prompt`), so a change to them
+(a new minbox, the person's prompt settings) reached an agent only at its next start, and the agent
+showed as stale for "prompt" (`internal/server/stale.go`). A Claude Code agent on the server's
+machine now gets them from its mod as part of a system prompt section, which Claude Code lets a mod
+send again, changed, to a running conversation. Read from Claude Code 2.1.328 (`claude-code.d.ts`,
+the plugin-authoring reference's "What a thread has sent is fixed", and the engine itself):
+
+- `prompt.section` "fires once per named section of the system prompt, when the engine assembles
+  it"; the hook answers `{ text }` (null leaves the section out). The ids are the engine's
+  (`prompt.compose` lists them); a mod cannot add a section of its own here (a `prompt.compose`
+  section of its own exists, but "a `prompt.compose` answer that changes is not sent while the
+  thread's recorded prompt stands", and that answer has no `breakPromptCache`).
+- The answers are cached for the process. "After `$.ui.invalidate("prompt.section")` a changed answer
+  waits for a new thread or a compaction, unless it carries `breakPromptCache: true`: then … a section
+  [goes out next turn] over the main thread's (a subagent keeps the prompt it started with), and a
+  dim line names the mod." The flag "rewrites the cache from the system prompt on and drops the
+  model's earlier thinking". The engine compares each answer with the one it had and sends only one
+  that changed, so a flag on an unchanged answer costs nothing; it also drops the cached answers on
+  its own (a mod reloaded, a move to a worktree), and asks again.
+- No size limit on a section's text (the check is only: a string or null).
+
+So the mod hooks the environment section (`env_info_simple`; `env_info_static` for an SDK preset),
+which every full and lean prompt has on the session side of the cache boundary and which a subagent's
+prompt does not use, and appends the instructions to its text (`INSTRUCTIONS_SECTIONS` in
+`register.ts`):
+
+- At `session.start` it fetches `GET /api/agent/instructions` before the first prompt is composed;
+  the first answer carries them with no flag.
+- A hello or heartbeat answer whose `instructions_version` differs from the version held fetches them
+  again. When the text changed after the section was answered, the mod calls
+  `$.ui.invalidate("prompt.section")`, and the next answer carries the new text with
+  `breakPromptCache: true`, only when its version differs from the one this process last answered
+  (the text the conversation was sent). A change and back before the section was asked again breaks
+  nothing. A section answered before the instructions could be fetched (the server was down) is
+  answered without them and gets them, with the flag, once they arrive.
+- Every heartbeat says `live_instructions: true` (the mod adds the section) and `instructions_version`
+  (the version it last answered). While a Claude Code agent's mod says so, the server does not count a
+  changed instructions text as a reason to restart it (`staleReasons`, its `live` argument); "plugin"
+  and "env" still count. An old mod, Pi and OpenCode keep the "prompt" reason. After a server restart
+  the reason may show until the mod's next heartbeat (15 s at most).
+- The prompt context (`prompt` event above) still repeats the instructions on the first prompt of a
+  conversation, after a compaction and every 20th prompt, as before.
+
+Limits: a resumed conversation keeps what it recorded ("A resumed thread keeps its recorded
+sections, and only an answer that changes there after its first turn goes out"), so a conversation
+started under the command-line scheme and resumed now may carry the old text from its record until
+the instructions next change or a compaction; the prompt context gives it the current text on its
+first prompt. On another machine the host's mod may be older, so a Claude Code agent there keeps the
+command line and the "prompt" reason.
 
 So all three refresh at runtime; the schemas did not need to be made generic. The remaining limits are
 Claude Code's: no removal, and description changes that may wait for the next conversation or
