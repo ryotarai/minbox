@@ -30,7 +30,7 @@ export function AllAgentsView({
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
   const { isPhone, navigate, goBack } = useApp()
-  const { detail } = useAllTasksSelect()
+  const { detail } = useAllTasksSelect(tasks)
   const owner = useOwnerName()
   const ids = agents.map((a) => a.id)
   const openTasks = agentTasks(tasks, ids).open
