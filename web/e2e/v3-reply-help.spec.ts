@@ -5,7 +5,7 @@ import { expect, expectTerminal, test, typeInTerminal, type Minbox } from './fix
 import { agentReply, api, say as sayTo, startAgent, taskNamed, type Agent } from './v3'
 
 // v3 (ported from suggestions.spec.ts): the reply help above the reply box of an agent's stream, of a
-// task's view (its latest agent message; also in the Columns view and on a phone).
+// task's view (its latest agent message; also on a phone).
 
 // Reply help: when the agent spoke last, questions with options above the reply box; the answers go
 // into the reply on Send. The server runs e2e/fake-suggest.py instead of claude
@@ -278,18 +278,6 @@ async function tasksPane(page: Page) {
   await expect(pane).toHaveAttribute('data-shown', 'true')
   return pane
 }
-
-test("columns on an agent's page: each task column has the questions for its latest agent message", async ({ page, minbox }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  await page.goto(minbox.url)
-  await seed(page, minbox)
-  const t = await taskNamed(minbox, 'Typed in the terminal')
-  const pane = await tasksPane(page)
-  await pane.locator(`[data-testid="agent-task-check"][data-task="${t.id}"]`).check()
-  const col = page.locator(`[data-testid="task-column"][data-task="${t.id}"]`)
-  await expect(col.getByTestId('reply-q')).toHaveCount(3)
-  await expect(col.locator('[data-testid="reply-q"][data-index="0"]')).toContainText('How should it continue? (0)')
-})
 
 test("an agent's page: a task opened from its Tasks pane has the questions for the task's latest agent message", async ({ page, minbox }) => {
   await page.goto(minbox.url)

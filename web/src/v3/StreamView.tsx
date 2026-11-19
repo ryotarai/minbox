@@ -28,7 +28,6 @@ import { ArtifactsGrid } from '../components/AttachmentTiles'
 import { IconFold, IconGrid, IconMore, IconUnfold } from '../components/icons'
 import { AgentActions } from './AgentActions'
 import { AgentTaskList, agentTasks } from './AgentTasks'
-import { AgentColumns, useColumnPick } from './Columns'
 import { TaskView } from './TaskView'
 import { StreamTaskEventLine, groupTaskEvents, type StreamTaskEvent } from './StreamEvents'
 import { Resizer, type PaneKind, type SidePane } from './layout'
@@ -67,13 +66,9 @@ export function StreamView({
   onOpenAttachment: (a: Attachment, m: V3Message) => void
 }) {
   const { error, isPhone, sessions, toast, route, navigate, goBack } = useApp()
-  // The tasks checked in the Tasks pane: shown side by side in place of the stream (not on a phone).
-  const mine = agentTasks(tasks, id)
-  const pick = useColumnPick(id, [...mine.open, ...mine.done])
-  // A task picked by its title in the Tasks pane, or opened from anywhere else (#v=agent&s=…&k=…): that
-  // one task in place of the stream, before the checked columns (on a phone too).
+  // A task picked by its row in the Tasks pane, or opened from anywhere else (#v=agent&s=…&k=…): that
+  // one task in place of the stream (on a phone too).
   const detail = route.view === 'agent' && route.k ? route.k : null
-  const cols = !isPhone && pick.columns && !detail
   const byId = useSessionsById()
   const nav = useNav()
   const sess = byId.get(id)
@@ -100,7 +95,7 @@ export function StreamView({
   const arrived = (p: V3Message) => msgs.some((m) => m.author === 'user' && (m.words ?? m.body) === p.words && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000)
   const shown = [...msgs, ...pending.filter((p) => !arrived(p))]
   const nearQ = answersNearQuestions(foldAll ? [] : shown)
-  useMarkRead(s?.messages, !cols && !detail)
+  useMarkRead(s?.messages, !detail)
   const firstNew = useFirstNew(id, s?.messages)
   const keep = useKeepPosition(scroller)
   const follow = useFollow(scroller, id, s ? shown : [], !!highlight || keep.pending())
@@ -119,9 +114,9 @@ export function StreamView({
   // Older messages arrive above: what the person reads stays where it is.
   useLayoutEffect(() => keep.after(), [older.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const files = threadArtifacts(msgs)
-  const streamShown = !cols && !detail
+  const streamShown = !detail
   useConversationKeys(scroller, msgs, onOpenAttachment, streamShown)
-  // Back from the columns or a task: the stream at its newest message.
+  // Back from a task: the stream at its newest message.
   const wasShown = useRef(streamShown)
   useLayoutEffect(() => {
     if (!wasShown.current && streamShown && scroller.current) {
@@ -222,7 +217,7 @@ export function StreamView({
   const pane = (side.shown[0] ?? 'tasks') as SidePane
   return (
     <>
-      <div className={'v-col' + (narrow ? ' v-narrow' : '')} data-testid="stream-view" data-session={id} data-columns={cols || undefined} data-detail={detail ?? undefined}>
+      <div className={'v-col' + (narrow ? ' v-narrow' : '')} data-testid="stream-view" data-session={id} data-detail={detail ?? undefined}>
         <div className="v-head">
           <div className="v-r1">
             <BackButton tasks={tasks} fallback={detail ? { k: null } : undefined} />
@@ -288,11 +283,9 @@ export function StreamView({
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">
-              <TaskView key={detail} id={detail} highlight={highlight} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ detail: true }} home={id} />
+              <TaskView key={detail} id={detail} highlight={highlight} tasks={tasks} onOpenAttachment={onOpenAttachment} home={id} />
             </div>
           </div>
-        ) : cols ? (
-          <AgentColumns pick={pick} tasks={tasks} onOpenAttachment={onOpenAttachment} />
         ) : (
         <>
         <div className="v-convwrap">

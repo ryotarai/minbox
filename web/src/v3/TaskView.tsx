@@ -3,8 +3,8 @@
 // The reply goes to the agent most recently active on it (switchable) and carries the task's tag.
 // The one task picked has the page's only reply box: its quieter "Send without task" (⇧⌘↵) sends to
 // the agent's stream untagged (the agent whose page it is; in All agents, the task's agent).
-// Two shapes: a column among the tasks checked in the agent's Tasks pane (a short header), or the one
-// task picked in the agent's page (#v=agent&s=…&k=…): a card with its title, status, agents and checklist.
+// It is the one task picked in the agent's page (#v=agent&s=…&k=…) or in All agents: a card with its
+// title, status, agents and checklist above the conversation.
 // (There is no task page of its own any more: every link to a task opens its agent's page with it.)
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment } from '../api'
@@ -18,30 +18,25 @@ import { QuoteBubble } from './quote'
 import { TaskTitle } from './RenameTask'
 import { StuckAgentBanners } from './StuckAgent'
 import { DeliveryLine } from '../components/ThreadView'
-import { IconAskStatus, IconCheck, IconChevronDown, IconClose, IconGoal } from '../components/icons'
+import { IconAskStatus, IconCheck, IconChevronDown } from '../components/icons'
 
 export function TaskView({
   id,
   highlight,
   tasks,
   onOpenAttachment,
-  column,
   home,
 }: {
   id: string
   highlight: string | null
   tasks: BoardTask[]
   onOpenAttachment: (a: Attachment, m: V3Message) => void
-  /** onRemove: a column among the checked ones (✕ unchecks it). detail: the one task picked in the
-   *  agent's page (its card; the Tasks pane's row, clicked again, closes it). */
-  column: { onRemove?: () => void; detail?: boolean }
   /** The agent whose page shows the task: where "Send without task" goes (else the task's agent). */
   home?: string
 }) {
   const { error, sessions, toast } = useApp()
   const byId = useSessionsById()
   const nav = useNav()
-  const detail = !!column.detail
   const [d, reload, setD] = useLive<TaskDetail>(id, () => v3.task(id))
   const [ctx, setCtx] = useState<Record<string, V3Message[] | 'loading'>>({})
   const [to, setTo] = useState<string | null>(null)
@@ -55,7 +50,7 @@ export function TaskView({
   useMarkRead(d?.messages)
   const msgs = d?.messages ?? []
   const firstNew = useFirstNew(id, d?.messages)
-  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight && detail)
+  const follow = useFollow(scroller, id, d ? msgs : [], !!highlight)
   const landed = useRef<string | null>(null)
   useLayoutEffect(() => {
     if (!d || landed.current === id || highlight) return
@@ -63,16 +58,16 @@ export function TaskView({
     const box = scroller.current
     const el = box?.querySelector('[data-new-divider]')
     if (el && box) {
-      // It scrolls only itself (scrollIntoView would also move the row of columns sideways).
+      // It scrolls only itself (scrollIntoView would also move the page around it).
       box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
       follow.atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 60
     }
   })
-  useConversationKeys(scroller, msgs, onOpenAttachment, detail)
+  useConversationKeys(scroller, msgs, onOpenAttachment, true)
   const live = useMemo(() => (sessions ?? []).filter((s) => !s.archived_at && s.kind !== 'shell'), [sessions])
   if (!d)
     return (
-      <div className="v-col v-column" data-testid="task-column" data-task={id} data-detail={detail || undefined}>
+      <div className="v-col v-column" data-testid="task-column" data-task={id} data-detail>
         <div className="v-empty">Loading…</div>
       </div>
     )
@@ -134,8 +129,8 @@ export function TaskView({
       throw e
     }
   }
-  // "Send without task" (the one task picked): to the agent's stream, untagged, as its stream's box sends.
-  const plainTo = detail ? (home ?? taskOwner(t, sessions ?? []) ?? '') : ''
+  // "Send without task": to the agent's stream, untagged, as its stream's box sends.
+  const plainTo = home ?? taskOwner(t, sessions ?? []) ?? ''
   const sendPlain = async (o: Outgoing) => {
     try {
       const { to: _to, tasks: _tasks, ...rest } = o
@@ -165,10 +160,9 @@ export function TaskView({
       {st.text}
     </div>
   )
-  // A column: a short header (its title shows the task in the agent's page; ✕ unchecks it). The one
-  // task picked in the agent's page: a card with its title (renamed in place), where it stands, its
-  // status (set here), its agents, and its checklist beside them (below them when narrow).
-  const head = detail ? (
+  // The card: its title (renamed in place), where it stands, its status (set here), its agents, and
+  // its checklist beside them (below them when narrow).
+  const head = (
     <div className="v-head v-colhead v-taskcard" data-testid="task-card">
       <div className="v-taskcard-main">
         <div className="v-r1">
@@ -190,35 +184,13 @@ export function TaskView({
       </div>
       <TaskChecklist t={t} reload={reload} />
     </div>
-  ) : (
-    <div className="v-head v-colhead">
-      <div className="v-r1">
-        <StatusDot t={t} live={working} />
-        <h2 data-testid="column-title" title={t.title}>
-          <button type="button" className="v-coltitle" title="Show this task in the agent's page" onClick={() => nav.task(t.id)}>
-            {t.kind === 'goal' && <IconGoal size={14} className="v-goal" style={{ color: 'var(--mb-purple)' }} />}
-            {t.title}
-          </button>
-        </h2>
-        {column.onRemove && (
-          <button type="button" className="v-btn v-colx" data-testid="column-remove" aria-label={`Remove “${t.title}” from the columns`} title="Remove from the columns" onClick={column.onRemove}>
-            <IconClose size={14} />
-          </button>
-        )}
-      </div>
-      {sub}
-      <div className="v-r2">
-        <span className="v-cnt2">{STATUS_LABEL[t.status]}</span>
-        {agentChips}
-      </div>
-    </div>
   )
   return (
     <>
-      <div className="v-col v-column" data-testid="task-column" data-task={t.id} data-detail={detail || undefined} data-quote-scope="">
+      <div className="v-col v-column" data-testid="task-column" data-task={t.id} data-detail data-quote-scope="">
         {head}
         {/* All agents: the task's agents that wait in their terminals (an agent's own page shows its own above). */}
-        {detail && !home && <StuckAgentBanners ids={t.agents.map((a) => a.session_id)} />}
+        {!home && <StuckAgentBanners ids={t.agents.map((a) => a.session_id)} />}
         <div className="v-convwrap">
           <NewPill n={follow.unseen} onClick={follow.toBottom} />
           <div className="v-scroll" data-scroll={'task-' + id} ref={scroller} data-quote-box onScroll={follow.onScroll}>

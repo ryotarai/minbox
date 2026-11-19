@@ -77,10 +77,15 @@ export function V3App() {
   const side = useSidePanes(current)
   useEffect(() => setSbOpen(false), [view, route.s, route.k])
   useEffect(() => setTasksOver(false), [view, route.s])
-  // The Columns page is gone (the agent's Tasks pane checks tasks into columns now): an old #v=columns
-  // link lands on the Board.
+  // Task columns are gone: an old #v=columns link lands on the Board, and the tasks once checked into
+  // an agent's columns (kept in this browser) are forgotten.
   useEffect(() => {
     if (/(^#|&)v=columns(&|$)/.test(location.hash)) app.navigate({ view: 'main', k: null, s: null, m: null }, { push: false })
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith('minbox:v3-columns:')) localStorage.removeItem(k)
+    } catch {
+      /* storage off: nothing kept */
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The agent's Tasks pane (desktop and tablet; a plain shell has none). Beside the stream, shown or
   // folded to a strip as the person left it (kept in the layout); with no room for it (the stream would

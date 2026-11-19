@@ -72,11 +72,8 @@ test('recently done tasks: between open and done this week, muted, and folded on
   expect((await r1.boundingBox())!.height).toBeLessThan((await work.boundingBox())!.height)
   await snap(page, 'recent-done')
 
-  // Still a task: its checkbox shows it as a column; its title opens it.
-  const box = list.locator(`[data-testid="agent-task-check"][data-task="${done[5].id}"]`)
-  await box.check()
-  await expect(box).toBeChecked()
-  await box.uncheck()
+  // Still a task: its row (no checkbox) opens it.
+  await expect(list.locator('input[type="checkbox"]')).toHaveCount(0)
   await r1.click()
   await expect(r1).toHaveAttribute('aria-current', 'true')
   await r1.click()

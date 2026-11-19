@@ -9,8 +9,7 @@ const QUOTE_EVENT = 'minbox:v3-quote'
 
 /**
  * Puts text into the reply box as a quote (the Composer on screen takes it). With several
- * conversations on screen (the columns view), the one the selection is in (its [data-quote-scope])
- * takes it.
+ * conversations on screen, the one the selection is in (its [data-quote-scope]) takes it.
  */
 export function quoteIntoComposer(text: string) {
   if (!text.trim()) return
@@ -43,7 +42,7 @@ export function useQuoteTarget(setText: (f: (t: string) => string) => void, box:
   }, [setText, box])
 }
 
-/** The text selected in the conversation on screen ('' when none), for R (the columns view: the column it is in). */
+/** The text selected in the conversation on screen ('' when none), for R (the one the selection is in). */
 export function selectedInConversation(): string {
   const at = window.getSelection()?.anchorNode
   const el = at ? (at.nodeType === 1 ? (at as Element) : at.parentElement) : null
