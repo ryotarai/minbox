@@ -39,7 +39,7 @@ Background and design goals: [WHAT.md](WHAT.md) (Japanese); the v3 redesign: [do
 - **An agent's page**: its **Tasks** pane (OPEN TASKS; RECENTLY DONE, muted; DONE THIS WEEK, folded; unread tasks in
   bold) beside its stream. Click a task to select it: the page shows its card (title, summary, status, agents, and
   the checklist, whose steps you can tick too) above the messages about it; click it again for the whole stream.
-  Tick the checkboxes of several tasks to see them side by side, each with its own reply box. `⇧T` folds the pane.
+  `⇧T` folds the pane.
 - **Side panes** (header buttons, or keys): the agent's **Terminal** (`T`), its companion **Shell** (``Ctrl+` ``)
   and its **Files** (`⇧F`: the folder's tree and a viewer with word wrap and full screen). Column edges can be dragged.
 
@@ -48,7 +48,7 @@ Background and design goals: [WHAT.md](WHAT.md) (Japanese); the v3 redesign: [do
 | Width | Layout |
 | --- | --- |
 | 1100 px and up | Sidebar, Tasks pane, stream and the side panes you open. |
-| 700–1099 px | The stream with one side pane at a time; checked tasks show one column at a time, with tabs. |
+| 700–1099 px | The stream with one side pane at a time. |
 | below 700 px (phone) | One screen at a time, with tabs **Board · Agents · Search**. A task's checklist folds to a progress bar under its title; the terminal, shell, files and tasks open as sheets. |
 
 ## Install

@@ -75,11 +75,11 @@ test('All agents: the agent page’s panes; every agent’s tasks in the Tasks p
   await expect(rowOf(webOpen.id)).toBeVisible()
   await expect(rowOf(oldOpen.id)).toHaveCount(0)
   await expect(list.getByTestId('agent-tasks-recent').locator(`[data-task="${webDone.id}"]`)).toBeVisible()
-  // Each row names its agent; no checkboxes (columns are an agent's own).
+  // Each row names its agent; no checkboxes.
   await expect(rowOf(apiOpen.id).getByTestId('task-agent-badge')).toHaveText(a.name)
   await expect(rowOf(webOpen.id).getByTestId('task-agent-badge')).toHaveText(b.name)
   await expect(rowOf(webDone.id).getByTestId('task-agent-badge')).toHaveText(b.name)
-  await expect(list.getByTestId('agent-task-check')).toHaveCount(0)
+  await expect(list.locator('input[type="checkbox"]')).toHaveCount(0)
   const look = await rowOf(apiOpen.id).getByTestId('task-agent-badge').evaluate((e) => ({ size: parseFloat(getComputedStyle(e).fontSize), bg: getComputedStyle(e).backgroundColor }))
   expect(look.size).toBeLessThan(12)
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)')

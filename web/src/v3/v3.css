@@ -266,7 +266,6 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-recentdone .v-rd-check { flex: none; color: var(--mb-ok); opacity: .8; }
 .v-recentdone .v-rd-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v-recentdone .v-rd-ago { flex: none; color: var(--mb-faint); font-size: 11.5px; }
-.v-recentdone .v-mt-check { margin-top: 5px; }
 
 /* search */
 .v-search { padding: 12px 18px; }
@@ -387,10 +386,8 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
   .v-side[data-sheet] .v-mt { padding-top: 10px; padding-bottom: 10px; }
 }
 
-/* Task columns on an agent's page (the tasks checked in its Tasks pane), each a task's conversation. */
-.v-colstrip { flex: 1; min-width: 0; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; }
+/* The task picked in an agent's page (or All agents): its conversation in place of the stream. */
 .v-colsone { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.v-colsone > .v-coltabs { padding: 0 12px 8px; border-bottom: 1px solid var(--mb-line); }
 .v-colsone > .v-colcell { flex: 1; min-width: 0; border-right: 0; }
 .v-colcell { flex: 1 1 0; min-width: 320px; display: flex; min-height: 0; border-right: 1px solid var(--mb-line); }
 .v-colcell:last-child { border-right: 0; }
@@ -399,18 +396,7 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-column .v-head .v-r2 { margin-top: 5px; flex-wrap: nowrap; overflow: hidden; }
 .v-column .v-conv { padding: 10px 12px; }
 .v-column .v-composer { margin: 0 10px 10px; }
-.v-coltitle { display: block; width: 100%; border: 0; background: none; padding: 0; color: inherit; font-weight: inherit; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.v-coltitle:hover { text-decoration: underline; }
-.v-colx { padding: 1px 7px; }
 .v-colsub { margin-top: 4px; font-size: 12px; color: var(--mb-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v-coltabs { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
-.v-coltab { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; border: 1px solid var(--mb-line2); border-radius: 14px; padding: 3px 10px; background: var(--mb-bg); color: var(--mb-fg2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v-coltab.on { background: var(--mb-rowsel); color: var(--mb-fg); border-color: var(--mb-accent); }
-/* The Tasks pane's checkboxes: beside each row (the row still opens the task). */
-.v-mt-row { display: flex; align-items: flex-start; gap: 7px; border-bottom: 1px solid var(--mb-line); }
-.v-mt-row > .v-mt { flex: 1; min-width: 0; border-bottom: 0; }
-.v-mt-check, .v-sec input[type='checkbox'] { flex: none; margin: 9px 0 0; accent-color: var(--mb-accent); }
-.v-sec input[type='checkbox'] { margin: 0; }
 /* The task shown in the agent's page (picked by its title in the Tasks pane). */
 .v-mt.sel { background: var(--mb-rowsel); box-shadow: inset 2px 0 0 var(--mb-accent); padding-left: 7px; padding-right: 4px; border-radius: 0 6px 6px 0; }
 .v-goal { margin-right: 4px; }
