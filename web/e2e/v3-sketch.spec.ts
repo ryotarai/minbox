@@ -696,3 +696,154 @@ test.describe('touch', () => {
     await expectSel(page, ['line'])
   })
 })
+
+/** The newest sent message's first image, decoded in the page: the RGB of the pixel at (fx, fy),
+ * fractions of its width and height. */
+async function sentPixel(page: Page, fx: number, fy: number) {
+  const img = page.locator('[data-testid="v3-message"][data-author="user"]').getByTestId('attachment-card').first().locator('img').first()
+  await expect(img).toBeVisible()
+  const src = new URL((await img.getAttribute('src'))!, page.url()).toString()
+  return page.evaluate(
+    async ({ src, fx, fy }) => {
+      const bmp = await createImageBitmap(await (await fetch(src)).blob())
+      const c = document.createElement('canvas')
+      c.width = bmp.width
+      c.height = bmp.height
+      const g = c.getContext('2d')!
+      g.drawImage(bmp, 0, 0)
+      const d = g.getImageData(Math.round(bmp.width * fx), Math.round(bmp.height * fy), 1, 1).data
+      return [d[0], d[1], d[2]]
+    },
+    { src, fx, fy },
+  )
+}
+
+const shots = process.env.SKETCH_FILL_SHOTS
+
+test('fill: pick a tint for new shapes, change it on a selection (undo), none, lines have none, export and re-edit', async ({ page, minbox }) => {
+  await page.setViewportSize({ width: 1500, height: 900 })
+  await page.goto(minbox.url)
+  await openStream(page, minbox, 'sk-fill')
+  await page.getByTestId('compose-draw').click()
+  await expect(modal(page)).toBeVisible()
+  const m = modal(page)
+  const fillBtn = m.getByTestId('sketch-fill')
+  const menu = m.getByTestId('sketch-fill-menu')
+  const b = await canvasBox(page)
+
+  // The default is no fill; the picker offers none plus the palette.
+  await tool(page, 'rect')
+  await expect(fillBtn).toHaveAttribute('data-fill', 'none')
+  await fillBtn.click()
+  await expect(menu.getByRole('menuitemradio')).toHaveCount(8)
+  await expect(m.getByTestId('sketch-fill-none')).toHaveAttribute('aria-checked', 'true')
+  if (shots) await page.screenshot({ path: `${shots}/desktop-fill-menu.png` })
+  // Esc closes the picker, not the sketcher.
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(m).toBeVisible()
+
+  // A blue fill: the new rectangle is filled with its tint.
+  await fillBtn.click()
+  await m.getByTestId('sketch-fill-4').click()
+  await expect(menu).toBeHidden()
+  await expect(fillBtn).toHaveAttribute('data-fill', '#2563eb')
+  await drag(page, [100, 100], [300, 250])
+  const a = shapes(page).nth(0).locator('rect')
+  await expect(a).toHaveAttribute('fill', '#2563eb')
+  await expect(a).toHaveAttribute('fill-opacity', '0.3')
+
+  // Lines, arrows, pen, text and the eraser have no fill: the control is off for them.
+  for (const t of ['line', 'arrow', 'pen', 'text', 'eraser']) {
+    await tool(page, t)
+    await expect(fillBtn).toBeDisabled()
+  }
+  await tool(page, 'ellipse')
+  await expect(fillBtn).toBeEnabled()
+
+  // None: the next rectangle has no fill.
+  await tool(page, 'rect')
+  await fillBtn.click()
+  await m.getByTestId('sketch-fill-none').click()
+  await drag(page, [400, 100], [600, 250])
+  await expect(shapes(page).nth(1).locator('rect')).toHaveAttribute('fill', 'none')
+
+  // A click inside the filled rectangle selects it; the picker shows its fill. Changing the fill
+  // and the stroke color of the selection updates it, and undo/redo step through.
+  await tool(page, 'select')
+  await page.mouse.click(b.x + 200, b.y + 175)
+  await expectSel(page, ['rect'])
+  await expect(fillBtn).toHaveAttribute('data-fill', '#2563eb')
+  await fillBtn.click()
+  await m.getByTestId('sketch-fill-1').click()
+  await expect(a).toHaveAttribute('fill', '#dc2626')
+  await m.getByTestId('sketch-color-3').click()
+  await expect(a).toHaveAttribute('stroke', '#16a34a')
+  await page.getByTestId('sketch-undo').click()
+  await expect(a).toHaveAttribute('stroke', '#111827')
+  await expect(a).toHaveAttribute('fill', '#dc2626')
+  await page.getByTestId('sketch-undo').click()
+  await expect(a).toHaveAttribute('fill', '#2563eb')
+  await page.getByTestId('sketch-redo').click()
+  await expect(a).toHaveAttribute('fill', '#dc2626')
+  await page.getByTestId('sketch-undo').click()
+  await expect(a).toHaveAttribute('fill', '#2563eb')
+  await expect(shapes(page).nth(1).locator('rect')).toHaveAttribute('fill', 'none')
+
+  // The unfilled rectangle shows none.
+  await page.mouse.click(b.x + 400, b.y + 175)
+  await expectSel(page, ['rect'])
+  await expect(fillBtn).toHaveAttribute('data-fill', 'none')
+
+  // Saved and edited again: the fill comes back.
+  await page.getByTestId('sketch-done').click()
+  await expect(m).toBeHidden()
+  const tile = page.getByTestId('compose-file')
+  await expect(tile).toHaveAttribute('data-state', 'done')
+  await tile.getByTestId('file-edit').click()
+  await expect(shapes(page)).toHaveCount(2)
+  await expect(shapes(page).nth(0).locator('rect')).toHaveAttribute('fill', '#2563eb')
+  await expect(shapes(page).nth(1).locator('rect')).toHaveAttribute('fill', 'none')
+  await page.keyboard.press('Escape')
+  await expect(m).toBeHidden()
+
+  // The PNG: the inside of the filled rectangle is the blue tint, the unfilled one stays white.
+  // The image spans the shapes' box (100..600 x 100..250) plus 24px on each side.
+  await page.getByTestId('composer-text').fill('Filled')
+  await page.getByTestId('composer-send').click()
+  const fx = (x: number) => (x - 76) / 548
+  const fy = (y: number) => (y - 76) / 198
+  const filled = await sentPixel(page, fx(200), fy(175))
+  const blue = [255 * 0.7 + 0x25 * 0.3, 255 * 0.7 + 0x63 * 0.3, 255 * 0.7 + 0xeb * 0.3]
+  filled.forEach((v, i) => expect(Math.abs(v - blue[i])).toBeLessThan(8))
+  expect(await sentPixel(page, fx(500), fy(175))).toEqual([255, 255, 255])
+})
+
+test.describe('phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  test('the toolbar with the fill picker fits the phone width', async ({ page, minbox }) => {
+    await page.goto(minbox.url)
+    await openStream(page, minbox, 'sk-fill-phone')
+    await page.getByTestId('reply-actions').click()
+    await page.getByTestId('compose-draw').click()
+    await expect(modal(page)).toBeVisible()
+    const bar = modal(page).getByTestId('sketch-toolbar')
+    const fillBtn = modal(page).getByTestId('sketch-fill')
+    await expect(fillBtn).toBeVisible()
+    await fillBtn.click()
+    const menu = modal(page).getByTestId('sketch-fill-menu')
+    await expect(menu).toBeVisible()
+    const mb = (await menu.boundingBox())!
+    expect(mb.x).toBeGreaterThanOrEqual(0)
+    expect(mb.x + mb.width).toBeLessThanOrEqual(390)
+    for (const el of [bar, modal(page)]) {
+      const [sw, cw] = await el.evaluate((e) => [e.scrollWidth, e.clientWidth])
+      expect(sw).toBeLessThanOrEqual(cw)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    if (shots) await page.screenshot({ path: `${shots}/phone-fill-menu.png` })
+    await modal(page).getByTestId('sketch-fill-2').click()
+    await expect(fillBtn).toHaveAttribute('data-fill', '#ea580c')
+    if (shots) await page.screenshot({ path: `${shots}/phone-toolbar.png` })
+  })
+})
