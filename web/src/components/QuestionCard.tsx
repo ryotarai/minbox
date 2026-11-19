@@ -149,8 +149,10 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
                   onClick={() => toggle(c.label)}
                   data-testid="choice"
                   className={cx(
-                    'flex items-center gap-2.5 text-left',
-                    phone ? 'min-h-14 rounded-[11px] border px-3.5 py-3' : 'min-h-11 rounded-[9px] border border-transparent px-3 py-1.5',
+                    // A long label wraps and the box grows: the icon stays at the first line (a row as tall as
+                    // that line), and the padding makes a one-line choice as tall as the minimum height.
+                    'flex items-start gap-2.5 text-left',
+                    phone ? 'min-h-14 rounded-[11px] border px-3.5 py-4' : 'min-h-11 rounded-[9px] border border-transparent px-3 py-3',
                     on && state === 'Answered' && 'border-ok/45 bg-ok/6',
                     on && state !== 'Answered' && (phone ? 'border-wait/55 bg-wait/8' : 'bg-wait/10'),
                     !on && phone && 'border-linestrong',
@@ -158,17 +160,19 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
                     readOnly && 'cursor-default',
                   )}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={cx(
-                      'box-border shrink-0 rounded-full',
-                      phone ? 'h-5 w-5' : 'h-4 w-4',
-                      on ? (state === 'Answered' ? 'border-[5px] border-ok' : 'border-[5px] border-wait') : state === 'Closed' || state === 'Ignored' ? 'border-[1.5px] border-dashed border-faint' : 'border-[1.5px] border-faint',
-                    )}
-                  />
+                  <span className={cx('flex shrink-0 items-center', phone ? 'h-[22px]' : 'h-5')}>
+                    <span
+                      aria-hidden="true"
+                      className={cx(
+                        'box-border shrink-0 rounded-full',
+                        phone ? 'h-5 w-5' : 'h-4 w-4',
+                        on ? (state === 'Answered' ? 'border-[5px] border-ok' : 'border-[5px] border-wait') : state === 'Closed' || state === 'Ignored' ? 'border-[1.5px] border-dashed border-faint' : 'border-[1.5px] border-faint',
+                      )}
+                    />
+                  </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="flex flex-wrap items-center gap-2">
-                      <span className={cx(phone ? 'text-[15px]' : 'text-[13.5px]', on ? 'font-semibold' : '', dim ? 'text-subtle' : 'text-fg')}>{c.label}</span>
+                      <span className={cx('min-w-0 [overflow-wrap:anywhere]', phone ? 'text-[15px] leading-[22px]' : 'text-[13.5px] leading-5', on ? 'font-semibold' : '', dim ? 'text-subtle' : 'text-fg')}>{c.label}</span>
                       {c.recommended && <RecommendedTag />}
                       {c.settled && <span className="text-[10.5px] text-subtle">decided</span>}
                     </span>
@@ -200,16 +204,19 @@ export function QuestionCard({ index, total, q, sent, draft, pickedAt, onDraft, 
                     onClick={() => toggle(c.label)}
                     data-testid="choice"
                     className={cx(
-                      'flex items-center gap-1.5 rounded-md border px-3 text-[13px]',
-                      phone ? 'min-h-11' : 'h-9',
+                      // A chip that grows with its label: a long one wraps inside the box (left-aligned, the
+                      // icon at the first line) instead of spilling out of a fixed height. One line is 36px
+                      // (44px on a phone), as before.
+                      'flex min-w-0 max-w-full items-start gap-1.5 rounded-md border px-3 text-left text-[13px] leading-[18px]',
+                      phone ? 'min-h-11 py-3' : 'min-h-9 py-2',
                       on ? (state === 'Answered' ? 'border-ok/45 bg-ok/6' : 'border-linestrong bg-chip') : 'border-linestrong bg-transparent',
                       !readOnly && 'hover:border-muted',
                     )}
                   >
-                    <span aria-hidden="true" className="flex">{on ? <IconCheckSquare size={14} /> : <IconSquare size={14} />}</span>
-                    {c.label}
-                    {c.recommended && <span className="text-[10.5px] font-bold text-wait">Recommended</span>}
-                    {c.settled && <span className="text-[10.5px] text-subtle">decided</span>}
+                    <span aria-hidden="true" className="flex h-[18px] shrink-0 items-center">{on ? <IconCheckSquare size={14} /> : <IconSquare size={14} />}</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{c.label}</span>
+                    {c.recommended && <span className="shrink-0 whitespace-nowrap text-[10.5px] font-bold text-wait">Recommended</span>}
+                    {c.settled && <span className="shrink-0 whitespace-nowrap text-[10.5px] text-subtle">decided</span>}
                   </button>
                 )
               })}
