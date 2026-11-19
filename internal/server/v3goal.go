@@ -143,6 +143,14 @@ func (s *Server) modConfirmsIdle(id string) bool {
 // (after a restart): tick the runs, which may now take it as idle (resumeIdle).
 func (s *Server) goalResumeKick(id string) {
 	if _, ok := idleSince(id); !ok {
+		s.kickGoals()
+	}
+}
+
+// kickGoals ticks the runs now, off the caller's request (the ticker does it every few seconds
+// anyway; this only spares the wait).
+func (s *Server) kickGoals() {
+	if !s.manualGoalTicks.Load() {
 		go s.goalTick()
 	}
 }
@@ -163,6 +171,11 @@ func goalAgent(t *store.Task) string {
 	return t.CreatedBy
 }
 
+// The run (Task.Auto) is changed by the person, the agent and the ticks at once, so every change is
+// made to the stored run in one step (store.UpdateAuto), never by writing back a copy read earlier:
+// that would undo a change made in between (a pause, a stop, a new time limit) and could let a run go
+// on past its limits.
+
 func (s *Server) startAuto(ctx context.Context, t *store.Task, sessionID string, maxTurns int, by string) {
 	if sessionID == "" {
 		sessionID = goalAgent(t)
@@ -172,15 +185,21 @@ func (s *Server) startAuto(ctx context.Context, t *store.Task, sessionID string,
 	}
 	maxTurns = min(maxTurns, goalMaxTurns)
 	until := time.Now().Add(goalDefaultFor)
-	a := t.Auto
-	if a.State == store.AutoPaused && a.SessionID == sessionID {
-		// Resume: the guards start over.
-		a.State, a.Reason, a.ReasonText = store.AutoRunning, "", ""
-		a.Recent, a.FastTurns, a.StillTurns, a.Mark = nil, 0, 0, ""
-	} else {
-		a = store.AutoRun{State: store.AutoRunning, SessionID: sessionID, MaxTurns: maxTurns, Until: &until}
+	a, _, err := s.store.UpdateAuto(ctx, t.ID, func(a *store.AutoRun) bool {
+		if a.State == store.AutoPaused && a.SessionID == sessionID {
+			// Resume: the guards start over.
+			a.State, a.Reason, a.ReasonText = store.AutoRunning, "", ""
+			a.Recent, a.FastTurns, a.StillTurns, a.Mark = nil, 0, 0, ""
+		} else {
+			*a = store.AutoRun{State: store.AutoRunning, SessionID: sessionID, MaxTurns: maxTurns, Until: &until}
+		}
+		return true
+	})
+	if err != nil {
+		log.Printf("goal %s: start: %v", t.ID, err)
+		return
 	}
-	_ = s.store.SetAuto(ctx, t.ID, a)
+	t.Auto = a
 	_, _ = s.store.AddTaskAgent(ctx, t.ID, sessionID, store.RoleAssigned)
 	who := ""
 	if by != "" {
@@ -188,37 +207,72 @@ func (s *Server) startAuto(ctx context.Context, t *store.Task, sessionID string,
 	}
 	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", fmt.Sprintf("Autonomous run on%s · up to %d turns", who, a.MaxTurns), sessionID, "")
 	s.publishTasks()
-	go s.goalTick()
+	s.kickGoals()
 }
 
-// stopAuto ends a run: reason is a code (store.AutoReason*), text says it for the person.
-func (s *Server) stopAuto(ctx context.Context, t *store.Task, reason, text string) {
-	a := t.Auto
-	a.State, a.Reason, a.ReasonText = store.AutoStopped, reason, text
-	_ = s.store.SetAuto(ctx, t.ID, a)
-	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run ended: "+text, a.SessionID, "")
+// stopAuto ends a run that is on or paused: reason is a code (store.AutoReason*), text says it for
+// the person. False when it was neither (anymore).
+func (s *Server) stopAuto(ctx context.Context, t *store.Task, reason, text string) bool {
+	return s.endAuto(ctx, t, nil, false, reason, text)
+}
+
+// pauseAuto pauses a run that is on (the person resumes it): reason is a code, text says it for the
+// person. False when it was not on (anymore).
+func (s *Server) pauseAuto(ctx context.Context, t *store.Task, reason, text string) bool {
+	return s.endAuto(ctx, t, nil, true, reason, text)
+}
+
+// endAuto pauses or stops a run and records it on the goal's timeline. from is the run as the caller
+// read it: when set (a tick, whose decision rests on that run), the change is made only if the stored
+// run is still exactly that, and to t.Auto (which may carry the guards' counts); when nil (the
+// person, the agent), it is made to the stored run as it is now. False when nothing changed.
+func (s *Server) endAuto(ctx context.Context, t *store.Task, from *store.AutoRun, pause bool, reason, text string) bool {
+	state, prefix := store.AutoStopped, "Autonomous run ended: "
+	if pause {
+		state, prefix = store.AutoPaused, "Autonomous run paused: "
+	}
+	var ok bool
+	var err error
+	if from != nil {
+		next := t.Auto
+		next.State, next.Reason, next.ReasonText = state, reason, text
+		if ok, err = s.store.CompareAndSetAuto(ctx, t.ID, *from, next); ok {
+			t.Auto = next
+		}
+	} else {
+		var a store.AutoRun
+		a, ok, err = s.store.UpdateAuto(ctx, t.ID, func(a *store.AutoRun) bool {
+			if a.State != store.AutoRunning && (pause || a.State != store.AutoPaused) {
+				return false
+			}
+			a.State, a.Reason, a.ReasonText = state, reason, text
+			return true
+		})
+		if ok {
+			t.Auto = a
+		}
+	}
+	if err != nil {
+		log.Printf("goal %s: %s: %v", t.ID, state, err)
+	}
+	if !ok {
+		return false
+	}
+	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", prefix+text, t.Auto.SessionID, "")
 	s.publishTasks()
+	return true
 }
 
-// pauseAuto pauses a run (the person resumes it): reason is a code, text says it for the person.
-func (s *Server) pauseAuto(ctx context.Context, t *store.Task, reason, text string) {
-	a := t.Auto
-	a.State, a.Reason, a.ReasonText = store.AutoPaused, reason, text
-	_ = s.store.SetAuto(ctx, t.ID, a)
-	_ = s.store.AddTaskEvent(ctx, t.ID, "auto", "Autonomous run paused: "+text, a.SessionID, "")
-	s.publishTasks()
-}
-
-// haltAuto pauses or stops a run that halted by itself without meeting the goal, and tells the
-// person through the notification destinations (as a message that needs them), since the goal now
-// waits on them.
-func (s *Server) haltAuto(ctx context.Context, t *store.Task, pause bool, reason, text string) {
+// haltAuto pauses or stops a run that halted by itself without meeting the goal (from: the run the
+// tick read, see endAuto), and tells the person through the notification destinations (as a message
+// that needs them), since the goal now waits on them.
+func (s *Server) haltAuto(ctx context.Context, t *store.Task, from *store.AutoRun, pause bool, reason, text string) {
 	verb := "stopped"
 	if pause {
 		verb = "paused"
-		s.pauseAuto(ctx, t, reason, text)
-	} else {
-		s.stopAuto(ctx, t, reason, text)
+	}
+	if !s.endAuto(ctx, t, from, pause, reason, text) {
+		return
 	}
 	sess, err := s.store.GetSession(ctx, t.Auto.SessionID)
 	if err != nil {
@@ -284,15 +338,12 @@ func (s *Server) v3Auto(w http.ResponseWriter, r *http.Request) {
 		}
 		s.startAuto(ctx, t, body.SessionID, body.MaxTurns, "you")
 	case "pause":
-		if t.Auto.State != store.AutoRunning {
+		if !s.pauseAuto(ctx, t, store.AutoReasonByYou, "by you") {
 			httpError(w, 409, "the run is not on")
 			return
 		}
-		s.pauseAuto(ctx, t, store.AutoReasonByYou, "by you")
 	case "stop":
-		if t.Auto.State == store.AutoRunning || t.Auto.State == store.AutoPaused {
-			s.stopAuto(ctx, t, store.AutoReasonByYou, "by you")
-		}
+		s.stopAuto(ctx, t, store.AutoReasonByYou, "by you") // a run that is neither on nor paused stays as it is
 	default:
 		httpError(w, 400, "action must be start, pause or stop")
 		return
@@ -310,7 +361,9 @@ func (s *Server) runGoals(every time.Duration) {
 		case <-s.closing:
 			return
 		case <-tk.C:
-			s.goalTick()
+			if !s.manualGoalTicks.Load() {
+				s.goalTick()
+			}
 		}
 	}
 }
@@ -332,7 +385,11 @@ func (s *Server) goalTick() {
 	}
 }
 
+// goalStep decides on one running goal from the run as goalTick read it (from). The person or the
+// agent may change the run meanwhile (pause, stop, a new limit), so what it decides is stored only
+// if the run is still that one (CompareAndSetAuto); otherwise the next tick decides again.
 func (s *Server) goalStep(ctx context.Context, g *store.Task) {
+	from := g.Auto
 	a := g.Auto
 	now := time.Now()
 	met := len(g.Criteria) > 0
@@ -348,10 +405,10 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 		s.stopAuto(ctx, g, store.AutoReasonMet, "met")
 		return
 	case a.Until != nil && now.After(*a.Until):
-		s.haltAuto(ctx, g, false, store.AutoReasonTimeLimit, "time limit")
+		s.haltAuto(ctx, g, &from, false, store.AutoReasonTimeLimit, "time limit")
 		return
 	case a.MaxTurns > 0 && a.Turns >= a.MaxTurns:
-		s.haltAuto(ctx, g, false, store.AutoReasonTurnLimit, fmt.Sprintf("turn limit (%d)", a.MaxTurns))
+		s.haltAuto(ctx, g, &from, false, store.AutoReasonTurnLimit, fmt.Sprintf("turn limit (%d)", a.MaxTurns))
 		return
 	}
 	sess, err := s.store.GetSession(ctx, a.SessionID)
@@ -381,7 +438,7 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 	// The agent has ended a turn: the guards decide whether it may go on.
 	if reason, text := goalGuard(&a, now, idle, s.goalMark(ctx, g), !seeded); reason != "" {
 		g.Auto = a
-		s.haltAuto(ctx, g, true, reason, text)
+		s.haltAuto(ctx, g, &from, true, reason, text)
 		return
 	}
 	stream, err := s.store.StreamThread(ctx, sess.ID)
@@ -389,16 +446,25 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 		return
 	}
 	body := goalPrompt(g, a.Turns+1, a.MaxTurns)
+	// Take the turn before sending it, and only from the run read above: a run paused, stopped or
+	// given a new limit since sends nothing (the next tick decides on it as it is now).
+	took := a
+	took.Turns++
+	took.LastAt = &now
+	took.Recent = append(took.Recent, now)
+	if ok, err := s.store.CompareAndSetAuto(ctx, g.ID, from, took); err != nil || !ok {
+		if err != nil {
+			log.Printf("goal %s: %v", g.ID, err)
+		}
+		return
+	}
 	msg, err := s.store.AddMessage(ctx, stream, store.NewMessage{Author: store.AuthorUser, Body: body, Kind: KindContinue})
 	if err != nil {
 		log.Printf("goal %s: %v", g.ID, err)
+		_, _ = s.store.CompareAndSetAuto(ctx, g.ID, took, from) // give the turn back
 		return
 	}
 	_, _ = s.store.LinkMessages(ctx, g.ID, []string{msg.ID}, store.LinkAuto)
-	a.Turns++
-	a.LastAt = &now
-	a.Recent = append(a.Recent, now)
-	_ = s.store.SetAuto(ctx, g.ID, a)
 	s.publishThread(sess.ID, stream)
 	s.publishTasks()
 	s.wakePending(sess.ID)

@@ -81,8 +81,11 @@ type Server struct {
 	pickRun func(ctx context.Context, prompt string) ([]byte, error)
 	// agentPickRun runs the agent-picking model (agentpick.go; replaced in tests).
 	agentPickRun func(ctx context.Context, prompt string) ([]byte, error)
-	web          fs.FS
-	handler      http.Handler
+	// manualGoalTicks (tests): the goals' runs tick only when the test calls goalTick, never on the
+	// ticker or a kick (kickGoals), so a test decides when each tick happens.
+	manualGoalTicks atomic.Bool
+	web             fs.FS
+	handler         http.Handler
 
 	pendingMu sync.Mutex
 	pendingCh map[string]chan struct{}

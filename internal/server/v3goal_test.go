@@ -26,9 +26,12 @@ type goalRun struct {
 	id   string
 }
 
-// newGoalRun makes a goal with the given criteria and an autonomous run, its agent idle.
+// newGoalRun makes a goal with the given criteria and an autonomous run, its agent idle. The runs
+// tick only when the test ticks them (turn, ticks): a tick of the ticker or a kick at a moment of its
+// own would make the turns the test counts depend on timing.
 func newGoalRun(t *testing.T, e *env, criteria []string, extra map[string]any) *goalRun {
 	t.Helper()
+	e.srv.manualGoalTicks.Store(true)
 	sess := e.createSession()
 	e.do("POST", "/api/agent/status", map[string]string{"status": "idle"}, bearer(sess))
 	e.personSays(sess, "keep going")
@@ -245,17 +248,85 @@ func TestGoalLimitReasons(t *testing.T) {
 		t.Fatalf("paused = %v", au)
 	}
 	g2.resume(t)
-	a = g2.task(t).Auto
+	// The time runs out (in one step: never write back a run read earlier).
 	past := time.Now().Add(-time.Minute)
-	a.Until = &past
-	if err := e.st.SetAuto(context.Background(), g2.id, a); err != nil {
+	if _, _, err := e.st.UpdateAuto(context.Background(), g2.id, func(a *store.AutoRun) bool {
+		a.Until = &past
+		return true
+	}); err != nil {
 		t.Fatal(err)
 	}
-	g2.turn() // (a continuation the resume sent before the limit may still arrive here)
+	if g2.turn() {
+		t.Fatal("continued past the time limit")
+	}
 	if g2.turn() {
 		t.Fatal("continued past the time limit")
 	}
 	if a := g2.task(t).Auto; a.State != store.AutoStopped || a.Reason != store.AutoReasonTimeLimit || a.ReasonText != "time limit" {
 		t.Fatalf("auto = %+v", a)
+	}
+}
+
+// staleRun is a running goal as a tick reads it, the agent's turn just ended.
+func (g *goalRun) staleRun(t *testing.T) store.Task {
+	t.Helper()
+	g.e.do("POST", "/api/agent/status", map[string]string{"status": "idle"}, bearer(g.sess))
+	time.Sleep(3 * time.Millisecond)
+	goals, err := g.e.st.RunningGoals(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range goals {
+		if r.ID == g.id {
+			return r
+		}
+	}
+	t.Fatalf("goal %s is not running", g.id)
+	return store.Task{}
+}
+
+// A tick decides from the run it read. When the run changed since (its time ran out, the person
+// paused it), the tick sends nothing and leaves the change as it is: it never writes back the run it
+// read, which would undo a pause or a limit and go on past it.
+func TestGoalTickKeepsAChangeMadeMeanwhile(t *testing.T) {
+	guards(t, 100, time.Minute, 100, 0, 100)
+	e := newEnv(t)
+	ctx := context.Background()
+
+	g := newGoalRun(t, e, []string{"CI passes"}, nil)
+	stale := g.staleRun(t)
+	past := time.Now().Add(-time.Minute)
+	if _, _, err := e.st.UpdateAuto(ctx, g.id, func(a *store.AutoRun) bool { a.Until = &past; return true }); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.goalStep(ctx, &stale)
+	for _, p := range e.pending(g.sess) {
+		if p["kind"] == KindContinue {
+			t.Fatal("continued past a time limit set after the tick read the run")
+		}
+	}
+	if a := g.task(t).Auto; a.Until == nil || !a.Until.Equal(past) || a.Turns != 0 {
+		t.Fatalf("the tick undid the time limit: %+v", a)
+	}
+	if g.turn() {
+		t.Fatal("continued past the time limit")
+	}
+	if a := g.task(t).Auto; a.State != store.AutoStopped || a.Reason != store.AutoReasonTimeLimit {
+		t.Fatalf("auto = %+v", a)
+	}
+
+	g2 := newGoalRun(t, e, []string{"docs out"}, nil)
+	stale = g2.staleRun(t)
+	if code, _, _ := e.do("POST", "/api/v3/tasks/"+g2.id+"/auto", map[string]any{"action": "pause"}, nil); code != 200 {
+		t.Fatalf("pause: %d", code)
+	}
+	e.srv.goalStep(ctx, &stale)
+	for _, p := range e.pending(g2.sess) {
+		if p["kind"] == KindContinue {
+			t.Fatal("continued a run the person paused after the tick read it")
+		}
+	}
+	if a := g2.task(t).Auto; a.State != store.AutoPaused || a.Reason != store.AutoReasonByYou || a.Turns != 0 {
+		t.Fatalf("the tick undid the pause: %+v", a)
 	}
 }

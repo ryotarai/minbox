@@ -1122,9 +1122,47 @@ func (s *Store) SearchTasks(ctx context.Context, projectID, q string) ([]Task, e
 	return out, nil
 }
 
-// SetAuto stores a goal's autonomous run.
-func (s *Store) SetAuto(ctx context.Context, taskID string, a AutoRun) error {
-	return s.exec(ctx, `UPDATE tasks SET auto=?, updated_at=? WHERE id=?`, jsonText(a), ms(s.now()), taskID)
+// UpdateAuto changes a goal's autonomous run in one transaction: fn gets the stored run and changes
+// it, or returns false to leave it as it is. It returns the run as stored afterwards and whether fn
+// changed it. fn must not use the store. There is no blind setter on purpose: the person, the agent
+// and the ticks change a run at once, and writing back a copy read earlier would undo a change made
+// in between (a pause, a stop, a limit).
+func (s *Store) UpdateAuto(ctx context.Context, taskID string, fn func(a *AutoRun) bool) (AutoRun, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AutoRun{}, false, err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err := tx.QueryRowContext(ctx, `SELECT auto FROM tasks WHERE id=?`, taskID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			err = ErrNotFound
+		}
+		return AutoRun{}, false, err
+	}
+	var a AutoRun
+	_ = json.Unmarshal([]byte(raw), &a)
+	if !fn(&a) {
+		return a, false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET auto=?, updated_at=? WHERE id=?`, jsonText(a), ms(s.now()), taskID); err != nil {
+		return AutoRun{}, false, err
+	}
+	return a, true, tx.Commit()
+}
+
+// CompareAndSetAuto stores next only when the stored run is still old (as read before): false when
+// it changed meanwhile and nothing was stored.
+func (s *Store) CompareAndSetAuto(ctx context.Context, taskID string, old, next AutoRun) (bool, error) {
+	want := jsonText(old)
+	_, ok, err := s.UpdateAuto(ctx, taskID, func(a *AutoRun) bool {
+		if jsonText(*a) != want {
+			return false
+		}
+		*a = next
+		return true
+	})
+	return ok, err
 }
 
 // RunningGoals lists the goals whose autonomous run is on.

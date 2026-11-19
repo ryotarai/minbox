@@ -741,7 +741,7 @@ func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request, sess *store
 		}
 		v3Turns.end(sess.ID)
 		noteIdle(sess.ID)
-		defer func() { go s.goalTick() }()
+		defer s.kickGoals()
 	}
 	if sess.Status != store.StatusEnded && sess.Status != req.Status {
 		if err := s.store.SetSessionStatus(r.Context(), sess.ID, req.Status); err != nil {

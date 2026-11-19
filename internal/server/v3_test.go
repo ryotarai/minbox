@@ -277,6 +277,7 @@ func TestV3GoalAutonomousRun(t *testing.T) {
 	goalSettle = 0
 	t.Cleanup(func() { goalSettle = old })
 	e := newEnv(t)
+	e.srv.manualGoalTicks.Store(true) // the test ticks the run itself
 	sess := e.createSession()
 	e.do("POST", "/api/agent/status", map[string]string{"status": "idle"}, bearer(sess))
 	e.personSays(sess, "keep going until CI is green")
