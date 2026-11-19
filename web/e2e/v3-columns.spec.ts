@@ -2,8 +2,8 @@
 // pane has a checkbox, with a tri-state "All" (every open task of the agent, new ones too) on top. Checked
 // tasks show side by side in place of the stream, each with its messages and a reply box to its agent;
 // no bar over them: the Tasks pane's "N checked · Clear" unchecks them all (the stream again). Kept per
-// agent across a reload. While the stream is hidden (columns, one task), the Tasks pane has a message box
-// to the agent itself. A tablet shows one column at a time with tabs; a phone keeps the stream.
+// agent across a reload. While columns hide the stream, the Tasks pane has a message box to the agent
+// itself (one task picked: only the task's box, see v3-one-composer). A tablet shows one column at a time with tabs; a phone keeps the stream.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -195,7 +195,7 @@ test('a task title shows that task in the agent page, the Tasks pane kept and th
   await expect(detail).toHaveCount(0)
 })
 
-test('the Tasks pane message box: to the agent itself while columns or one task fill the page, the stream draft shared, shown in the stream', async ({ page, minbox }) => {
+test('the Tasks pane message box: to the agent itself while columns fill the page (not with one task), the stream draft shared, shown in the stream', async ({ page, minbox }) => {
   const a = await startAgent(minbox, 'api')
   const t1 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Fix the gauge reading', session_id: a.id })
   const t2 = await api(minbox, 'POST', '/api/v3/tasks', { title: 'Update the login screen copy', session_id: a.id })
@@ -228,19 +228,20 @@ test('the Tasks pane message box: to the agent itself while columns or one task 
   await expect(box.getByTestId('composer-text')).toHaveValue('')
   await expect(page.getByTestId('tasks-composer-sent')).toHaveCount(0, { timeout: 6000 })
 
-  // One task (its title): the box stays, beside the task's own reply box.
+  // One task (its title): only the task's own box (the pane's goes); its "Send without task" reaches the stream.
   await page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${t1.id}"]`).click()
   await expect(page.getByTestId('agent-task-detail')).toBeVisible()
-  await expect(box).toBeVisible()
-  await box.getByTestId('composer-text').fill('and the release notes')
-  await box.getByTestId('composer-send').click()
-  await expect(page.getByTestId('tasks-composer-sent')).toBeVisible()
+  await expect(box).toHaveCount(0)
+  await expect(page.getByTestId('composer-text')).toHaveCount(1)
+  const one = page.getByTestId('task-composer')
+  await one.getByTestId('composer-text').fill('and the release notes')
+  await one.getByTestId('composer-send-untagged').click()
   await expect.poll(() => inStream('and the release notes')).toBe(true)
 
   // The draft is the stream's: words left in the pane's box are in the stream's box once it shows.
-  await box.getByTestId('composer-text').fill('half a thought')
   await page.getByTestId('tasks-pane').locator(`[data-testid="agent-task"][data-task="${t1.id}"]`).click()
   await expect(page.getByTestId('task-column')).toHaveCount(2)
+  await box.getByTestId('composer-text').fill('half a thought')
   await page.getByTestId('tasks-clear').click()
   await expect(conv(page)).toBeVisible()
   await expect(box).toHaveCount(0)

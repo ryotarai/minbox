@@ -4,12 +4,14 @@
 // drawing), @ completes the agent's files, "!" runs a command, the picked answers to the
 // conversation's questions and the viewer's comments go with the words, the reply help's questions,
 // and, to an agent that ended, where the reply should go (resume it, another agent, or keep it).
+// A task's box can also send without the task (a quieter second button, ⇧⌘↵): to an agent's stream,
+// untagged, as its stream's box does.
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Annotation, Answer, Session } from '../api'
 import { useApp } from '../lib/app'
 import { getReplyDraft, updateReplyDraft, useDraftsVersion, useReplyDraft } from '../lib/drafts'
 import { ComposeFileTiles, clearFiles, fileInputHandlers, uploadIds, useComposeFiles } from '../lib/uploads'
-import { plural } from '../lib/format'
+import { isMac, plural } from '../lib/format'
 import { SketchButton } from '../components/Sketch'
 import { useMentions } from '../components/Mentions'
 import { commandOf } from '../components/CommandMessage'
@@ -49,6 +51,7 @@ export function Composer({
   helpThread,
   helpTask,
   compact = false,
+  untagged,
 }: {
   toId: string
   toOptions: Session[]
@@ -72,6 +75,8 @@ export function Composer({
   helpTask?: string
   /** A small box (the Tasks pane's): one line growing to a few, no full height. */
   compact?: boolean
+  /** A task's box: the second, quieter send (⇧⌘↵) that sends to this agent's stream without the task. */
+  untagged?: { to: string; onSend: (o: Outgoing) => Promise<void> }
 }) {
   const { isPhone, settings, toast, sessions } = useApp()
   const draft = useReplyDraft(draftKey)
@@ -83,13 +88,14 @@ export function Composer({
   const [extra, setExtra] = useState<{ task_id: string; title: string }[]>([])
   const [picking, setPicking] = useState(false)
   const [full, setFull] = useState(false)
-  const [where, setWhere] = useState<HTMLElement | null>(null)
+  const [where, setWhere] = useState<{ at: HTMLElement; untagged: boolean } | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const compose = useComposeFiles(draftKey)
   const { files, addFiles, addPastedText, remove } = compose
   const fileInput = useRef<HTMLInputElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   const sendRef = useRef<HTMLButtonElement>(null)
+  const plainRef = useRef<HTMLButtonElement>(null)
   const sketchOpen = useRef<(() => void) | null>(null)
   useQuoteTarget(setWords, box)
   const io = fileInputHandlers(addFiles, addPastedText)
@@ -99,8 +105,7 @@ export function Composer({
   // The picked answers of the conversation's questions: the newest message of the recipient's stream
   // with picks goes with the words (one message); the others go first, each on its own.
   const picked = messages.filter((m) => m.author === 'agent' && !m.pending).map((m) => ({ m, answers: draftedAnswers(m) })).filter((x) => x.answers.length > 0)
-  const withWords = [...picked].reverse().find((x) => !x.m.segment && x.m.session_id === toId)
-  const alone = picked.filter((x) => x !== withWords)
+  const withWordsFor = (to: string) => [...picked].reverse().find((x) => !x.m.segment && x.m.session_id === to)
   const picksCount = picked.reduce((n, x) => n + x.answers.length, 0)
   const openCount = messages.reduce((n, m) => n + (m.author === 'agent' ? openQuestions(m).length : 0), 0)
   const annoKeys = [...new Set([draftKey, ...annotationKeys])]
@@ -127,12 +132,20 @@ export function Composer({
   const ready = files.some((f) => f.state === 'done')
   const canSend = (!!words.trim() || ready || !!helpText || (!cmd && (picksCount > 0 || annos.length > 0))) && !uploading && !busy
 
-  const send = async (opts: { resume?: boolean; forward_to?: string; keep?: boolean } = {}) => {
+  const send = async (opts: { resume?: boolean; forward_to?: string; keep?: boolean; untagged?: boolean } = {}) => {
     if (!canSend) return
-    if (target?.status === 'ended' && !opts.resume && !opts.forward_to && !opts.keep) {
-      setWhere(sendRef.current)
+    const plain = !!opts.untagged && !!untagged
+    const dest = plain ? untagged!.to : toId
+    const deliver = plain ? untagged!.onSend : onSend
+    const destSess = plain ? (sessions ?? []).find((s) => s.id === dest) : target
+    console.log('DBGSEND', JSON.stringify(opts), plain, dest, destSess?.status)
+    if (destSess?.status === 'ended' && !opts.resume && !opts.forward_to && !opts.keep) {
+      const at = plain ? plainRef.current : sendRef.current
+      if (at) setWhere({ at, untagged: plain })
       return
     }
+    const withWords = withWordsFor(dest)
+    const alone = picked.filter((x) => x !== withWords)
     setBusy(true)
     const w = words.trim()
     const ex = extra
@@ -140,7 +153,7 @@ export function Composer({
       if (cmd) {
         // A "!command" goes alone: the answers and files stay for the next message.
         updateReplyDraft(draftKey, (d) => ({ ...d, words: '' }))
-        await onSend({ words: w, to: toId, tasks: ex.map((t) => t.task_id), uploads: [], resume: opts.resume, forward_to: opts.forward_to })
+        await deliver({ words: w, to: dest, tasks: plain ? [] : ex.map((t) => t.task_id), uploads: [], resume: opts.resume, forward_to: opts.forward_to })
       } else {
         for (const x of alone) {
           await v3.send(x.m.session_id, { words: '', answers_for: x.m.id, answers: x.answers }, x.m.thread_id)
@@ -151,10 +164,10 @@ export function Composer({
         if (text || withWords || annos.length || ups.length) {
           updateReplyDraft(draftKey, (d) => ({ ...d, words: '' }))
           setExtra([])
-          await onSend({
+          await deliver({
             words: text,
-            to: toId,
-            tasks: ex.map((t) => t.task_id),
+            to: dest,
+            tasks: plain ? [] : ex.map((t) => t.task_id),
             uploads: ups,
             answers_for: withWords?.m.id,
             answers: withWords?.answers,
@@ -215,6 +228,10 @@ export function Composer({
   const actionsDone = picked.reduce((n, x) => n + x.answers.filter((a) => actionKeys.has(a.key)).length, 0)
   const idleOthers = (sessions ?? []).filter((s) => s.id !== toId && s.status !== 'ended' && !s.archived_at && s.kind !== 'shell' && (!target?.project_id || s.project_id === target.project_id))
   const name = target?.name ?? 'the agent'
+  const whereSess = where?.untagged && untagged ? (sessions ?? []).find((s) => s.id === untagged.to) : target
+  const whereName = whereSess?.name ?? 'the agent'
+  const plainName = untagged ? ((sessions ?? []).find((s) => s.id === untagged.to)?.name ?? 'the agent') : ''
+  const plainKey = isMac() ? '⇧⌘↵' : 'Shift+Ctrl+Enter'
 
   return (
     <div className={'v-composer' + (full ? ' full' : '') + (compact ? ' compact' : '')} data-testid={testid} onDragOver={io.onDragOver} onDrop={io.onDrop}>
@@ -291,10 +308,13 @@ export function Composer({
             mention.handlers.onChange(e)
           }}
           onKeyDown={(e) => {
+            // An IME's Enter confirms the composition: it never sends.
+            console.log('DBGKEY', e.key, e.metaKey, e.shiftKey, e.nativeEvent.isComposing, e.keyCode, canSend, busy)
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (mention.onKeyDown(e)) return
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault()
-              void send()
+              void send({ untagged: e.shiftKey && !!untagged })
             } else if (e.key === 'Escape') {
               e.stopPropagation()
               ;(e.target as HTMLElement).blur()
@@ -362,6 +382,20 @@ export function Composer({
         <span className="v-sp" />
         {uploading && <span>uploading…</span>}
         {!uploading && words.trim() && !busy && !compact && <span className="v-hide-phone" data-testid="draft-saved">Draft saved</span>}
+        {untagged && (
+          <button
+            type="button"
+            ref={plainRef}
+            className="v-btn v-plainsend"
+            data-testid="composer-send-untagged"
+            disabled={!canSend}
+            onClick={() => void send({ untagged: true })}
+            aria-label={`Send to ${plainName} without the task`}
+            title={`Send to ${plainName}'s stream without tying it to this task (${plainKey})`}
+          >
+            {isPhone ? 'No task' : 'Send without task'}
+          </button>
+        )}
         <span className="v-kbd v-hide-phone">⌘↵</span>
         <button type="button" ref={sendRef} className="v-btn pri" data-testid="composer-send" disabled={!canSend} onClick={() => void send()} title={cmd ? 'Run as a command' : 'Send'}>
           {busy ? (cmd ? 'Running…' : 'Sending…') : cmd ? 'Run' : 'Send'}
@@ -375,19 +409,19 @@ export function Composer({
           <IconSketch size={18} /> Draw a diagram
         </button>
       </Popover>
-      <Popover anchor={where} open={!!where} onClose={() => setWhere(null)} side="top" align="end" className="w-[320px] p-3">
+      <Popover anchor={where?.at ?? null} open={!!where} onClose={() => setWhere(null)} side="top" align="end" className="w-[320px] p-3">
         <div className="flex flex-col gap-2" data-testid="where-reply">
           <b className="text-[13.5px] font-[650]">Where should this reply go?</b>
-          <span className="text-[12.5px] text-muted">{name} has ended.</span>
-          <button type="button" data-testid="where-resume" onClick={() => (setWhere(null), void send({ resume: true }))} className="h-9 rounded-md border border-accent bg-wait/8 px-2.5 text-left text-[13px]">
-            Resume {name} and deliver it
+          <span className="text-[12.5px] text-muted">{whereName} has ended.</span>
+          <button type="button" data-testid="where-resume" onClick={() => (setWhere(null), void send({ resume: true, untagged: where?.untagged }))} className="h-9 rounded-md border border-accent bg-wait/8 px-2.5 text-left text-[13px]">
+            Resume {whereName} and deliver it
           </button>
-          {idleOthers.map((s) => (
-            <button key={s.id} type="button" data-testid="where-forward" onClick={() => (setWhere(null), void send({ forward_to: s.id }))} className="h-9 rounded-md border border-linestrong bg-transparent px-2.5 text-left text-[13px]">
+          {idleOthers.filter((s) => s.id !== whereSess?.id).map((s) => (
+            <button key={s.id} type="button" data-testid="where-forward" onClick={() => (setWhere(null), void send({ forward_to: s.id, untagged: where?.untagged }))} className="h-9 rounded-md border border-linestrong bg-transparent px-2.5 text-left text-[13px]">
               Send to {s.name} ({s.status})
             </button>
           ))}
-          <button type="button" data-testid="where-keep" onClick={() => (setWhere(null), void send({ keep: true }))} className="h-8 rounded-md border-0 bg-transparent px-2.5 text-left text-[12.5px] text-subtle hover:text-fg">
+          <button type="button" data-testid="where-keep" onClick={() => (setWhere(null), void send({ keep: true, untagged: where?.untagged }))} className="h-8 rounded-md border-0 bg-transparent px-2.5 text-left text-[12.5px] text-subtle hover:text-fg">
             Keep it here; it goes in after Resume
           </button>
         </div>

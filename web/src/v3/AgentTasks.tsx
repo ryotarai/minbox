@@ -3,8 +3,9 @@
 // On a desktop or tablet they are a pane of their own between the agents list and the stream (its
 // width dragged and kept, folded to a strip with ⇧T); on a phone they are the first tab of the agent's
 // sheet ("Tasks N ›"). In the pane each task has a checkbox (and "All" one on top): the checked tasks
-// show side by side in place of the stream (see Columns). While the stream is not shown (columns, or one
-// task picked by its title), the pane ends with a message box to the agent itself (see PaneComposer).
+// show side by side in place of the stream (see Columns). While columns fill the page, the pane ends with
+// a message box to the agent itself (see PaneComposer); one task picked by its title has its own box
+// only, which can also send to the agent without the task.
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
 import { useSelectedProject } from '../lib/projects'
@@ -308,7 +309,7 @@ export function TasksPane({ tasks, sessionId, shown, overlay, onToggle }: PanePr
       onClear={pick.clear}
       label="Tasks of the agent"
       stripTitle="the agent's tasks"
-      footer={(detail || own.columns) && <PaneComposer sessionId={sessionId} tasks={tasks} />}
+      footer={own.columns && !detail && <PaneComposer sessionId={sessionId} tasks={tasks} />}
     >
       <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
     </TasksPaneFrame>
@@ -336,8 +337,9 @@ export function AllTasksPane({ tasks, agents, shown, overlay, onToggle }: PanePr
 /**
  * The Tasks pane's message box: to the agent itself (it decides the task, as from its stream), with the
  * stream composer's draft (the same words and files, whichever box shows), so a message can go to the
- * agent while its columns or one task fill the page. The stream is hidden then, so a brief "Sent to
- * <agent> ✓" says it went (it shows in the stream as usual).
+ * agent while its columns fill the page (one task picked: the task's box sends without the task
+ * instead). The stream is hidden then, so a brief "Sent to <agent> ✓" says it went (it shows in the
+ * stream as usual).
  */
 function PaneComposer({ sessionId, tasks }: { sessionId: string; tasks: BoardTask[] }) {
   const { sessions, error } = useApp()

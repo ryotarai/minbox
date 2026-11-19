@@ -285,7 +285,7 @@ export function StreamView({
         {detail ? (
           <div className="v-colsone" data-testid="agent-task-detail">
             <div className="v-colcell">
-              <TaskView key={detail} id={detail} highlight={highlight} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ detail: true }} />
+              <TaskView key={detail} id={detail} highlight={highlight} tasks={tasks} onOpenAttachment={onOpenAttachment} column={{ detail: true }} home={id} />
             </div>
           </div>
         ) : cols ? (
