@@ -436,7 +436,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return subscribe(
       (ev) => {
         if (ev.type === 'sessions') reloadSessions()
-        if (ev.type === 'projects') reloadProjects()
+        // A task's status moves a project's needs_you count (the rail badge).
+        if (ev.type === 'projects' || ev.type === 'tasks') reloadProjects()
         if (ev.type === 'threads') setThreadsVersion((v) => v + 1)
         if (ev.type === 'thread' && ev.thread_id) setThreadVersion((m) => ({ ...m, [ev.thread_id!]: (m[ev.thread_id!] ?? 0) + 1 }))
         if (ev.type === 'topics') setTopicsVersion((v) => v + 1)

@@ -16,42 +16,48 @@ export function shortDir(dir: string, max = 26): string {
 }
 
 export type ProjectStat = {
-  /** Threads waiting on the person (stopped, holding, waiting). */
-  waiting: number
+  /** Tasks and goals of the project whose status is needs_you (from the server; an open question alone never counts). */
+  needsYou: number
   unread: number
   /** Sessions that are not ended or archived. */
   live: number
   working: number
-  /** The busiest session state, for the dot. */
+  /** The busiest state, for the dot: 'waiting' when a task needs you. */
   state: 'waiting' | 'working' | 'idle' | 'ended' | 'empty'
 }
 
-export function statOf(sessions: Session[]): ProjectStat {
+export function statOf(sessions: Session[], needsYou: number): ProjectStat {
   const live = sessions.filter((s) => !s.archived_at)
-  const waiting = live.reduce((n, s) => n + (s.waiting ?? 0), 0)
   const unread = live.reduce((n, s) => n + (s.unread ?? 0), 0)
   const running = live.filter((s) => s.status !== 'ended')
   const working = running.filter((s) => s.status === 'working').length
-  const state = waiting > 0 ? 'waiting' : working > 0 ? 'working' : running.length > 0 ? 'idle' : live.length > 0 ? 'ended' : 'empty'
-  return { waiting, unread, live: running.length, working, state }
+  const state = needsYou > 0 ? 'waiting' : working > 0 ? 'working' : running.length > 0 ? 'idle' : live.length > 0 ? 'ended' : 'empty'
+  return { needsYou, unread, live: running.length, working, state }
 }
 
-/** Stats per project id (and '' = all projects), from the sessions list. */
+/** Stats per project id (and '' = all projects), from the sessions list and the projects' needs_you counts. */
 export function useProjectStats(): Map<string, ProjectStat> {
-  const { sessions } = useApp()
+  const { sessions, projects } = useApp()
   return useMemo(() => {
     const by = new Map<string, Session[]>()
     for (const s of sessions ?? []) {
       const k = s.project_id ?? ''
       by.set(k, [...(by.get(k) ?? []), s])
     }
+    const needs = new Map<string, number>()
+    let all = 0
+    for (const p of projects ?? []) {
+      needs.set(p.id, p.needs_you ?? 0)
+      all += p.needs_you ?? 0
+      if (!by.has(p.id)) by.set(p.id, [])
+    }
     const out = new Map<string, ProjectStat>()
     for (const [k, v] of by) {
-      out.set(k, statOf(v))
+      if (k) out.set(k, statOf(v, needs.get(k) ?? 0))
     }
-    out.set('', statOf(sessions ?? []))
+    out.set('', statOf(sessions ?? [], all))
     return out
-  }, [sessions])
+  }, [sessions, projects])
 }
 
 /** The selected project: '' = All projects (also when the remembered one is gone). */

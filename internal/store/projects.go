@@ -41,6 +41,9 @@ type Project struct {
 	SessionCount int       `json:"session_count"` // every session, archived and ended too
 	LiveSessions int       `json:"live_sessions"` // not ended, not archived
 	LastActivity time.Time `json:"last_activity"` // newest session or thread update
+	// NeedsYou: the project's tasks and goals whose status is needs_you (the rail's badge). An open
+	// question alone never counts.
+	NeedsYou int `json:"needs_you"`
 }
 
 // ProjectIcon is a project's icon. An image is served at URL (the PNG bytes are not in the list).
@@ -260,8 +263,9 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id),
 	  (SELECT COUNT(*) FROM sessions s WHERE s.project_id=p.id AND s.archived_at IS NULL AND s.status!=?),
 	  (SELECT COALESCE(MAX(s.updated_at),0) FROM sessions s WHERE s.project_id=p.id),
-	  (SELECT COALESCE(MAX(t.updated_at),0) FROM threads t JOIN sessions s ON s.id=t.session_id WHERE s.project_id=p.id)
-	  FROM projects p `+where, append([]any{StatusEnded}, args...)...)
+	  (SELECT COALESCE(MAX(t.updated_at),0) FROM threads t JOIN sessions s ON s.id=t.session_id WHERE s.project_id=p.id),
+	  (SELECT COUNT(*) FROM tasks k WHERE k.project_id=p.id AND k.status=?)
+	  FROM projects p `+where, append([]any{StatusEnded, TaskNeedsYou}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +276,7 @@ func (s *Store) listProjects(ctx context.Context, where string, args ...any) ([]
 		var created, sUp, tUp, iconAt int64
 		var archived, pinned sql.NullInt64
 		var iconKind, iconEmoji string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.DefaultAgent, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Dir, &p.HostID, &created, &archived, &pinned, &p.DefaultAgent, &iconKind, &iconEmoji, &iconAt, &p.SessionCount, &p.LiveSessions, &sUp, &tUp, &p.NeedsYou); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = fromMs(created)

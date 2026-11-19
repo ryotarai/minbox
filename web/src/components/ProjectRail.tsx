@@ -58,14 +58,25 @@ export function ProjectIcon({ icon, size }: { icon: NonNullable<Project['icon']>
   )
 }
 
-/** Waiting (amber) and unread (grey) counts of a project. */
+/** "N tasks need you" (the tasks and goals whose status is needs_you). */
+export function needsYouText(n: number): string {
+  return `${n} ${n === 1 ? 'task needs' : 'tasks need'} you`
+}
+
+/** Needs-you (amber: tasks whose status is needs_you) and unread (grey) counts of a project. */
 export function ProjectBadges({ stat }: { stat?: ProjectStat }) {
   if (!stat) return null
   return (
     <>
-      {stat.waiting > 0 && (
-        <span data-testid="project-waiting" className="shrink-0 rounded-[6px] bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-onaccent">
-          {stat.waiting}
+      {stat.needsYou > 0 && (
+        <span
+          data-testid="project-waiting"
+          role="img"
+          aria-label={needsYouText(stat.needsYou)}
+          title={needsYouText(stat.needsYou)}
+          className="shrink-0 rounded-[6px] bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-onaccent"
+        >
+          {stat.needsYou}
         </span>
       )}
       {stat.unread > 0 && (
@@ -394,7 +405,7 @@ export function ProjectRail() {
           type="button"
           data-testid="project-all"
           aria-pressed={selected === ''}
-          title="All projects"
+          title={all && all.needsYou > 0 ? `All projects\n${needsYouText(all.needsYou)}` : 'All projects'}
           onClick={() => selectProject('')}
           className={cx(
             'flex shrink-0 items-center gap-2 rounded-lg border-0 text-left',
@@ -405,7 +416,8 @@ export function ProjectRail() {
           <IconInbox size={tiles ? 18 : 16} className="shrink-0" />
           {!tiles && <span className="min-w-0 flex-1 truncate text-[13px] font-[650]">All projects</span>}
           {!tiles && <ProjectBadges stat={all} />}
-          {tiles && all && (all.waiting > 0 || all.unread > 0) && <span className="sr-only">{all.waiting || all.unread}</span>}
+          {tiles && all && all.needsYou > 0 && <span className="sr-only">{needsYouText(all.needsYou)}</span>}
+          {tiles && all && all.needsYou === 0 && all.unread > 0 && <span className="sr-only">{all.unread}</span>}
         </button>
         <div aria-hidden="true" className="mx-1.5 my-1 h-px shrink-0 bg-line" />
         {projects === null && <span className="px-2 py-2 text-[12px] text-subtle">Loading…</span>}
@@ -424,7 +436,7 @@ export function ProjectRail() {
               <button
                 type="button"
                 aria-pressed={on}
-                title={`${p.name}\n${p.dir || 'no folder'}${p.host_name && p.host_id !== 'local' ? ` · ${p.host_name}` : ''}${tiles && stat ? `\n${stat.state}${stat.waiting > 0 ? ` · ${stat.waiting} waiting` : ''}${stat.unread > 0 ? ` · ${stat.unread} unread` : ''}` : ''}`}
+                title={`${p.name}\n${p.dir || 'no folder'}${p.host_name && p.host_id !== 'local' ? ` · ${p.host_name}` : ''}${tiles && stat ? `\n${stat.state}${stat.needsYou > 0 ? ` · ${needsYouText(stat.needsYou)}` : ''}${stat.unread > 0 ? ` · ${stat.unread} unread` : ''}` : ''}`}
                 data-testid="project-select"
                 onClick={() => selectProject(p.id)}
                 className={cx(
@@ -440,8 +452,13 @@ export function ProjectRail() {
                     className={cx('relative flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold', p.icon ? 'proj-tint' : 'proj-badge')}
                   >
                     {p.icon ? <ProjectIcon icon={p.icon} size={32} /> : initials(p.name)}
-                    {stat && (stat.waiting > 0 || stat.unread > 0) && (
-                      <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">{stat.waiting || stat.unread}</span>
+                    {stat && stat.needsYou > 0 && (
+                      <span data-testid="project-waiting" aria-label={needsYouText(stat.needsYou)} className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">
+                        {stat.needsYou}
+                      </span>
+                    )}
+                    {stat && stat.needsYou === 0 && stat.unread > 0 && (
+                      <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1 text-[9px] font-bold leading-[13px] text-onaccent">{stat.unread}</span>
                     )}
                   </span>
                 ) : (
@@ -460,7 +477,7 @@ export function ProjectRail() {
                         >
                           {p.icon ? <ProjectIcon icon={p.icon} size={20} /> : initials(p.name)}
                         </span>
-                        <span data-testid="project-name" className={cx('min-w-0 flex-1 truncate text-[13px]', on || (stat && stat.waiting > 0) ? 'font-[650] text-fg' : 'font-medium text-fg2')}>
+                        <span data-testid="project-name" className={cx('min-w-0 flex-1 truncate text-[13px]', on || (stat && stat.needsYou > 0) ? 'font-[650] text-fg' : 'font-medium text-fg2')}>
                           {p.name}
                         </span>
                         <ProjectBadges stat={stat} />

@@ -160,6 +160,8 @@ export type Project = {
   session_count: number
   live_sessions: number
   last_activity: string
+  /** The project's open tasks and goals whose status is needs_you (an open question alone never counts). */
+  needs_you?: number
   /** An emoji, or an uploaded image served at url; null when none. */
   icon?: { kind: 'emoji'; emoji: string } | { kind: 'image'; url: string } | null
 }
