@@ -16,7 +16,9 @@ export type Shape = {
   text?: string
   stroke: string
   width: number
-  fill: boolean
+  /** The fill of a closed shape (rect, ellipse): a palette color, drawn as a light tint
+   * (FILL_OPACITY). false: none. true: the stroke color (older sketches). Other kinds ignore it. */
+  fill: string | boolean
 }
 
 /** What is kept in a compose file so a sketch can be opened again before sending. */
@@ -28,6 +30,17 @@ export type Scene = {
 
 export const PALETTE = ['#111827', '#dc2626', '#ea580c', '#16a34a', '#2563eb', '#9333ea', '#ffffff']
 export const WIDTHS = [2, 4, 7]
+/** Fills are drawn as a tint of the color, so the outline and anything under it still read. */
+export const FILL_OPACITY = 0.3
+
+/** Whether a kind of shape is closed (has an inside that can be filled). */
+export const isClosed = (kind: ShapeKind | Tool) => kind === 'rect' || kind === 'ellipse'
+
+/** The color a shape is filled with, or null when it has no fill. */
+export function fillOf(s: Pick<Shape, 'kind' | 'fill' | 'stroke'>): string | null {
+  if (!isClosed(s.kind) || !s.fill) return null
+  return s.fill === true ? s.stroke : s.fill
+}
 export const TEXT_BASE = 18
 
 export const textSize = (s: Pick<Shape, 'width'>) => TEXT_BASE + s.width * 3
@@ -185,7 +198,7 @@ export function hitsAt(shapes: Shape[], p: [number, number], tol: number, opts: 
     const { d, inside } = shapeDistance(s, p[0], p[1])
     if (d <= s.width / 2 + tol) out.push({ id: s.id, kind: 'ink', area, z })
     else if (opts.selected?.includes(s.id) && inBox(tol / 2)) out.push({ id: s.id, kind: 'selected', area, z })
-    else if (inside && (opts.inside !== false || s.fill)) out.push({ id: s.id, kind: 'inside', area, z })
+    else if (inside && (opts.inside !== false || fillOf(s) != null)) out.push({ id: s.id, kind: 'inside', area, z })
   })
   return out
 }

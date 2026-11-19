@@ -3,13 +3,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { useApp } from '../lib/app'
 import {
+  FILL_OPACITY,
   PALETTE,
   WIDTHS,
   arrowHead,
   blobToDataUrl,
   constrain,
+  fillOf,
   hitTest,
   hitTolerance,
+  isClosed,
   moveShape,
   normBox,
   onSketchRequest,
@@ -26,7 +29,7 @@ import {
   type Tool,
 } from '../lib/sketch'
 import { unique, type useComposeFiles } from '../lib/uploads'
-import { IconArrow, IconEllipse, IconEraser, IconLine, IconPen, IconRect, IconRedo, IconSelect, IconSketch, IconSquare, IconText, IconUndoStep } from './icons'
+import { IconArrow, IconEllipse, IconEraser, IconLine, IconPen, IconRect, IconRedo, IconSelect, IconSketch, IconText, IconUndoStep } from './icons'
 import { cx } from './ui'
 
 // A simple shape drawing tool (plain SVG), opened from the compose boxes. The
@@ -90,10 +93,10 @@ function Geom({ s, paint }: { s: Shape; paint: Paint }) {
 
 function ShapeEl({ s, sel }: { s: Shape; sel: boolean }) {
   const b = shapeBounds(s)
-  const filled = s.fill && (s.kind === 'rect' || s.kind === 'ellipse')
+  const fill = fillOf(s)
   return (
     <g data-testid="sketch-shape" data-kind={s.kind} data-shape-id={s.id} data-selected={sel ? 'true' : 'false'} data-x={Math.round(b.x)} data-y={Math.round(b.y)} data-w={Math.round(b.w)} data-h={Math.round(b.h)}>
-      <Geom s={s} paint={{ stroke: s.stroke, strokeWidth: s.width, fill: filled ? s.stroke : 'none', fillOpacity: filled ? 0.25 : undefined }} />
+      <Geom s={s} paint={{ stroke: s.stroke, strokeWidth: s.width, fill: fill ?? 'none', fillOpacity: fill ? FILL_OPACITY : undefined }} />
     </g>
   )
 }
@@ -125,6 +128,19 @@ type Editing = { id: string; x: number; y: number; text: string; isNew: boolean;
 let counter = 0
 const newId = () => `s${Date.now().toString(36)}${counter++}`
 
+/** A fill swatch as it looks on the canvas: the color's tint on white; none is a slashed white square. */
+function FillSwatch({ color, size = 16 }: { color: string | null; size?: number }) {
+  const tint = (c: string) => c + Math.round(FILL_OPACITY * 255).toString(16).padStart(2, '0')
+  const slash = 'linear-gradient(to top right, transparent calc(50% - 1px), #dc2626 calc(50% - 1px), #dc2626 calc(50% + 1px), transparent calc(50% + 1px))'
+  return (
+    <span
+      aria-hidden="true"
+      className="block shrink-0 rounded-[4px] border"
+      style={{ width: size, height: size, backgroundColor: '#ffffff', backgroundImage: color ? `linear-gradient(${tint(color)}, ${tint(color)})` : slash, borderColor: color && color !== '#ffffff' ? color : '#9ca3af' }}
+    />
+  )
+}
+
 function Btn({ children, className, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -144,7 +160,11 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   const [tool, setTool] = useState<Tool>('rect')
   const [stroke, setStroke] = useState(PALETTE[0])
   const [width, setWidth] = useState(WIDTHS[1])
-  const [fill, setFill] = useState(false)
+  /** The fill of new rectangles and ellipses: a palette color, or null for none. */
+  const [fill, setFill] = useState<string | null>(null)
+  /** The fill picker, when open: which side of its button it lines up with (it stays on screen). */
+  const [fillMenu, setFillMenu] = useState<'left' | 'right' | null>(null)
+  const fillRef = useRef<HTMLDivElement>(null)
   const [selIds, setSelIds] = useState<string[]>([])
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<[number, number, number, number] | null>(null)
@@ -346,7 +366,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
       return
     }
     const id = newId()
-    const s: Shape = { id, kind: tool, x1: p[0], y1: p[1], x2: p[0], y2: p[1], stroke, width, fill, pts: tool === 'pen' ? [p] : undefined }
+    const s: Shape = { id, kind: tool, x1: p[0], y1: p[1], x2: p[0], y2: p[1], stroke, width, fill: isClosed(tool) && fill ? fill : false, pts: tool === 'pen' ? [p] : undefined }
     // If the press ends as a click on a shape, it selects that shape (see endGesture). The pen
     // picks only by ink (not the inside of an unfilled shape), so a dot can still go there.
     const pickId = tool === 'pen' ? pick(p, e.pointerType, { inside: false }) : hitId
@@ -420,12 +440,37 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
     }
   }
 
-  const style = (patch: Partial<Pick<Shape, 'stroke' | 'width' | 'fill'>>) => {
+  /** Sets the stroke color, width or fill for new shapes and, in select mode, for the selected
+   * shapes (one undo step). The fill only goes to closed shapes. */
+  const style = (patch: { stroke?: string; width?: number; fill?: string | null }) => {
     if (patch.stroke) setStroke(patch.stroke)
     if (patch.width) setWidth(patch.width)
     if (patch.fill !== undefined) setFill(patch.fill)
-    if (selIds.length && tool === 'select') commit(hRef.current.shapes.map((s) => (selIds.includes(s.id) ? { ...s, ...patch } : s)))
+    if (!selIds.length || tool !== 'select') return
+    const cur = hRef.current.shapes
+    let changed = false
+    const next = cur.map((s) => {
+      if (!selIds.includes(s.id)) return s
+      const n: Shape = { ...s }
+      if (patch.stroke) n.stroke = patch.stroke
+      if (patch.width) n.width = patch.width
+      if (patch.fill !== undefined && isClosed(s.kind)) n.fill = patch.fill ?? false
+      if (n.stroke === s.stroke && n.width === s.width && n.fill === s.fill) return s
+      changed = true
+      return n
+    })
+    if (changed) commit(next)
   }
+
+  // The fill picker closes on a press outside it.
+  useEffect(() => {
+    if (!fillMenu) return
+    const f = (e: PointerEvent) => {
+      if (!fillRef.current?.contains(e.target as Node)) setFillMenu(null)
+    }
+    window.addEventListener('pointerdown', f, true)
+    return () => window.removeEventListener('pointerdown', f, true)
+  }, [fillMenu])
 
   const done = async () => {
     const svg = svgRef.current
@@ -479,6 +524,7 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
       e.preventDefault()
       e.stopPropagation()
       if (editRef.current) finishEdit(false)
+      else if (fillMenu) setFillMenu(null)
       else if (selIds.length > 1) setSelIds([])
       else if (confirming) setConfirming(false)
       else close()
@@ -546,6 +592,13 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
   const cursor = copying ? 'copy' : tool === 'select' ? (hoverId || gest.current?.type === 'move' ? 'move' : 'default') : tool === 'eraser' ? 'not-allowed' : 'crosshair'
   const hovered = tool === 'select' && !editing && hoverId ? shapes.find((s) => s.id === hoverId && !selIds.includes(s.id)) : undefined
   const sep = <span aria-hidden="true" className="mx-1 h-5 w-px bg-line2" />
+  // Fill applies to rectangles and ellipses: their tools, or a selection that holds one (or none,
+  // to set the fill of the next shapes). Lines, arrows, pen, text and the eraser have no fill.
+  const selShapes = tool === 'select' ? shapes.filter((s) => selIds.includes(s.id)) : []
+  const fillApplies = isClosed(tool) || (tool === 'select' && (selShapes.length === 0 || selShapes.some((s) => isClosed(s.kind))))
+  // The picker shows the fill of the one selected closed shape, else the fill of new shapes.
+  const selClosed = selShapes.filter((s) => isClosed(s.kind))
+  const shownFill = selClosed.length === 1 ? fillOf(selClosed[0]) : fill
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(5,5,7,0.6)]">
@@ -593,9 +646,47 @@ export function SketchModal({ initial, onDone, onClose }: { initial: Scene | nul
               <span aria-hidden="true" className="block w-4 rounded bg-current" style={{ height: w }} />
             </Btn>
           ))}
-          <Btn aria-label="Fill shapes" aria-pressed={fill} title="Fill rectangles and ellipses" data-testid="sketch-fill" className={cx(fill && 'border-accent bg-sel')} onClick={() => style({ fill: !fill })}>
-            <IconSquare size={14} fill="currentColor" /> Fill
-          </Btn>
+          <div ref={fillRef} className="relative">
+            <Btn
+              aria-label={`Fill: ${shownFill ?? 'none'}`}
+              aria-haspopup="menu"
+              aria-expanded={!!fillMenu && fillApplies}
+              title={fillApplies ? 'Fill of rectangles and ellipses' : 'Fill: only for rectangles and ellipses'}
+              data-testid="sketch-fill"
+              data-fill={shownFill ?? 'none'}
+              disabled={!fillApplies}
+              className="gap-1.5"
+              onClick={(e) => {
+                if (fillMenu) return setFillMenu(null)
+                const r = e.currentTarget.getBoundingClientRect()
+                setFillMenu(r.left + 150 > window.innerWidth ? 'right' : 'left')
+              }}
+            >
+              <FillSwatch color={shownFill} /> Fill
+            </Btn>
+            {fillMenu && fillApplies && (
+              <div role="menu" aria-label="Fill" data-testid="sketch-fill-menu" className={cx('absolute top-full z-10 mt-1 grid w-max grid-cols-4 gap-1.5 rounded-md border border-line2 bg-overlay p-2 shadow-pop', fillMenu === 'right' ? 'right-0' : 'left-0')}>
+                {[null, ...PALETTE].map((c, i) => (
+                  <button
+                    key={c ?? 'none'}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={shownFill === c}
+                    aria-label={c ? `Fill ${c}` : 'No fill'}
+                    title={c ? `Fill ${c}` : 'No fill'}
+                    data-testid={c ? `sketch-fill-${i - 1}` : 'sketch-fill-none'}
+                    onClick={() => {
+                      style({ fill: c })
+                      setFillMenu(null)
+                    }}
+                    className={cx('flex h-7 w-7 items-center justify-center rounded-md border-2 bg-transparent p-0', shownFill === c ? 'border-accent' : 'border-transparent hover:border-line2')}
+                  >
+                    <FillSwatch color={c} size={20} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {sep}
           <Btn aria-label="Undo" title="Undo" data-testid="sketch-undo" disabled={h.past.length === 0} onClick={undo}>
             <IconUndoStep size={16} />
