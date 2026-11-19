@@ -7,6 +7,7 @@
 // task picked by its title), the pane ends with a message box to the agent itself (see PaneComposer).
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
+import { useSelectedProject } from '../lib/projects'
 import { ago, standing, STATUS_LABEL, unreadCls, v3, type BoardTask } from './data'
 import { Composer, type Outgoing } from './Composer'
 import { Bar, StatusDot, agentHint, taskOwner, useNav } from './parts'
@@ -157,10 +158,15 @@ export function useOwnerName(): (t: BoardTask) => string | null {
 }
 
 /** All agents (#v=alltasks): a task picked by its title shows in place of the merged stream (#…&k=: a
- *  first one pushes, another replaces, so ‹ goes back to the stream; the shown one again closes it). */
-export function useAllTasksSelect(): { detail: string | null; select: (id: string) => void } {
+ *  first one pushes, another replaces, so ‹ goes back to the stream; the shown one again closes it).
+ *  The picked task counts only while it is one of the selected project's (tasks: the Board's, as the
+ *  Tasks pane lists them), so the pane and the task shown beside it always agree: a k of another
+ *  project (picked before the project changed, a back entry) shows nothing, and the pane marks nothing. */
+export function useAllTasksSelect(tasks: BoardTask[]): { detail: string | null; select: (id: string) => void } {
   const { route, navigate } = useApp()
-  const detail = route.view === 'alltasks' ? route.k : null
+  const { id: projectId } = useSelectedProject()
+  const k = route.view === 'alltasks' ? route.k : null
+  const detail = k && (!projectId || tasks.find((t) => t.id === k)?.project_id === projectId) ? k : null
   const select = (id: string) => (id === detail ? navigate({ k: null, m: null }, { push: false }) : navigate({ view: 'alltasks', s: null, k: id, m: null, tab: 'inbox' }, { push: !detail }))
   return { detail, select }
 }
@@ -319,7 +325,7 @@ export function AllTasksPane({ tasks, agents, shown, overlay, onToggle }: PanePr
   const { open, done } = agentTasks(tasks, ids)
   const unread = [...open, ...done].filter((t) => (t.unread ?? 0) > 0).length
   const owner = useOwnerName()
-  const { detail, select } = useAllTasksSelect()
+  const { detail, select } = useAllTasksSelect(tasks)
   return (
     <TasksPaneFrame shown={shown} overlay={overlay} onToggle={onToggle} open={open.length} unread={unread} label="Tasks of every agent" stripTitle="every agent's tasks">
       <AgentTaskList tasks={tasks} sessionId={ids} owner={owner} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />

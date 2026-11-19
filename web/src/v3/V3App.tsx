@@ -1,7 +1,7 @@
 // minbox v3's screens (docs/v3/usecases.md): the project rail, the sidebar (Board, Search, Agents),
 // and the Board / an agent's stream (a task: selected in its agent's page) / Search. On a phone: one column with bottom tabs
 // Board · Agents · Search. Keys: ⌘K J/K Enter X N Z R ⇧N ⇧F / ? g b g a T Ctrl+` Esc.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type Attachment, type Session } from '../api'
 import { opensBeside } from '../lib/attachments'
 import { useMentions } from '../components/Mentions'
@@ -156,6 +156,22 @@ export function V3App() {
     followed.current = route.s
     if (projectId && s.project_id && s.project_id !== projectId) selectProject(s.project_id)
   }, [view, route.s, sessions, app.projects, projectId])
+  // Another project picked (the rail, the palette, the phone's projects, a project archived): nothing
+  // of the previous one stays open. All agents unpicks a task of another project (#…&k= dropped, so the
+  // pane and the main pane show no task); an open agent of another project is left for the Board. All
+  // projects holds every agent and task, so picking it leaves things as they are. A layout effect, so
+  // the old project's task or agent is never painted under the new project.
+  const lastProject = useRef(projectId)
+  useLayoutEffect(() => {
+    if (lastProject.current === projectId) return
+    lastProject.current = projectId
+    if (!projectId) return
+    if (view === 'alltasks' && route.k) {
+      if (boardRef.current?.tasks.find((t) => t.id === route.k)?.project_id !== projectId) app.navigate({ k: null, m: null }, { push: false })
+    } else if (view === 'agent' && current?.project_id && current.project_id !== projectId) {
+      app.navigate({ view: 'main', s: null, k: null, m: null, tab: 'inbox' }, { push: true })
+    }
+  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
   // The ＋ on a project's header in the agent list: the New agent dialog in that project.
