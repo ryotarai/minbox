@@ -118,6 +118,9 @@ test('a tool call goes to the server with its arguments; its text is the result,
   const res: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', task_id: 't1' } as any)
   expect(res.result).toBe('Sent to the person.')
   expect(server.calls.find((c) => c.path === '/api/agent/tool')?.body).toEqual({ tool: 'send_message', args: { body: 'hi', task_id: 't1' } })
+  // Arguments the conversation's schema may not list (added later) go to the server as given; only the host's own keys are dropped.
+  await $.tool.call({ tool: 'mcp__minbox__send_message', body: 'hi', commands: [{ command: 'make' }], later_param: { x: 1 }, tool_use_id: 'tu9' } as any)
+  expect(server.calls.filter((c) => c.path === '/api/agent/tool').pop()?.body).toEqual({ tool: 'send_message', args: { body: 'hi', commands: [{ command: 'make' }], later_param: { x: 1 } } })
   const bad: any = await $.tool.call({ tool: 'mcp__minbox__send_message', body: '' } as any)
   expect(bad.deny).toBe('body is required.')
 })

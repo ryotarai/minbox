@@ -1,12 +1,12 @@
 {
   "protocol": 1,
-  "version": "39a2b3fba019",
+  "version": "6e8681c6fee9",
   "tools": [
     {
       "name": "send_message",
-      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes. commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so); the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
+      "description": "Send a message to the person in minbox: your conversation with them (your stream) is how they hear from you; they may not be watching the terminal. Use it EVERY time you need their opinion, a decision, an approval or an action from them, and when you finish work they should look at. Ask each decision as a `:::question` block (see `body`). It does not block: their reply arrives later as a new message in this conversation. Never wait or poll for it, and do not also ask the same thing in the chat. It reaches the person at once and cannot be taken back: never send placeholder, test or draft text, only the final message. Do not call it in the same parallel batch as a call whose result it needs (e.g. create_task's task id): wait for that result, then send; never guess ids. Pass `task_id`: the one task this message is about (from create_task / list_tasks, or the task shown with the person's message). Every message belongs to exactly one task; the person's messages it answers that are in no task yet go in the same one, so the person sees the exchange in that task. Without task_id it goes in the task you created in this turn (if you created exactly one), else in the task of the person's message it answers. About two tasks: send one message per task. `task_ids` is the older name (one id). `thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task). It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused. attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes. commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so), as [{command, cwd?, description?}]; the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "attachments": {
             "description": "Files to show the person beside your message, e.g. [\"docs/plan.md\", \"/tmp/checkout.png\", \"src/retry.mjs\"]: absolute (anywhere you can read) or relative to the session's folder. For something visual, a screenshot or image usually reads fastest; attach the HTML or source too when they should open or click through it. Any regular file, any size. Markdown, plain text, config and data files, Mermaid and Graphviz sources and HTML (its relative images and frames load from its folder) open in minbox's viewers; images (PNG, JPEG, GIF, WebP, SVG, AVIF, BMP, ICO) show in the message; videos (MP4, MOV, WebM) play beside it, and the person comments at moments (each comment comes back with its time and the paused frame's path); source code, scripts and other text open as code with line comments; PDFs and anything else are offered as a download. Folders and .env files are refused. The inbox keeps the version you sent and shows the file as it is now, saying when it changed. The person's annotations, including comments on images and code lines, come back in their reply. Each attachment's kind in the result is markdown, text, html, mermaid, graphviz, code, image, video, pdf or file; treat any other as file. A markdown link to an attached file in the body, e.g. [the mock](proto/admin.html), opens it beside the thread.",
@@ -124,7 +124,7 @@
       "name": "read_thread",
       "description": "Read the person's minbox inbox. With `thread_id` (the id every reply from the person carries, or one from list_threads / search): that thread's messages and the answers given. Any thread can be read, also one of another session (read-only). It returns the newest `limit` messages (default 30, at most 100), oldest first, and says how many exist; pass `before` (the message id the answer names) to page back to older ones. Long messages are cut and the whole answer is bounded, with a marker where text is missing. Without `thread_id`: the list of this session's threads (use list_threads for other sessions and filters).",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "before": {
             "description": "A message id from an earlier answer (\"older messages: before \u003cid\u003e\"): returns the messages before it.",
@@ -145,9 +145,9 @@
     },
     {
       "name": "set_session_title",
-      "description": "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply.",
+      "description": "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply. Parameters: `title`.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "title": {
             "description": "One line, about 3-8 words, about 80 characters or fewer (a guide, not a hard limit); plain text, in the language the person writes in.",
@@ -163,9 +163,9 @@
     },
     {
       "name": "open_url",
-      "description": "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer.",
+      "description": "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer. Parameters: `url`.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "url": {
             "description": "An absolute http(s) URL, e.g. https://github.com/owner/repo/pull/12.",
@@ -181,9 +181,9 @@
     },
     {
       "name": "create_task",
-      "description": "Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in. A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids moves earlier messages to it (a message belongs to exactly one task). The person's message that asked for it goes in it by itself, and so does your reply in this turn when it names no other task (send_message task_id). If the result lists similar_tasks that are the same work, use that task (send_message task_id) and do not create more. kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met. It returns the task id; keep the task current with update_task. A reply that needs the id waits for this result: do not call send_message in the same parallel batch.",
+      "description": "Add a task to the person's minbox Board: the Board is how they follow your work, and only you fill it in. A task is one distinct piece of work the person asked for (a feature, a bug, an investigation). Create one only for new work: first check the tasks shown with their message (or list_tasks) and keep using an open one that fits. Not for steps inside one piece of work (put those in its `steps`), not for a sub-question or a status check (they go in the task they are about). Every message must be about a task: a quick exchange that fits no task gets a small one, with status done once answered; message_ids moves earlier messages to it (a message belongs to exactly one task). The person's message that asked for it goes in it by itself, and so does your reply in this turn when it names no other task (send_message task_id). If the result lists similar_tasks that are the same work, use that task (send_message task_id) and do not create more. kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met. It returns the task id; keep the task current with update_task. A reply that needs the id waits for this result: do not call send_message in the same parallel batch. Parameters: title (required), kind, goal_id, summary, detail, status, steps, criteria, autonomous, message_ids.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "autonomous": {
             "description": "Goals only: minbox keeps continuing you until the criteria are met. Only when the person asked for it.",
@@ -296,9 +296,9 @@
     },
     {
       "name": "update_task",
-      "description": "Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step. A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only.",
+      "description": "Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed. Tick steps as you finish them (check_steps: their numbers from 1, in reading order), or replace the checklist with steps. A goal: tick its criteria with check_criteria; when all are met it is done. Set status needs_you only while you are truly blocked on the person (and ask them with send_message), done when finished or dropped; a done task the person writes about stays done until you set it back to working (only when they ask for more work). Keep summary current: one line on what is being done now, concretely (not who does it or how), updated as the work moves (the person reads it under the task's title). report: a short \"where it stands\" the person reads on the Board, as concrete. message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task). title: rename it when the work's scope becomes clear or changes, not on every step. A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only. Parameters: task_id (required), title, summary, detail, report, status, steps, check_steps, uncheck_steps, criteria, check_criteria, goal_id, message_ids.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "check_criteria": {
             "description": "Numbers (from 1) of a goal's criteria that are now met.",
@@ -430,7 +430,7 @@
       "name": "list_tasks",
       "description": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_id.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "all": {
             "description": "Every open task of the project, not only yours.",
@@ -445,7 +445,7 @@
       "name": "list_projects",
       "description": "List the person's minbox projects (a project is a folder on a host): id, name, folder, host, default agent, session and thread counts, how many threads wait on the person, last activity. Read-only. Archived projects only with `archived`.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "archived": {
             "description": "List archived projects instead of live ones.",
@@ -458,9 +458,9 @@
     },
     {
       "name": "get_project",
-      "description": "One minbox project by id (from list_projects): its folder, host, default agent, counts and its sessions (id, name, title, agent, status). Read-only.",
+      "description": "One minbox project by `project_id` (from list_projects): its folder, host, default agent, counts and its sessions (id, name, title, agent, status). Read-only.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "project_id": {
             "description": "A project id from list_projects.",
@@ -476,9 +476,9 @@
     },
     {
       "name": "list_sessions",
-      "description": "List minbox sessions (one coding-agent session each, Claude Code or Pi): id, name, title, folder, agent, status, project, unread and waiting counts. Newest activity first. Filter by `project_id`, `status` or `agent`. Read-only; returns at most `limit` rows and says how many exist.",
+      "description": "List minbox sessions (one coding-agent session each, Claude Code or Pi): id, name, title, folder, agent, status, project, unread and waiting counts. Newest activity first. Filter by `project_id`, `status` or `agent`; archived sessions with `archived`. Read-only; returns at most `limit` rows and says how many exist.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "agent": {
             "enum": [
@@ -517,7 +517,7 @@
       "name": "list_threads",
       "description": "List minbox threads across ALL sessions and projects (read_thread without an id lists only this session's), newest first: id, subject, project, session, status, unread and open-question counts, who wrote last, the start of the last message. Filters: `project_id`, `session_id` (\"self\" = this session), `status`, `awaiting` (person = waits on the person, agent = the person wrote last), `unread`, `query` (words in the subject or last message), `archived`. Read a thread with read_thread. Read-only; returns at most `limit` rows and says how many exist.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "archived": {
             "description": "List archived threads instead of live ones.",
@@ -567,9 +567,9 @@
     },
     {
       "name": "search",
-      "description": "Full-text search of minbox: thread titles, message bodies of the agent and of the person, and attachment names/text. Returns hits with thread id, session, a snippet and the date; open one with read_thread. Narrow it with `project_id`, `session_id` (\"self\" = this session) or `from` (agent | person). Read-only.",
+      "description": "Full-text search of minbox for the words in `query`: thread titles, message bodies of the agent and of the person, and attachment names/text. Returns hits with thread id, session, a snippet and the date; open one with read_thread. Narrow it with `project_id`, `session_id` (\"self\" = this session) or `from` (agent | person); at most `limit` hits per kind. Read-only.",
       "input_schema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "from": {
             "description": "Only messages written by the agent or by the person.",

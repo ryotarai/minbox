@@ -17,18 +17,18 @@ var taskTools = []string{"create_task", "update_task", "list_tasks"}
 
 var navDescription = map[string]string{
 	"list_projects": "List the person's minbox projects (a project is a folder on a host): id, name, folder, host, default agent, session and thread counts, how many threads wait on the person, last activity. Read-only. Archived projects only with `archived`.",
-	"get_project":   "One minbox project by id (from list_projects): its folder, host, default agent, counts and its sessions (id, name, title, agent, status). Read-only.",
-	"list_sessions": "List minbox sessions (one coding-agent session each, Claude Code or Pi): id, name, title, folder, agent, status, project, unread and waiting counts. Newest activity first. Filter by `project_id`, `status` or `agent`. Read-only; returns at most `limit` rows and says how many exist.",
+	"get_project":   "One minbox project by `project_id` (from list_projects): its folder, host, default agent, counts and its sessions (id, name, title, agent, status). Read-only.",
+	"list_sessions": "List minbox sessions (one coding-agent session each, Claude Code or Pi): id, name, title, folder, agent, status, project, unread and waiting counts. Newest activity first. Filter by `project_id`, `status` or `agent`; archived sessions with `archived`. Read-only; returns at most `limit` rows and says how many exist.",
 	"list_threads":  "List minbox threads across ALL sessions and projects (read_thread without an id lists only this session's), newest first: id, subject, project, session, status, unread and open-question counts, who wrote last, the start of the last message. Filters: `project_id`, `session_id` (\"self\" = this session), `status`, `awaiting` (person = waits on the person, agent = the person wrote last), `unread`, `query` (words in the subject or last message), `archived`. Read a thread with read_thread. Read-only; returns at most `limit` rows and says how many exist.",
-	"search":        "Full-text search of minbox: thread titles, message bodies of the agent and of the person, and attachment names/text. Returns hits with thread id, session, a snippet and the date; open one with read_thread. Narrow it with `project_id`, `session_id` (\"self\" = this session) or `from` (agent | person). Read-only.",
+	"search":        "Full-text search of minbox for the words in `query`: thread titles, message bodies of the agent and of the person, and attachment names/text. Returns hits with thread id, session, a snippet and the date; open one with read_thread. Narrow it with `project_id`, `session_id` (\"self\" = this session) or `from` (agent | person); at most `limit` hits per kind. Read-only.",
 }
 
 func navSchema(tool string) jobj {
 	switch tool {
 	case "list_projects":
-		return jobj{"type": "object", "properties": jobj{"archived": jobj{"type": "boolean", "description": "List archived projects instead of live ones."}}, "additionalProperties": false}
+		return jobj{"type": "object", "properties": jobj{"archived": jobj{"type": "boolean", "description": "List archived projects instead of live ones."}}, "additionalProperties": true}
 	case "get_project":
-		return jobj{"type": "object", "properties": jobj{"project_id": jobj{"type": "string", "description": "A project id from list_projects."}}, "required": []string{"project_id"}, "additionalProperties": false}
+		return jobj{"type": "object", "properties": jobj{"project_id": jobj{"type": "string", "description": "A project id from list_projects."}}, "required": []string{"project_id"}, "additionalProperties": true}
 	case "list_sessions":
 		return jobj{"type": "object", "properties": jobj{
 			"project_id": jobj{"type": "string"},
@@ -36,7 +36,7 @@ func navSchema(tool string) jobj {
 			"agent":      jobj{"type": "string", "enum": []string{"claude", "pi"}},
 			"archived":   jobj{"type": "boolean", "description": "List archived sessions instead of live ones."},
 			"limit":      jobj{"type": "number", "description": "Most rows (default 50, at most 200)."},
-		}, "additionalProperties": false}
+		}, "additionalProperties": true}
 	case "list_threads":
 		return jobj{"type": "object", "properties": jobj{
 			"project_id": jobj{"type": "string"},
@@ -47,7 +47,7 @@ func navSchema(tool string) jobj {
 			"query":      jobj{"type": "string", "description": "Words that must all appear in the subject, name or last message (case-insensitive). For full text use search."},
 			"archived":   jobj{"type": "boolean", "description": "List archived threads instead of live ones."},
 			"limit":      jobj{"type": "number", "description": "Most rows (default 50, at most 200)."},
-		}, "additionalProperties": false}
+		}, "additionalProperties": true}
 	case "search":
 		return jobj{"type": "object", "properties": jobj{
 			"query":      jobj{"type": "string", "description": "Words that must all appear (case-insensitive)."},
@@ -55,7 +55,7 @@ func navSchema(tool string) jobj {
 			"session_id": jobj{"type": "string", "description": "A session id, or \"self\" for this session."},
 			"from":       jobj{"type": "string", "enum": []string{"agent", "person"}, "description": "Only messages written by the agent or by the person."},
 			"limit":      jobj{"type": "number", "description": "Most hits per kind (default 20, at most 50)."},
-		}, "required": []string{"query"}, "additionalProperties": false}
+		}, "required": []string{"query"}, "additionalProperties": true}
 	}
 	return nil
 }
@@ -395,6 +395,7 @@ var taskDescription = map[string]string{
 		"If the result lists similar_tasks that are the same work, use that task (send_message task_id) and do not create more.",
 		"kind \"goal\": an outcome to keep pursuing until its `criteria` are met (\"keep going until CI is green\"); tasks can serve it (goal_id). Set autonomous: true only when the person asked you to keep going on your own: minbox then continues you until the criteria are met.",
 		"It returns the task id; keep the task current with update_task. A reply that needs the id waits for this result: do not call send_message in the same parallel batch.",
+		"Parameters: title (required), kind, goal_id, summary, detail, status, steps, criteria, autonomous, message_ids.",
 	}, " "),
 	"update_task": strings.Join([]string{
 		"Update a task or goal of your project by its task_id (from create_task or list_tasks). Pass only what changed.",
@@ -403,6 +404,7 @@ var taskDescription = map[string]string{
 		"message_ids: earlier messages that are about this task (they move to it: a message belongs to exactly one task).",
 		"title: rename it when the work's scope becomes clear or changes, not on every step.",
 		"A subagent briefed with a task_id calls it too, as each of its steps finishes: check_steps and summary only.",
+		"Parameters: task_id (required), title, summary, detail, report, status, steps, check_steps, uncheck_steps, criteria, check_criteria, goal_id, message_ids.",
 	}, " "),
 	"list_tasks": "List your tasks and goals on the person's minbox Board (open ones and the ones done this week) with their ids, status, steps and criteria; all: true lists every open task of the project. Use it to find a task's id (e.g. after a compaction) before update_task or send_message task_id.",
 }
@@ -421,7 +423,7 @@ func taskSchema(tool string) jobj {
 			"criteria":    criteriaSchema(),
 			"autonomous":  jobj{"type": "boolean", "description": "Goals only: minbox keeps continuing you until the criteria are met. Only when the person asked for it."},
 			"message_ids": jobj{"type": "array", "items": jobj{"type": "string"}, "description": "Ids of earlier messages about it (the ones of this turn belong to it anyway)."},
-		}, "required": []string{"title"}, "additionalProperties": false}
+		}, "required": []string{"title"}, "additionalProperties": true}
 	case "update_task":
 		return jobj{"type": "object", "properties": jobj{
 			"task_id":        jobj{"type": "string", "description": "The task or goal to update (from create_task or list_tasks)."},
@@ -437,11 +439,11 @@ func taskSchema(tool string) jobj {
 			"check_criteria": jobj{"type": "array", "items": jobj{"type": "number"}, "description": "Numbers (from 1) of a goal's criteria that are now met."},
 			"goal_id":        jobj{"type": "string", "description": "The goal this task serves."},
 			"message_ids":    jobj{"type": "array", "items": jobj{"type": "string"}, "description": "Ids of more messages that are about this task."},
-		}, "required": []string{"task_id"}, "additionalProperties": false}
+		}, "required": []string{"task_id"}, "additionalProperties": true}
 	case "list_tasks":
 		return jobj{"type": "object", "properties": jobj{
 			"all": jobj{"type": "boolean", "description": "Every open task of the project, not only yours."},
-		}, "additionalProperties": false}
+		}, "additionalProperties": true}
 	}
 	return nil
 }

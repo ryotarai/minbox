@@ -85,6 +85,7 @@ test("session_start says hello (protocol 1) and registers the server's tools as 
   const send = t.tools.get('minbox_send_message')
   assert.equal(send.label, 'minbox: send message')
   assert.deepEqual(send.parameters.required, ['body'])
+  assert.equal(send.parameters.additionalProperties, true, 'the schema stays open: Pi validates against it')
   assert.match(t.tools.get('minbox_create_task').description, /minbox_update_task/)
   t.ext!.stop()
 })
@@ -96,6 +97,9 @@ test("a tool call goes to the server with its arguments; its text is the result,
   const r = await send.execute('1', { body: 'hi', task_id: 'tsk_1' })
   assert.equal(r.content[0].text, 'RESULT minbox_send_message')
   assert.deepEqual(t.calls.find((c) => c.path === '/api/agent/tool')!.body, { tool: 'minbox_send_message', args: { body: 'hi', task_id: 'tsk_1' } })
+  // An argument the registered schema does not declare is passed on as given.
+  await send.execute('1', { body: 'hi', later_param: { x: 1 } })
+  assert.deepEqual(t.calls.filter((c) => c.path === '/api/agent/tool').at(-1)!.body.args, { body: 'hi', later_param: { x: 1 } })
   await assert.rejects(send.execute('1', { fail: true }), /^Error: body is required\.$/)
   await assert.rejects(send.execute('1', { down: true }), /minbox: boom/)
   t.ext!.stop()

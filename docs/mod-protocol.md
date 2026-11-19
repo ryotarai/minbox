@@ -52,6 +52,20 @@ the agent reads. Every agent's shell tool has two: a command that opens a page o
 one that runs `minbox pair accept` (anywhere in the command: accepting a pairing is the person's
 alone, see "Browser pairing" in api-contract.md).
 
+**Adding a parameter.** Claude Code keeps a tool's input schema as a conversation first sent it (see
+"Changing tools at runtime" below), while a changed description reaches a running conversation. So:
+
+- every tool's top-level input schema stays open (`additionalProperties: true`); the declared
+  properties keep their types, and nested objects may stay strict;
+- a new parameter must also be named in the tool's description (with its shape, if it is an object or
+  a list of objects), so a conversation pinned to an older schema learns it and can pass it;
+- the server's handler picks the keys it knows and ignores the rest (never a 400 for an unknown key),
+  and the integrations forward the arguments as given (the Claude Code mod drops only the host's own
+  keys).
+
+`TestToolSchemasStayOpen` checks the first two for every tool of every agent; `TestUnknownToolArgsAreIgnored`
+the third.
+
 `plugin/testdata/manifest-<agent>.json` hold the served sets; `TestManifestFixtures` keeps them equal
 (`MINBOX_UPDATE_FIXTURES=1 go test ./internal/server -run TestManifestFixtures` rewrites them) and the
 node tests of the integrations run against them (the guard patterns included, `plugin/pi/proxy.test.ts`).
@@ -149,8 +163,9 @@ changed). What the hosts allow:
   differs from what that conversation sent, so the cost is paid once per real change. Nothing is
   flagged at `session.start` (a start registers the whole set afresh). A change of schema alone to a
   listed tool cannot be sent to a conversation that has the tool: the model sees it after a new
-  conversation or a compaction, so a new parameter should come with a description that says what it
-  does.
+  conversation or a compaction. That is why the schemas stay open and the descriptions name every
+  parameter ("Adding a parameter" above): the model learns a new parameter from the refreshed
+  description, and its pinned schema lets the call through.
 - **Pi** (1.4, `docs/extensions.md` of `@earendil-works/pi-coding-agent`): `pi.registerTool` works after
   startup (the `dynamic-tools.ts` example registers from `session_start` and from a command); registering
   a name again replaces it; "tools cannot be unregistered", but "re-register a tool with `exposure:

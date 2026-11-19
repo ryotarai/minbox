@@ -136,7 +136,7 @@ var sendDescription = strings.Join([]string{
 	"`thread_id` and `thread_title` are accepted but not needed: every message goes to your one conversation with the person (an older thread_id points the message at that conversation's task).",
 	"It has no `status`: a task's status is set with update_task, and a send_message that carries one is refused.",
 	"attachments: files to show the person beside your message; link one from the body (`[the mock](mock.html)`) to open it. A guided `review` walks them through your changes.",
-	"commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so); the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
+	"commands: shell commands you want run that you cannot or should not run yourself (denied to you, or needing the person's say-so), as [{command, cwd?, description?}]; the person sees each one with Allow and Deny buttons, so do not ask them to copy and run commands by hand.",
 }, " ")
 
 const commandsGuide = "Shell commands for the person to approve, in order. Each runs only after the person presses Allow in minbox, at most once, with `sh -c` on your host (the machine you run on), in `cwd` (default: your working directory), with no input and a 10-minute limit. " +
@@ -171,6 +171,10 @@ const attachmentsGuide = "Files to show the person beside your message, e.g. [\"
 	"Each attachment's kind in the result is markdown, text, html, mermaid, graphviz, code, image, video, pdf or file; treat any other as file. " +
 	"A markdown link to an attached file in the body, e.g. [the mock](proto/admin.html), opens it beside the thread."
 
+// Every tool's top-level input schema allows properties it does not declare: Claude Code keeps a
+// conversation's schema as first sent, so a parameter added later reaches a running conversation
+// only through the (refreshed) description, which names every parameter (docs/mod-protocol.md).
+// The handlers pick the keys they know and ignore the rest.
 func sendSchema() jobj {
 	return jobj{
 		"type": "object",
@@ -234,7 +238,7 @@ func sendSchema() jobj {
 			},
 		},
 		"required":             []string{"body"},
-		"additionalProperties": false,
+		"additionalProperties": true,
 	}
 }
 
@@ -253,11 +257,11 @@ func readSchema() jobj {
 			"limit":     jobj{"type": "number", "description": "Most messages to return: the newest ones (default 30, at most 100)."},
 			"before":    jobj{"type": "string", "description": "A message id from an earlier answer (\"older messages: before <id>\"): returns the messages before it."},
 		},
-		"additionalProperties": false,
+		"additionalProperties": true,
 	}
 }
 
-const titleDescription = "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply."
+const titleDescription = "Set this session's title in the person's minbox session list: a few words saying what you are working on now (e.g. \"Fix login redirect loop\"). Call it when the work becomes clear and again when it changes; it costs nothing and needs no reply. Parameters: `title`."
 
 func titleSchema() jobj {
 	return jobj{
@@ -266,11 +270,11 @@ func titleSchema() jobj {
 			"title": jobj{"type": "string", "description": "One line, about 3-8 words, about 80 characters or fewer (a guide, not a hard limit); plain text, in the language the person writes in."},
 		},
 		"required":             []string{"title"},
-		"additionalProperties": false,
+		"additionalProperties": true,
 	}
 }
 
-const openDescription = "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer."
+const openDescription = "Open a web page (a PR, an issue, a CI run, docs) in the person's browser, wherever they have minbox open. Use it instead of `open URL`, `xdg-open`, `gh … --web` or `gh browse`: those open the page on the machine Claude runs on, which may not be the person's computer. Parameters: `url`."
 
 func openSchema() jobj {
 	return jobj{
@@ -279,7 +283,7 @@ func openSchema() jobj {
 			"url": jobj{"type": "string", "description": "An absolute http(s) URL, e.g. https://github.com/owner/repo/pull/12."},
 		},
 		"required":             []string{"url"},
-		"additionalProperties": false,
+		"additionalProperties": true,
 	}
 }
 

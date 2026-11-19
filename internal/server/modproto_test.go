@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -428,5 +429,65 @@ func TestStatusOnlyUpdateHasASubject(t *testing.T) {
 	}
 	if got := strings.Join(lines, " | "); !strings.Contains(got, "Read it → done | Status → needs you | Status → blocked") {
 		t.Fatalf("events: %s", got)
+	}
+}
+
+// TestToolSchemasStayOpen: Claude Code keeps a conversation's tool schema as first sent, so every
+// tool's top-level schema allows undeclared properties and its description names every parameter:
+// a conversation started before a parameter was added learns it from the refreshed description and
+// can pass it (docs/mod-protocol.md, "Adding a parameter").
+func TestToolSchemasStayOpen(t *testing.T) {
+	for _, kind := range []string{"claude", "pi", "opencode"} {
+		for _, tl := range manifestFor(kind).Tools {
+			if tl.InputSchema["type"] != "object" || tl.InputSchema["additionalProperties"] != true {
+				t.Errorf("%s %s: the top-level schema must say additionalProperties: true, got %v", kind, tl.Name, tl.InputSchema["additionalProperties"])
+			}
+			props, _ := tl.InputSchema["properties"].(jobj)
+			for name := range props {
+				if !regexp.MustCompile(`(^|[^\w])` + regexp.QuoteMeta(name) + `([^\w]|$)`).MatchString(tl.Description) {
+					t.Errorf("%s %s: the description does not name the parameter %q", kind, tl.Name, name)
+				}
+			}
+		}
+	}
+}
+
+// TestUnknownToolArgsAreIgnored: an argument the server does not know is ignored, and one it knows
+// works whether or not the conversation's schema lists it (send_message's commands).
+func TestUnknownToolArgsAreIgnored(t *testing.T) {
+	p := newProto(t)
+	o := p.tool("send_message", map[string]any{
+		"body":       "Please allow this.",
+		"commands":   []any{map[string]any{"command": "true", "description": "nothing", "later_field": 1}},
+		"some_param": map[string]any{"added": "later"},
+	})
+	if o["ok"] != true || !strings.Contains(o["text"].(string), "with 1 command for them to approve") {
+		t.Fatalf("send with commands and an unknown key: %v", o)
+	}
+	o = p.tool("create_task", map[string]any{"title": "Open schemas", "priority": "high", "labels": []any{"x"}})
+	if o["ok"] != true || !strings.HasPrefix(o["text"].(string), "Task created (task_id ") {
+		t.Fatalf("create_task with unknown keys: %v", o)
+	}
+	id := strings.TrimSuffix(strings.Fields(strings.TrimPrefix(o["text"].(string), "Task created (task_id "))[0], ").")
+	if o := p.tool("update_task", map[string]any{"task_id": id, "summary": "now", "eta": 3}); o["ok"] != true {
+		t.Fatalf("update_task with an unknown key: %v", o)
+	}
+	if o := p.tool("set_session_title", map[string]any{"title": "Open", "emoji": "x"}); o["ok"] != true {
+		t.Fatal(o)
+	}
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"read_thread", map[string]any{"format": "full"}},
+		{"list_tasks", map[string]any{"sort": "new"}},
+		{"list_threads", map[string]any{"session_id": "self", "color": "red"}},
+		{"list_projects", map[string]any{"x": true}},
+		{"list_sessions", map[string]any{"x": true}},
+		{"search", map[string]any{"query": "Open", "fuzzy": true}},
+	} {
+		if o := p.tool(c.tool, c.args); o["ok"] != true {
+			t.Errorf("%s with an unknown key: %v", c.tool, o)
+		}
 	}
 }

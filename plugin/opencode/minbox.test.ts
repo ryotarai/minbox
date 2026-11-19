@@ -167,6 +167,7 @@ test("registers the server's tools as direct tools, as served", async () => {
   assert.deepEqual([...t.oc.tools.keys()], MANIFEST.tools.map((x: any) => x.name))
   for (const tool of t.oc.tools.values()) assert.deepEqual(tool.options, { codemode: false }, tool.name)
   assert.deepEqual(t.oc.tools.get('minbox_send_message').input.required, ['body'])
+  assert.equal(t.oc.tools.get('minbox_send_message').input.additionalProperties, true, 'the schema stays open')
   assert.match(t.oc.tools.get('minbox_update_task').description, /minbox_send_message/)
   t.core.stop()
   cleanup?.()
@@ -326,6 +327,9 @@ test("a tool call goes to the server; its text is the result, a failure throws, 
   const r = await send.execute({ body: 'Done', task_id: 'tsk_1' })
   assert.deepEqual(r, { content: 'Sent.' })
   assert.deepEqual(t.calls.filter((c) => c.path === '/api/agent/tool').at(-1)!.body, { tool: 'minbox_send_message', args: { body: 'Done', task_id: 'tsk_1' } })
+  // An argument the registered schema does not declare is passed on as given.
+  await send.execute({ body: 'Done', later_param: [1] })
+  assert.deepEqual(t.calls.filter((c) => c.path === '/api/agent/tool').at(-1)!.body.args, { body: 'Done', later_param: [1] })
   const title = await t.oc.tools.get('minbox_set_session_title').execute({ title: 'New title' })
   assert.equal(title.content, 'Session title set: New title')
   assert.deepEqual(t.oc.sessionCalls.find((c) => c.op === 'update')?.arg, { sessionID: SES, title: 'New title' })
