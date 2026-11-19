@@ -1,0 +1,62 @@
+/* The first-run introduction (Onboarding.tsx): a stepped card over the app, full screen on a phone. */
+.v-overlay.v-onb-ov { padding: 6vh 16px 16px; align-items: flex-start; overflow-y: auto; }
+.v-onb { width: min(720px, 100%); max-height: calc(94vh - 16px); display: flex; flex-direction: column; background: var(--mb-overlay); border: 1px solid var(--mb-line2); border-radius: 14px; box-shadow: var(--mb-shadow); color: var(--mb-body); overflow: hidden; }
+.v-onb-top { display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--mb-line); flex: none; }
+.v-onb-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; }
+.v-onb-steps li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mb-faint); white-space: nowrap; }
+.v-onb-steps li + li::before { content: ''; width: 18px; height: 1px; background: var(--mb-line2); margin-right: 2px; }
+.v-onb-steps li.on { color: var(--mb-fg); font-weight: 600; }
+.v-onb-steps li.past { color: var(--mb-subtle); }
+.v-onb-n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--mb-line2); font-size: 11px; font-weight: 600; flex: none; }
+.v-onb-steps li.on .v-onb-n { background: var(--mb-accent); border-color: var(--mb-accent); color: var(--mb-onaccent); }
+.v-onb-steps li.past .v-onb-n { border-color: var(--mb-ok); color: var(--mb-ok); }
+.v-onb-skip { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--mb-subtle); font-size: 12.5px; padding: 6px 8px; border-radius: 6px; flex: none; }
+.v-onb-skip:hover { background: var(--mb-rowsel); color: var(--mb-fg); }
+.v-onb-body { padding: 18px 22px 20px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.v-onb-body h2 { margin: 0; font-size: 19px; font-weight: 650; color: var(--mb-fg); }
+.v-onb-lead { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--mb-muted); }
+.v-onb-note { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: var(--mb-muted); background: var(--mb-sunken); border: 1px solid var(--mb-line); border-radius: 8px; padding: 8px 10px; }
+.v-onb-note svg { flex: none; margin-top: 2px; }
+.v-onb-concepts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.v-onb-concepts li { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; }
+.v-onb-concepts b { color: var(--mb-fg); }
+.v-onb-ic { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; flex: none; }
+.v-onb-ic.p { color: var(--mb-accent); background: color-mix(in srgb, var(--mb-accent) 14%, transparent); }
+.v-onb-ic.a { color: var(--mb-work); background: color-mix(in srgb, var(--mb-work) 14%, transparent); }
+.v-onb-ic.t { color: var(--mb-ok); background: color-mix(in srgb, var(--mb-ok) 14%, transparent); }
+.v-onb-foot { display: flex; align-items: center; gap: 8px; }
+.v-onb-foot .v-sp { flex: 1; }
+.v-onb-next, .v-onb-hint .v-btn.pri { padding: 7px 16px; font-size: 13px; border-radius: 8px; }
+.v-onb-existing { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--mb-subtle); }
+.v-onb-diagram { width: 100%; max-width: 560px; height: auto; align-self: center; }
+.v-onb-diagram text { font-family: inherit; }
+.v-onb-d-line { fill: none; stroke: var(--mb-linestrong); stroke-width: 1.5; }
+.v-onb-d-proj { fill: color-mix(in srgb, var(--mb-accent) 12%, var(--mb-overlay)); stroke: var(--mb-accent); stroke-width: 1.2; }
+.v-onb-d-agent { fill: color-mix(in srgb, var(--mb-work) 10%, var(--mb-overlay)); stroke: var(--mb-work); stroke-width: 1.2; }
+.v-onb-d-task { fill: var(--mb-card); stroke: var(--mb-line2); }
+.v-onb-d-check { fill: none; stroke: var(--mb-subtle); stroke-width: 1.2; }
+.v-onb-d-check.on { fill: var(--mb-ok); stroke: var(--mb-ok); }
+.v-onb-d-dot { fill: var(--mb-work); }
+.v-onb-d-k { font-size: 9.5px; letter-spacing: .08em; fill: var(--mb-subtle); font-weight: 600; }
+.v-onb-d-n { font-size: 13px; fill: var(--mb-fg); font-weight: 600; }
+.v-onb-d-t { font-size: 11.5px; fill: var(--mb-fg2); }
+/* Step 4: a card over the new agent's stream (not modal: the reply box stays usable). */
+.v-onb-hint { position: fixed; right: 20px; bottom: 140px; width: min(360px, calc(100vw - 32px)); z-index: 40; background: var(--mb-overlay); border: 1px solid var(--mb-accent); border-radius: 12px; box-shadow: var(--mb-shadow); padding: 12px 14px; font-size: 13px; line-height: 1.5; color: var(--mb-body); }
+.v-onb-hint p { margin: 6px 0; }
+.v-onb-hint b { color: var(--mb-fg); }
+.v-onb-hint-h { display: flex; align-items: center; gap: 8px; }
+.v-onb-hint-h .v-onb-n { background: var(--mb-accent); border-color: var(--mb-accent); color: var(--mb-onaccent); }
+@media (max-width: 699px) {
+  .v-overlay.v-onb-ov { padding: 0; }
+  .v-onb { width: 100%; max-height: none; height: 100%; border-radius: 0; border: 0; }
+  .v-onb-top { padding: calc(8px + env(safe-area-inset-top)) 8px 8px 14px; }
+  .v-onb-steps li .v-onb-sl { display: none; }
+  .v-onb-steps li.on .v-onb-sl { display: inline; }
+  .v-onb-steps li + li::before { width: 10px; }
+  .v-onb-skip { font-size: 15px; padding: 10px 12px; }
+  .v-onb-body { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); flex: 1; }
+  .v-onb-body h2 { font-size: 21px; }
+  .v-onb-lead, .v-onb-concepts li { font-size: 15px; }
+  .v-onb-next, .v-onb-hint .v-btn.pri { padding: 11px 20px; font-size: 15px; }
+  .v-onb-hint { left: 12px; right: 12px; width: auto; top: calc(64px + env(safe-area-inset-top)); bottom: auto; font-size: 14px; }
+}

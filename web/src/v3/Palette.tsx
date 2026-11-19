@@ -16,6 +16,7 @@ import { Kbd, Modal, cx } from '../components/ui'
 import { v3, STATUS_LABEL, type BoardTask } from './data'
 import type { PaneKind } from './layout'
 import { taskOwner } from './parts'
+import { useOpenOnboarding } from './Onboarding'
 
 type Kind = 'action' | 'agent' | 'task' | 'project'
 type Item = {
@@ -106,6 +107,7 @@ export type PaletteCtx = {
 
 export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteCtx }) {
   const { projects, sessions, navigate, setOverlay, settings, saveSettings, isPhone, error, toast } = useApp()
+  const openOnboarding = useOpenOnboarding()
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [tasks, setTasks] = useState<BoardTask[]>(lastTasks)
@@ -151,6 +153,7 @@ export function V3Palette({ onClose, ctx }: { onClose: () => void; ctx: PaletteC
     act('integrations', 'Open Integrations', () => go({ view: 'settings', ss: 'integrations' }), { keywords: 'linear slack connect' })
     if (settings.decision_mode) act('decide', 'Decision mode', () => setOverlay({ kind: 'decide' }), { keywords: 'questions answer', shortcut: '⇧D' })
     act('shortcuts', 'Show keyboard shortcuts', () => ctx.openHelp(), { keywords: 'help keys hotkeys', shortcut: '?' })
+    act('introduction', 'Show the introduction', openOnboarding, { keywords: 'onboarding welcome tour getting started help project agent task' })
     if (cur) {
       const label = agentKindLabel(cur.agent)
       const pane = (p: PaneKind, on: string, off: string, kw: string, shortcut?: string) =>

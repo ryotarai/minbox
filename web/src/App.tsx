@@ -11,6 +11,7 @@ import { ProjectIconDialog } from './components/ProjectRail'
 import { NewSessionDialog } from './components/NewSession'
 import { DeviceGate } from './components/Devices'
 import { SettingsPage } from './components/Settings'
+import { Onboarding } from './v3/Onboarding'
 
 export function App() {
   return (
@@ -87,6 +88,7 @@ function Root() {
       {overlay?.kind === 'delete-project' && <DeleteProject project={overlay.project} onClose={close} />}
       {overlay?.kind === 'project-icon' && <ProjectIconDialog project={overlay.project} onClose={close} />}
       {overlay?.kind === 'edit-project' && <NewSessionDialog mode="project-edit" project={overlay.project} onClose={close} />}
+      <Onboarding />
       <Toasts />
     </>
   )

@@ -8,6 +8,7 @@ import { bytes, homeRelative, shortTime } from '../lib/format'
 import { useHotkeys } from '../lib/hotkeys'
 import { IconBack } from './icons'
 import { routeLabel, useSessionsById } from '../v3/parts'
+import { useOpenOnboarding } from '../v3/Onboarding'
 import { Button, Segmented, Switch, cx } from './ui'
 import { HostsSection } from './Hosts'
 import { DevicesSection } from './Devices'
@@ -137,6 +138,7 @@ function Row({ label, desc, children }: { label: string; desc?: string; children
 
 function General() {
   const { settings, saveSettings, toast } = useApp()
+  const openOnboarding = useOpenOnboarding()
   const [perm, setPerm] = useState(notificationPermission())
   return (
     <>
@@ -198,6 +200,13 @@ function General() {
       <Group title="Keyboard">
         <Row label="Single-key shortcuts" desc="J K R E Z / and so on. Always off inside the terminal.">
           <Switch label="Single-key shortcuts" on={settings.single_key} onChange={(v) => saveSettings({ single_key: v })} />
+        </Row>
+      </Group>
+      <Group title="Getting started">
+        <Row label="Introduction" desc="Projects, agents and tasks in four short steps, making a project and an agent as you go">
+          <Button size="sm" data-testid="settings-introduction" onClick={openOnboarding}>
+            Show the introduction
+          </Button>
         </Row>
       </Group>
     </>

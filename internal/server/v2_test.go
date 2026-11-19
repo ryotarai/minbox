@@ -194,6 +194,26 @@ func TestThreadOpsReplyExtrasAndSearch(t *testing.T) {
 	}
 }
 
+// The first-run introduction: not done on a fresh data dir, remembered once finished or skipped,
+// and only a boolean is taken.
+func TestOnboardedSetting(t *testing.T) {
+	e := newEnv(t)
+	_, st, _ := e.do("GET", "/api/settings", nil, nil)
+	if st["onboarded"] != false {
+		t.Fatalf("fresh onboarded = %v", st["onboarded"])
+	}
+	if code, _, _ := e.do("PUT", "/api/settings", map[string]any{"onboarded": "yes"}, nil); code != 400 {
+		t.Fatalf("a non-boolean onboarded: %d", code)
+	}
+	if code, st, _ := e.do("PUT", "/api/settings", map[string]any{"onboarded": true}, nil); code != 200 || st["onboarded"] != true {
+		t.Fatalf("put onboarded: %d %v", code, st)
+	}
+	_, st, _ = e.do("GET", "/api/settings", nil, nil)
+	if st["onboarded"] != true {
+		t.Fatalf("onboarded not kept: %v", st["onboarded"])
+	}
+}
+
 func TestSessionArchiveSettings(t *testing.T) {
 	e := newEnv(t)
 	sess := e.createSession()

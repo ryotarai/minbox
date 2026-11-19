@@ -55,9 +55,20 @@ export function NewSessionDialog({
   mode = 'session',
   projectId,
   project: editing,
+  onProjectCreated,
+  embedded,
+  allAgents,
 }: {
   onClose: () => void
   onCreated?: (s: Session) => void
+  /** Mode "project": the new project (after it is selected), instead of only closing. */
+  onProjectCreated?: (p: Project) => void
+  /** The form alone, in the page (the first-run introduction): no dialog around it, and a Back button
+   *  in place of Cancel. */
+  embedded?: { onBack: () => void }
+  /** Every coding agent in the picker, the ones this machine cannot run disabled with why (the picker
+   *  shows even with one installed). */
+  allAgents?: boolean
   mode?: 'session' | 'project' | 'project-edit'
   /** The project to start in (the selected one). */
   projectId?: string
@@ -103,7 +114,7 @@ export function NewSessionDialog({
   // The agents of the machine the session runs on (a project's host, else the picked host).
   const agentsInfo = useAgents((proj ? proj.host_id : hostId) || undefined)
   const installed = installedAgents(agentsInfo)
-  const showAgentPicker = installed.length > 1 && (mode === 'session' || mode === 'project-edit')
+  const showAgentPicker = (allAgents && mode === 'session' && !!agentsInfo?.agents.length) || (installed.length > 1 && (mode === 'session' || mode === 'project-edit'))
   const [agentPick, setAgentPick] = useState<AgentKind | ''>(() => (mode === 'project-edit' ? editing?.default_agent ?? '' : ''))
   // A pick the newly chosen host cannot run falls back to that host's default.
   useEffect(() => {
@@ -175,6 +186,7 @@ export function NewSessionDialog({
         reloadProjects()
         reloadSessions()
         selectProject(p.id)
+        onProjectCreated?.(p)
         onClose()
         return
       }
@@ -186,7 +198,8 @@ export function NewSessionDialog({
       reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
       if (onCreated) onCreated(s)
-      else navigate({ s: s.id, t: null, f: null, view: 'main', tab: 'terminal' })
+      // The agent's stream; its terminal shows only if the person keeps it open (the header's toggle, T).
+      else navigate({ s: s.id, t: null, f: null, k: null, m: null, view: 'agent', tab: 'inbox' })
       onClose()
     } catch (err) {
       error(err)
@@ -394,25 +407,36 @@ export function NewSessionDialog({
   const agentPicker = !showAgentPicker ? null : (
     <div className="flex flex-col gap-1.5">
       <span className={cx('text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>{mode === 'session' ? 'Coding agent' : 'Default coding agent'}</span>
-      <div role="radiogroup" aria-label="Coding agent" data-testid="new-session-agent" className="flex gap-2">
-        {([...(mode === 'project-edit' ? [{ kind: '' as const, label: 'Default' }] : []), ...installed]).map((a) => {
+      <div role="radiogroup" aria-label="Coding agent" data-testid="new-session-agent" className="flex flex-wrap gap-2">
+        {([...(mode === 'project-edit' ? [{ kind: '' as const, label: 'Default' }] : []), ...(allAgents ? agentsInfo?.agents ?? [] : installed)]).map((a) => {
           const on = mode === 'session' ? agentKind === a.kind : agentPick === a.kind
+          // allAgents: one this machine cannot run is listed, disabled, with why.
+          const why = !('installed' in a) ? '' : !a.installed ? 'not installed' : a.supported === false ? a.reason || 'not supported' : ''
           return (
             <button
               key={a.kind || 'default'}
               type="button"
               role="radio"
               aria-checked={on}
+              disabled={!!why}
+              title={why ? `${a.label}: ${why} on this machine` : undefined}
               data-testid="new-session-agent-option"
               data-agent={a.kind}
+              data-unavailable={why ? 'true' : undefined}
               onClick={() => setAgentPick(a.kind as AgentKind | '')}
-              className={cx('h-9 rounded-[9px] border px-3 text-[13px] font-semibold', on ? 'border-wait/55 bg-wait/10' : 'border-line2 bg-transparent')}
+              className={cx('flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[13px] font-semibold', on ? 'border-wait/55 bg-wait/10' : 'border-line2 bg-transparent', why && 'opacity-55')}
             >
               {a.label}
+              {why && <span className="text-[11.5px] font-normal text-subtle">· {why}</span>}
             </button>
           )
         })}
       </div>
+      {allAgents && installed.length === 0 && (
+        <span data-testid="new-session-no-agent" className="text-[12px] text-dangerfg">
+          No coding agent found on this machine. Install Claude Code, Pi or OpenCode, then come back.
+        </span>
+      )}
     </div>
   )
 
@@ -595,7 +619,46 @@ export function NewSessionDialog({
       </div>
     )
 
-  const canStart = !busy && !envBad && (!showFolder || (!missing && !!cwd.trim()))
+  const canStart = !busy && !envBad && (!showFolder || (!missing && !!cwd.trim())) && !(allAgents && agentsInfo && installed.length === 0)
+
+  // The first-run introduction: the same fields in its page, Back instead of Cancel.
+  if (embedded) {
+    return (
+      <div className="flex min-h-0 flex-col gap-3" data-testid={mode === 'project' ? 'onboarding-project-form' : 'onboarding-agent-form'} onKeyDown={isPhone ? undefined : onKey}>
+        {projectPicker}
+        {agentPicker}
+        {showFolder && (
+          <>
+            {hostPicker}
+            {cwdInput}
+            {isPhone && !browsing ? (
+              <button
+                type="button"
+                data-testid="new-session-browse"
+                onClick={() => setBrowsing(true)}
+                className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-xl border border-dashed border-[#52525b] bg-transparent text-[15px]"
+              >
+                Browse folders…
+              </button>
+            ) : (
+              <div className={cx('flex min-h-0 shrink-0 flex-col', isPhone ? 'h-[260px]' : 'h-[240px]')}>{browser}</div>
+            )}
+          </>
+        )}
+        {nameInput}
+        {advancedSection}
+        <div className="flex shrink-0 items-center gap-2.5 pt-1">
+          <Button variant="quiet" className={isPhone ? 'h-12 text-[15px]' : 'h-[38px] text-[13.5px]'} data-testid="onboarding-back" onClick={embedded.onBack}>
+            Back
+          </Button>
+          <span className="flex-1" />
+          <Button variant="primary" className={cx('px-4', isPhone ? 'h-12 text-[15px]' : 'h-[38px] text-[13.5px]')} data-testid="new-session-start" disabled={!canStart} onClick={() => void start()}>
+            {busy ? (mode === 'project' ? 'Creating…' : 'Starting…') : startLabel}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (isPhone) {
     return <PhoneSheet onClose={onClose} title={title} body={

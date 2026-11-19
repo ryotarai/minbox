@@ -505,6 +505,8 @@ export type Settings = {
   public_url: string
   /** The agent a new session gets when nothing else says ('' : the installed one, Claude Code if both). */
   default_agent: AgentKind | ''
+  /** The first-run introduction was finished or skipped (the server says false on a fresh data dir). */
+  onboarded: boolean
   linear: LinearSettings
   list: ListOptions
 }
@@ -800,6 +802,8 @@ export const DEFAULT_SETTINGS: Settings = {
   reply_suggestions: true,
   public_url: '',
   default_agent: '',
+  // Until the server's settings load: no introduction (it would flash for everybody else).
+  onboarded: true,
   linear: { author_filter: 'everyone', allowed_authors: '', include_body: false, thread_link: false, draft_extra_prompt: '' },
   list: { highlight_subject: true, compact: false, hide_icons: false, small_names: false, keep_panel: false },
 }
