@@ -73,8 +73,8 @@ function routeHash(r: Route): string {
   if (r.view === 'issues' && r.issue) p.set('issue', r.issue)
   if (r.view === 'slack' && r.slack) p.set('thread', r.slack)
   // k on an agent: the task shown in its page (picked in its Tasks pane).
-  if ((r.view === 'task' || r.view === 'agent') && r.k) p.set('k', r.k)
-  if (r.m && (r.view === 'task' || r.view === 'agent')) p.set('m', r.m)
+  if ((r.view === 'task' || r.view === 'agent' || r.view === 'alltasks') && r.k) p.set('k', r.k)
+  if (r.m && (r.view === 'task' || r.view === 'agent' || r.view === 'alltasks')) p.set('m', r.m)
   const h = p.toString()
   return h ? `#${h}` : location.pathname
 }
