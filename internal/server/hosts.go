@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -51,6 +52,9 @@ type hostConn struct {
 	pid       int
 	startedAt *time.Time
 	binary    string
+	// plugins: the host's minbox plugins by agent kind (termhost.VersionInfo.Plugins); nil from an
+	// older host.
+	plugins map[string]string
 	// agents: the coding agents found on that machine (hostAgents), and when.
 	agents   []agent.Info
 	agentsAt time.Time
@@ -104,14 +108,29 @@ func (c *hostConn) setOffline(err error) {
 	}
 }
 
-func (c *hostConn) setVersion(v termhost.VersionInfo, latency time.Duration) {
+// setVersion records what the host's /version said; it reports whether the host's plugins changed
+// (agents there may have become stale, or fresh again).
+func (c *hostConn) setVersion(v termhost.VersionInfo, latency time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	changed := !maps.Equal(c.plugins, v.Plugins)
+	c.plugins = v.Plugins
 	c.version, c.os, c.arch, c.protocol = v.Version, v.OS, v.Arch, v.Protocol
 	c.pid, c.startedAt, c.binary = v.PID, v.StartedAt, v.Binary
 	c.latency = latency.Milliseconds()
 	now := time.Now()
 	c.lastSeen = &now
+	return changed
+}
+
+// pluginID is the host's minbox plugin for agent kind ("" when unknown).
+func (c *hostConn) pluginID(kind string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.plugins[kind]
 }
 
 // hostSet holds the connections.
@@ -379,7 +398,9 @@ func (s *Server) remoteLoop(ctx context.Context, c *hostConn) {
 					v, err := client.Version(vctx)
 					vc()
 					if err == nil {
-						c.setVersion(v, time.Since(start))
+						if c.setVersion(v, time.Since(start)) {
+							s.hub.publish(Event{Type: "sessions"}) // stale agents there may have changed
+						}
 						s.hub.publish(Event{Type: "hosts"})
 					}
 				}

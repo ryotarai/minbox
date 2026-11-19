@@ -6,6 +6,8 @@ package termhost
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,6 +74,20 @@ type VersionInfo struct {
 	// empty from an older host.
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	Binary    string     `json:"binary,omitempty"`
+	// Plugins: PluginID of each minbox plugin the host gives the agents it starts, by agent kind
+	// ("claude", "pi", "opencode"): what a restart of an agent there loads. Empty from an older host.
+	Plugins map[string]string `json:"plugins,omitempty"`
+}
+
+// PluginID names the minbox plugin at path (a folder or entry file under a content-hash folder,
+// see plugin.Extract): a short hash of the path, so the same content gives the same id and new
+// content a new one. "" for no path.
+func PluginID(path string) string {
+	if path == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:])[:12]
 }
 
 // Placeholders the server puts in a remote host's spawn requests; the host
@@ -625,6 +641,7 @@ func (h *Host) Handler() http.Handler {
 			t := h.StartedAt
 			v.StartedAt = &t
 		}
+		v.Plugins = map[string]string{"claude": PluginID(h.PluginDir), "pi": PluginID(h.PiExtension), "opencode": PluginID(h.OpenCodePlugin)}
 		if h.FS != nil {
 			v.Hostname, _ = os.Hostname()
 			v.PID = 0 // not another machine's business
