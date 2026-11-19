@@ -87,7 +87,8 @@ export function routeLabel(r: Route | null, tasks: { id: string; title: string }
       // The Agents page is the phone's tab; wider, #v=agents shows the Board (the sidebar lists the agents).
       return isPhoneWidth() ? 'Agents' : 'Board'
     case 'alltasks':
-      return 'All agents'
+      // A task selected in All agents: the task's title.
+      return (r.k && (tasks.find((t) => t.id === r.k)?.title ?? knownTasks.get(r.k)?.title)) || 'All agents'
     case 'search':
       return 'Search'
     case 'settings':

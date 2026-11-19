@@ -429,12 +429,9 @@ ul.v-steps ul.v-steps { padding-left: 22px; }
 .v-ag-all { border-bottom: 1px solid var(--mb-line); margin-bottom: 2px; }
 .v-ag-all .v-ag-all-i { color: var(--mb-subtle); justify-self: center; }
 .v-ag-all.sel .v-ag-all-i { color: var(--mb-accent); }
-.v-alltasks { padding: 0 18px 18px; }
-.v-alltasks > .v-agtasks { max-width: 760px; }
 .v-agbadge { flex: none; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 400; border-radius: 4px; padding: 0 5px; line-height: 16px; background: var(--mb-chip); color: var(--mb-muted); }
 .v-mt .v-a .v-agbadge { margin-left: auto; }
 .v-mt .v-a .v-done-t { min-width: 0; }
 @media (max-width: 699px) {
-  .v-alltasks { padding: 0 16px 16px; }
   .v-agbadge { max-width: 9em; }
 }

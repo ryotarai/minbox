@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/app'
 import { ago, standing, STATUS_LABEL, unreadCls, v3, type BoardTask } from './data'
 import { Composer, type Outgoing } from './Composer'
-import { BackButton, Bar, StatusDot, agentHint, taskOwner, useNav } from './parts'
+import { Bar, StatusDot, agentHint, taskOwner, useNav } from './parts'
 import type { Session } from '../api'
 import { IconCheck, IconCheckSquare, IconFoldLeft, IconGoal, IconTasks } from '../components/icons'
 import { TriBox, useColumnPick, type ColumnPickState } from './Columns'
@@ -143,35 +143,26 @@ export function AgentTaskList({ tasks, sessionId, onOpen, pick, onSelect, select
   )
 }
 
-/**
- * All agents (the top of the agents list): one list of the tasks of every agent shown there (the
- * project's live agents), with the agent's list's sections and rules, each row naming the agent whose
- * page it opens in (see taskOwner). A task opens there, selected, as from that agent's Tasks pane.
- */
-export function AllAgentsTasks({ tasks, agents, projectName }: { tasks: BoardTask[]; agents: Session[]; projectName?: string }) {
+/** All agents: the name each task row shows (the agent whose stream the task is in; see taskOwner). */
+export function useOwnerName(): (t: BoardTask) => string | null {
   const { sessions } = useApp()
   const all = sessions ?? []
   const byId = new Map(all.map((s) => [s.id, s]))
-  const owner = (t: BoardTask) => {
+  return (t: BoardTask) => {
     const a = byId.get(taskOwner(t, all) ?? '')
     if (!a) return null
     const hint = agentHint(all, a)
     return a.name + (hint ? ` (${hint})` : '')
   }
-  return (
-    <div className="v-col" data-testid="all-agents-view">
-      <div className="v-head">
-        <div className="v-r1">
-          <BackButton />
-          <h1>All agents</h1>
-        </div>
-        <div className="v-r2">Tasks of every agent{projectName ? ' in ' + projectName : ''}</div>
-      </div>
-      <div className="v-scroll v-alltasks">
-        <AgentTaskList tasks={tasks} sessionId={agents.map((a) => a.id)} owner={owner} />
-      </div>
-    </div>
-  )
+}
+
+/** All agents (#v=alltasks): a task picked by its title shows in place of the merged stream (#…&k=: a
+ *  first one pushes, another replaces, so ‹ goes back to the stream; the shown one again closes it). */
+export function useAllTasksSelect(): { detail: string | null; select: (id: string) => void } {
+  const { route, navigate } = useApp()
+  const detail = route.view === 'alltasks' ? route.k : null
+  const select = (id: string) => (id === detail ? navigate({ k: null, m: null }, { push: false }) : navigate({ view: 'alltasks', s: null, k: id, m: null, tab: 'inbox' }, { push: !detail }))
+  return { detail, select }
 }
 
 /**
@@ -181,35 +172,31 @@ export function AllAgentsTasks({ tasks, agents, projectName }: { tasks: BoardTas
  * the terminal open), so unfolded it lies over
  * the stream and folds again when a task opens, on Esc or a click outside.
  */
-export function TasksPane({
-  tasks,
-  sessionId,
+function TasksPaneFrame({
   shown,
   overlay,
   onToggle,
+  open,
+  unread,
+  checked = 0,
+  onClear,
+  label,
+  stripTitle,
+  children,
+  footer,
 }: {
-  tasks: BoardTask[]
-  sessionId: string
   shown: boolean
   overlay: boolean
   onToggle: (show: boolean) => void
+  open: number
+  unread: number
+  checked?: number
+  onClear?: () => void
+  label: string
+  stripTitle: string
+  children: React.ReactNode
+  footer?: React.ReactNode
 }) {
-  const { open, done } = agentTasks(tasks, sessionId)
-  const own = useColumnPick(sessionId, [...open, ...done])
-  const checked = own.selected.length
-  const unread = [...open, ...done].filter((t) => (t.unread ?? 0) > 0).length
-  // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
-  // goes back to the stream; the shown one again closes it, back to the stream); a checkbox shows the
-  // checked ones as columns (leaving the one task).
-  const { route, navigate } = useApp()
-  const detail = route.view === 'agent' ? route.k : null
-  const select = (id: string) =>
-    id === detail ? navigate({ k: null }, { push: false }) : navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
-  const leave = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
-    f(...a)
-    if (detail) navigate({ k: null }, { push: false })
-  }
-  const pick = { ...own, toggle: leave(own.toggle), toggleAll: leave(own.toggleAll), clear: leave(own.clear) }
   const ref = useRef<HTMLDivElement>(null)
   const floating = overlay && shown
   useEffect(() => {
@@ -236,13 +223,13 @@ export function TasksPane({
       className="v-tasks-strip"
       data-testid="tasks-pane-toggle"
       aria-expanded={shown}
-      aria-label={`${shown ? 'Hide' : 'Show'} tasks (${open.length} open${checked ? `, ${checked} checked` : ''})`}
-      title={`${shown ? 'Hide' : 'Show'} the agent's tasks (⇧T)`}
+      aria-label={`${shown ? 'Hide' : 'Show'} tasks (${open} open${checked ? `, ${checked} checked` : ''})`}
+      title={`${shown ? 'Hide' : 'Show'} ${stripTitle} (⇧T)`}
       onClick={() => onToggle(!shown)}
     >
       <IconTasks size={14} />
       <span className="v-tasks-strip-l">Tasks</span>
-      <b>{open.length}</b>
+      <b>{open}</b>
       {unread > 0 && <span className="v-unread" data-testid="tasks-strip-unread" title={`${unread} with unread messages`} />}
       {checked > 0 && (
         <span className="v-tasks-strip-checked" data-testid="tasks-strip-checked" title={`${checked} checked: shown as columns`}>
@@ -256,11 +243,11 @@ export function TasksPane({
     <div ref={ref} className={'v-tasks-wrap' + (overlay ? ' overlay' : '')} data-testid="tasks-pane" data-shown={shown} data-overlay={overlay || undefined}>
       {(!shown || overlay) && strip}
       {shown && (
-        <aside className="v-tasks" aria-label="Tasks of the agent">
+        <aside className="v-tasks" aria-label={label}>
           <div className="v-tasks-h">
             TASKS
-            {checked > 0 && (
-              <button type="button" className="v-link v-tasks-clear" data-testid="tasks-clear" title="Uncheck every task: back to the stream" onClick={pick.clear}>
+            {checked > 0 && onClear && (
+              <button type="button" className="v-link v-tasks-clear" data-testid="tasks-clear" title="Uncheck every task: back to the stream" onClick={onClear}>
                 {checked} checked · Clear
               </button>
             )}
@@ -276,14 +263,67 @@ export function TasksPane({
               <IconFoldLeft size={14} />
             </button>
           </div>
-          <div className="v-tasks-body">
-            <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
-          </div>
-          {/* The stream has its own box (the same draft): this one only while the stream is not shown. */}
-          {(detail || own.columns) && <PaneComposer sessionId={sessionId} tasks={tasks} />}
+          <div className="v-tasks-body">{children}</div>
+          {footer}
         </aside>
       )}
     </div>
+  )
+}
+
+type PaneProps = { tasks: BoardTask[]; shown: boolean; overlay: boolean; onToggle: (show: boolean) => void }
+
+/** An agent's Tasks pane: its tasks, each with a checkbox (the checked ones as columns). */
+export function TasksPane({ tasks, sessionId, shown, overlay, onToggle }: PaneProps & { sessionId: string }) {
+  const { open, done } = agentTasks(tasks, sessionId)
+  const own = useColumnPick(sessionId, [...open, ...done])
+  const checked = own.selected.length
+  const unread = [...open, ...done].filter((t) => (t.unread ?? 0) > 0).length
+  // A title shows that one task in the agent's page (#…&k=: a first one pushes, another replaces, so ‹
+  // goes back to the stream; the shown one again closes it, back to the stream); a checkbox shows the
+  // checked ones as columns (leaving the one task).
+  const { route, navigate } = useApp()
+  const detail = route.view === 'agent' ? route.k : null
+  const select = (id: string) =>
+    id === detail ? navigate({ k: null }, { push: false }) : navigate({ view: 'agent', s: sessionId, k: id, m: null, tab: 'inbox' }, { push: !detail })
+  const leave = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+    f(...a)
+    if (detail) navigate({ k: null }, { push: false })
+  }
+  const pick = { ...own, toggle: leave(own.toggle), toggleAll: leave(own.toggleAll), clear: leave(own.clear) }
+  return (
+    <TasksPaneFrame
+      shown={shown}
+      overlay={overlay}
+      onToggle={onToggle}
+      open={open.length}
+      unread={unread}
+      checked={checked}
+      onClear={pick.clear}
+      label="Tasks of the agent"
+      stripTitle="the agent's tasks"
+      footer={(detail || own.columns) && <PaneComposer sessionId={sessionId} tasks={tasks} />}
+    >
+      <AgentTaskList tasks={tasks} sessionId={sessionId} pick={pick} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
+    </TasksPaneFrame>
+  )
+}
+
+/**
+ * All agents' Tasks pane: the tasks of every agent listed (the project's live agents), with the agent
+ * list's sections and rules, each row naming its agent. A title shows that task in place of the merged
+ * stream, staying in All agents (no checkboxes: columns are an agent's own).
+ */
+export function AllTasksPane({ tasks, agents, shown, overlay, onToggle }: PaneProps & { agents: Session[] }) {
+  const ids = agents.map((a) => a.id)
+  const { open, done } = agentTasks(tasks, ids)
+  const unread = [...open, ...done].filter((t) => (t.unread ?? 0) > 0).length
+  const owner = useOwnerName()
+  const { detail, select } = useAllTasksSelect()
+  return (
+    <TasksPaneFrame shown={shown} overlay={overlay} onToggle={onToggle} open={open.length} unread={unread} label="Tasks of every agent" stripTitle="every agent's tasks">
+      <AgentTaskList tasks={tasks} sessionId={ids} owner={owner} onSelect={select} selected={detail} onOpen={overlay ? () => onToggle(false) : undefined} />
+    </TasksPaneFrame>
   )
 }
 

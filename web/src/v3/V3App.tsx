@@ -23,7 +23,8 @@ import { PairRequestBanner } from '../components/Devices'
 import { BoardView, boardKeys, needsCount, useBoard } from './Board'
 import { RENAME_TASK_EVENT, RenameTaskDialog } from './RenameTask'
 import { StreamView } from './StreamView'
-import { AllAgentsTasks, TasksPane, agentTasks } from './AgentTasks'
+import { AllTasksPane, TasksPane, agentTasks } from './AgentTasks'
+import { AllAgentsView } from './AllAgents'
 import { SearchView } from './Search'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, rememberTasks, agentHint, openQuestions, taskOwner, useNav, useSessionsById } from './parts'
@@ -84,7 +85,8 @@ export function V3App() {
   // with side panes open) a strip that unfolds over the stream.
   const zoom = useZoom()
   const winW = useWindowWidth() / zoom
-  const hasTasks = !isPhone && view === 'agent' && !!current && current.kind !== 'shell'
+  // All agents has the same pane (every agent's tasks).
+  const hasTasks = !isPhone && ((view === 'agent' && !!current && current.kind !== 'shell') || view === 'alltasks')
   // A tablet's default is narrower, so the stream keeps its room beside it.
   const tasksW = clamp(layout.v3TasksW ?? (isTablet ? 232 : 260), 200, 480)
   // The sidebar beside them (a tablet's only when the rail's ☰ brought it back).
@@ -93,7 +95,7 @@ export function V3App() {
   // would get narrower than MIN_STREAM beside them, the Tasks pane folds to its strip first; still too
   // narrow, the panes squeeze toward MIN_PANE and the ones opened longest ago stop showing (fitPanes).
   const wantW = (p: PaneKind) => clamp(layout.v3PaneW?.[p] ?? (p === 'files' ? 400 : layout.v3WideW ?? Math.min(winW * 0.46, 760)), MIN_PANE, 4000)
-  const openW = side.open.reduce((n, p) => n + wantW(p), 0)
+  const openW = view === 'agent' ? side.open.reduce((n, p) => n + wantW(p), 0) : 0
   const tasksCompact = winW - railWidth(layout) - sbShownW - tasksW - openW < MIN_STREAM
   const tasksShown = tasksCompact ? tasksOver : !layout.v3TasksHidden
   const showTasks = useCallback((show: boolean) => (tasksCompact ? setTasksOver(show) : setLayout({ v3TasksHidden: !show })), [tasksCompact, setLayout])
@@ -191,14 +193,14 @@ export function V3App() {
       // Back to where the person came from (as the header's ‹ does), else the Board.
       if (view !== 'board') {
         e.preventDefault()
-        app.goBack(view === 'agent' && route.k ? { k: null } : undefined)
+        app.goBack((view === 'agent' || view === 'alltasks') && route.k ? { k: null } : undefined)
       }
       return
     }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return
     // E / F2: rename the open task (in place) or the focused Board row (a dialog).
     if (e.key === 'F2' || ((e.key === 'e' || e.key === 'E') && settings.single_key)) {
-      if (view === 'agent' && route.k) {
+      if ((view === 'agent' || view === 'alltasks') && route.k) {
         e.preventDefault()
         window.dispatchEvent(new Event(RENAME_TASK_EVENT))
         return
@@ -251,7 +253,7 @@ export function V3App() {
       return togglePane('files')
     }
     // ⇧T: show or fold the agent's Tasks pane; T: its terminal.
-    if (view === 'agent' && e.key === 'T' && e.shiftKey) {
+    if ((view === 'agent' || view === 'alltasks') && e.key === 'T' && e.shiftKey) {
       e.preventDefault()
       if (hasTasks) showTasks(!tasksShown)
       return
@@ -343,7 +345,7 @@ export function V3App() {
   else if (view === 'agent') main = <StreamView id={route.s!} highlight={route.m} tasks={tasks} narrow={streamNarrow} side={{ shown: shownPanes, widths: fitted.widths, toggle: togglePane, show: showPane, close: closePane, only: side.only, drag: dragPane }} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else if (view === 'search') main = <SearchView />
   else if (view === 'agents') main = <AgentsList agents={agents} shells={shells} counts={board?.agents ?? {}} tasks={tasks} onNewAgent={newAgentIn} onRename={setRenaming} />
-  else if (view === 'alltasks') main = <AllAgentsTasks tasks={tasks} agents={agents} projectName={project?.name} />
+  else if (view === 'alltasks') main = <AllAgentsView agents={agents} tasks={tasks} projectName={project?.name} highlight={route.m} sheet={isPhone && route.tab === 'tasks'} onOpenAttachment={onOpenAttachment} />
   else
     main = (
       <BoardView
@@ -364,10 +366,10 @@ export function V3App() {
   // A viewer pushed on top of the view goes back (no duplicate entry of the view stays behind).
   const closeViewer = () => (history.state?.viewer ? history.back() : app.navigate({ f: null }, { push: false }))
   // Tablet: two panes. On a task or an agent the sidebar folds away (the rail's ☰ shows it again).
-  const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || view === 'alltasks' || sbOpen)
+  const showSidebar = !isPhone && (!isTablet || view === 'board' || view === 'search' || view === 'agents' || sbOpen)
   // Phone: the agent's sheet (its tasks, terminal, shell, files) is a history entry (#…&tab=tasks): back closes it.
-  const sheet = isPhone && view === 'agent' && route.tab === 'tasks'
-  const wide = view === 'agent' && (shownPanes.length > 0 || sheet)
+  const sheet = isPhone && (view === 'agent' || view === 'alltasks') && route.tab === 'tasks'
+  const wide = (view === 'agent' || view === 'alltasks') && (shownPanes.length > 0 || sheet)
   const sbW = clamp(layout.v3SidebarW ?? 236, 200, 480)
   const style = {
     '--v-sb-w': sbW + 'px',
@@ -438,7 +440,8 @@ export function V3App() {
         </nav>
       )}
       {showSidebar && <Resizer testid="sidebar-resizer" className="v-rz-sb" measure={() => document.querySelector<HTMLElement>('.v-sidebar')?.offsetWidth ?? sbW} onDrag={dragSidebar} />}
-      {hasTasks && <TasksPane tasks={board?.tasks ?? []} sessionId={route.s!} shown={tasksShown} overlay={tasksCompact} onToggle={showTasks} />}
+      {hasTasks && view === 'agent' && <TasksPane tasks={board?.tasks ?? []} sessionId={route.s!} shown={tasksShown} overlay={tasksCompact} onToggle={showTasks} />}
+      {hasTasks && view === 'alltasks' && <AllTasksPane tasks={board?.tasks ?? []} agents={agents} shown={tasksShown} overlay={tasksCompact} onToggle={showTasks} />}
       {hasTasks && tasksShown && !tasksCompact && <Resizer testid="tasks-resizer" className="v-rz-tasks" measure={() => document.querySelector<HTMLElement>('.v-tasks')?.offsetWidth ?? tasksW} onDrag={dragTasks} />}
       {isPhone && (
         <>
@@ -447,7 +450,7 @@ export function V3App() {
           <NotificationAsk />
         </>
       )}
-      <main className={'v-main' + (wide ? ' wide' : '') + (view === 'agent' && !wide ? ' conv' : '')}>
+      <main className={'v-main' + (wide ? ' wide' : '') + ((view === 'agent' || view === 'alltasks') && !wide ? ' conv' : '')}>
         {main}
       </main>
       {isPhone && (
