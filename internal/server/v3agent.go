@@ -510,13 +510,13 @@ func (s *Server) agentUpdateTask(w http.ResponseWriter, r *http.Request, sess *s
 			t, _ = s.store.UpdateTask(ctx, t.ID, sess.ID, store.TaskFields{Status: &d})
 		}
 		if t.Status == store.TaskDone && t.Auto.State == store.AutoRunning {
-			s.stopAuto(ctx, t, "met")
+			s.stopAuto(ctx, t, store.AutoReasonMet, "met")
 		}
 		if b.Autonomous != nil {
 			if *b.Autonomous && t.Auto.State != store.AutoRunning && t.Status != store.TaskDone {
 				s.startAuto(ctx, t, sess.ID, b.MaxTurns, "")
 			} else if !*b.Autonomous && t.Auto.State == store.AutoRunning {
-				s.stopAuto(ctx, t, "stopped by the agent")
+				s.stopAuto(ctx, t, store.AutoReasonByAgent, "by the agent")
 			}
 		}
 	}

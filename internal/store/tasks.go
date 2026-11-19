@@ -193,7 +193,7 @@ const KindGoal = "goal"
 const (
 	AutoOff     = ""        // the agent works turn by turn, as with any task
 	AutoRunning = "running" // minbox continues the agent's turns until the goal is met, it needs the person, or a limit hits
-	AutoPaused  = "paused"  // the person paused it; Start resumes
+	AutoPaused  = "paused"  // the person paused it, or a guard did (Reason); Start resumes
 	AutoStopped = "stopped" // ended: met, stopped by the person, or a limit (Reason)
 )
 
@@ -204,9 +204,30 @@ type AutoRun struct {
 	MaxTurns  int        `json:"max_turns,omitempty"`  // continuation turns at most (0: the default)
 	Turns     int        `json:"turns,omitempty"`      // continuation turns sent so far
 	Until     *time.Time `json:"until,omitempty"`      // stop after this time
-	Reason    string     `json:"reason,omitempty"`     // why it stopped or paused
-	LastAt    *time.Time `json:"last_at,omitempty"`    // the last continuation
+	// Reason is why it stopped or paused, a code (AutoReason*); ReasonText says it for the person.
+	Reason     string     `json:"reason,omitempty"`
+	ReasonText string     `json:"reason_text,omitempty"`
+	LastAt     *time.Time `json:"last_at,omitempty"` // the last continuation
+	// The run's guards (internal/server/v3goal.go): when the recent continuations were sent, how many
+	// turns in a row ended fast, how many in a row made no progress, and the progress mark of the
+	// last continuation. Resuming clears them.
+	Recent     []time.Time `json:"recent,omitempty"`
+	FastTurns  int         `json:"fast_turns,omitempty"`
+	StillTurns int         `json:"still_turns,omitempty"`
+	Mark       string      `json:"mark,omitempty"`
 }
+
+// Why a goal's run paused or stopped (AutoRun.Reason).
+const (
+	AutoReasonMet        = "met"         // its criteria are met (or it is done)
+	AutoReasonByYou      = "by_you"      // the person paused or stopped it
+	AutoReasonByAgent    = "by_agent"    // the agent turned it off
+	AutoReasonAgentGone  = "agent_gone"  // its agent was archived or removed
+	AutoReasonTurnLimit  = "turn_limit"  // it used its turns
+	AutoReasonTimeLimit  = "time_limit"  // it ran out of time
+	AutoReasonTooFast    = "too_fast"    // the agent's turns ended right away, again and again
+	AutoReasonNoProgress = "no_progress" // turns in a row changed nothing
+)
 
 // TaskEvent is a line of a task's timeline.
 type TaskEvent struct {
