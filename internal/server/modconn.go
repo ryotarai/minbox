@@ -297,6 +297,9 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request, sess *st
 		s.hub.publish(Event{Type: "sessions"})
 	}
 	s.modQueueCheck(sess.ID)
+	if req.State == store.StatusIdle {
+		s.goalResumeKick(sess.ID) // after a restart: a running goal may go on (resumeIdle)
+	}
 	writeJSON(w, 200, map[string]any{"ok": true, "server_time": now.UTC().Format(time.RFC3339Nano),
 		"protocol": ModProtocol, "tools_version": manifestFor(sessKind(sess)).Version})
 }

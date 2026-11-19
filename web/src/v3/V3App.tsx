@@ -30,6 +30,7 @@ import { AllTasksPane, TasksPane, agentTasks } from './AgentTasks'
 import { AllAgentsView } from './AllAgents'
 import { useOpenOnboarding } from './Onboarding'
 import { SearchView } from './Search'
+import { AgentOptions, NewGoalDialog, NewModeToggle, type NewMode } from './NewGoal'
 import { v3, type BoardTask, type V3Message } from './data'
 import { BackButton, SendKey, rememberTasks, agentHint, taskOwner, useNav, useSessionsById } from './parts'
 import { quoteIntoComposer, selectedInConversation } from './quote'
@@ -189,7 +190,7 @@ export function V3App() {
       app.navigate({ view: 'main', s: null, k: null, m: null, tab: 'inbox' }, { push: true })
     }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const openNew = useCallback((to?: string) => setOverlay({ kind: 'v3-new', to } as never), [setOverlay])
+  const openNew = useCallback((to?: string, mode?: NewMode) => setOverlay({ kind: 'v3-new', to, mode } as never), [setOverlay])
   const openNewAgent = useCallback(() => setOverlay({ kind: 'new-session', projectId: projectId || undefined }), [setOverlay, projectId])
   // The ＋ on a project's header in the agent list: the New agent dialog in that project.
   const newAgentIn = useCallback((pid?: string) => setOverlay({ kind: 'new-session', projectId: pid || undefined }), [setOverlay])
@@ -488,7 +489,13 @@ export function V3App() {
           onSaved={reloadBoard}
         />
       )}
-      {overlay && (overlay as { kind: string }).kind === 'v3-new' && <NewMessageDialog agents={agents} initialTo={(overlay as { to?: string }).to} onClose={() => setOverlay(null)} />}
+      {overlay &&
+        (overlay as { kind: string }).kind === 'v3-new' &&
+        ((overlay as { mode?: NewMode }).mode === 'goal' ? (
+          <NewGoalDialog agents={agents} initialTo={(overlay as { to?: string }).to} onMode={(mode) => openNew((overlay as { to?: string }).to, mode)} onClose={() => setOverlay(null)} />
+        ) : (
+          <NewMessageDialog agents={agents} initialTo={(overlay as { to?: string }).to} onMode={(mode) => openNew((overlay as { to?: string }).to, mode)} onClose={() => setOverlay(null)} />
+        ))}
       {overlay && (overlay as { kind: string }).kind === 'v3-help' && <HelpDialog onClose={() => setOverlay(null)} />}
       {route.f && (
         <div className="v-overlay" style={{ padding: 0, alignItems: 'stretch' }} data-testid="attachment-overlay" onClick={closeViewer}>
@@ -711,7 +718,7 @@ function NoAgents({ noProjects, onNewAgent }: { noProjects: boolean; onNewAgent:
  * default is "Let minbox choose": the server's helper picks one of the project's running agents whose work
  * fits, else a new agent starts (POST /api/v3/new without to). Otherwise the most recently active agent.
  */
-function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; initialTo?: string; onClose: () => void }) {
+function NewMessageDialog({ agents, initialTo, onMode, onClose }: { agents: Session[]; initialTo?: string; onMode: (m: NewMode) => void; onClose: () => void }) {
   const { error, projects, toast, setOverlay } = useApp()
   const { id: projectId } = useSelectedProject()
   const nav = useNav()
@@ -750,7 +757,10 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
   return (
     <div className="v-overlay" onMouseDown={onClose} data-testid="new-message-dialog">
       <div className="v-dialog" onMouseDown={(e) => e.stopPropagation()}>
-        <h3>New message</h3>
+        <div className="v-dhead">
+          <h3>New message</h3>
+          <NewModeToggle mode="message" onMode={onMode} />
+        </div>
         {!project && (
           <div className="v-rowf" data-testid="no-project">
             There is no project yet: add one (its folder) first, then write to its agent.
@@ -763,13 +773,7 @@ function NewMessageDialog({ agents, initialTo, onClose }: { agents: Session[]; i
           To
           <select aria-label="To" data-testid="new-to" value={to} onChange={(e) => setTo(e.target.value)}>
             {canAuto && <option value="auto">Let minbox choose (an agent whose work fits, else a new one)</option>}
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-                {agentHint(agents, a) ? ` (${agentHint(agents, a)})` : ''} · {agentKindLabel(a.agent)}
-                {a.title ? ' — ' + a.title.slice(0, 40) : ''}
-              </option>
-            ))}
+            <AgentOptions agents={agents} />
             <option value="new">New agent…</option>
           </select>
           {to === 'new' && <input type="text" aria-label="Agent name" placeholder="name (optional)" value={name} onChange={(e) => setName(e.target.value)} />}

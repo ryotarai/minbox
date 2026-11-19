@@ -94,8 +94,10 @@ export const v3 = {
   task: (id: string) => call<TaskDetail>('GET', `/api/v3/tasks/${id}`),
   /** The reply help of a task's view: questions for the task's latest agent message. */
   taskSuggestions: (id: string) => call<SuggestResult>('GET', `/api/v3/tasks/${id}/suggestions`),
-  patchTask: (id: string, body: Partial<Pick<Task, 'title' | 'status' | 'summary' | 'steps' | 'criteria' | 'parent_id'>>) => call<Task>('PATCH', `/api/v3/tasks/${id}`, body),
-  createTask: (body: { project_id?: string; title: string; kind?: string; session_id?: string; message_ids?: string[] }) => call<Task>('POST', '/api/v3/tasks', body),
+  patchTask: (id: string, body: Partial<Pick<Task, 'title' | 'status' | 'summary' | 'steps' | 'criteria' | 'parent_id' | 'kind'>>) => call<Task>('PATCH', `/api/v3/tasks/${id}`, body),
+  /** A task, or a goal (kind "goal": its criteria, its agent, and its run started at once with autonomous). */
+  createTask: (body: { project_id?: string; title: string; kind?: '' | 'goal'; criteria?: Step[]; session_id?: string; autonomous?: boolean; max_turns?: number; message_ids?: string[] }) =>
+    call<Task>('POST', '/api/v3/tasks', body),
   auto: (id: string, action: 'start' | 'pause' | 'stop', session_id?: string) => call<Task>('POST', `/api/v3/tasks/${id}/auto`, { action, session_id }),
   stream: (session: string, opts: { before?: string; after?: string; limit?: number } = {}) =>
     call<Stream>('GET', `/api/v3/sessions/${session}/stream` + q({ before: opts.before, after: opts.after, limit: opts.limit ? String(opts.limit) : undefined })),

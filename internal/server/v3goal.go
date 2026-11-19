@@ -55,11 +55,15 @@ const KindContinue = "continue"
 var goalIdle = struct {
 	sync.Mutex
 	at map[string]time.Time // session → when it last reported idle
-}{at: map[string]time.Time{}}
+	// seeded: the time in at was not reported but taken after a restart (resumeIdle): the turn that
+	// ended then is not timed by the guards.
+	seeded map[string]bool
+}{at: map[string]time.Time{}, seeded: map[string]bool{}}
 
 func noteIdle(sessionID string) {
 	goalIdle.Lock()
 	goalIdle.at[sessionID] = time.Now()
+	delete(goalIdle.seeded, sessionID)
 	goalIdle.Unlock()
 }
 
@@ -68,6 +72,79 @@ func idleSince(sessionID string) (time.Time, bool) {
 	defer goalIdle.Unlock()
 	t, ok := goalIdle.at[sessionID]
 	return t, ok
+}
+
+// seedIdle records an idle time minbox did not hear (see resumeIdle); false when one is known already.
+func seedIdle(sessionID string, at time.Time) bool {
+	goalIdle.Lock()
+	defer goalIdle.Unlock()
+	if _, ok := goalIdle.at[sessionID]; ok {
+		return false
+	}
+	goalIdle.at[sessionID] = at
+	goalIdle.seeded[sessionID] = true
+	return true
+}
+
+func idleSeeded(sessionID string) bool {
+	goalIdle.Lock()
+	defer goalIdle.Unlock()
+	return goalIdle.seeded[sessionID]
+}
+
+// forgetIdle drops what minbox knows of a session's idle time (tests: a restart).
+func forgetIdle(sessionID string) {
+	goalIdle.Lock()
+	delete(goalIdle.at, sessionID)
+	delete(goalIdle.seeded, sessionID)
+	goalIdle.Unlock()
+}
+
+// Resuming after a restart: the idle times above live in memory, so after a restart minbox knows none
+// and a running goal would wait for its agent to report idle again, which an agent that was already
+// idle never does. resumeIdle takes the agent as idle from now when its stored status is idle with
+// nothing queued, and its mod, heard from since the start, does not say it is working (its heartbeat
+// state; a mod that sends no heartbeats counts once it has been heard from for a stale period without
+// one). The run then goes on after goalSettle, as after any idle. An agent in a turn has the stored
+// status working (or a heartbeat saying so) and is left alone until it reports idle. The seeded idle
+// is no turn's end: the guards do not time it (a restart is no fast turn), and the turn count, the
+// recent continuations and the progress mark carry over from the stored run.
+func (s *Server) resumeIdle(sess *store.Session) bool {
+	if sess.Status != store.StatusIdle || sess.Undelivered > 0 || sess.ArchivedAt != nil {
+		return false
+	}
+	if !s.modConfirmsIdle(sess.ID) {
+		return false
+	}
+	if seedIdle(sess.ID, time.Now()) {
+		log.Printf("goals: session %s: idle after a restart (stored status idle, its mod agrees); runs go on", sess.ID)
+		return true
+	}
+	return false
+}
+
+// modConfirmsIdle: the session's mod has been heard from since minbox started, is not stale, and does
+// not say it is working.
+func (s *Server) modConfirmsIdle(id string) bool {
+	now := s.nowFn()
+	s.modMu.Lock()
+	defer s.modMu.Unlock()
+	c := s.modConns[id]
+	if c == nil || c.lastContact.IsZero() || c.stale {
+		return false
+	}
+	if c.hb {
+		return c.modState == store.StatusIdle
+	}
+	return now.Sub(c.firstSeen) > s.modStaleAfter
+}
+
+// goalResumeKick: a mod spoke (hello, heartbeat) for a session whose idle time minbox does not know
+// (after a restart): tick the runs, which may now take it as idle (resumeIdle).
+func (s *Server) goalResumeKick(id string) {
+	if _, ok := idleSince(id); !ok {
+		go s.goalTick()
+	}
 }
 
 // goalAgent is the session that pursues a goal: the run's, else its first assigned agent.
@@ -286,15 +363,23 @@ func (s *Server) goalStep(ctx context.Context, g *store.Task) {
 		return // working, starting, ended, or a message is on its way
 	}
 	idle, ok := idleSince(sess.ID)
-	if !ok || now.Sub(idle) < goalSettle || (a.LastAt != nil && !idle.After(*a.LastAt)) {
+	if !ok {
+		s.resumeIdle(sess) // after a restart: idle from now when its mod agrees, settled next tick
+		return
+	}
+	seeded := idleSeeded(sess.ID)
+	if now.Sub(idle) < goalSettle || (a.LastAt != nil && !idle.After(*a.LastAt)) {
 		return // not idle since the last continuation (it has not taken it yet)
+	}
+	if seeded && !s.modConfirmsIdle(sess.ID) {
+		return // taken as idle after a restart, but its mod now says it works
 	}
 	// Waiting on the person: a question tagged with the goal or its tasks is open.
 	if s.goalNeedsYou(ctx, g) {
 		return
 	}
 	// The agent has ended a turn: the guards decide whether it may go on.
-	if reason, text := goalGuard(&a, now, idle, s.goalMark(ctx, g)); reason != "" {
+	if reason, text := goalGuard(&a, now, idle, s.goalMark(ctx, g), !seeded); reason != "" {
 		g.Auto = a
 		s.haltAuto(ctx, g, true, reason, text)
 		return
@@ -394,12 +479,15 @@ func goalPrompt(g *store.Task, turn, max int) string {
 // goalGuard counts the turn that just ended (idle: when the agent went idle; mark: the goal's
 // progress mark now) and says why the run must pause ("" when it may go on). See goalFastCount.
 // The turn before the first continuation of a run (or of a resume) is not minbox's: only its mark
-// is taken.
-func goalGuard(a *store.AutoRun, now, idle time.Time, mark string) (reason, text string) {
+// is taken. timed is false when the idle time was not reported but taken after a restart: that
+// turn's length is unknown, so it neither counts as fast nor ends a streak.
+func goalGuard(a *store.AutoRun, now, idle time.Time, mark string, timed bool) (reason, text string) {
 	if a.Mark != "" && a.LastAt != nil {
-		if idle.Sub(*a.LastAt) < goalFastTurn {
+		switch {
+		case !timed: // a restart: the fast streak stays as it was
+		case idle.Sub(*a.LastAt) < goalFastTurn:
 			a.FastTurns++
-		} else {
+		default:
 			a.FastTurns = 0
 		}
 		if mark == a.Mark {

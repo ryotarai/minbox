@@ -523,7 +523,9 @@ func (s *Server) v3New(w http.ResponseWriter, r *http.Request) {
 	s.v3Send(w, r)
 }
 
-// PATCH /api/v3/tasks/{id} {title?, status?, steps?, criteria?, parent_id?, summary?}: the person edits a task.
+// PATCH /api/v3/tasks/{id} {title?, status?, steps?, criteria?, parent_id?, summary?, kind?}: the person
+// edits a task. kind "goal" makes a task a goal ("" or "task" makes a goal a task again, ending its run).
+// A goal whose criteria the person sets all met is done and its run stops, as when the agent ticks them.
 func (s *Server) v3PatchTask(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title    *string           `json:"title"`
@@ -532,32 +534,84 @@ func (s *Server) v3PatchTask(w http.ResponseWriter, r *http.Request) {
 		Steps    *[]store.TaskStep `json:"steps"`
 		Criteria *[]store.TaskStep `json:"criteria"`
 		ParentID *string           `json:"parent_id"`
+		Kind     *string           `json:"kind"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
 	ctx := r.Context()
-	t, err := s.store.UpdateTask(ctx, r.PathValue("id"), "", store.TaskFields{Title: body.Title, Status: body.Status, Summary: body.Summary, Steps: body.Steps, Criteria: body.Criteria, ParentID: body.ParentID})
+	f := store.TaskFields{Title: body.Title, Status: body.Status, Summary: body.Summary, Steps: body.Steps, Criteria: body.Criteria, ParentID: body.ParentID}
+	if body.Kind != nil {
+		k := strings.TrimSpace(*body.Kind)
+		switch k {
+		case store.KindGoal:
+		case "", "task":
+			k = ""
+		default:
+			httpError(w, 400, "kind must be goal or task")
+			return
+		}
+		f.Kind = &k
+	}
+	cur, err := s.store.GetTask(ctx, r.PathValue("id"))
 	if err != nil {
 		v3TaskError(w, err)
 		return
 	}
+	t, err := s.store.UpdateTask(ctx, cur.ID, "", f)
+	if err != nil {
+		v3TaskError(w, err)
+		return
+	}
+	switch {
+	case t.Kind == store.KindGoal && cur.Kind != store.KindGoal:
+		_ = s.store.AddTaskEvent(ctx, t.ID, "goal", "Made a goal (you)", "", "")
+	case t.Kind != store.KindGoal && cur.Kind == store.KindGoal:
+		_ = s.store.AddTaskEvent(ctx, t.ID, "goal", "Made a task (you)", "", "")
+		if t.Auto.State == store.AutoRunning || t.Auto.State == store.AutoPaused {
+			s.stopAuto(ctx, t, store.AutoReasonByYou, "it is a task now")
+		}
+	}
+	if t.Kind == store.KindGoal && body.Criteria != nil && body.Status == nil && criteriaMet(t.Criteria) && t.Status != store.TaskDone {
+		d := store.TaskDone
+		if nt, err := s.store.UpdateTask(ctx, t.ID, "", store.TaskFields{Status: &d}); err == nil {
+			t = nt
+		}
+	}
 	if t.Kind == store.KindGoal && t.Status == store.TaskDone && t.Auto.State == store.AutoRunning {
-		s.stopAuto(ctx, t, store.AutoReasonMet, "done")
+		why := "done"
+		if criteriaMet(t.Criteria) {
+			why = "met"
+		}
+		s.stopAuto(ctx, t, store.AutoReasonMet, why)
+		t, _ = s.store.GetTask(ctx, t.ID)
 	}
 	s.publishTasks()
 	writeJSON(w, 200, t)
 }
 
-// POST /api/v3/tasks {project_id, title, kind?, session_id?, message_ids?}: the person makes a task (the
-// tag picker's "New task") and tags messages with it.
+// criteriaMet: a goal has criteria and every one is ticked.
+func criteriaMet(cs []store.TaskStep) bool {
+	met := len(cs) > 0
+	for _, c := range cs {
+		met = met && c.Done
+	}
+	return met
+}
+
+// POST /api/v3/tasks {project_id, title, kind?, criteria?, session_id?, autonomous?, max_turns?,
+// message_ids?}: the person makes a task (the tag picker's "New task") or a goal (New goal: its
+// criteria, its agent, its autonomous run started at once when asked) and tags messages with it.
 func (s *Server) v3CreateTask(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ProjectID  string   `json:"project_id"`
-		Title      string   `json:"title"`
-		Kind       string   `json:"kind"`
-		SessionID  string   `json:"session_id"`
-		MessageIDs []string `json:"message_ids"`
+		ProjectID  string           `json:"project_id"`
+		Title      string           `json:"title"`
+		Kind       string           `json:"kind"`
+		Criteria   []store.TaskStep `json:"criteria"`
+		SessionID  string           `json:"session_id"`
+		Autonomous bool             `json:"autonomous"`
+		MaxTurns   int              `json:"max_turns"`
+		MessageIDs []string         `json:"message_ids"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -571,11 +625,30 @@ func (s *Server) v3CreateTask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if project == "" && body.SessionID != "" {
+		if sess, err := s.store.GetSession(ctx, body.SessionID); err == nil {
+			project = sess.ProjectID
+		}
+	}
 	kind := ""
+	f := store.TaskFields{Title: &body.Title, Kind: &kind}
 	if body.Kind == store.KindGoal {
 		kind = store.KindGoal
+		if len(body.Criteria) > 0 {
+			f.Criteria = &body.Criteria
+		}
 	}
-	t, err := s.store.CreateTask(ctx, project, "", store.TaskFields{Title: &body.Title, Kind: &kind})
+	if body.Autonomous {
+		if kind != store.KindGoal || body.SessionID == "" {
+			httpError(w, 400, "an autonomous run needs a goal with an agent (session_id)")
+			return
+		}
+		if sess, err := s.store.GetSession(ctx, body.SessionID); err != nil || sess.ArchivedAt != nil {
+			httpError(w, 400, "no such agent")
+			return
+		}
+	}
+	t, err := s.store.CreateTask(ctx, project, "", f)
 	if err != nil {
 		v3TaskError(w, err)
 		return
@@ -588,6 +661,10 @@ func (s *Server) v3CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, _ = s.store.GetTask(ctx, t.ID)
+	if body.Autonomous {
+		s.startAuto(ctx, t, body.SessionID, body.MaxTurns, "you")
+		t, _ = s.store.GetTask(ctx, t.ID)
+	}
 	s.publishTasks()
 	writeJSON(w, 201, t)
 }
