@@ -5,6 +5,7 @@ import { agentLabel, installedAgents, useAgents } from '../lib/agents'
 import { useApp } from '../lib/app'
 import { selectProject, shortDir } from '../lib/projects'
 import { homeRelative, isMac } from '../lib/format'
+import { parseEnvLines } from '../lib/agentEnv'
 import { Button, HostTag, IconButton, MenuItem, Modal, Popover, cx } from './ui'
 import { IconArrowUp, IconChevronDown, IconChevronRight, IconClose, IconFiles, IconSearch } from './icons'
 
@@ -117,6 +118,11 @@ export function NewSessionDialog({
   const showFolder = !proj
   const title = mode === 'project' ? 'New project' : mode === 'project-edit' ? 'Edit project' : 'New agent'
   const cwdRef = useRef<HTMLInputElement>(null)
+  // Advanced (a new agent only): environment variables, KEY=value lines.
+  const [advanced, setAdvanced] = useState(false)
+  const [envText, setEnvText] = useState('')
+  const envParsed = parseEnvLines(envText)
+  const envBad = mode === 'session' && envParsed.errors.length > 0
 
   useEffect(() => {
     api
@@ -154,6 +160,10 @@ export function NewSessionDialog({
   const starting = useRef(false)
   const start = async () => {
     if (starting.current || (showFolder && (missing || !cwd.trim()))) return
+    if (envBad) {
+      setAdvanced(true)
+      return
+    }
     starting.current = true
     setBusy(true)
     try {
@@ -168,7 +178,10 @@ export function NewSessionDialog({
         onClose()
         return
       }
-      const s = proj ? await api.createSessionIn(proj.id, name.trim(), 'claude', agentPick || undefined) : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, 'claude', agentPick || undefined)
+      const env = envParsed.keys.length ? envParsed.env : undefined
+      const s = proj
+        ? await api.createSessionIn(proj.id, name.trim(), 'claude', agentPick || undefined, env)
+        : await api.createSession(cwd.trim(), name.trim(), hostId || undefined, 'claude', agentPick || undefined, env)
       if (!proj) rememberCwd(cwd.trim(), hostId)
       reloadProjects()
       setSessions((p) => (p && !p.some((x) => x.id === s.id) ? [s, ...p] : p))
@@ -516,7 +529,73 @@ export function NewSessionDialog({
       </div>
     )
 
-  const canStart = !busy && (!showFolder || (!missing && !!cwd.trim()))
+  // Advanced: closed by default. Environment variables for the new agent, whichever coding agent runs it.
+  const advancedSection =
+    mode !== 'session' ? null : (
+      <div className="flex shrink-0 flex-col gap-2" data-testid="new-session-advanced-section">
+        <button
+          type="button"
+          data-testid="new-session-advanced"
+          aria-expanded={advanced}
+          aria-controls="new-session-advanced-body"
+          onClick={() => setAdvanced((v) => !v)}
+          className={cx('flex items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-0 text-muted hover:text-fg', isPhone ? 'h-11 text-[15px]' : 'h-7 text-[12.5px]')}
+        >
+          <IconChevronRight size={14} className={cx('transition-transform', advanced && 'rotate-90')} />
+          Advanced
+          {!advanced && envParsed.keys.length > 0 && (
+            <span className="text-subtle" data-testid="new-session-env-count">
+              · {envParsed.keys.length} environment variable{envParsed.keys.length === 1 ? '' : 's'}
+            </span>
+          )}
+          {!advanced && envBad && <span className="text-dangerfg">· fix the environment variables</span>}
+        </button>
+        {advanced && (
+          <div id="new-session-advanced-body" className="flex flex-col gap-1.5">
+            <label className={cx('flex flex-col gap-1.5 text-muted', isPhone ? 'text-[13px]' : 'text-[12.5px]')}>
+              <span>
+                Environment variables <span className="text-subtle">(optional)</span>
+              </span>
+              <textarea
+                data-testid="new-session-env"
+                value={envText}
+                onChange={(e) => setEnvText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isPhone) onKey(e)
+                }}
+                aria-invalid={envBad}
+                aria-describedby="new-session-env-help"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                rows={isPhone ? 4 : 5}
+                placeholder={'API_BASE_URL=https://example.test\n# a comment\nDEBUG=1'}
+                className={cx(
+                  'mono min-w-0 resize-y rounded-lg border bg-sunken px-2.5 py-2 leading-[1.45] text-fg outline-none',
+                  isPhone ? 'rounded-[10px] text-[16px]' : 'text-[13px]',
+                  envBad ? 'border-danger' : 'border-linestrong focus:border-accent',
+                )}
+              />
+            </label>
+            {envBad && (
+              <ul data-testid="new-session-env-error" className="m-0 flex list-none flex-col gap-0.5 p-0 text-[12px] text-dangerfg">
+                {envParsed.errors.map((er) => (
+                  <li key={er}>{er}</li>
+                ))}
+              </ul>
+            )}
+            <p id="new-session-env-help" className="m-0 text-[12px] leading-snug text-subtle">
+              One <span className="mono">KEY=value</span> per line, added to the agent&apos;s environment every time it starts, whichever coding agent runs it.
+              Blank lines and lines starting with # are skipped; the value is everything after the first =. MINBOX_*, TERM, COLORTERM and
+              OPENCODE_CONFIG_CONTENT are set by minbox and cannot be overridden. Values are not shown again after the agent starts.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+
+  const canStart = !busy && !envBad && (!showFolder || (!missing && !!cwd.trim()))
 
   if (isPhone) {
     return <PhoneSheet onClose={onClose} title={title} body={
@@ -542,6 +621,7 @@ export function NewSessionDialog({
           </>
         )}
         {nameInput}
+        {advancedSection}
         {editNote}
       </>
     } footer={
@@ -566,17 +646,18 @@ export function NewSessionDialog({
         </IconButton>
       </div>
       <div className="flex min-h-0 flex-1" onKeyDown={onKey}>
-        <div className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-4">
-            {projectPicker}
+        <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+          {projectPicker}
           {agentPicker}
           {showFolder && (
             <>
               {hostPicker}
               {cwdInput}
-              <div className="flex h-[300px] min-h-0 flex-col">{browser}</div>
+              <div className="flex h-[300px] min-h-0 shrink-0 flex-col">{browser}</div>
             </>
           )}
           {nameInput}
+          {advancedSection}
           {editNote}
         </div>
       </div>

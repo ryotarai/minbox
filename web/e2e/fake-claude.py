@@ -296,6 +296,11 @@ def heartbeat_loop():
 
 
 out(f"fake-claude {mode} session={session_id} cwd={os.getcwd()}")
+# E2E_ENV_DUMP=<file>: write the E2E_* variables it was started with there (agent-env.spec: the New
+# agent dialog's environment variables reach the agent). Only names starting with E2E_.
+if os.environ.get("E2E_ENV_DUMP"):
+    with open(os.environ["E2E_ENV_DUMP"], "w") as f:
+        json.dump({k: v for k, v in os.environ.items() if k.startswith("E2E_")}, f)
 api("POST", "/api/agent/hello", {"claude_session_id": session_id})
 api("POST", "/api/agent/status", {"status": "idle"})
 threading.Thread(target=poll, daemon=True).start()

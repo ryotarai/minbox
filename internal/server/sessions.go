@@ -197,6 +197,15 @@ func (m *sessionManager) CreateKind(ctx context.Context, kind, name, cwd, hostID
 // CreateAgent is CreateKind with the coding agent to run. agentKind "" means the project's
 // default agent, else the default_agent setting, else the installed agent (Claude Code if both are).
 func (m *sessionManager) CreateAgent(ctx context.Context, kind, agentKind, name, cwd, hostID, projectID string) (*store.Session, error) {
+	return m.CreateAgentEnv(ctx, kind, agentKind, name, cwd, hostID, projectID, nil)
+}
+
+// CreateAgentEnv is CreateAgent with the person's environment variables for the agent (see
+// agentEnv): checked, stored with the session and added at every start.
+func (m *sessionManager) CreateAgentEnv(ctx context.Context, kind, agentKind, name, cwd, hostID, projectID string, env map[string]string) (*store.Session, error) {
+	if err := validateAgentEnv(env); err != nil {
+		return nil, err
+	}
 	switch kind {
 	case "":
 		kind = store.KindClaude
@@ -256,6 +265,12 @@ func (m *sessionManager) CreateAgent(ctx context.Context, kind, agentKind, name,
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(env) > 0 {
+		if err := m.store.SetSessionEnv(ctx, sess.ID, env); err != nil {
+			return nil, err
+		}
+		sess.Env, sess.EnvKeys = env, store.EnvKeys(env)
 	}
 	if err := m.spawn(ctx, sess, false); err != nil {
 		_ = m.store.SetSessionEnded(ctx, sess.ID, -1)
@@ -726,6 +741,9 @@ func (m *sessionManager) sessionEnv(sess *store.Session) []string {
 	} else {
 		env = termhost.CleanEnv(os.Environ())
 	}
+	// The person's variables, on top of the inherited environment (here, or the host's own one);
+	// minbox's own below come after them and are never among them (validateAgentEnv).
+	env = append(env, envPairs(sess.Env)...)
 	env = append(env, "TERM=xterm-256color", "COLORTERM=truecolor")
 	if sess.Kind == store.KindShell {
 		return env // no mod: nothing of minbox's to hand on

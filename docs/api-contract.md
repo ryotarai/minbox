@@ -1385,3 +1385,15 @@ Host JSON adds `pid` (the local host's), `started_at` (when the host process sta
 The local host is `outdated` when its `binary` differs from the server's own, `unknown` when it does not say; a remote host
 compares its `version` with the server's (`unknown` when either is empty or both are "dev"). The local host's `version` is
 now its own (`minbox host start` reports the build's version), no longer the server's when the host does not say.
+
+## Agent environment variables
+
+`POST /api/sessions` and `POST /api/v3/new` (`to: "new"`) take `env`: `{"KEY": "value"}`, or a list of
+pairs `[{"key": "KEY", "value": "v"}]` / `[["KEY", "v"]]`. Keys match `^[A-Za-z_][A-Za-z0-9_]*$`; `MINBOX_*`,
+`TERM`, `COLORTERM` and `OPENCODE_CONFIG_CONTENT` are minbox's own and refused (400, naming the keys only).
+An empty value sets the variable to empty. They are stored with the session (`sessions.env`, JSON) and added at
+every start (create, restart, resume, the companion shell), on this machine and on a remote host, on top of the
+inherited (cleaned) environment and under minbox's own variables (`internal/server/agentenv.go`). Values are
+never logged nor returned: session JSON carries `env_keys` (sorted names) only, and the agents' API
+(`/api/agent/*`, the mod's tools) carries neither. The New agent dialog's Advanced section edits them as
+`KEY=value` lines; there is no editing after creation.
